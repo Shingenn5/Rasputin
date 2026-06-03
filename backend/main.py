@@ -78,6 +78,11 @@ class LoginIn(BaseModel):
     password: str
 
 
+class PasswordChangeIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class TaskIn(BaseModel):
     objective: str
     model: str = "dry-run"
@@ -202,6 +207,14 @@ async def auth_logout(response: Response, request: Request):
     out = auth.logout(token)
     response.delete_cookie(auth.COOKIE_NAME, path="/")
     return ok(out)
+
+
+@app.post("/api/auth/change-password")
+async def auth_change_password(req: PasswordChangeIn, request: Request, user=Depends(current_user)):
+    username = user.get("username")
+    if username == "localhost":
+        username = auth.load_public().get("username", "admin")
+    return ok(auth.change_password(username, req.current_password, req.new_password))
 
 
 @app.get("/api/models")

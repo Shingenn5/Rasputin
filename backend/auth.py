@@ -121,6 +121,27 @@ def logout(token):
     return {"logged_out": True}
 
 
+def change_password(username, current_password, new_password):
+    if len(str(new_password or "")) < 10:
+        raise ValueError("new password must be at least 10 characters")
+    data = load()
+    for user in data.get("users", []):
+        if user.get("username") != username:
+            continue
+        if not _verify(current_password, user.get("salt", ""), user.get("password_hash", "")):
+            audit.log("auth_password_change_failed", {"username": username}, actor=username)
+            raise PermissionError("current password is incorrect")
+        hashed = _hash_password(new_password)
+        user["salt"] = hashed["salt"]
+        user["password_hash"] = hashed["hash"]
+        user["password_changed_at"] = time.time()
+        with _lock:
+            AUTH_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        audit.log("auth_password_changed", {"username": username}, actor=username)
+        return {"changed": True, "username": username}
+    raise ValueError("user missing")
+
+
 def session_info(token):
     session = _sessions.get(token)
     if not session:

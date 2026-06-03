@@ -302,8 +302,15 @@
 
           <section class="settings-pane" id="settings-admin">
             <div class="pane-title"><div><h3>Admin</h3><p>Local session and server identity.</p></div></div>
-            <div class="settings-card">
+            <div class="settings-card card-form">
               <p id="adminSession" class="muted-line">Checking session...</p>
+              <form id="passwordChangeForm" class="card-form">
+                <label><span>Current password</span><input class="field" id="currentPassword" type="password" autocomplete="current-password" required></label>
+                <label><span>New password</span><input class="field" id="newPassword" type="password" autocomplete="new-password" required></label>
+                <label><span>Confirm new password</span><input class="field" id="confirmPassword" type="password" autocomplete="new-password" required></label>
+                <button class="ghost-btn" type="submit">Change Password</button>
+              </form>
+              <p id="passwordChangeStatus" class="muted-line"></p>
               <button class="ghost-btn" id="logoutSettingsBtn" type="button">Logout</button>
             </div>
           </section>

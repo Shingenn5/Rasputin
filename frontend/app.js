@@ -706,6 +706,35 @@ if ($("loginForm")) {
 $("logoutBtn").addEventListener("click", logout);
 $("logoutSettingsBtn").addEventListener("click", logout);
 
+$("passwordChangeForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const currentPassword = $("currentPassword").value;
+  const newPassword = $("newPassword").value;
+  const confirmPassword = $("confirmPassword").value;
+  if (newPassword !== confirmPassword) {
+    $("passwordChangeStatus").textContent = "New passwords do not match.";
+    return;
+  }
+  if (newPassword.length < 10) {
+    $("passwordChangeStatus").textContent = "Use at least 10 characters.";
+    return;
+  }
+  try {
+    $("passwordChangeStatus").textContent = "Changing password...";
+    await api("/api/auth/change-password", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({current_password: currentPassword, new_password: newPassword}),
+    });
+    $("currentPassword").value = "";
+    $("newPassword").value = "";
+    $("confirmPassword").value = "";
+    $("passwordChangeStatus").textContent = "Password changed. Use the new password next time you sign in.";
+  } catch (err) {
+    $("passwordChangeStatus").textContent = err.message;
+  }
+});
+
 document.addEventListener("click", async (e) => {
   const selectWorkspace = e.target.closest("[data-select-workspace]");
   if (selectWorkspace) {
