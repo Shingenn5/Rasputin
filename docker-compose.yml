@@ -1,0 +1,44 @@
+name: rasputin
+
+services:
+  rasputin-wrapper:
+    image: rasputin-wrapper:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    ports:
+      - "127.0.0.1:${WRAPPER_PORT:-8787}:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      WRAPPER_RUNTIME: docker
+      RASPUTIN_COOKIE_SECURE: "0"
+      RASPUTIN_LOCALHOST_BYPASS: ${RASPUTIN_LOCALHOST_BYPASS:-0}
+      MAIN_VLLM_BASE_URL: ${MAIN_VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      CONTAINER_MODELS_DIR: /app/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+      - ./workspace:/app/workspace
+      - ./models:/app/models:ro
+    restart: unless-stopped
+
+  chroma:
+    profiles: ["rag"]
+    image: chromadb/chroma:latest
+    ports:
+      - "127.0.0.1:8008:8000"
+    volumes:
+      - ./data/chroma:/chroma/chroma
+    restart: unless-stopped
+
+  searxng:
+    profiles: ["search"]
+    image: searxng/searxng:latest
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./data/searxng:/etc/searxng
+    restart: unless-stopped

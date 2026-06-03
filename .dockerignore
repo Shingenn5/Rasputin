@@ -1,0 +1,15 @@
+.git
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.log
+server.*.log
+
+data/
+workspace/
+models/
+
+.venv/
+venv/
+node_modules/
