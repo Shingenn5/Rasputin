@@ -1,0 +1,9 @@
+# Advanced mode only.
+# This lets the wrapper ask Docker to start/stop sibling model containers.
+# Mounting docker.sock grants powerful host control; keep this opt-in.
+services:
+  rasputin-wrapper:
+    environment:
+      WRAPPER_DOCKER_CONTROL: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

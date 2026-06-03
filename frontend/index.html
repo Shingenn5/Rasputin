@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rasputin</title>
+  <link href="/static/styles.css" rel="stylesheet">
+</head>
+<body>
+  <section class="login-shell" id="loginShell">
+    <form class="login-card" id="loginForm">
+      <div class="brand-mark large">R</div>
+      <h1>Rasputin</h1>
+      <p>Private local workbench. Sign in with the first-run admin password from your server logs.</p>
+      <label><span>Username</span><input class="field" id="loginUser" value="admin" autocomplete="username"></label>
+      <label><span>Password</span><input class="field" id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <button class="primary-btn full-btn" type="submit">Sign In</button>
+      <p id="loginStatus" class="muted-line"></p>
+    </form>
+  </section>
+
+  <div class="app-frame">
+    <aside class="icon-rail">
+      <div class="brand-mark">R</div>
+      <nav class="icon-nav" aria-label="Primary">
+        <button class="icon-nav-btn active" type="button" data-view="home" title="Home" aria-label="Home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        </button>
+        <button class="icon-nav-btn" type="button" data-open-settings="workspace" title="Workspaces" aria-label="Workspaces">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </button>
+        <button class="icon-nav-btn" type="button" data-open-settings="knowledge" title="Knowledge" aria-label="Knowledge">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>
+        </button>
+        <button class="icon-nav-btn" type="button" data-open-settings="models" title="Models" aria-label="Models">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="4"/></svg>
+        </button>
+        <button class="icon-nav-btn" type="button" data-open-settings="audit" title="Audit" aria-label="Audit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </button>
+        <button class="icon-nav-btn" id="settingsOpenBtn" type="button" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm8.5 4a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.8-1L15.8 3h-4l-.4 3a8 8 0 0 0-1.8 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.8 1l.4 3h4l.4-3a8 8 0 0 0 1.8-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z"/></svg>
+        </button>
+      </nav>
+      <div class="rail-status">
+        <span class="dot" id="conn">connecting</span>
+        <span class="dot privacy" id="navPrivacySummary">checking</span>
+      </div>
+    </aside>
+
+    <main class="workspace-shell" id="homeView">
+      <section class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <h1>Rasputin</h1>
+            <p id="activeProfile">Using current profile</p>
+          </div>
+          <div class="header-actions">
+            <span class="workspace-chip" id="workspacePill">workspace: loading</span>
+            <button class="ghost-btn compact" id="logoutBtn" type="button">Logout</button>
+            <button class="icon-btn" id="settingsOpenTopBtn" type="button" title="Settings" aria-label="Open settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm8.5 4a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.8-1L15.8 3h-4l-.4 3a8 8 0 0 0-1.8 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.8 1l.4 3h4l.4-3a8 8 0 0 0 1.8-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1Z"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="thread-scroll">
+          <div id="tasks" class="thread-list"></div>
+        </div>
+
+        <form id="taskForm" class="chat-composer">
+          <textarea id="objective" rows="1" placeholder="Message Rasputin" required></textarea>
+          <div class="composer-bar">
+            <button class="ghost-btn" id="profileSettingsBtn" type="button">Profile</button>
+            <button class="primary-btn" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="activity-panel">
+        <div class="activity-header">
+          <h2>Activity</h2>
+          <button class="ghost-btn compact" id="refreshBtn" type="button">Refresh</button>
+        </div>
+        <div class="mini-stats">
+          <span><strong id="taskCount">0</strong> tasks</span>
+          <span><strong id="runningCount">0</strong> running</span>
+          <span><strong id="mainTaskCount">0</strong> main</span>
+          <span><strong id="subTaskCount">0</strong> helpers</span>
+          <span><strong id="runtimeSummary">Ready</strong> model</span>
+        </div>
+        <div id="subtasks" class="activity-list"></div>
+      </aside>
+    </main>
+  </div>
+
+  <section class="settings-shell" id="settingsShell" aria-hidden="true">
+    <div class="settings-backdrop" id="settingsBackdrop"></div>
+    <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <header class="settings-header">
+        <div>
+          <h2 id="settingsTitle">Settings</h2>
+          <p>Local runtime, folders, output, and safety.</p>
+        </div>
+        <button class="icon-btn" id="settingsCloseBtn" type="button" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="settings-body">
+        <nav class="settings-tabs" aria-label="Settings sections">
+          <button class="settings-tab active" type="button" data-settings-tab="profile"><span>Profile</span><small>run defaults</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="workspace"><span>Workspaces</span><small>folder access</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="output"><span>Output</span><small>markdown folder</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="knowledge"><span>Knowledge</span><small>RAG + graph</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="models"><span>Models</span><small>registry</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="safety"><span>Safety</span><small>permissions</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="memory"><span>Memory</span><small>saved context</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="appearance"><span>Appearance</span><small>themes</small></button>
+          <button class="settings-tab" type="button" data-settings-tab="admin"><span>Admin</span><small>session</small></button>
+        </nav>
+
+        <div class="settings-panels">
+          <section class="settings-pane active" id="settings-profile">
+            <div class="pane-title">
+              <div><h3>Profile</h3><p>Defaults for new tasks.</p></div>
+              <span class="soft-badge">new tasks only</span>
+            </div>
+            <div class="settings-card form-grid">
+              <label><span>Model</span><select id="model" class="field"></select></label>
+              <label><span>Skill</span><select id="skill" class="field"></select></label>
+              <label><span>Mode</span><select id="taskMode" class="field">
+                <option value="chat">chat</option>
+                <option value="research">research</option>
+                <option value="code">code</option>
+                <option value="write">write</option>
+                <option value="organize">organize</option>
+                <option value="analyze files">analyze files</option>
+              </select></label>
+              <label><span>Sub-agents</span><input type="number" min="0" max="4" value="0" id="subagents" class="field"></label>
+            </div>
+          </section>
+
+          <section class="settings-pane" id="settings-workspace">
+            <div class="pane-title"><div><h3>Workspace</h3><p id="workspaceActive">Loading...</p></div></div>
+            <div class="settings-card">
+              <form id="workspaceAddForm" class="inline-form">
+                <input class="field" id="workspaceAddPath" placeholder="Add approved folder path">
+                <input class="field" id="workspaceAddName" placeholder="Name">
+                <button class="ghost-btn" type="submit">Add</button>
+              </form>
+              <div id="workspaceRegistry" class="workspace-registry"></div>
+              <form id="workspaceForm" class="inline-form">
+                <input class="field" id="workspacePath" value=".">
+                <button class="ghost-btn" type="submit">Use Folder</button>
+              </form>
+              <div class="workspace-dirs" id="workspaceDirs"></div>
+            </div>
+          </section>
+
+          <section class="settings-pane" id="settings-output">
+            <div class="pane-title">
+              <div><h3>Output</h3><p>Completed task results can be written as Markdown.</p></div>
+            </div>
+            <div class="settings-card">
+              <form id="outputForm" class="inline-form">
+                <input class="field" id="outputFolder" value="workspace/markdown-output">
+                <button class="ghost-btn" type="submit">Save Folder</button>
+              </form>
+              <p id="outputStatus" class="muted-line">No output folder loaded.</p>
+            </div>
+          </section>
+
+          <section class="settings-pane" id="settings-knowledge">
+            <div class="pane-title"><div><h3>Knowledge</h3><p>Local retrieval and graph tools.</p></div></div>
+            <div class="two-col">
+              <div class="settings-card">
+                <h4>RAG Index</h4>
+                <form id="ragIngestForm" class="inline-form">
+                  <input class="field" id="ragPath" value=".">
+                  <button class="ghost-btn" type="submit">Index</button>
+                </form>
+                <form id="ragSearchForm" class="inline-form">
+                  <input class="field" id="ragQuery" placeholder="Search indexed knowledge">
+                  <button class="ghost-btn" type="submit">Find</button>
+                </form>
+                <p id="ragStats" class="muted-line">No index loaded.</p>
+                <div id="ragResults" class="result-list"></div>
+              </div>
+              <div class="settings-card">
+                <h4>Graphify</h4>
+                <div class="inline-form">
+                  <button class="ghost-btn" id="graphBuildBtn" type="button">Build</button>
+                  <button class="ghost-btn" id="graphRefreshBtn" type="button">Stats</button>
+                </div>
+                <form id="graphSearchForm" class="inline-form">
+                  <input class="field" id="graphQuery" placeholder="Find relationships">
+                  <button class="ghost-btn" type="submit">Map</button>
+                </form>
+                <p id="graphStats" class="muted-line">No graph yet.</p>
+                <div id="graphResults" class="result-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" id="settings-models">
+            <div class="section-row">
+              <div><h3>Models</h3><p>Register endpoints or import GGUF models.</p></div>
+              <button class="ghost-btn" id="modelsRefreshBtn" type="button">Refresh</button>
+            </div>
+            <div class="two-col">
+              <form id="endpointModelForm" class="settings-card card-form">
+                <h4>Endpoint</h4>
+                <label><span>Name</span><input class="field" id="endpointName" value="Main vLLM"></label>
+                <label><span>Key</span><input class="field" id="endpointKey" value="main-vllm"></label>
+                <label><span>Base URL</span><input class="field" id="endpointBaseUrl" value="http://127.0.0.1:8000/v1"></label>
+                <label><span>Role</span><input class="field" id="endpointRole" value="main"></label>
+                <label><span>Model id</span><input class="field" id="endpointModelId" value="local-main"></label>
+                <button class="ghost-btn" type="submit">Save Endpoint</button>
+              </form>
+              <form id="ggufImportForm" class="settings-card card-form">
+                <h4>GGUF</h4>
+                <label><span>Path</span><input class="field" id="ggufPath" placeholder="C:\models\model.Q4_K_M.gguf"></label>
+                <label><span>Port</span><input class="field" id="ggufPort" type="number" placeholder="8081"></label>
+                <label><span>Name</span><input class="field" id="ggufName" placeholder="small-coder"></label>
+                <label><span>Role</span><input class="field" id="ggufRole" value="helper"></label>
+                <label><span>Context</span><input class="field" id="ggufContext" type="number" value="4096"></label>
+                <label><span>GPU layers</span><input class="field" id="ggufGpuLayers" type="number" value="0"></label>
+                <button class="ghost-btn" type="submit">Import GGUF</button>
+              </form>
+            </div>
+            <div id="modelRegistry" class="model-list"></div>
+            <p id="modelMsg" class="muted-line"></p>
+            <pre id="modelLogs" class="log-box"></pre>
+          </section>
+
+          <section class="settings-pane" id="settings-safety">
+            <div class="section-row">
+              <div><h3>Safety</h3><p>Permissions and local-only protections.</p></div>
+              <button class="ghost-btn" id="auditRefreshBtn" type="button">Audit</button>
+            </div>
+            <form id="securityForm" class="toggle-grid">
+              <label class="switch-row"><span><strong>Privacy lock</strong><small>Only local model endpoints</small></span><input type="checkbox" id="privacy_lock"></label>
+              <label class="switch-row"><span><strong>File read</strong><small>Inspect approved folders</small></span><input type="checkbox" id="allow_file_read"></label>
+              <label class="switch-row"><span><strong>File write</strong><small>Create or edit files</small></span><input type="checkbox" id="allow_file_write"></label>
+              <label class="switch-row"><span><strong>Reorganize</strong><small>Move files when enabled</small></span><input type="checkbox" id="allow_file_reorganize"></label>
+              <label class="switch-row"><span><strong>Shell execution</strong><small>Run commands after approval</small></span><input type="checkbox" id="allow_shell_execution"></label>
+              <label class="switch-row"><span><strong>Web search tool</strong><small>Brokered MCP access</small></span><input type="checkbox" id="allow_web_search"></label>
+              <label class="switch-row"><span><strong>Docker control</strong><small>Manage model containers</small></span><input type="checkbox" id="allow_docker_control"></label>
+              <label class="switch-row"><span><strong>Model tests</strong><small>Health check endpoints</small></span><input type="checkbox" id="allow_model_tests"></label>
+              <label class="switch-row"><span><strong>Model registry edits</strong><small>Add or update endpoints</small></span><input type="checkbox" id="allow_model_registry_edit"></label>
+              <label class="switch-row"><span><strong>Remote models</strong><small>Permit non-local endpoints</small></span><input type="checkbox" id="allow_remote_models"></label>
+              <label class="switch-row"><span><strong>Approve file writes</strong><small>Preview before editing files</small></span><input type="checkbox" id="approval_required_file_write"></label>
+              <label class="switch-row"><span><strong>Approve file moves</strong><small>Preview before reorganizing</small></span><input type="checkbox" id="approval_required_file_move"></label>
+              <label class="switch-row"><span><strong>Approve web queries</strong><small>Preview brokered searches</small></span><input type="checkbox" id="approval_required_web_search"></label>
+              <label class="switch-row"><span><strong>Audit log</strong><small>Record safety actions</small></span><input type="checkbox" id="audit_enabled"></label>
+              <label class="switch-row"><span><strong>Query chars</strong><small>Max web-search query length</small></span><input class="field compact-field" type="number" id="web_search_max_chars" value="180"></label>
+              <button class="ghost-btn" type="submit">Save Safety</button>
+            </form>
+            <div id="privacyStatus" class="badge-row"></div>
+            <div id="sidebarStatus" class="guardrail-list"></div>
+            <pre id="auditLog" class="log-box tall"></pre>
+          </section>
+
+          <section class="settings-pane" id="settings-memory">
+            <div class="pane-title"><div><h3>Memory</h3><p>Saved preferences and project facts.</p></div></div>
+            <div class="settings-card">
+              <form id="memoryForm" class="inline-form">
+                <input class="field" id="memoryText" placeholder="Save a preference or fact">
+                <button class="ghost-btn" type="submit">Add Memory</button>
+              </form>
+            </div>
+            <pre id="memoryBox" class="log-box tall"></pre>
+          </section>
+
+          <section class="settings-pane" id="settings-appearance">
+            <div class="pane-title"><div><h3>Appearance</h3><p>Saved locally in this browser.</p></div></div>
+            <label class="theme-select-row settings-card">
+              <span><strong>Theme</strong></span>
+              <select id="themeSelect" class="field compact-select">
+                <option value="sage">Studio Sage</option>
+                <option value="graphite">Graphite</option>
+                <option value="ocean">Ocean</option>
+                <option value="ember">Ember</option>
+                <option value="iris">Iris</option>
+                <option value="alpine">Alpine</option>
+                <option value="sandstone">Sandstone</option>
+                <option value="contrast">High Contrast</option>
+              </select>
+            </label>
+            <div class="theme-grid" id="themeChoices">
+              <button class="theme-card" type="button" data-theme-choice="sage"><span><i style="background:#246455"></i><i style="background:#f7f7f4"></i><i style="background:#2f5f9f"></i></span><strong>Studio Sage</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="graphite"><span><i style="background:#c8a95a"></i><i style="background:#171a1f"></i><i style="background:#6f93c6"></i></span><strong>Graphite</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="ocean"><span><i style="background:#126d7a"></i><i style="background:#eef7f8"></i><i style="background:#7a4e9f"></i></span><strong>Ocean</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="ember"><span><i style="background:#9d3f2f"></i><i style="background:#fff8f3"></i><i style="background:#315f72"></i></span><strong>Ember</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="iris"><span><i style="background:#6651a6"></i><i style="background:#f7f5ff"></i><i style="background:#27806c"></i></span><strong>Iris</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="alpine"><span><i style="background:#2b6f83"></i><i style="background:#f3f8f4"></i><i style="background:#78613b"></i></span><strong>Alpine</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="sandstone"><span><i style="background:#6c584c"></i><i style="background:#fbf7ef"></i><i style="background:#2f6f73"></i></span><strong>Sandstone</strong></button>
+              <button class="theme-card" type="button" data-theme-choice="contrast"><span><i style="background:#101010"></i><i style="background:#fff"></i><i style="background:#005fcc"></i></span><strong>High Contrast</strong></button>
+            </div>
+          </section>
+
+          <section class="settings-pane" id="settings-admin">
+            <div class="pane-title"><div><h3>Admin</h3><p>Local session and server identity.</p></div></div>
+            <div class="settings-card">
+              <p id="adminSession" class="muted-line">Checking session...</p>
+              <button class="ghost-btn" id="logoutSettingsBtn" type="button">Logout</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

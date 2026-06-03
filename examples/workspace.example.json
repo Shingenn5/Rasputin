@@ -1,0 +1,17 @@
+{
+  "active_id": "project-root",
+  "workspaces": [
+    {
+      "id": "project-root",
+      "name": "Project Root",
+      "root": ".",
+      "permission_profile": {
+        "read": true,
+        "write": true,
+        "reorganize": false
+      },
+      "indexed": false,
+      "last_used": null
+    }
+  ]
+}

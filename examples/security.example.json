@@ -1,0 +1,18 @@
+{
+  "privacy_lock": true,
+  "offline_lock": false,
+  "allow_file_read": true,
+  "allow_file_write": true,
+  "allow_file_reorganize": false,
+  "allow_shell_execution": false,
+  "allow_web_search": true,
+  "allow_docker_control": false,
+  "allow_model_tests": true,
+  "allow_remote_models": false,
+  "approval_required_file_write": true,
+  "approval_required_file_move": true,
+  "approval_required_web_search": false,
+  "web_search_max_chars": 180,
+  "audit_enabled": true,
+  "notes": "Rasputin keeps models local. Only the brokered web-search tool may reach the internet."
+}

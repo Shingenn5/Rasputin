@@ -1,0 +1,151 @@
+import base64
+import hashlib
+import hmac
+import json
+import os
+import secrets
+import time
+from pathlib import Path
+from threading import Lock
+
+from . import audit
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT / "data"
+AUTH_FILE = DATA_DIR / "auth.json"
+COOKIE_NAME = "rasputin_session"
+
+_lock = Lock()
+_sessions = {}
+_boot_password = None
+
+
+def _hash_password(password, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 180_000)
+    return {
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "hash": base64.b64encode(digest).decode("ascii"),
+    }
+
+
+def _verify(password, salt, expected):
+    salt_bytes = base64.b64decode(salt.encode("ascii"))
+    expected_bytes = base64.b64decode(expected.encode("ascii"))
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, 180_000)
+    return hmac.compare_digest(actual, expected_bytes)
+
+
+def bootstrap():
+    global _boot_password
+    DATA_DIR.mkdir(exist_ok=True)
+    if AUTH_FILE.exists():
+        return load_public()
+    username = os.environ.get("RASPUTIN_ADMIN_USER", "admin")
+    password = os.environ.get("RASPUTIN_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
+    hashed = _hash_password(password)
+    data = {
+        "version": 1,
+        "created_at": time.time(),
+        "users": [
+            {
+                "username": username,
+                "role": "admin",
+                "salt": hashed["salt"],
+                "password_hash": hashed["hash"],
+            }
+        ],
+    }
+    with _lock:
+        AUTH_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    if not os.environ.get("RASPUTIN_ADMIN_PASSWORD"):
+        _boot_password = password
+        print("")
+        print("Rasputin first-run admin credentials")
+        print(f"  username: {username}")
+        print(f"  password: {password}")
+        print("Change this after first login if you expose the app beyond localhost.")
+        print("")
+    return load_public()
+
+
+def load():
+    bootstrap()
+    with _lock:
+        return json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+
+
+def load_public():
+    if not AUTH_FILE.exists():
+        return {"configured": False, "username": "admin", "localhost_bypass": localhost_bypass_enabled()}
+    data = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+    user = data.get("users", [{}])[0]
+    return {
+        "configured": True,
+        "username": user.get("username", "admin"),
+        "role": user.get("role", "admin"),
+        "localhost_bypass": localhost_bypass_enabled(),
+    }
+
+
+def localhost_bypass_enabled():
+    return os.environ.get("RASPUTIN_LOCALHOST_BYPASS", "0").lower() in {"1", "true", "yes"}
+
+
+def cookie_secure():
+    return os.environ.get("RASPUTIN_COOKIE_SECURE", "0").lower() in {"1", "true", "yes"}
+
+
+def login(username, password, client="local"):
+    data = load()
+    for user in data.get("users", []):
+        if user.get("username") == username and _verify(password, user.get("salt", ""), user.get("password_hash", "")):
+            token = secrets.token_urlsafe(32)
+            _sessions[token] = {
+                "username": username,
+                "role": user.get("role", "admin"),
+                "created_at": time.time(),
+                "last_seen": time.time(),
+            }
+            audit.log("auth_login", {"username": username, "client": client}, actor=username)
+            return token, session_info(token)
+    audit.log("auth_login_failed", {"username": username, "client": client})
+    raise PermissionError("invalid username or password")
+
+
+def logout(token):
+    if token:
+        session = _sessions.pop(token, None)
+        if session:
+            audit.log("auth_logout", {"username": session.get("username")}, actor=session.get("username", "local-user"))
+    return {"logged_out": True}
+
+
+def session_info(token):
+    session = _sessions.get(token)
+    if not session:
+        return None
+    session["last_seen"] = time.time()
+    return {
+        "authenticated": True,
+        "username": session.get("username"),
+        "role": session.get("role"),
+        "created_at": session.get("created_at"),
+    }
+
+
+def public_session(token=None, client_host=""):
+    if localhost_bypass_enabled() and client_host in {"127.0.0.1", "::1", "localhost"}:
+        return {"authenticated": True, "username": "localhost", "role": "admin", "bypass": True}
+    info = session_info(token)
+    if info:
+        return info
+    public = load_public()
+    return {"authenticated": False, "auth": public}
+
+
+def require_user(token=None, client_host=""):
+    session = public_session(token, client_host)
+    if not session.get("authenticated"):
+        raise PermissionError("login required")
+    return session
