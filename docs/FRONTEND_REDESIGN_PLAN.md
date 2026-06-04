@@ -214,7 +214,7 @@ Home should become a clean chat surface:
 - centered empty state when no local conversation is active
 - composer pinned at bottom
 - latest user and assistant messages in a readable thread
-- model logs, artifacts, sources, and traces inside collapsed details
+- model logs, outputs, sources, and traces inside collapsed details
 
 Bootstrap components:
 

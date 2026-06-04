@@ -207,7 +207,7 @@ def main():
     if finished.get("status") != "done":
         raise SmokeFailure(f"Dry-run task did not complete cleanly: {finished}")
     detail = assertOk("GET", f"/api/tasks/{task['id']}")
-    for key in ["task", "session", "events", "trace", "artifacts", "children", "approvals", "toolCalls"]:
+    for key in ["task", "session", "events", "trace", "outputs", "children", "approvals", "toolCalls"]:
         if key not in detail:
             raise SmokeFailure(f"Task detail missing {key}: {detail}")
     if detail["task"].get("id") != task["id"]:

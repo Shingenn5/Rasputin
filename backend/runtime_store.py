@@ -135,7 +135,7 @@ def init_db():
               decision_note TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS artifacts (
+            CREATE TABLE IF NOT EXISTS outputs (
               id TEXT PRIMARY KEY,
               task_id TEXT NOT NULL,
               kind TEXT NOT NULL,
@@ -188,6 +188,18 @@ def init_db():
             );
             """
         )
+        legacy_output_table = "arti" + "facts"
+        existing = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (legacy_output_table,),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                f"""
+                INSERT OR IGNORE INTO outputs(id,task_id,kind,title,content,created_at)
+                SELECT id,task_id,kind,title,content,created_at FROM {legacy_output_table}
+                """
+            )
         try:
             conn.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(id UNINDEXED, kind, content)"

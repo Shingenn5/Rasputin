@@ -270,11 +270,11 @@ approvals
 memory_items
 skills
 schedules
-artifacts
+outputs
 agent_traces
 ```
 
-The in-process `AgentHub` still runs active async work, but it persists each task, log, trace, artifact, message, and session update as the task moves through the pipeline.
+The in-process `AgentHub` still runs active async work, but it persists each task, log, trace, output, message, and session update as the task moves through the pipeline.
 
 The runtime pipeline is:
 
@@ -287,7 +287,7 @@ intake
   -> execution
   -> reflection
   -> memory review
-  -> artifact write
+  -> output write
 ```
 
 Existing `/api/tasks` calls remain compatible. New runtime APIs include:
@@ -697,7 +697,7 @@ Core concepts:
 - `AgentHub`
 - task lifecycle: queued, running, done, error, cancelled
 - live logs
-- artifacts
+- outputs
 - traces
 - sources
 - graph context
@@ -753,6 +753,21 @@ Current behavior:
 - builds local relationship data
 - stores typed nodes/edges
 - returns graph relationships for agent context
+
+### document_intel.py
+
+Planned local document intelligence layer.
+
+Target behavior:
+
+- parses approved workspace PDFs into text chunks and citation metadata
+- parses approved workspace DOCX files into sections, headings, tables, and text chunks
+- stores parsed text, summaries, and memory candidates only under local `data/`
+- sends parsed chunks into RAG indexing for retrieval
+- sends document entities and section links into Graphify so files are easier to locate later
+- exposes editor-safe previews before any DOCX rewrite or PDF-derived output is saved
+
+PDF and DOCX content must follow the same privacy rules as workspace files: local models may read approved local context, but direct internet access remains blocked and brokered search cannot receive private document text.
 
 ### output.py
 

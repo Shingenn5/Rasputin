@@ -1564,12 +1564,12 @@ button.runtime-chip {
   border-color: color-mix(in srgb, var(--ras-accent) 26%, var(--ras-border));
 }
 
-.warsat-recipe-card {
+.warsat-protocol-card {
   position: relative;
   overflow: hidden;
 }
 
-.warsat-recipe-card::before,
+.warsat-protocol-card::before,
 .warsat-plan-card::before {
   content: "";
   position: absolute;
@@ -1869,7 +1869,7 @@ button.runtime-chip {
 
 .task-detail-metric,
 .context-block,
-.artifact-card,
+.output-card,
 .subagent-card,
 .tool-call-card,
 .detail-approval-card,
@@ -1899,7 +1899,7 @@ button.runtime-chip {
 }
 
 .drawer-control-row,
-.artifact-stack,
+.output-stack,
 .context-stack,
 .subagent-stack,
 .approval-tool-stack {
@@ -1919,7 +1919,7 @@ button.runtime-chip {
 
 .drawer-result-block h2,
 .context-block h2,
-.artifact-card h2,
+.output-card h2,
 .tool-call-card h2,
 .detail-approval-card h2 {
   margin: 0 0 .45rem;
@@ -1971,7 +1971,7 @@ button.runtime-chip {
   overflow-wrap: anywhere;
 }
 
-.artifact-card .markdown-body {
+.output-card .markdown-body {
   margin-top: .75rem;
 }
 

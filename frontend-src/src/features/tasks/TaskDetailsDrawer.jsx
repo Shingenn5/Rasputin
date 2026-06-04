@@ -9,7 +9,7 @@ const sections = [
   ["seen", "What Rasputin Saw"],
   ["trace", "Plan And Trace"],
   ["logs", "Logs"],
-  ["artifacts", "Artifacts"],
+  ["outputs", "Outputs"],
   ["subagents", "Sub-Agents"],
   ["approvals", "Approvals And Tools"],
 ];
@@ -208,24 +208,24 @@ export function TaskDetailsDrawer({
                 </section>
               )}
 
-              {section === "artifacts" && (
-                <section id="task-detail-panel-artifacts" role="tabpanel" aria-labelledby="task-detail-tab-artifacts" data-testid="task-details-artifacts">
-                  <div className="artifact-stack">
-                    {(detail.artifacts || task.artifacts || []).map((artifact, index) => (
-                      <article className="artifact-card" key={artifact.id || `${artifact.title}-${index}`}>
+              {section === "outputs" && (
+                <section id="task-detail-panel-outputs" role="tabpanel" aria-labelledby="task-detail-tab-outputs" data-testid="task-details-outputs">
+                  <div className="output-stack">
+                    {(detail.outputs || task.outputs || []).map((output, index) => (
+                      <article className="output-card" key={output.id || `${output.title}-${index}`}>
                         <div className="section-row">
                           <div>
-                            <span className="eyebrow">{artifact.kind || "artifact"}</span>
-                            <h2>{artifact.title || "Task artifact"}</h2>
+                            <span className="eyebrow">{output.kind || "output"}</span>
+                            <h2>{output.title || "Task output"}</h2>
                           </div>
-                          <span className="status-pill">{formatTime(artifact.createdAt)}</span>
+                          <span className="status-pill">{formatTime(output.createdAt)}</span>
                         </div>
                         <div className="markdown-body">
-                          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{artifact.content || ""}</ReactMarkdown>
+                          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{output.content || ""}</ReactMarkdown>
                         </div>
                       </article>
                     ))}
-                    {!(detail.artifacts || task.artifacts || []).length && <EmptyInline text="No artifacts have been written for this task." />}
+                    {!(detail.outputs || task.outputs || []).length && <EmptyInline text="No outputs have been written for this task." />}
                   </div>
                 </section>
               )}

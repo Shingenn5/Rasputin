@@ -10,7 +10,7 @@ The current UI works, but it does not feel like a finished product. The biggest 
 - The main chat view mixes conversation, task metadata, model health, workspace state, and activity in ways that make the product feel unfinished.
 - Many controls are technically present, but they do not yet feel grouped into obvious workflows.
 
-The target is a local AI workbench that feels closer to AiderDesk, Open WebUI, ChatGPT, or Gemini: calm, readable, fast, obvious, and trustworthy.
+The target is a Rasputin-native local AI workbench: calm, readable, fast, obvious, and trustworthy.
 
 ## Current Evidence
 
@@ -109,7 +109,7 @@ Changes:
   - user message
   - assistant response
   - compact status line only when useful
-  - logs/sources/artifacts hidden in disclosure panels
+  - logs/sources/outputs hidden in disclosure panels
 - Make the composer feel like the main product surface:
   - model health indicator
   - send button
@@ -129,7 +129,7 @@ Acceptance checks:
 
 - The first screen reads as "chat with Rasputin" immediately.
 - The user can send a message without parsing model internals.
-- Task logs and artifacts are available, but not visually dominant.
+- Task logs and outputs are available, but not visually dominant.
 - Mobile layout keeps the composer and latest response usable.
 
 ## Phase 3: Settings Redesign

@@ -123,7 +123,7 @@ class BackendSmokeTests(unittest.TestCase):
             "workspacePath": ".",
         }))
         detail = self.assertOk(self.client.get(f"/api/tasks/{task['id']}"))
-        for key in ["task", "session", "events", "trace", "artifacts", "children", "approvals", "toolCalls"]:
+        for key in ["task", "session", "events", "trace", "outputs", "children", "approvals", "toolCalls"]:
             self.assertIn(key, detail)
         self.assertEqual(detail["task"]["id"], task["id"])
         missing = self.client.get("/api/tasks/definitely-missing-task")
@@ -171,30 +171,30 @@ class BackendSmokeTests(unittest.TestCase):
         }))
         self.assertEqual(schedule["name"], "Smoke Schedule")
 
-    def testWarsatRecipesAndPlanAreSafeByDefault(self):
-        recipes = self.assertOk(self.client.get("/api/warsat/recipes"))
-        self.assertGreaterEqual(recipes["count"], 2)
-        self.assertFalse(recipes["executionEnabled"])
-        self.assertTrue(any(item["id"] == "vllmCudaOpenai" for item in recipes["recipes"]))
+    def testWarsatProtocolsAndPlanAreSafeByDefault(self):
+        protocols = self.assertOk(self.client.get("/api/warsat/protocols"))
+        self.assertGreaterEqual(protocols["count"], 2)
+        self.assertFalse(protocols["executionEnabled"])
+        self.assertTrue(any(item["id"] == "vllmCudaOpenai" for item in protocols["protocols"]))
 
         plan = self.assertOk(self.client.post("/api/warsat/plan", json={
-            "recipeId": "vllmCudaOpenai",
+            "protocolId": "vllmCudaOpenai",
             "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
             "hostPort": 8020,
             "role": "coder",
         }))
-        self.assertEqual(plan["recipeId"], "vllmCudaOpenai")
+        self.assertEqual(plan["protocolId"], "vllmCudaOpenai")
         self.assertFalse(plan["executionEnabled"])
         self.assertTrue(plan["requiresApproval"])
         self.assertTrue(plan["securityChecks"]["localhostOnly"])
         self.assertIn("127.0.0.1:8020:8000", " ".join(plan["commandPreview"]["run"]))
         self.assertEqual(plan["expectedModelRegistryEntry"]["role"], "coder")
 
-        missing = self.client.post("/api/warsat/plan", json={"recipeId": "missingRecipe", "modelRef": "x"})
+        missing = self.client.post("/api/warsat/plan", json={"protocolId": "missingProtocol", "modelRef": "x"})
         body = missing.json()
         self.assertEqual(missing.status_code, 404)
         self.assertFalse(body["ok"])
-        self.assertEqual(body["error"]["code"], "warsatRecipeMissing")
+        self.assertEqual(body["error"]["code"], "warsatProtocolMissing")
 
     def testWorkspaceRootsBrowseAndMountPlan(self):
         data = self.assertOk(self.client.get("/api/workspace/roots"))

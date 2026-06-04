@@ -72,7 +72,7 @@ def _markdown(name, metadata):
         "- Read the task and active workspace.",
         "- Use only allowed tools.",
         "- Ask for approval before risky actions.",
-        "- Return a concise result with artifacts when useful.",
+        "- Return a concise result with outputs when useful.",
     ]
     return "\n".join(lines) + "\n"
 

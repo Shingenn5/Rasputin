@@ -80,8 +80,8 @@ test("home shell settings and dry-run task work", async ({ page }) => {
   await expect(page.locator("[data-testid='task-details-overview']")).toBeVisible();
   await page.getByRole("tab", { name: "Logs" }).click();
   await expect(page.locator("[data-testid='task-details-logs']")).toBeVisible();
-  await page.getByRole("tab", { name: "Artifacts" }).click();
-  await expect(page.locator("[data-testid='task-details-artifacts']")).toBeVisible();
+  await page.getByRole("tab", { name: "Outputs" }).click();
+  await expect(page.locator("[data-testid='task-details-outputs']")).toBeVisible();
   await page.locator("[data-testid='task-details-close']").click();
   await expect(page.locator("[data-testid='task-details-drawer']")).toBeHidden();
 });
@@ -158,15 +158,15 @@ test("activity hub groups runtime pages", async ({ page }) => {
   await expect(page.locator("#activityAuditLog")).toBeVisible();
 });
 
-test("warsat recipes produce dry-run launch plans", async ({ page }) => {
+test("warsat protocols produce dry-run launch plans", async ({ page }) => {
   await page.goto("/");
   await waitForAppReady(page);
 
   await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
-  await expect(page.locator("[data-testid='warsat-recipe-card']")).toHaveCount(2);
+  await expect(page.locator("[data-testid='warsat-protocol-card']")).toHaveCount(2);
   await expect(page.locator("[data-testid='warsat-view']")).toContainText("Plan only");
-  await page.locator("#warsatRecipeId").selectOption("vllmCudaOpenai");
+  await page.locator("#warsatProtocolId").selectOption("vllmCudaOpenai");
   await page.locator("#warsatModelRef").fill("Qwen/Qwen2.5-Coder-7B-Instruct");
   await page.locator("#warsatHostPort").fill("8020");
   await page.locator("#warsatRole").selectOption("coder");

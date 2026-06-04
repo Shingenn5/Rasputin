@@ -277,7 +277,7 @@ class ScheduleIn(CamelModel):
 
 
 class WarsatPlanIn(CamelModel):
-    recipe_id: str
+    protocol_id: str
     model_ref: str | None = None
     model_path: str | None = None
     host_port: int | None = None
@@ -319,7 +319,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "skill_registry": skill_store.list_skills(),
         "telegram": telegram.public_config(),
         "schedules": schedules.list_schedules(),
-        "warsat": warsat.list_recipes(),
+        "warsat": warsat.list_protocols(),
     })
 
 
@@ -600,9 +600,9 @@ async def warsat_status(_user=Depends(current_user)):
     return ok(warsat.summary())
 
 
-@app.get("/api/warsat/recipes")
-async def warsat_recipes(_user=Depends(current_user)):
-    return ok(warsat.list_recipes())
+@app.get("/api/warsat/protocols")
+async def warsat_protocols(_user=Depends(current_user)):
+    return ok(warsat.list_protocols())
 
 
 @app.post("/api/warsat/plan")

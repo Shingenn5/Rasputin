@@ -19,19 +19,19 @@ Rasputin now includes:
 - local admin login with first-run password printed to server logs
 - session expiry plus a small local login-failure throttle
 - structured API responses
-- task manager with live SSE updates, cancellation, modes, traces, and artifacts
-- SQLite-backed agent runtime in `data/rasputin.db` for sessions, tasks, messages, approvals, memory, skills, schedules, traces, and artifacts
+- task manager with live SSE updates, cancellation, modes, traces, and outputs
+- SQLite-backed agent runtime in `data/rasputin.db` for sessions, tasks, messages, approvals, memory, skills, schedules, traces, and outputs
 - pause/resume task controls and durable session history
 - persistent approval queue for risky tool actions
 - optional Telegram approval integration using outbound Bot API polling only
-- Hermes-style memory store with review queue, SQLite search, and local Markdown exports
+- Warmind recall store with review queue, SQLite search, and local Markdown exports
 - `SKILL.md` skill registry with built-in descriptors and session-to-skill previews
 - workspace registry for approved folders, read-only folder approvals, and GUI folder browsing
 - safety flags and audit log
 - local RAG index with citations and hash-vector retrieval
 - typed Graphify nodes/edges with evidence
 - vLLM/GGUF model registry and health checks
-- Warsat model-runtime recipes and dry-run Docker launch plans
+- Warsat model-runtime protocols and dry-run Docker launch plans
 - Docker model controls blocked unless explicitly enabled
 - Docker Compose localhost deployment
 - React + Vite frontend source in `frontend-src/`, built into `frontend/` for FastAPI
@@ -200,7 +200,7 @@ http://host.docker.internal:8000/v1
 
 GGUF helper models can be registered for llama.cpp. Starting/stopping model containers requires Docker control mode and the `allow_docker_control` safety flag.
 
-Warsat is the newer planning layer for model runtimes. It reads curated recipes from `cookbook/recipes/`, generates safe launch plans, and previews the model registry entry Rasputin would create after the runtime is healthy. Warsat is currently plan-only; it does not pull images or start containers. See `docs/WARSAT_COOKBOOK_PLAN.md`.
+Warsat is the newer planning layer for model runtimes. It reads curated protocols from `warsat/protocols/`, generates safe launch plans, and previews the model registry entry Rasputin would create after the runtime is healthy. Warsat is currently plan-only; it does not pull images or start containers. See `docs/WARSAT_PROTOCOLS_PLAN.md`.
 
 ## Safety Defaults
 

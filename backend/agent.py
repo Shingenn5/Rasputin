@@ -28,7 +28,7 @@ class AgentTask:
         self.result = ""
         self.sources = []
         self.graph = []
-        self.artifacts = []
+        self.outputs = []
         self.trace = []
         self.cancel_requested = False
         self.paused_requested = False
@@ -36,7 +36,7 @@ class AgentTask:
         self.permission_snapshot = security.load()
         self.created_at = time.time()
         self.event_sink = None
-        self.artifact_sink = None
+        self.output_sink = None
         self.trace_sink = None
 
     def log(self, msg):
@@ -54,12 +54,12 @@ class AgentTask:
         if self.trace_sink:
             self.trace_sink(self.id, kind, detail)
 
-    def artifact(self, kind, title, content):
+    def output(self, kind, title, content):
         item = {"kind": kind, "title": title, "content": content, "createdAt": time.time()}
-        self.artifacts.append(item)
-        self.artifacts = self.artifacts[-40:]
-        if self.artifact_sink:
-            self.artifact_sink(self.id, kind, title, content)
+        self.outputs.append(item)
+        self.outputs = self.outputs[-40:]
+        if self.output_sink:
+            self.output_sink(self.id, kind, title, content)
 
 
 class AgentHub:
@@ -80,7 +80,7 @@ class AgentHub:
 
     def _wire(self, task):
         task.event_sink = self.record_event
-        task.artifact_sink = self.record_artifact
+        task.output_sink = self.record_output
         task.trace_sink = self.record_trace
 
     def record_event(self, task_id, kind, detail):
@@ -99,11 +99,11 @@ class AgentHub:
             )
             conn.commit()
 
-    def record_artifact(self, task_id, kind, title, content):
+    def record_output(self, task_id, kind, title, content):
         with store._lock, store.connect() as conn:
             conn.execute(
-                "INSERT INTO artifacts(id,task_id,kind,title,content,created_at) VALUES(?,?,?,?,?,?)",
-                (store.new_id("art"), task_id, kind, title, str(content or ""), store.now()),
+                "INSERT INTO outputs(id,task_id,kind,title,content,created_at) VALUES(?,?,?,?,?,?)",
+                (store.new_id("out"), task_id, kind, title, str(content or ""), store.now()),
             )
             conn.commit()
 
@@ -193,7 +193,7 @@ class AgentHub:
             "result": task.result,
             "sources": task.sources,
             "graph": task.graph,
-            "artifacts": task.artifacts,
+            "outputs": task.outputs,
             "trace": task.trace[-80:],
             "permissionSnapshot": task.permission_snapshot,
             "workspace": task.workspace,
@@ -209,8 +209,8 @@ class AgentHub:
                 "SELECT kind,detail,created_at FROM task_events WHERE task_id=? ORDER BY id DESC LIMIT 80",
                 (task["id"],),
             ).fetchall()
-            artifacts = conn.execute(
-                "SELECT kind,title,content,created_at FROM artifacts WHERE task_id=? ORDER BY created_at DESC LIMIT 40",
+            outputs = conn.execute(
+                "SELECT kind,title,content,created_at FROM outputs WHERE task_id=? ORDER BY created_at DESC LIMIT 40",
                 (task["id"],),
             ).fetchall()
             traces = conn.execute(
@@ -235,9 +235,9 @@ class AgentHub:
             "result": task["result"],
             "sources": [],
             "graph": [],
-            "artifacts": [
+            "outputs": [
                 {"kind": a["kind"], "title": a["title"], "content": a["content"], "createdAt": a["created_at"]}
-                for a in artifacts
+                for a in outputs
             ],
             "trace": [
                 {"at": t["created_at"], "kind": t["kind"], "detail": store._loads(t["detail"], {})}
@@ -278,8 +278,8 @@ class AgentHub:
                 "SELECT kind,detail,created_at FROM agent_traces WHERE task_id=? ORDER BY id ASC LIMIT 300",
                 (task_id,),
             ).fetchall()
-            artifacts = conn.execute(
-                "SELECT id,kind,title,content,created_at FROM artifacts WHERE task_id=? ORDER BY created_at ASC LIMIT 100",
+            outputs = conn.execute(
+                "SELECT id,kind,title,content,created_at FROM outputs WHERE task_id=? ORDER BY created_at ASC LIMIT 100",
                 (task_id,),
             ).fetchall()
             children = conn.execute(
@@ -305,9 +305,9 @@ class AgentHub:
                 {"kind": t["kind"], "detail": store._loads(t["detail"], {}), "createdAt": t["created_at"]}
                 for t in traces
             ],
-            "artifacts": [
+            "outputs": [
                 {"id": a["id"], "kind": a["kind"], "title": a["title"], "content": a["content"], "createdAt": a["created_at"]}
-                for a in artifacts
+                for a in outputs
             ],
             "children": [self._snapshot_from_db(row) for row in children],
             "approvals": [self._public_approval(row) for row in approvals],
@@ -443,7 +443,7 @@ class AgentHub:
                 await self.checkpoint(task)
                 reply = self.ground_chat_response(task, reply)
                 task.result = reply
-                task.artifact("markdown", "Chat reply", reply)
+                task.output("markdown", "Chat reply", reply)
                 task.progress = 100
                 task.status = "done"
                 memory.remember("session", {"objective": task.objective, "result": reply, "model": task.model})
@@ -472,7 +472,7 @@ class AgentHub:
                 reflection = await self.reflect(task, plan, work)
                 await self.checkpoint(task)
                 task.result = reflection
-                task.artifact("markdown", "Task summary", reflection)
+                task.output("markdown", "Task summary", reflection)
                 task.progress = 100
                 task.status = "done"
                 memory.remember("session", {"objective": task.objective, "result": reflection, "model": task.model})

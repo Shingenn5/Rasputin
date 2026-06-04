@@ -69,7 +69,7 @@ export function App() {
   const [skillPreview, setSkillPreview] = useState(null);
   const [telegramConfig, setTelegramConfig] = useState(null);
   const [schedulesList, setSchedulesList] = useState({ schedules: [] });
-  const [warsat, setWarsat] = useState({ recipes: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
+  const [warsat, setWarsat] = useState({ protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
   const [warsatPlan, setWarsatPlan] = useState(null);
   const [warsatError, setWarsatError] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
@@ -241,7 +241,7 @@ export function App() {
     setSkillRegistry(data.skillRegistry || { skills: [] });
     setTelegramConfig(data.telegram || null);
     setSchedulesList(data.schedules || { schedules: [] });
-    setWarsat(data.warsat || { recipes: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
+    setWarsat(data.warsat || { protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(localTheme || prefs.theme || "rasputin-light");
@@ -612,7 +612,7 @@ export function App() {
   }
 
   async function loadWarsat() {
-    const nextWarsat = await api("/api/warsat/recipes");
+    const nextWarsat = await api("/api/warsat/protocols");
     setWarsat(nextWarsat);
     return nextWarsat;
   }
@@ -623,7 +623,7 @@ export function App() {
     setWarsatError("");
     try {
       const plan = await postJson("/api/warsat/plan", {
-        recipeId: form.get("recipeId"),
+        protocolId: form.get("protocolId"),
         modelRef: form.get("modelRef") || undefined,
         modelPath: form.get("modelPath") || undefined,
         hostPort: Number(form.get("hostPort") || 0) || undefined,

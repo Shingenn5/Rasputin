@@ -135,7 +135,7 @@ export function MemoryView({ view, memoryReview, memorySearchResults, searchMemo
   const pending = memoryReview?.items || [];
   return (
     <section className={`app-view ${view === "memory" ? "active" : ""}`} id="memoryView" data-app-view="memory">
-      <PageHeader title="Memory" text="Hermes-style local recall, memory suggestions, and Markdown exports." />
+      <PageHeader title="Memory" text="Warmind recall, memory suggestions, and local Markdown exports." />
       <div className="task-dashboard">
         <Card className="settings-card shadow-sm">
           <Card.Body>
@@ -289,18 +289,18 @@ export function SchedulesView({ view, schedules, createSchedule }) {
 }
 
 export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
-  const recipes = warsat?.recipes || [];
-  const firstRecipe = recipes[0];
+  const protocols = warsat?.protocols || [];
+  const firstProtocol = protocols[0];
   return (
     <section className={`app-view ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat" data-testid="warsat-view">
       <PageHeader
         title="Warsat"
-        text="Model runtime launcher plans for local Docker containers. Current mode is planning only."
-        action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Recipes</Button>}
+        text="Model runtime launch protocols for local Docker containers. Current mode is planning only."
+        action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Protocols</Button>}
       />
       <div className="task-dashboard warsat-dashboard">
         <Row className="g-3">
-          <MiniCard title="Runtime recipes" value={warsat?.count || recipes.length} />
+          <MiniCard title="Launch protocols" value={warsat?.count || protocols.length} />
           <MiniCard title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
           <MiniCard title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
         </Row>
@@ -319,11 +319,11 @@ export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
             <Form className="mt-3" data-testid="warsat-plan-form" onSubmit={createPlan}>
               <Row className="g-3 align-items-end">
                 <Col lg={4}>
-                  <Form.Label htmlFor="warsatRecipeId">Recipe</Form.Label>
-                  <Form.Select id="warsatRecipeId" name="recipeId" defaultValue={firstRecipe?.id || ""} required>
-                    <option value="" disabled>Choose a recipe</option>
-                    {recipes.map((recipe) => (
-                      <option key={recipe.id} value={recipe.id}>{recipe.name}</option>
+                  <Form.Label htmlFor="warsatProtocolId">Protocol</Form.Label>
+                  <Form.Select id="warsatProtocolId" name="protocolId" defaultValue={firstProtocol?.id || ""} required>
+                    <option value="" disabled>Choose a protocol</option>
+                    {protocols.map((protocol) => (
+                      <option key={protocol.id} value={protocol.id}>{protocol.name}</option>
                     ))}
                   </Form.Select>
                 </Col>
@@ -335,7 +335,7 @@ export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
                 <Col lg={4}>
                   <Form.Label htmlFor="warsatModelPath">Mounted model path</Form.Label>
                   <Form.Control id="warsatModelPath" name="modelPath" placeholder="models/my-model.gguf" />
-                  <Form.Text>Use this for GGUF recipes or mounted model folders.</Form.Text>
+                  <Form.Text>Use this for GGUF protocols or mounted model folders.</Form.Text>
                 </Col>
                 <Col md={3}>
                   <Form.Label htmlFor="warsatHostPort">Host port</Form.Label>
@@ -343,7 +343,7 @@ export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
                 </Col>
                 <Col md={3}>
                   <Form.Label htmlFor="warsatRole">Model role</Form.Label>
-                  <Form.Select id="warsatRole" name="role" defaultValue={firstRecipe?.defaultRole || "helper"}>
+                  <Form.Select id="warsatRole" name="role" defaultValue={firstProtocol?.defaultRole || "helper"}>
                     {["main", "planner", "executor", "coder", "researcher", "summarizer", "memory", "embeddings", "helper"].map((role) => (
                       <option key={role} value={role}>{role}</option>
                     ))}
@@ -363,27 +363,27 @@ export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
         </Card>
 
         <Row className="g-3 mt-1">
-          {recipes.map((recipe) => (
-            <Col xl={6} key={recipe.id}>
-              <Card className="settings-card warsat-recipe-card shadow-sm h-100" data-testid="warsat-recipe-card">
+          {protocols.map((protocol) => (
+            <Col xl={6} key={protocol.id}>
+              <Card className="settings-card warsat-protocol-card shadow-sm h-100" data-testid="warsat-protocol-card">
                 <Card.Body>
                   <div className="section-row align-items-start">
                     <div>
-                      <Badge bg="secondary">{recipe.runtime}</Badge>
-                      <h2 className="mt-2">{recipe.name}</h2>
-                      <p className="text-body-secondary mb-0">{recipe.description}</p>
+                      <Badge bg="secondary">{protocol.runtime}</Badge>
+                      <h2 className="mt-2">{protocol.name}</h2>
+                      <p className="text-body-secondary mb-0">{protocol.description}</p>
                     </div>
-                    <Badge bg={recipe.gpu?.required ? "danger" : "success"}>{recipe.gpu?.required ? "GPU" : "CPU OK"}</Badge>
+                    <Badge bg={protocol.gpu?.required ? "danger" : "success"}>{protocol.gpu?.required ? "GPU" : "CPU OK"}</Badge>
                   </div>
                   <dl className="detail-grid mt-3 mb-0">
-                    <dt>Image</dt><dd>{recipe.image}</dd>
-                    <dt>Format</dt><dd>{recipe.modelFormat}</dd>
-                    <dt>Default port</dt><dd>{recipe.defaultHostPort}</dd>
-                    <dt>Capabilities</dt><dd>{(recipe.capabilities || []).join(", ") || "chat"}</dd>
+                    <dt>Image</dt><dd>{protocol.image}</dd>
+                    <dt>Format</dt><dd>{protocol.modelFormat}</dd>
+                    <dt>Default port</dt><dd>{protocol.defaultHostPort}</dd>
+                    <dt>Capabilities</dt><dd>{(protocol.capabilities || []).join(", ") || "chat"}</dd>
                   </dl>
-                  {!!recipe.notes?.length && (
+                  {!!protocol.notes?.length && (
                     <ul className="warsat-note-list mt-3 mb-0">
-                      {recipe.notes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}
+                      {protocol.notes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}
                     </ul>
                   )}
                 </Card.Body>
@@ -398,7 +398,7 @@ export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
               <div className="section-row">
                 <div>
                   <Badge bg="warning">{plan.riskLevel}</Badge>
-                  <h2 className="mt-2">{plan.recipeName}</h2>
+                  <h2 className="mt-2">{plan.protocolName}</h2>
                   <p className="text-body-secondary mb-0">
                     {plan.runtime} on port {plan.hostPort}. Execution is {plan.executionEnabled ? "enabled" : "disabled"}.
                   </p>
