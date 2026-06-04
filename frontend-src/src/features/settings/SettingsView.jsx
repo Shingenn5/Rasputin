@@ -136,7 +136,7 @@ function WorkspaceSettings({ workspace, workspaceRoots, workspaceBrowse, browseW
               <p className="text-body-secondary">Preview a new Docker mount. New mounts default to read-only.</p>
               <form id="workspaceMountForm" onSubmit={previewMount}>
                 <Row className="g-3 align-items-end">
-                  <Col md={5}><Form.Label htmlFor="mountHostPath">Host folder</Form.Label><Form.Control id="mountHostPath" name="hostPath" placeholder="C:\\Users\\you\\Documents\\Project" /></Col>
+                  <Col md={5}><Form.Label htmlFor="mountHostPath">Host folder</Form.Label><Form.Control id="mountHostPath" name="hostPath" placeholder="C:\\Users\\you\\Project or /home/you/project" /></Col>
                   <Col md={4}><Form.Label>Name</Form.Label><Form.Control name="name" placeholder="Project Documents" /></Col>
                   <Col md={3}><Form.Check type="switch" name="readOnly" defaultChecked label="Read-only mount" /></Col>
                   <Col xs={12}><Button variant="outline-secondary" type="submit">Preview Mount</Button></Col>

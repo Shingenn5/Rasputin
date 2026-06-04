@@ -3,6 +3,8 @@
 # Mounting docker.sock grants powerful host control; keep this opt-in.
 services:
   rasputin-wrapper:
+    build:
+      target: runtime-docker-control
     environment:
       WRAPPER_DOCKER_CONTROL: "1"
     volumes:

@@ -198,7 +198,7 @@ export function WorkspacesView({
             <form id="workspaceMountForm" className="mount-form" onSubmit={previewMount}>
               <label>
                 <span>Host folder</span>
-                <input id="mountHostPath" name="hostPath" placeholder={"C:\\Users\\you\\Documents\\Project"} />
+                <input id="mountHostPath" name="hostPath" placeholder={"C:\\Users\\you\\Project or /home/you/project"} />
               </label>
               <label>
                 <span>Display name</span>

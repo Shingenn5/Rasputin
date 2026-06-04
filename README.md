@@ -36,18 +36,12 @@ Rasputin now includes:
 - Docker Compose localhost deployment
 - React + Vite frontend source in `frontend-src/`, built into `frontend/` for FastAPI
 
-The private GitHub repo target is:
-
-```text
-Shingenn5/Rasputin
-```
-
-That repo does not currently exist or is not accessible to the GitHub connector from this workspace. Create it privately before the first push, or install/authenticate GitHub CLI with explicit approval.
+If you fork or publish Rasputin, set your own Git remote. Local runtime state, credentials, model files, generated indexes, and workspace contents are ignored by default.
 
 ## Run With Docker
 
 ```powershell
-cd "C:\Users\elliott\OneDrive\Documents\WrapperProject"
+cd path\to\Rasputin
 .\start-wrapper.ps1
 ```
 
@@ -82,10 +76,10 @@ Run the backend:
 python server.py
 ```
 
-Or with the bundled runtime:
+If Python is installed somewhere else, call that interpreter explicitly:
 
 ```powershell
-& "C:\Users\elliott\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" server.py
+& "path\to\python.exe" server.py
 ```
 
 Run the frontend dev server:

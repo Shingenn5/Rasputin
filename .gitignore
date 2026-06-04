@@ -4,7 +4,21 @@ __pycache__/
 *.log
 server.*.log
 
+# local environment and secrets
 .env
+.env.*
+!.env.example
+*.local
+*.secret
+*.secrets
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
 .venv/
 venv/
 node_modules/
@@ -23,6 +37,31 @@ output/
 testdata/
 playwright-report/
 test-results/
+
+# Rasputin private state files, even if copied outside data/
+auth.json
+telegram.json
+security.json
+models.json
+workspace.json
+preferences.json
+output.json
+audit.jsonl
+memory.json
+memory.json.backup-*
+rasputin.db
+*.sqlite
+*.sqlite3
+rag_index.json
+graph.json
+
+# local model weights
+*.gguf
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.ckpt
 
 # keep placeholder folders visible
 !workspace/.gitkeep
