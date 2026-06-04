@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Cpu, Folder, Pause, PanelLeftOpen, Play, Send, Settings, ShieldCheck, SlidersHorizontal, Square, Users } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
@@ -48,11 +48,27 @@ export function HomeView(props) {
     openTaskDetails,
   } = props;
 
-  const activeHomeTasks = homeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
-  const latestActiveTask = activeHomeTasks[0] || runningTasks?.[0];
-  const modelName = displayModelName(selectedModelObject, models);
+  const threadScrollRef = useRef(null);
+  const orderedHomeTasks = useMemo(
+    () => [...homeTasks].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
+    [homeTasks],
+  );
+  const threadVersion = useMemo(
+    () => orderedHomeTasks.map((task) => `${task.id}:${task.status}:${task.progress}:${String(task.result || "").length}`).join("|"),
+    [orderedHomeTasks],
+  );
+  const activeHomeTasks = orderedHomeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
+  const latestActiveTask = activeHomeTasks[activeHomeTasks.length - 1] || runningTasks?.[0];
   const privacyLabel = security.privacyLock ? "Privacy lock" : "Review mode";
   const disabledReason = healthy ? "" : "A healthy local model or Testing Mode is required before sending.";
+
+  useEffect(() => {
+    if (view !== "home" || !threadScrollRef.current) return;
+    const target = threadScrollRef.current;
+    window.requestAnimationFrame(() => {
+      target.scrollTop = target.scrollHeight;
+    });
+  }, [threadVersion, view]);
 
   return (
     <section className={`app-view home-view ${view === "home" ? "active" : ""}`} id="homeView" data-app-view="home" tabIndex="-1">
@@ -86,9 +102,9 @@ export function HomeView(props) {
       </header>
 
       <section className="chat-shell" aria-label="Conversation">
-        <div className="thread-scroll">
+        <div className="thread-scroll" ref={threadScrollRef}>
           <section
-            className={homeTasks.length ? "welcome-panel hidden" : "welcome-panel"}
+            className={orderedHomeTasks.length ? "welcome-panel hidden" : "welcome-panel"}
             id="welcomePanel"
             aria-label="Start a task"
             data-testid="home-empty-state"
@@ -108,7 +124,7 @@ export function HomeView(props) {
                 <button type="button" onClick={() => go("activity")}>Open Activity</button>
               </div>
             )}
-            {homeTasks.map((task) => (
+            {orderedHomeTasks.map((task) => (
               <TaskThread
                 key={task.id}
                 task={task}

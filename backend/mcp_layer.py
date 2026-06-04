@@ -16,11 +16,13 @@ from . import runtime_store as store
 
 ROOT = Path(__file__).resolve().parents[1]
 SAFE_ROOT = ROOT
+EXCLUDED_TREE_DIRS = {".git", ".pytest_cache", "__pycache__", "node_modules", ".venv", "venv", "dist", "build"}
 
 TOOL_SPECS = {
     "fs_read": {"risk": "safe", "permission": "allow_file_read"},
     "fs_write": {"risk": "approval_required", "permission": "allow_file_write"},
     "fs_list": {"risk": "safe", "permission": "allow_file_read"},
+    "fs_tree": {"risk": "safe", "permission": "allow_file_read"},
     "fs_mkdir": {"risk": "approval_required", "permission": "allow_file_reorganize"},
     "fs_move": {"risk": "approval_required", "permission": "allow_file_reorganize"},
     "web_search": {"risk": "approval_required", "permission": "allow_web_search"},
@@ -36,6 +38,7 @@ class McpLayer:
             "fs_read": self.fs_read,
             "fs_write": self.fs_write,
             "fs_list": self.fs_list,
+            "fs_tree": self.fs_tree,
             "fs_mkdir": self.fs_mkdir,
             "fs_move": self.fs_move,
             "web_search": self.web_search,
@@ -103,12 +106,23 @@ class McpLayer:
                 raise PermissionError(f"approval {approval['status']}")
             await asyncio.sleep(2)
 
-    async def fs_read(self, path, workspace_path=None, _task_id=None, _tool_call_id=None):
+    def _relative(self, path, base):
+        try:
+            rel = path.relative_to(base)
+            return "." if str(rel) == "." else rel.as_posix()
+        except ValueError:
+            return path.name
+
+    async def fs_read(self, path, workspace_path=None, max_chars=12000, _task_id=None, _tool_call_id=None):
         security.require("allow_file_read")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
         target = self._safe(path, workspace_path)
         workspace.require_path_permission(target, "read")
         audit.log("fs_read", {"path": str(target)})
-        return {"path": str(target), "content": target.read_text(encoding="utf-8")}
+        content = target.read_text(encoding="utf-8", errors="replace")
+        limit = max(1000, min(int(max_chars or 12000), 24000))
+        truncated = len(content) > limit
+        return {"path": str(target), "relativePath": self._relative(target, base), "content": content[:limit], "truncated": truncated}
 
     async def fs_write(self, path, content, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_write")
@@ -134,12 +148,68 @@ class McpLayer:
 
     async def fs_list(self, path=".", workspace_path=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_read")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
         target = self._safe(path, workspace_path)
         workspace.require_path_permission(target, "read")
         items = []
         for p in target.iterdir():
-            items.append({"name": p.name, "kind": "dir" if p.is_dir() else "file", "bytes": p.stat().st_size if p.is_file() else 0})
+            items.append({
+                "name": p.name,
+                "path": self._relative(p, base),
+                "kind": "dir" if p.is_dir() else "file",
+                "bytes": p.stat().st_size if p.is_file() else 0,
+            })
         return {"path": str(target), "items": items}
+
+    async def fs_tree(self, path=".", workspace_path=None, max_items=120, max_depth=3, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        target = self._safe(path, workspace_path)
+        workspace.require_path_permission(target, "read")
+        items = []
+        truncated = False
+        limit = max(10, min(int(max_items or 120), 300))
+        depth_limit = max(0, min(int(max_depth or 3), 6))
+
+        def add_entry(p, depth):
+            try:
+                stat = p.stat()
+            except OSError:
+                stat = None
+            items.append({
+                "name": p.name,
+                "path": self._relative(p, base),
+                "kind": "dir" if p.is_dir() else "file",
+                "bytes": stat.st_size if stat and p.is_file() else 0,
+                "depth": depth,
+            })
+
+        def walk(current, depth):
+            nonlocal truncated
+            if len(items) >= limit:
+                truncated = True
+                return
+            try:
+                children = sorted(current.iterdir(), key=lambda item: (0 if item.is_dir() else 1, item.name.lower()))
+            except OSError:
+                return
+            for child in children:
+                if len(items) >= limit:
+                    truncated = True
+                    return
+                if child.is_dir() and child.name in EXCLUDED_TREE_DIRS:
+                    continue
+                add_entry(child, depth)
+                if child.is_dir() and depth < depth_limit:
+                    walk(child, depth + 1)
+
+        walk(target, 0)
+        return {
+            "workspace": workspace_path or workspace.get_active()["active_path"],
+            "path": str(target),
+            "items": items,
+            "truncated": truncated,
+        }
 
     async def fs_mkdir(self, path, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_reorganize")

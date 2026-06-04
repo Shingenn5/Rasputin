@@ -144,6 +144,7 @@ class TaskIn(CamelModel):
     mode: str = "chat"
     subagents: int = 0
     workspace_path: str | None = None
+    session_id: str | None = None
 
 
 class MemoryIn(CamelModel):
@@ -504,7 +505,7 @@ async def approvals_expire(approval_id: str, _user=Depends(current_user)):
 
 @app.post("/api/tasks")
 async def create_task(req: TaskIn, _user=Depends(current_user)):
-    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), req.workspace_path, req.mode)
+    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), req.workspace_path, req.mode, req.session_id)
     return ok(hub.snapshot_task(task))
 
 

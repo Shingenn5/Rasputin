@@ -3,6 +3,7 @@ import importlib
 import json
 import time
 import uuid
+from pathlib import Path
 
 from .mcp_layer import McpLayer
 from .models import chat
@@ -11,6 +12,20 @@ from . import model_registry
 from . import runtime_store as store
 from . import security
 from . import workspace
+
+TEXT_FILE_EXTENSIONS = {
+    ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
+    ".json", ".csv", ".yml", ".yaml", ".toml", ".ini", ".cfg",
+}
+WORKSPACE_CONTEXT_TERMS = (
+    "file", "files", "folder", "folders", "directory", "directories", "workspace",
+    "codebase", "repo", "repository", "project", "read my", "inspect", "scan",
+    "look through", "file base", "filebase",
+)
+FILE_SNIPPET_TERMS = (
+    "read", "inspect", "scan", "analyze", "summarize", "review", "look through",
+    "file base", "filebase", "codebase", "repo", "repository", "project",
+)
 
 
 class AgentTask:
@@ -346,13 +361,21 @@ class AgentHub:
             tasks = conn.execute("SELECT * FROM tasks WHERE session_id=? ORDER BY created_at ASC", (session_id,)).fetchall()
         return {"session": dict(row), "messages": [dict(m) for m in messages], "tasks": [self._snapshot_from_db(t) for t in tasks]}
 
+    def recent_messages(self, session_id, limit=10):
+        with store._lock, store.connect() as conn:
+            rows = conn.execute(
+                "SELECT role,content,task_id,created_at FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
+                (session_id, max(1, min(int(limit), 30))),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     async def subscribe(self):
         q = asyncio.Queue()
         self.listeners.add(q)
         return q
 
-    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat"):
-        task = AgentTask(objective, model, skill, workspace_path=workspace_path, mode=mode)
+    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat", session_id=None):
+        task = AgentTask(objective, model, skill, workspace_path=workspace_path, mode=mode, session_id=session_id)
         self._wire(task)
         self.tasks[task.id] = task
         self._persist_task(task)
@@ -495,9 +518,11 @@ class AgentHub:
         await self.emit(task)
 
     async def chat_reply(self, task):
+        previous_messages = self.recent_messages(task.session_id, 10)
         recall = memory.search(task.objective, 5)
         context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
         graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
+        workspace_context = await self.workspace_context(task)
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = [{"source": e["source"], "relation": e["relation"], "target": e["target"]} for e in graph.get("edges", [])[:8]]
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
@@ -507,8 +532,15 @@ class AgentHub:
             task.log(f"rag hits: {len(task.sources)}")
         if task.graph:
             task.log(f"graph hits: {len(task.graph)}")
-        prompt = f"""Answer the user directly as Rasputin.
-Task: {task.objective}
+        prompt = f"""You are Rasputin, the user's local AI workbench assistant. Reply naturally and directly.
+Do not use a repeated greeting unless the user's message is only a greeting.
+
+Current user message:
+{task.objective}
+
+Previous conversation:
+{self.format_conversation(previous_messages, task.id)}
+
 Workspace: {task.workspace}
 Relevant memory recall:
 {self.format_memory(recall)}
@@ -519,8 +551,12 @@ Actual local RAG context:
 Actual local graph context:
 {self.format_graph(graph)}
 
+Approved workspace file context:
+{self.format_workspace_context(workspace_context)}
+
 Rules:
 - Do not claim you browsed the web, searched social media, emailed, called, scheduled meetings, contacted people, edited files, or used external tools unless the context above proves that happened.
+- If workspace file context includes file paths or snippets, use those local paths as evidence. If a file is listed but not included as a snippet, say you can see the path but have not read its contents.
 - If there are no local matches, do not invent file sources. You can still answer from general model knowledge.
 - If the user asks for an action that requires a tool or permission not shown here, say what is missing instead of pretending it happened.
 - Keep the reply useful and conversational. Do not write an internal plan unless the user asked for one.
@@ -641,6 +677,109 @@ Rules:
             conn.execute("UPDATE sessions SET summary=?, updated_at=? WHERE id=?", (summary, store.now(), session_id))
             conn.commit()
         return summary
+
+    def needs_workspace_context(self, task):
+        text = str(task.objective or "").lower()
+        if task.mode in {"analyze", "code", "organize"}:
+            return True
+        return any(term in text for term in WORKSPACE_CONTEXT_TERMS)
+
+    def needs_file_snippets(self, task):
+        text = str(task.objective or "").lower()
+        return task.mode in {"analyze", "code"} or any(term in text for term in FILE_SNIPPET_TERMS)
+
+    async def workspace_context(self, task):
+        if not self.needs_workspace_context(task):
+            return {"tree": None, "snippets": []}
+        try:
+            tree = await self.mcp.call_tool("fs_tree", {
+                "path": ".",
+                "workspace_path": task.workspace,
+                "max_items": 90,
+                "max_depth": 3,
+                "_task_id": task.id,
+            })
+            items = tree.get("items", [])
+            task.seen("workspace_tree", {
+                "workspace": task.workspace,
+                "items": len(items),
+                "truncated": bool(tree.get("truncated")),
+            })
+            task.log(f"workspace files visible: {len(items)}")
+            snippets = []
+            if self.needs_file_snippets(task):
+                files = [
+                    item for item in items
+                    if item.get("kind") == "file"
+                    and Path(str(item.get("path") or "")).suffix.lower() in TEXT_FILE_EXTENSIONS
+                    and int(item.get("bytes") or 0) <= 50000
+                ]
+                for item in files[:5]:
+                    try:
+                        read = await self.mcp.call_tool("fs_read", {
+                            "path": item.get("path"),
+                            "workspace_path": task.workspace,
+                            "max_chars": 2500,
+                            "_task_id": task.id,
+                        })
+                        snippets.append({
+                            "path": read.get("relativePath") or item.get("path"),
+                            "content": read.get("content", ""),
+                            "truncated": bool(read.get("truncated")),
+                        })
+                    except Exception as exc:
+                        snippets.append({"path": item.get("path"), "error": str(exc)})
+                if snippets:
+                    task.log(f"workspace files read: {len(snippets)}")
+            return {"tree": tree, "snippets": snippets}
+        except Exception as exc:
+            task.seen("workspace_context_error", {"workspace": task.workspace, "error": str(exc)})
+            task.log(f"workspace context unavailable: {exc}")
+            return {"tree": None, "snippets": [], "error": str(exc)}
+
+    def format_conversation(self, messages, current_task_id=None):
+        lines = []
+        for message in messages:
+            if message.get("task_id") == current_task_id and message.get("role") == "user":
+                continue
+            content = " ".join(str(message.get("content") or "").split())
+            if not content:
+                continue
+            if len(content) > 420:
+                content = content[:420].rstrip() + "..."
+            role = "User" if message.get("role") == "user" else "Rasputin"
+            lines.append(f"{role}: {content}")
+        return "\n".join(lines[-8:]) if lines else "No previous messages in this chat."
+
+    def format_workspace_context(self, context):
+        if context.get("error"):
+            return f"Workspace context unavailable: {context['error']}"
+        tree = context.get("tree") or {}
+        snippets = context.get("snippets") or []
+        items = tree.get("items") or []
+        if not items and not snippets:
+            return "No workspace file inspection was requested or available."
+        lines = []
+        if items:
+            lines.append("Visible files and folders:")
+            for item in items[:55]:
+                prefix = "  " * min(int(item.get("depth") or 0), 4)
+                kind = "folder" if item.get("kind") == "dir" else "file"
+                size = f" ({item.get('bytes')} bytes)" if kind == "file" else ""
+                lines.append(f"- {prefix}{kind}: {item.get('path')}{size}")
+            if tree.get("truncated"):
+                lines.append("- [listing truncated]")
+        if snippets:
+            lines.append("\nRead snippets:")
+            for snippet in snippets[:5]:
+                path = snippet.get("path") or "unknown"
+                if snippet.get("error"):
+                    lines.append(f"[{path}] read failed: {snippet['error']}")
+                    continue
+                content = str(snippet.get("content") or "")[:900]
+                marker = " [truncated]" if snippet.get("truncated") else ""
+                lines.append(f"[{path}{marker}]\n{content}")
+        return "\n".join(lines)
 
     def format_context(self, context, max_items=3, max_chars=450):
         hits = context.get("hits", [])

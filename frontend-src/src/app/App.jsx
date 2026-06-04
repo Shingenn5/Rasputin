@@ -49,6 +49,7 @@ export function App() {
   const [taskDetailsLoading, setTaskDetailsLoading] = useState(false);
   const [taskDetailsError, setTaskDetailsError] = useState("");
   const [homeTaskIds, setHomeTaskIds] = useState(new Set());
+  const [activeChatSessionId, setActiveChatSessionId] = useState(null);
   const [objective, setObjective] = useState("");
   const [composerStatus, setComposerStatus] = useState("");
   const [workspace, setWorkspace] = useState({ activePath: ".", activeName: "Project Root", workspaces: [] });
@@ -385,10 +386,12 @@ export function App() {
         mode: taskMode,
         subagents: subagentCount,
         workspacePath: workspace.activePath || ".",
+        sessionId: activeChatSessionId || undefined,
       });
       setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
       queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id)]);
       setHomeTaskIds((current) => new Set([...current, task.id]));
+      setActiveChatSessionId(task.sessionId || activeChatSessionId);
       setObjective("");
       setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} sub-agent${subagentCount === 1 ? "" : "s"}.` : "Task started.");
     } catch (error) {
@@ -668,6 +671,7 @@ export function App() {
         mobileOpen: mobileSidebarOpen,
         newTask: () => {
           setHomeTaskIds(new Set());
+          setActiveChatSessionId(null);
           setObjective("");
           setMobileSidebarOpen(false);
           go("home");

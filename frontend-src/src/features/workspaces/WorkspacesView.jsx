@@ -25,6 +25,7 @@ export function WorkspacesView({
   mountPlan,
 }) {
   const [filter, setFilter] = useState("");
+  const [quickAddError, setQuickAddError] = useState("");
   const activeName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const activePath = workspace.absolutePath || workspace.activePath || ".";
   const entries = workspaceBrowse?.entries || [];
@@ -35,6 +36,23 @@ export function WorkspacesView({
     if (!query) return entries;
     return entries.filter((entry) => String(entry.displayName || entry.name || "").toLowerCase().includes(query));
   }, [entries, filter]);
+
+  async function addVisibleFolder(event) {
+    event.preventDefault();
+    setQuickAddError("");
+    const form = new FormData(event.currentTarget);
+    const path = String(form.get("path") || "").trim();
+    if (!path) {
+      setQuickAddError("Enter a folder path that Rasputin can already see.");
+      return;
+    }
+    try {
+      await approvePath(path);
+      event.currentTarget.reset();
+    } catch (error) {
+      setQuickAddError(error.message);
+    }
+  }
 
   return (
     <section
@@ -66,6 +84,26 @@ export function WorkspacesView({
               <h2>{activeName || "No workspace selected"}</h2>
               <p>{displayPath(activePath)}</p>
             </div>
+          </section>
+
+          <section className="workspace-section workspace-quick-add">
+            <div>
+              <h2>Add Visible Folder</h2>
+              <p>Use this for folders already mounted into the Rasputin container.</p>
+            </div>
+            <form className="quick-folder-form" onSubmit={addVisibleFolder}>
+              <label>
+                <span>Folder path</span>
+                <input name="path" placeholder="workspace/my-project, backend, or data/imports" />
+              </label>
+              <button type="submit" className="send-text-button">
+                Approve folder
+              </button>
+            </form>
+            <p className="workspace-help-text">
+              Host folders that are not mounted yet need the mount preview below. New folders default to read-only.
+            </p>
+            {quickAddError && <p className="composer-status" role="alert">{quickAddError}</p>}
           </section>
 
           <section className="workspace-section">

@@ -1340,6 +1340,37 @@ button.runtime-chip {
   padding: .9rem;
 }
 
+.workspace-quick-add {
+  display: grid;
+  gap: .75rem;
+}
+
+.quick-folder-form {
+  display: grid;
+  gap: .6rem;
+}
+
+.quick-folder-form label {
+  display: grid;
+  gap: .32rem;
+  color: var(--ras-muted);
+  font-size: .84rem;
+}
+
+.quick-folder-form input {
+  min-height: 40px;
+  width: 100%;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  padding: 0 .68rem;
+}
+
+.workspace-help-text {
+  font-size: .84rem;
+}
+
 .workspace-root-main {
   min-width: 0;
   display: flex;
