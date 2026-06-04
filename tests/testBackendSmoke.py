@@ -44,7 +44,7 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testUiBootstrapShape(self):
         data = self.assertOk(self.client.get("/api/ui/bootstrap"))
-        for key in ["models", "tasks", "security", "workspace", "output", "preferences"]:
+        for key in ["models", "tasks", "security", "workspace", "output", "preferences", "warsat"]:
             self.assertIn(key, data)
 
     def testPreferencesRoundTrip(self):
@@ -170,6 +170,31 @@ class BackendSmokeTests(unittest.TestCase):
             "enabled": False,
         }))
         self.assertEqual(schedule["name"], "Smoke Schedule")
+
+    def testWarsatRecipesAndPlanAreSafeByDefault(self):
+        recipes = self.assertOk(self.client.get("/api/warsat/recipes"))
+        self.assertGreaterEqual(recipes["count"], 2)
+        self.assertFalse(recipes["executionEnabled"])
+        self.assertTrue(any(item["id"] == "vllmCudaOpenai" for item in recipes["recipes"]))
+
+        plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+            "recipeId": "vllmCudaOpenai",
+            "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "hostPort": 8020,
+            "role": "coder",
+        }))
+        self.assertEqual(plan["recipeId"], "vllmCudaOpenai")
+        self.assertFalse(plan["executionEnabled"])
+        self.assertTrue(plan["requiresApproval"])
+        self.assertTrue(plan["securityChecks"]["localhostOnly"])
+        self.assertIn("127.0.0.1:8020:8000", " ".join(plan["commandPreview"]["run"]))
+        self.assertEqual(plan["expectedModelRegistryEntry"]["role"], "coder")
+
+        missing = self.client.post("/api/warsat/plan", json={"recipeId": "missingRecipe", "modelRef": "x"})
+        body = missing.json()
+        self.assertEqual(missing.status_code, 404)
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"]["code"], "warsatRecipeMissing")
 
     def testWorkspaceRootsBrowseAndMountPlan(self):
         data = self.assertOk(self.client.get("/api/workspace/roots"))

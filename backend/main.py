@@ -27,6 +27,7 @@ from . import memory as memory_store
 from . import schedules
 from . import skill_store
 from . import telegram
+from . import warsat
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -275,6 +276,15 @@ class ScheduleIn(CamelModel):
     enabled: bool = False
 
 
+class WarsatPlanIn(CamelModel):
+    recipe_id: str
+    model_ref: str | None = None
+    model_path: str | None = None
+    host_port: int | None = None
+    role: str | None = None
+    container_name: str | None = None
+
+
 @app.get("/")
 async def index():
     return FileResponse(FRONTEND / "index.html")
@@ -309,6 +319,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "skill_registry": skill_store.list_skills(),
         "telegram": telegram.public_config(),
         "schedules": schedules.list_schedules(),
+        "warsat": warsat.list_recipes(),
     })
 
 
@@ -582,6 +593,21 @@ async def schedules_get(_user=Depends(current_user)):
 @app.post("/api/schedules")
 async def schedules_create(req: ScheduleIn, _user=Depends(current_user)):
     return ok(schedules.create(req.name, req.prompt, req.interval_seconds, req.enabled))
+
+
+@app.get("/api/warsat/status")
+async def warsat_status(_user=Depends(current_user)):
+    return ok(warsat.summary())
+
+
+@app.get("/api/warsat/recipes")
+async def warsat_recipes(_user=Depends(current_user)):
+    return ok(warsat.list_recipes())
+
+
+@app.post("/api/warsat/plan")
+async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
+    return ok(warsat.make_plan(req.model_dump()))
 
 
 @app.get("/api/rag/stats")

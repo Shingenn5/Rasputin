@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Satellite,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const icons = {
   Activity,
   Knowledge: Brain,
   Models: Sparkles,
+  Warsat: Satellite,
   Settings,
 };
 

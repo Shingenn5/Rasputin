@@ -1,0 +1,37 @@
+{
+  "id": "vllmCudaOpenai",
+  "name": "vLLM CUDA OpenAI Server",
+  "description": "Run a Hugging Face model through vLLM's OpenAI-compatible API on local hardware.",
+  "runtime": "vllm",
+  "image": "vllm/vllm-openai:latest",
+  "modelFormat": "huggingface",
+  "defaultRole": "main",
+  "defaultHostPort": 8000,
+  "containerPort": 8000,
+  "gpu": {
+    "required": true,
+    "modes": ["nvidia"],
+    "minVramGb": 12
+  },
+  "capabilities": ["chat", "code", "vision"],
+  "modelArgument": "--model",
+  "healthPath": "/v1/models",
+  "dataMounts": [
+    {
+      "name": "huggingfaceCache",
+      "hostPath": "./data/huggingface",
+      "containerPath": "/root/.cache/huggingface",
+      "readOnly": false
+    }
+  ],
+  "security": {
+    "hostBinding": "127.0.0.1",
+    "noNewPrivileges": true,
+    "hostNetwork": false
+  },
+  "notes": [
+    "Best for the main model when you have enough VRAM.",
+    "The model id should be a Hugging Face model reference visible to the container.",
+    "Rasputin models should point at http://host.docker.internal:8000/v1 when the wrapper itself runs in Docker."
+  ]
+}

@@ -288,6 +288,165 @@ export function SchedulesView({ view, schedules, createSchedule }) {
   );
 }
 
+export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
+  const recipes = warsat?.recipes || [];
+  const firstRecipe = recipes[0];
+  return (
+    <section className={`app-view ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat" data-testid="warsat-view">
+      <PageHeader
+        title="Warsat"
+        text="Model runtime launcher plans for local Docker containers. Current mode is planning only."
+        action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Recipes</Button>}
+      />
+      <div className="task-dashboard warsat-dashboard">
+        <Row className="g-3">
+          <MiniCard title="Runtime recipes" value={warsat?.count || recipes.length} />
+          <MiniCard title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
+          <MiniCard title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
+        </Row>
+
+        <Card className="settings-card warsat-panel shadow-sm mt-3">
+          <Card.Body>
+            <div className="section-row">
+              <div>
+                <h2>Launch Plan</h2>
+                <p className="text-body-secondary mb-0">
+                  Generate a dry-run plan before Rasputin is allowed to pull images, start containers, or edit the model registry.
+                </p>
+              </div>
+              <Badge bg="warning">Approval required later</Badge>
+            </div>
+            <Form className="mt-3" data-testid="warsat-plan-form" onSubmit={createPlan}>
+              <Row className="g-3 align-items-end">
+                <Col lg={4}>
+                  <Form.Label htmlFor="warsatRecipeId">Recipe</Form.Label>
+                  <Form.Select id="warsatRecipeId" name="recipeId" defaultValue={firstRecipe?.id || ""} required>
+                    <option value="" disabled>Choose a recipe</option>
+                    {recipes.map((recipe) => (
+                      <option key={recipe.id} value={recipe.id}>{recipe.name}</option>
+                    ))}
+                  </Form.Select>
+                </Col>
+                <Col lg={4}>
+                  <Form.Label htmlFor="warsatModelRef">Model id</Form.Label>
+                  <Form.Control id="warsatModelRef" name="modelRef" placeholder="Qwen/Qwen2.5-Coder-7B-Instruct" />
+                  <Form.Text>Use this for vLLM or any Hugging Face based runtime.</Form.Text>
+                </Col>
+                <Col lg={4}>
+                  <Form.Label htmlFor="warsatModelPath">Mounted model path</Form.Label>
+                  <Form.Control id="warsatModelPath" name="modelPath" placeholder="models/my-model.gguf" />
+                  <Form.Text>Use this for GGUF recipes or mounted model folders.</Form.Text>
+                </Col>
+                <Col md={3}>
+                  <Form.Label htmlFor="warsatHostPort">Host port</Form.Label>
+                  <Form.Control id="warsatHostPort" name="hostPort" type="number" min="1024" max="65535" placeholder="Auto" />
+                </Col>
+                <Col md={3}>
+                  <Form.Label htmlFor="warsatRole">Model role</Form.Label>
+                  <Form.Select id="warsatRole" name="role" defaultValue={firstRecipe?.defaultRole || "helper"}>
+                    {["main", "planner", "executor", "coder", "researcher", "summarizer", "memory", "embeddings", "helper"].map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </Form.Select>
+                </Col>
+                <Col md={4}>
+                  <Form.Label htmlFor="warsatContainerName">Container name</Form.Label>
+                  <Form.Control id="warsatContainerName" name="containerName" placeholder="Auto" />
+                </Col>
+                <Col md={2}>
+                  <Button className="w-100" type="submit">Plan</Button>
+                </Col>
+              </Row>
+            </Form>
+            {error && <p className="text-danger mt-3 mb-0" role="alert">{error}</p>}
+          </Card.Body>
+        </Card>
+
+        <Row className="g-3 mt-1">
+          {recipes.map((recipe) => (
+            <Col xl={6} key={recipe.id}>
+              <Card className="settings-card warsat-recipe-card shadow-sm h-100" data-testid="warsat-recipe-card">
+                <Card.Body>
+                  <div className="section-row align-items-start">
+                    <div>
+                      <Badge bg="secondary">{recipe.runtime}</Badge>
+                      <h2 className="mt-2">{recipe.name}</h2>
+                      <p className="text-body-secondary mb-0">{recipe.description}</p>
+                    </div>
+                    <Badge bg={recipe.gpu?.required ? "danger" : "success"}>{recipe.gpu?.required ? "GPU" : "CPU OK"}</Badge>
+                  </div>
+                  <dl className="detail-grid mt-3 mb-0">
+                    <dt>Image</dt><dd>{recipe.image}</dd>
+                    <dt>Format</dt><dd>{recipe.modelFormat}</dd>
+                    <dt>Default port</dt><dd>{recipe.defaultHostPort}</dd>
+                    <dt>Capabilities</dt><dd>{(recipe.capabilities || []).join(", ") || "chat"}</dd>
+                  </dl>
+                  {!!recipe.notes?.length && (
+                    <ul className="warsat-note-list mt-3 mb-0">
+                      {recipe.notes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}
+                    </ul>
+                  )}
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+
+        {plan && (
+          <Card className="settings-card warsat-plan-card shadow-sm mt-3" data-testid="warsat-launch-plan">
+            <Card.Body>
+              <div className="section-row">
+                <div>
+                  <Badge bg="warning">{plan.riskLevel}</Badge>
+                  <h2 className="mt-2">{plan.recipeName}</h2>
+                  <p className="text-body-secondary mb-0">
+                    {plan.runtime} on port {plan.hostPort}. Execution is {plan.executionEnabled ? "enabled" : "disabled"}.
+                  </p>
+                </div>
+                <Badge bg={plan.securityChecks?.localhostOnly ? "success" : "danger"}>
+                  {plan.securityChecks?.localhostOnly ? "localhost only" : "review binding"}
+                </Badge>
+              </div>
+
+              <Row className="g-3 mt-1">
+                <Col lg={6}>
+                  <h3>Model Registry Entry</h3>
+                  <dl className="detail-grid">
+                    <dt>Name</dt><dd>{plan.expectedModelRegistryEntry?.name}</dd>
+                    <dt>Role</dt><dd>{plan.expectedModelRegistryEntry?.role}</dd>
+                    <dt>Endpoint</dt><dd>{plan.expectedModelRegistryEntry?.baseUrl}</dd>
+                    <dt>Container</dt><dd>{plan.expectedModelRegistryEntry?.container}</dd>
+                  </dl>
+                </Col>
+                <Col lg={6}>
+                  <h3>Safety Checks</h3>
+                  <dl className="detail-grid">
+                    <dt>Approval</dt><dd>{plan.requiresApproval ? "Required" : "Not required"}</dd>
+                    <dt>No new privileges</dt><dd>{plan.securityChecks?.noNewPrivileges ? "Yes" : "No"}</dd>
+                    <dt>Host network</dt><dd>{plan.securityChecks?.hostNetwork ? "Requested" : "Blocked"}</dd>
+                    <dt>Health</dt><dd>{plan.healthUrl}</dd>
+                  </dl>
+                </Col>
+              </Row>
+
+              <details className="advanced-block mt-3" open>
+                <summary>Command Preview</summary>
+                <pre className="log-box mt-3 mb-0">{formatCommandPreview(plan.commandPreview)}</pre>
+              </details>
+
+              {!!plan.warnings?.length && (
+                <div className="warsat-warning-list mt-3" role="status">
+                  {plan.warnings.map((warning) => <p key={warning} className="mb-1">{warning}</p>)}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function PageHeader({ title, text, action }) {
   return (
     <header className="page-header border-bottom bg-body">
@@ -335,4 +494,23 @@ function summarizeApproval(value) {
     .slice(0, 6)
     .map(([key, item]) => `${key}: ${typeof item === "object" ? JSON.stringify(item) : item}`)
     .join(" / ") || "No redacted details.";
+}
+
+function formatCommandPreview(commandPreview) {
+  if (!commandPreview) return "No command preview.";
+  const pull = commandPreview.pull || [];
+  const run = commandPreview.run || [];
+  return [
+    "# Pull image",
+    shellJoin(pull),
+    "",
+    "# Start runtime",
+    shellJoin(run),
+  ].join("\n");
+}
+
+function shellJoin(parts) {
+  return (parts || [])
+    .map((part) => String(part).includes(" ") ? JSON.stringify(String(part)) : String(part))
+    .join(" ");
 }

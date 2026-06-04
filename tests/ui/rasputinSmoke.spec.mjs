@@ -44,6 +44,7 @@ test("home shell settings and dry-run task work", async ({ page }) => {
   await expect(page.locator("[data-testid='nav-home']")).toContainText("Home");
   await expect(page.locator("[data-testid='nav-models']")).toContainText("Models");
   await expect(page.locator("[data-testid='nav-activity']")).toContainText("Activity");
+  await expect(page.locator("[data-testid='nav-warsat']")).toContainText("Warsat");
   await expect(page.locator("#workspacePill")).toContainText("Project Root");
   await expect(page.locator("#model")).not.toContainText("Dry Run");
   await expect(page.locator("#objective")).toBeVisible();
@@ -157,6 +158,25 @@ test("activity hub groups runtime pages", async ({ page }) => {
   await expect(page.locator("#activityAuditLog")).toBeVisible();
 });
 
+test("warsat recipes produce dry-run launch plans", async ({ page }) => {
+  await page.goto("/");
+  await waitForAppReady(page);
+
+  await page.locator("[data-testid='nav-warsat']").click();
+  await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-recipe-card']")).toHaveCount(2);
+  await expect(page.locator("[data-testid='warsat-view']")).toContainText("Plan only");
+  await page.locator("#warsatRecipeId").selectOption("vllmCudaOpenai");
+  await page.locator("#warsatModelRef").fill("Qwen/Qwen2.5-Coder-7B-Instruct");
+  await page.locator("#warsatHostPort").fill("8020");
+  await page.locator("#warsatRole").selectOption("coder");
+  await page.locator("[data-testid='warsat-plan-form']").evaluate(form => form.requestSubmit());
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("vLLM CUDA OpenAI Server");
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("localhost only");
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("127.0.0.1:8020:8000");
+});
+
 test("visual review screenshots", async ({ page }) => {
   await page.goto("/");
   await waitForAppReady(page);
@@ -175,6 +195,10 @@ test("visual review screenshots", async ({ page }) => {
   await page.locator("[data-testid='nav-workspaces']").click();
   await expect(page.locator("[data-testid='workspace-browser']")).toBeVisible();
   await page.screenshot({ path: `${screenshotDir}/workspaces.png`, fullPage: true });
+
+  await page.locator("[data-testid='nav-warsat']").click();
+  await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
+  await page.screenshot({ path: `${screenshotDir}/warsat.png`, fullPage: true });
 
   await page.locator("[data-testid='nav-settings']").click();
   await page.locator("[data-testid='settings-appearance']").click();

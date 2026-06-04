@@ -30,7 +30,7 @@ def _coerce(data):
         merged.update({k: data.get(k, v) for k, v in merged.items()})
     if merged["theme"] not in {"rasputin-light", "rasputin-dark", "contrast"}:
         merged["theme"] = "rasputin-light"
-    if merged["activeView"] not in {"home", "workspaces", "activity", "agents", "sessions", "tasks", "approvals", "memory", "skills", "telegram", "schedules", "settings", "audit"}:
+    if merged["activeView"] not in {"home", "workspaces", "activity", "agents", "sessions", "tasks", "approvals", "memory", "skills", "telegram", "schedules", "warsat", "settings", "audit"}:
         merged["activeView"] = "home"
     try:
         merged["subagents"] = max(0, min(int(merged["subagents"]), 4))

@@ -1,0 +1,35 @@
+{
+  "id": "llamaCppGgufServer",
+  "name": "llama.cpp GGUF Server",
+  "description": "Serve a local GGUF model through llama.cpp's OpenAI-compatible server.",
+  "runtime": "llama.cpp",
+  "image": "ghcr.io/ggml-org/llama.cpp:server",
+  "modelFormat": "gguf",
+  "defaultRole": "helper",
+  "defaultHostPort": 8081,
+  "containerPort": 8080,
+  "gpu": {
+    "required": false,
+    "modes": ["cpu", "nvidia", "metalNative"],
+    "minVramGb": 0
+  },
+  "capabilities": ["chat", "summarize", "organize"],
+  "modelMount": {
+    "containerPath": "/models",
+    "readOnly": true,
+    "required": true
+  },
+  "modelArgument": "-m",
+  "defaultArguments": ["--host", "0.0.0.0", "--port", "8080", "-c", "4096"],
+  "healthPath": "/v1/models",
+  "security": {
+    "hostBinding": "127.0.0.1",
+    "noNewPrivileges": true,
+    "hostNetwork": false
+  },
+  "notes": [
+    "Best for small helper models and GGUF files in the mounted models folder.",
+    "Model folders should be mounted read-only.",
+    "GPU acceleration depends on the host runtime and container image support."
+  ]
+}

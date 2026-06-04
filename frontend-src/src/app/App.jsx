@@ -17,6 +17,7 @@ import {
   SessionsView,
   SkillsView,
   TelegramView,
+  WarsatView,
 } from "../features/runtime/RuntimeViews.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
 import {
@@ -68,6 +69,9 @@ export function App() {
   const [skillPreview, setSkillPreview] = useState(null);
   const [telegramConfig, setTelegramConfig] = useState(null);
   const [schedulesList, setSchedulesList] = useState({ schedules: [] });
+  const [warsat, setWarsat] = useState({ recipes: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
+  const [warsatPlan, setWarsatPlan] = useState(null);
+  const [warsatError, setWarsatError] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -237,6 +241,7 @@ export function App() {
     setSkillRegistry(data.skillRegistry || { skills: [] });
     setTelegramConfig(data.telegram || null);
     setSchedulesList(data.schedules || { schedules: [] });
+    setWarsat(data.warsat || { recipes: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(localTheme || prefs.theme || "rasputin-light");
@@ -314,6 +319,9 @@ export function App() {
     }
     if (["activity", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"].includes(nextView)) {
       loadRuntimeData().catch((error) => setGlobalStatus(error.message));
+    }
+    if (nextView === "warsat") {
+      loadWarsat().catch((error) => setGlobalStatus(error.message));
     }
     setMobileSidebarOpen(false);
   }
@@ -603,6 +611,33 @@ export function App() {
     setGlobalStatus("Schedule saved.");
   }
 
+  async function loadWarsat() {
+    const nextWarsat = await api("/api/warsat/recipes");
+    setWarsat(nextWarsat);
+    return nextWarsat;
+  }
+
+  async function createWarsatPlan(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setWarsatError("");
+    try {
+      const plan = await postJson("/api/warsat/plan", {
+        recipeId: form.get("recipeId"),
+        modelRef: form.get("modelRef") || undefined,
+        modelPath: form.get("modelPath") || undefined,
+        hostPort: Number(form.get("hostPort") || 0) || undefined,
+        role: form.get("role") || undefined,
+        containerName: form.get("containerName") || undefined,
+      });
+      setWarsatPlan(plan);
+      setGlobalStatus("Warsat launch plan created.");
+    } catch (error) {
+      setWarsatError(error.message);
+      setWarsatPlan(null);
+    }
+  }
+
   if (loginVisible) {
     return <LoginShell onSubmit={login} status={loginStatus} />;
   }
@@ -721,6 +756,14 @@ export function App() {
         view={view}
         schedules={schedulesList}
         createSchedule={createSchedule}
+      />
+      <WarsatView
+        view={view}
+        warsat={warsat}
+        plan={warsatPlan}
+        error={warsatError}
+        createPlan={createWarsatPlan}
+        refresh={loadWarsat}
       />
       <ActivityView
         view={view}

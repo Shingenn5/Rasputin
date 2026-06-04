@@ -4,6 +4,7 @@ export const navItems = [
   { view: "activity", label: "Activity", testId: "nav-activity" },
   { view: "settings", section: "knowledge", label: "Knowledge", testId: "nav-knowledge" },
   { view: "settings", section: "models", label: "Models", testId: "nav-models" },
+  { view: "warsat", label: "Warsat", testId: "nav-warsat" },
   { view: "settings", section: "general", label: "Settings", testId: "nav-settings" },
 ];
 

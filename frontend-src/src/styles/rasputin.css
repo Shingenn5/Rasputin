@@ -1554,6 +1554,47 @@ button.runtime-chip {
   box-shadow: none !important;
 }
 
+.warsat-dashboard .settings-card {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--ras-panel) 92%, var(--ras-accent) 8%), var(--ras-panel));
+}
+
+.warsat-panel,
+.warsat-plan-card {
+  border-color: color-mix(in srgb, var(--ras-accent) 26%, var(--ras-border));
+}
+
+.warsat-recipe-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.warsat-recipe-card::before,
+.warsat-plan-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ras-accent), transparent 72%);
+  opacity: .78;
+}
+
+.warsat-note-list {
+  display: grid;
+  gap: .35rem;
+  padding-left: 1.1rem;
+  color: var(--ras-muted);
+  font-size: .92rem;
+}
+
+.warsat-warning-list {
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 38%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-warn) 11%, var(--ras-panel));
+  padding: .75rem .85rem;
+  color: var(--ras-text);
+}
+
 .settings-layout {
   flex: 1;
   min-height: 0;
