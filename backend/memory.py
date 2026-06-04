@@ -1,45 +1,278 @@
 import json
+import shutil
+import time
 from pathlib import Path
-from threading import Lock
+
+from . import audit
+from . import runtime_store as store
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
-MEMORY_FILE = DATA_DIR / "memory.json"
+MEMORY_JSON = DATA_DIR / "memory.json"
+MEMORY_DIR = DATA_DIR / "memory"
 
-_lock = Lock()
+KINDS = {
+    "preference",
+    "fact",
+    "project_note",
+    "workflow_lesson",
+    "tool_lesson",
+    "blocked_pattern",
+    "session",
+}
 
 
-def _blank():
-    return {"prefs": {}, "facts": [], "sessions": []}
+def _text(value):
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+
+def _parse(value):
+    try:
+        return json.loads(value)
+    except Exception:
+        return value
+
+
+def _normalize_kind(kind):
+    if kind == "pref":
+        return "preference"
+    if kind in {"project", "projectNote"}:
+        return "project_note"
+    if kind in KINDS:
+        return kind
+    return "fact"
+
+
+def init_memory():
+    store.init_db()
+    imported = store.get_kv("memory_json_imported", False)
+    if not imported and MEMORY_JSON.exists():
+        try:
+            raw = json.loads(MEMORY_JSON.read_text(encoding="utf-8"))
+        except Exception:
+            raw = {}
+        for key, value in (raw.get("prefs") or {}).items():
+            add_item("preference", {"key": key, "value": value}, status="saved", export=False)
+        for value in raw.get("facts") or []:
+            add_item("fact", value, status="saved", export=False)
+        for value in raw.get("sessions") or []:
+            add_item("session", value, status="saved", export=False)
+        backup = MEMORY_JSON.with_suffix(f".json.backup-{int(time.time())}")
+        try:
+            shutil.copy2(MEMORY_JSON, backup)
+        except Exception:
+            pass
+        store.set_kv("memory_json_imported", True)
+    export_markdown()
+
+
+def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, status="saved", source_task_id=None, export=True):
+    kind = _normalize_kind(kind)
+    item_id = store.new_id("mem")
+    stamp = store.now()
+    with store._lock, store.connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO memory_items(id,kind,scope,workspace_id,content,sensitive,status,source_task_id,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)
+            """,
+            (item_id, kind, scope, workspace_id, _text(content), int(bool(sensitive)), status, source_task_id, stamp, stamp),
+        )
+        try:
+            conn.execute(
+                "INSERT INTO memory_fts(id,kind,content) VALUES(?,?,?)",
+                (item_id, kind, _text(content)),
+            )
+        except Exception:
+            pass
+        conn.commit()
+    audit.log("memory_item_saved" if status == "saved" else "memory_item_suggested", {
+        "id": item_id,
+        "kind": kind,
+        "scope": scope,
+        "workspace_id": workspace_id,
+        "status": status,
+    })
+    if status == "saved" and export:
+        export_markdown()
+    return get_item(item_id)
+
+
+def get_item(item_id):
+    store.init_db()
+    with store._lock, store.connect() as conn:
+        row = conn.execute("SELECT * FROM memory_items WHERE id=?", (item_id,)).fetchone()
+    return _public(row)
+
+
+def _public(row):
+    if not row:
+        return None
+    data = dict(row)
+    data["content"] = _parse(data.get("content", ""))
+    data["sensitive"] = bool(data.get("sensitive"))
+    return data
+
+
+def list_items(status="saved", limit=200):
+    init_memory()
+    with store._lock, store.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM memory_items WHERE status=? ORDER BY updated_at DESC LIMIT ?",
+            (status, max(1, min(int(limit), 500))),
+        ).fetchall()
+    return [_public(row) for row in rows]
+
+
+def pending_review():
+    return {"items": list_items("pending", 200)}
+
+
+def approve_item(item_id):
+    stamp = store.now()
+    with store._lock, store.connect() as conn:
+        row = conn.execute("SELECT * FROM memory_items WHERE id=?", (item_id,)).fetchone()
+        if not row:
+            raise ValueError("memory item missing")
+        conn.execute("UPDATE memory_items SET status='saved', updated_at=? WHERE id=?", (stamp, item_id))
+        conn.commit()
+    audit.log("memory_item_approved", {"id": item_id})
+    export_markdown()
+    return get_item(item_id)
+
+
+def reject_item(item_id):
+    stamp = store.now()
+    with store._lock, store.connect() as conn:
+        row = conn.execute("SELECT * FROM memory_items WHERE id=?", (item_id,)).fetchone()
+        if not row:
+            raise ValueError("memory item missing")
+        conn.execute("UPDATE memory_items SET status='rejected', updated_at=? WHERE id=?", (stamp, item_id))
+        conn.commit()
+    audit.log("memory_item_rejected", {"id": item_id})
+    return get_item(item_id)
+
+
+def suggest_from_task(task_id, objective, result, workspace_id=None):
+    lower = f"{objective}\n{result}".lower()
+    if any(word in lower for word in ["prefer", "always", "never", "remember"]):
+        return add_item("preference", {
+            "source": "task_review",
+            "objective": objective[:500],
+            "note": result[:1000],
+        }, status="pending", source_task_id=task_id, sensitive=True)
+    if result:
+        return add_item("workflow_lesson", {
+            "source": "task_review",
+            "objective": objective[:500],
+            "summary": result[:1000],
+        }, workspace_id=workspace_id, status="pending", source_task_id=task_id)
+    return None
+
+
+def search(query, limit=10):
+    init_memory()
+    query = str(query or "").strip()
+    if not query:
+        return {"query": query, "items": []}
+    with store._lock, store.connect() as conn:
+        try:
+            rows = conn.execute(
+                """
+                SELECT m.*, bm25(memory_fts) AS score
+                FROM memory_fts
+                JOIN memory_items m ON m.id = memory_fts.id
+                WHERE memory_fts MATCH ? AND m.status='saved'
+                ORDER BY score LIMIT ?
+                """,
+                (query, max(1, min(int(limit), 50))),
+            ).fetchall()
+        except Exception:
+            rows = conn.execute(
+                "SELECT *, 0 AS score FROM memory_items WHERE status='saved' AND content LIKE ? ORDER BY updated_at DESC LIMIT ?",
+                (f"%{query}%", max(1, min(int(limit), 50))),
+            ).fetchall()
+    items = [_public(row) for row in rows]
+    return {"query": query, "items": items}
 
 
 def load_memory():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not MEMORY_FILE.exists():
-        MEMORY_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            return json.loads(MEMORY_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return _blank()
+    init_memory()
+    items = list_items("saved", 500)
+    prefs = {}
+    facts = []
+    sessions = []
+    for item in items:
+        content = item.get("content")
+        if item["kind"] == "preference":
+            if isinstance(content, dict) and "key" in content:
+                prefs[str(content["key"])] = content.get("value")
+            else:
+                prefs[item["id"]] = content
+        elif item["kind"] == "session":
+            sessions.append(content)
+        else:
+            facts.append(content)
+    return {"prefs": prefs, "facts": facts[-250:], "sessions": sessions[-100:]}
 
 
 def save_memory(data):
-    DATA_DIR.mkdir(exist_ok=True)
-    with _lock:
-        MEMORY_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    if not isinstance(data, dict):
+        return load_memory()
+    for key, value in (data.get("prefs") or {}).items():
+        add_item("preference", {"key": key, "value": value})
+    for value in data.get("facts") or []:
+        add_item("fact", value)
+    for value in data.get("sessions") or []:
+        add_item("session", value)
+    return load_memory()
 
 
 def remember(kind, value):
-    mem = load_memory()
-    if kind == "pref":
-        if isinstance(value, dict):
-            mem["prefs"].update(value)
-    elif kind == "session":
-        mem["sessions"].append(value)
-        mem["sessions"] = mem["sessions"][-100:]
+    kind = _normalize_kind(kind)
+    if kind == "preference" and isinstance(value, dict):
+        for key, pref in value.items():
+            add_item("preference", {"key": key, "value": pref})
     else:
-        mem["facts"].append(value)
-        mem["facts"] = mem["facts"][-250:]
-    save_memory(mem)
-    return mem
+        add_item(kind, value)
+    return load_memory()
+
+
+def export_markdown():
+    store.init_db()
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    (MEMORY_DIR / "projects").mkdir(exist_ok=True)
+    with store._lock, store.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM memory_items WHERE status='saved' ORDER BY updated_at DESC LIMIT 500"
+        ).fetchall()
+    items = [_public(row) for row in rows]
+
+    prefs = [item for item in items if item["kind"] == "preference"]
+    facts = [item for item in items if item["kind"] not in {"preference", "project_note", "session"}]
+    projects = [item for item in items if item["kind"] == "project_note"]
+
+    user_lines = ["# User Memory", ""]
+    for item in prefs:
+        user_lines.append(f"- {_text(item['content'])}")
+    (MEMORY_DIR / "user.md").write_text("\n".join(user_lines).strip() + "\n", encoding="utf-8")
+
+    memory_lines = ["# Rasputin Memory", ""]
+    for item in facts:
+        memory_lines.append(f"- **{item['kind']}**: {_text(item['content'])}")
+    (MEMORY_DIR / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
+
+    grouped = {}
+    for item in projects:
+        grouped.setdefault(item.get("workspace_id") or "global", []).append(item)
+    for wid, group in grouped.items():
+        lines = [f"# Project Memory: {wid}", ""]
+        for item in group:
+            lines.append(f"- {_text(item['content'])}")
+        safe = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in wid)[:80] or "project"
+        (MEMORY_DIR / "projects" / f"{safe}.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+
+
+init_memory()

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#d9d3c8" />
+    <title>Rasputin</title>
+    <script>
+      (function () {
+        var saved = localStorage.getItem("rasputin-theme") || "rasputin-light";
+        if (saved !== "rasputin-light" && saved !== "rasputin-dark" && saved !== "contrast") saved = "rasputin-light";
+        var root = document.documentElement;
+        root.dataset.theme = saved;
+        root.dataset.bsTheme = saved === "rasputin-dark" ? "dark" : "light";
+        root.style.background = saved === "rasputin-dark" ? "#090b0f" : "#d9d3c8";
+        var meta = document.querySelector("meta[name='theme-color']");
+        if (meta) meta.setAttribute("content", saved === "rasputin-dark" ? "#090b0f" : "#d9d3c8");
+      })();
+    </script>
+    <style>
+      html, body, #root { min-height: 100%; }
+      body {
+        margin: 0;
+        background: #d9d3c8;
+        color: #17191d;
+      }
+      html[data-theme="rasputin-dark"] body {
+        background: #090b0f;
+        color: #e9edf2;
+      }
+      #rasputinLoader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background:
+          linear-gradient(135deg, rgba(189, 74, 40, .12), transparent 34%),
+          linear-gradient(90deg, rgba(49, 94, 132, .06) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(189, 74, 40, .06) 1px, transparent 1px),
+          var(--loader-bg, #ebe8e1);
+        background-size: auto, 38px 38px, 38px 38px, auto;
+        transition: opacity .24s ease, visibility .24s ease;
+      }
+      html[data-theme="rasputin-dark"] #rasputinLoader { --loader-bg: #090b0f; }
+      body[data-ready="true"] #rasputinLoader {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .loader-core {
+        width: 54px;
+        height: 54px;
+        border: 1px solid rgba(189, 74, 40, .35);
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        color: #bd4a28;
+        font: 700 18px/1 system-ui, sans-serif;
+        box-shadow: 0 0 36px rgba(189, 74, 40, .18);
+        animation: loaderPulse 1.2s ease-in-out infinite;
+      }
+      @keyframes loaderPulse {
+        50% { transform: scale(.96); opacity: .72; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="rasputinLoader" aria-hidden="true"><div class="loader-core">R</div></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

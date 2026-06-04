@@ -23,7 +23,7 @@ services:
       - ./data:/app/data
       - ./workspace:/app/workspace
       - ./models:/app/models:ro
-    restart: unless-stopped
+    restart: "no"
 
   chroma:
     profiles: ["rag"]
@@ -32,7 +32,7 @@ services:
       - "127.0.0.1:8008:8000"
     volumes:
       - ./data/chroma:/chroma/chroma
-    restart: unless-stopped
+    restart: "no"
 
   searxng:
     profiles: ["search"]
@@ -41,4 +41,4 @@ services:
       - "127.0.0.1:8888:8080"
     volumes:
       - ./data/searxng:/etc/searxng
-    restart: unless-stopped
+    restart: "no"

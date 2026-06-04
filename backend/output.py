@@ -59,7 +59,8 @@ def get_config():
 
 
 def save_config(data):
-    target = _safe_path((data or {}).get("markdown_folder", "workspace/markdown-output"))
+    payload = data or {}
+    target = _safe_path(payload.get("markdownFolder") or payload.get("markdown_folder", "workspace/markdown-output"))
     target.mkdir(parents=True, exist_ok=True)
     out = {"markdown_folder": _rel(target)}
     _save(out)

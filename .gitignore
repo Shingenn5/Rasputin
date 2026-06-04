@@ -9,10 +9,20 @@ server.*.log
 venv/
 node_modules/
 
+# generated frontend build output
+frontend/
+
+# local one-off generated helpers
+scripts/hatch_wrapper_spark.py
+
 # local state, never commit
 data/
 workspace/*
 models/*
+output/
+testdata/
+playwright-report/
+test-results/
 
 # keep placeholder folders visible
 !workspace/.gitkeep

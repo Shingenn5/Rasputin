@@ -9,7 +9,12 @@ server.*.log
 data/
 workspace/
 models/
+testdata/
+playwright-report/
+test-results/
 
 .venv/
 venv/
 node_modules/
+frontend/
+output/

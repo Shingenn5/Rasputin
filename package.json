@@ -1,0 +1,30 @@
+{
+  "name": "rasputin",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config vite.config.mjs --host 127.0.0.1",
+    "build": "vite build --config vite.config.mjs",
+    "preview": "vite preview --config vite.config.mjs --host 127.0.0.1",
+    "testUi": "playwright test",
+    "testUiHeaded": "playwright test --headed",
+    "testHarness": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.0",
+    "bootstrap": "^5.3.8",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-bootstrap": "^2.10.10",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "sass": "^1.100.0",
+    "vite": "^6.0.7"
+  }
+}

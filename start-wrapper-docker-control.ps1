@@ -10,11 +10,13 @@ foreach ($dir in @("data", "workspace", "models")) {
 }
 
 $port = if ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
+$url = "http://127.0.0.1:$port"
 
 docker compose version | Out-Null
 
-Write-Host "Starting Rasputin with Docker control on http://127.0.0.1:$port"
+Write-Host "Starting Rasputin with Docker control on $url"
 Write-Host "Advanced mode: docker.sock is mounted into the wrapper container."
+
 if ($Detached) {
   docker compose -f docker-compose.yml -f docker-compose.docker-control.yml up --build -d
 } else {

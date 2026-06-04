@@ -10,6 +10,21 @@ SECURITY_FILE = DATA_DIR / "security.json"
 _lock = Lock()
 
 
+def _snake_key(key):
+    out = []
+    for char in str(key or ""):
+        if char.isupper():
+            out.append("_")
+            out.append(char.lower())
+        else:
+            out.append(char)
+    return "".join(out).lstrip("_")
+
+
+def _normalize(data):
+    return {_snake_key(k): v for k, v in (data or {}).items()}
+
+
 def defaults():
     return {
         "privacy_lock": True,
@@ -25,7 +40,7 @@ def defaults():
         "allow_remote_models": False,
         "approval_required_file_write": True,
         "approval_required_file_move": True,
-        "approval_required_web_search": False,
+        "approval_required_web_search": True,
         "web_search_max_chars": 180,
         "audit_enabled": True,
         "notes": "Rasputin keeps model endpoints local. Web search is brokered and query-guarded.",
@@ -48,7 +63,7 @@ def load():
 
 def save(data):
     merged = defaults()
-    merged.update(data or {})
+    merged.update(_normalize(data))
     with _lock:
         SECURITY_FILE.write_text(json.dumps(merged, indent=2), encoding="utf-8")
     return merged

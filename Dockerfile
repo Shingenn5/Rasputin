@@ -1,3 +1,13 @@
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json vite.config.mjs /app/
+COPY frontend-src /app/frontend-src
+RUN npm ci
+RUN npm run build
+
+
 FROM docker:27-cli AS docker-cli
 
 FROM python:3.12-slim
@@ -17,7 +27,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY server.py /app/server.py
 COPY backend /app/backend
-COPY frontend /app/frontend
+COPY --from=frontend-builder /app/frontend /app/frontend
 
 RUN mkdir -p /app/data /app/workspace /app/models
 

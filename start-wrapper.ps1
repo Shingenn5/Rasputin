@@ -10,11 +10,13 @@ foreach ($dir in @("data", "workspace", "models")) {
 }
 
 $port = if ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
+$url = "http://127.0.0.1:$port"
 
 docker compose version | Out-Null
 
-Write-Host "Starting Rasputin on http://127.0.0.1:$port"
+Write-Host "Starting Rasputin on $url"
 Write-Host "First-run admin password appears in the container logs."
+
 if ($Detached) {
   docker compose up --build -d
 } else {
