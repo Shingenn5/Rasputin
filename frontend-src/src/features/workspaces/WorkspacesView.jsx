@@ -77,26 +77,32 @@ export function WorkspacesView({
             </div>
             <div id="workspaceRootList" className="workspace-root-list">
               {workspaceRoots.map((root) => {
-                const active = root.path === workspace.activePath || root.id === workspace.activeId;
-                const info = workspace.workspaces?.find((item) => item.id === root.id || item.root === root.path) || {};
+                const rootPath = root.path || root.root;
+                const rootId = root.id;
+                const active = rootPath === workspace.activePath || rootId === workspace.activeId;
+                const browsing = rootId === currentRoot.id || rootPath === currentRoot.path;
+                const info = workspace.workspaces?.find((item) => item.id === rootId || item.root === rootPath) || {};
+                const displayName = root.displayName || root.display_name || root.name || displayWorkspaceName(rootPath);
+                const absolutePath = root.absolutePath || root.absolute_path || rootPath;
+                const readOnly = root.readOnly ?? root.read_only;
                 return (
-                  <article className={`workspace-root-card ${active ? "is-active" : ""}`} key={root.id} data-testid="workspace-folder-card">
-                    <button type="button" className="workspace-root-main" onClick={() => browseWorkspace(root.id)}>
+                  <article className={`workspace-root-card ${active ? "is-active" : ""} ${browsing ? "is-browsing" : ""}`} key={rootId} data-testid="workspace-folder-card">
+                    <button type="button" className="workspace-root-main" onClick={() => browseWorkspace(rootId)}>
                       <FolderOpen size={18} />
                       <span>
-                        <strong>{root.displayName || root.name || displayWorkspaceName(root.path)}</strong>
-                        <small>{displayPath(root.absolutePath || root.path)}</small>
+                        <strong>{displayName}</strong>
+                        <small>{displayPath(absolutePath)}</small>
                       </span>
                     </button>
                     <div className="workspace-root-actions">
-                      <span className={`workspace-permission ${root.readOnly ? "is-readonly" : "is-write"}`}>
-                        {root.readOnly ? <Lock size={13} /> : <Check size={13} />}
-                        {root.readOnly ? "Read-only" : "Read/write"}
+                      <span className={`workspace-permission ${readOnly ? "is-readonly" : "is-write"}`}>
+                        {readOnly ? <Lock size={13} /> : <Check size={13} />}
+                        {readOnly ? "Read-only" : "Read/write"}
                       </span>
                       <span className="workspace-permission">
                         {info.indexed ? "Indexed" : "Not indexed"}
                       </span>
-                      <button type="button" className="tiny-action" onClick={() => selectWorkspace(root.path || root.id)}>
+                      <button type="button" className="tiny-action" onClick={() => selectWorkspace(rootPath || rootId)}>
                         {active ? "Active" : "Use"}
                       </button>
                     </div>

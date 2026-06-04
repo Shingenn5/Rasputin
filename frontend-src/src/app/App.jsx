@@ -152,6 +152,12 @@ export function App() {
   }, [theme, sidebarCollapsed, mobileSidebarOpen, ready]);
 
   useEffect(() => {
+    if (!globalStatus) return undefined;
+    const timer = window.setTimeout(() => setGlobalStatus(""), 5500);
+    return () => window.clearTimeout(timer);
+  }, [globalStatus]);
+
+  useEffect(() => {
     boot();
     return () => eventSourceRef.current?.close();
   }, []);
@@ -384,7 +390,7 @@ export function App() {
       queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id)]);
       setHomeTaskIds((current) => new Set([...current, task.id]));
       setObjective("");
-      setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} helper${subagentCount === 1 ? "" : "s"}.` : "Task started.");
+      setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} sub-agent${subagentCount === 1 ? "" : "s"}.` : "Task started.");
     } catch (error) {
       setComposerStatus(error.message);
     }
@@ -632,9 +638,11 @@ export function App() {
       });
       setWarsatPlan(plan);
       setGlobalStatus("Warsat launch plan created.");
+      return plan;
     } catch (error) {
       setWarsatError(error.message);
       setWarsatPlan(null);
+      return null;
     }
   }
 
@@ -645,6 +653,7 @@ export function App() {
   return (
     <AppShell
       globalStatus={globalStatus}
+      clearGlobalStatus={() => setGlobalStatus("")}
       sidebarProps={{
         collapsed: sidebarCollapsed,
         toggleSidebar,
@@ -763,6 +772,11 @@ export function App() {
         plan={warsatPlan}
         error={warsatError}
         createPlan={createWarsatPlan}
+        clearPlan={() => {
+          setWarsatPlan(null);
+          setWarsatError("");
+          setGlobalStatus("");
+        }}
         refresh={loadWarsat}
       />
       <ActivityView

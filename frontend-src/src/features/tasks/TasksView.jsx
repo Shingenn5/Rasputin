@@ -43,7 +43,7 @@ export function ActivityView({
         <div>
           <span className="eyebrow">Operations</span>
           <h1 id="activityTitle">Activity</h1>
-          <p>Concurrent runs, helper agents, approvals, sessions, and local audit signals.</p>
+          <p>Concurrent runs, sub-agents, approvals, sessions, and local audit signals.</p>
         </div>
         <button className="secondary-action" type="button" onClick={refresh}>
           <RefreshCw size={15} />
@@ -252,7 +252,7 @@ function TaskRunCard({ task, helpers = [], models, cancelTask, pauseTask, resume
         <>
           <pre className="message-result">{task.result || task.logs?.slice(-6).join("\n") || "Queued."}</pre>
           {helpers.length > 0 && (
-            <div className="helper-list" aria-label="Helper agents">
+            <div className="helper-list" aria-label="Sub-agents">
               {helpers.map((helper) => (
                 <button className="helper-row" type="button" key={helper.id} onClick={() => openTaskDetails(helper.id)}>
                   <Users size={14} />

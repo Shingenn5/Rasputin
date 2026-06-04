@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -84,6 +85,48 @@ def _dry_run_response(text):
     return f"Dry-run preview for: {task}"
 
 
+def _as_int(value, fallback):
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else fallback
+    except Exception:
+        return fallback
+
+
+def _trim_text(text, max_chars):
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    if max_chars < 300:
+        return text[:max_chars]
+    head = max_chars // 3
+    tail = max_chars - head - 76
+    return (
+        text[:head].rstrip()
+        + "\n\n[rasputin: prompt context shortened to fit the selected local model]\n\n"
+        + text[-tail:].lstrip()
+    )
+
+
+def _fit_messages(messages, cfg, max_tokens):
+    context_window = _as_int(
+        cfg.get("context_window") or cfg.get("contextWindow") or os.environ.get("RASPUTIN_CONTEXT_WINDOW"),
+        1024,
+    )
+    max_input_tokens = max(128, context_window - max_tokens - 64)
+    char_budget = max_input_tokens * 2
+    fitted = []
+    remaining = char_budget
+    for message in reversed(messages or []):
+        content = str(message.get("content", ""))
+        if remaining <= 0:
+            break
+        next_content = _trim_text(content, remaining)
+        fitted.insert(0, {**message, "content": next_content})
+        remaining -= len(next_content)
+    return fitted or [{"role": "user", "content": ""}]
+
+
 async def chat(model_key, messages, temperature=0.2):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
     url = model_registry.chat_url(cfg)
@@ -93,10 +136,15 @@ async def chat(model_key, messages, temperature=0.2):
     from . import security
     security.require_local_url(url)
 
+    max_tokens = min(
+        _as_int(cfg.get("max_tokens") or cfg.get("maxTokens") or os.environ.get("RASPUTIN_MAX_OUTPUT_TOKENS"), 160),
+        512,
+    )
     payload = {
         "model": cfg["model"],
-        "messages": messages,
+        "messages": _fit_messages(messages, cfg, max_tokens),
         "temperature": temperature,
+        "max_tokens": max_tokens,
         "stream": False,
     }
     def post_it():

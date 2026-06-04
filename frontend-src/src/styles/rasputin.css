@@ -155,12 +155,33 @@ svg {
   bottom: 1rem;
   z-index: 1070;
   max-width: min(440px, calc(100vw - 2rem));
+  display: flex;
+  align-items: center;
+  gap: .65rem;
   border: 1px solid color-mix(in srgb, var(--ras-accent) 45%, var(--ras-border));
   border-radius: 8px;
   background: var(--ras-panel);
   color: var(--ras-text);
   box-shadow: var(--ras-shadow);
   padding: .75rem .875rem;
+}
+
+.global-status span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.global-status button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ras-muted);
+  cursor: pointer;
 }
 
 .brand-mark {
@@ -897,6 +918,10 @@ button.runtime-chip {
   margin-bottom: .55rem;
 }
 
+.composer-chip-row:empty {
+  display: none;
+}
+
 .chat-composer textarea {
   width: 100%;
   min-height: 76px;
@@ -1015,17 +1040,20 @@ button.runtime-chip {
   text-transform: uppercase;
 }
 
-.agent-control-row {
+.composer-runbar {
   display: flex;
-  align-items: center;
-  gap: .55rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .65rem;
   flex-wrap: wrap;
   border-top: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
   margin-top: .45rem;
   padding-top: .55rem;
 }
 
-.agent-control-row label {
+.mode-segment,
+.model-inline-select,
+.parallel-agent-options {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -1033,13 +1061,49 @@ button.runtime-chip {
   border: 1px solid var(--ras-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
-  padding: .26rem .45rem;
   color: var(--ras-muted);
   font-size: .84rem;
 }
 
-.agent-control-row select,
-.agent-control-row input {
+.mode-segment {
+  flex: 1 1 420px;
+  flex-wrap: wrap;
+  padding: .25rem;
+}
+
+.mode-segment-label,
+.model-inline-select span {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: 0 .35rem;
+  font-weight: 800;
+}
+
+.mode-option {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ras-muted);
+  padding: 0 .58rem;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.mode-option.is-active {
+  border-color: color-mix(in srgb, var(--ras-accent) 55%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 12%, var(--ras-panel));
+  color: var(--ras-accent);
+}
+
+.model-inline-select {
+  flex: 1 1 260px;
+  padding: .27rem .45rem;
+}
+
+.model-inline-select select,
+.parallel-agent-body input {
   min-width: 0;
   border: 0;
   background: transparent;
@@ -1047,8 +1111,51 @@ button.runtime-chip {
   outline: 0;
 }
 
-.agent-control-row input {
+.model-inline-select select {
+  flex: 1;
+}
+
+.parallel-agent-options {
+  position: relative;
+  flex: 0 1 220px;
+  display: block;
+  padding: 0;
+}
+
+.parallel-agent-options summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: .42rem;
+  cursor: pointer;
+  padding: .26rem .55rem;
+  font-weight: 800;
+}
+
+.parallel-agent-body {
+  display: grid;
+  gap: .45rem;
+  border-top: 1px solid var(--ras-border);
+  padding: .6rem;
+}
+
+.parallel-agent-body label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+
+.parallel-agent-body input {
   width: 3.5rem;
+  border-bottom: 1px solid var(--ras-border);
+  text-align: right;
+}
+
+.parallel-agent-body p {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .78rem;
 }
 
 .parallel-note {
@@ -1271,6 +1378,11 @@ button.runtime-chip {
 .workspace-root-card.is-active {
   border-color: color-mix(in srgb, var(--ras-accent) 58%, var(--ras-border));
   background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel));
+}
+
+.workspace-root-card.is-browsing {
+  outline: 2px solid color-mix(in srgb, var(--ras-blue) 54%, transparent);
+  outline-offset: 2px;
 }
 
 .workspace-root-actions {
@@ -1562,6 +1674,20 @@ button.runtime-chip {
 .warsat-panel,
 .warsat-plan-card {
   border-color: color-mix(in srgb, var(--ras-accent) 26%, var(--ras-border));
+}
+
+.warsat-plan-form .form-label {
+  color: var(--ras-text);
+  font-weight: 800;
+}
+
+.warsat-plan-form .form-text {
+  min-height: 2.3em;
+  color: var(--ras-muted);
+}
+
+.warsat-action-col {
+  align-self: end;
 }
 
 .warsat-protocol-card {
@@ -2250,9 +2376,13 @@ button.helper-row:hover {
     flex-direction: column;
   }
 
-  .agent-control-row label,
-  .agent-control-row .parallel-note {
+  .model-inline-select,
+  .parallel-agent-options {
     width: 100%;
+  }
+
+  .mode-segment {
+    flex-basis: 100%;
   }
 
   .page-header,

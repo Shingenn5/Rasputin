@@ -137,6 +137,10 @@ class AgentHub:
             except Exception:
                 pass
             conn.commit()
+        try:
+            memory.export_master_context()
+        except Exception:
+            pass
 
     def _persist_task(self, task):
         self._persist_session(task)
@@ -491,10 +495,9 @@ class AgentHub:
         await self.emit(task)
 
     async def chat_reply(self, task):
-        mem = memory.load_memory()
         recall = memory.search(task.objective, 5)
-        context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 6, "workspace_path": task.workspace, "_task_id": task.id})
-        graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 8, "_task_id": task.id})
+        context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
+        graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = [{"source": e["source"], "relation": e["relation"], "target": e["target"]} for e in graph.get("edges", [])[:8]]
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
@@ -507,7 +510,6 @@ class AgentHub:
         prompt = f"""Answer the user directly as Rasputin.
 Task: {task.objective}
 Workspace: {task.workspace}
-Memory: {mem}
 Relevant memory recall:
 {self.format_memory(recall)}
 
@@ -544,10 +546,9 @@ Rules:
         )
 
     async def plan(self, task):
-        mem = memory.load_memory()
         recall = memory.search(task.objective, 5)
-        context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 6, "workspace_path": task.workspace, "_task_id": task.id})
-        graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 8, "_task_id": task.id})
+        context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
+        graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = [{"source": e["source"], "relation": e["relation"], "target": e["target"]} for e in graph.get("edges", [])[:8]]
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
@@ -557,7 +558,6 @@ Rules:
 Mode: {task.mode}
 Task: {task.objective}
 Workspace: {task.workspace}
-Memory: {mem}
 Relevant memory recall:
 {self.format_memory(recall)}
 Local RAG context:
@@ -642,13 +642,13 @@ Rules:
             conn.commit()
         return summary
 
-    def format_context(self, context):
+    def format_context(self, context, max_items=3, max_chars=450):
         hits = context.get("hits", [])
         if not hits:
             return "No local matches."
         lines = []
-        for h in hits:
-            lines.append(f"[{h['source']}#{h['chunk']} score={h['score']}]\n{h['text'][:1200]}")
+        for h in hits[:max_items]:
+            lines.append(f"[{h['source']}#{h['chunk']} score={h['score']}]\n{h['text'][:max_chars]}")
         return "\n\n".join(lines)
 
     def format_graph(self, graph):
@@ -661,7 +661,11 @@ Rules:
         items = recall.get("items", [])
         if not items:
             return "No relevant saved memory."
-        return "\n".join(f"- {item.get('kind')}: {item.get('content')}" for item in items[:8])
+        lines = []
+        for item in items[:4]:
+            content = str(item.get("content"))[:420]
+            lines.append(f"- {item.get('kind')}: {content}")
+        return "\n".join(lines)
 
     def format_task_sources(self, sources):
         if not sources:

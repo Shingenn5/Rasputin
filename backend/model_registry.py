@@ -78,6 +78,8 @@ def _defaults():
                 "role": "main",
                 "base_url": _default_main_url(),
                 "model": "local-main",
+                "context_window": 1024,
+                "max_tokens": 160,
                 "enabled": True,
                 "managed": False,
                 "notes": "Your big vLLM container on port 8000.",

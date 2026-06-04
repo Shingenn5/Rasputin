@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend import approvals
 from backend import model_registry
+from backend import models
 from backend import telegram
 from backend.mcp_layer import McpLayer
 
@@ -41,6 +42,13 @@ class BackendSmokeTests(unittest.TestCase):
         data = self.assertOk(self.client.get("/api/model-registry"))
         self.assertIn("models", data)
         self.assertIsInstance(data["models"], list)
+
+    def testModelPromptIsTrimmedForSmallContextWindow(self):
+        message = {"role": "user", "content": "hello " + ("x" * 10000)}
+        fitted = models._fit_messages([message], {"context_window": 1024}, 160)
+        self.assertEqual(len(fitted), 1)
+        self.assertLessEqual(len(fitted[0]["content"]), (1024 - 160 - 64) * 2)
+        self.assertIn("prompt context shortened", fitted[0]["content"])
 
     def testUiBootstrapShape(self):
         data = self.assertOk(self.client.get("/api/ui/bootstrap"))

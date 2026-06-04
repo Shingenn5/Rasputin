@@ -203,7 +203,7 @@ That file imports only the Bootstrap pieces Rasputin uses:
 - accordions
 - list groups
 - transitions
-- helpers
+- utilities
 - utilities
 
 Rasputin-specific CSS is in:
@@ -517,7 +517,7 @@ The operational task list:
 - task count
 - running count
 - main task count
-- helper task count
+- sub-agent task count
 - task cards
 
 ### AuditView.jsx
@@ -938,7 +938,7 @@ Expected model layout:
 ```text
 Rasputin wrapper container -> talks to model endpoints
 vLLM container             -> main large model on port 8000
-llama.cpp containers       -> optional GGUF helper models
+llama.cpp containers       -> optional GGUF auxiliary models
 ```
 
 Default main endpoint:

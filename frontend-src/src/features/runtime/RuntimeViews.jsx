@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-bootstrap";
 import { displayWorkspaceName } from "../../lib/display.js";
 
@@ -288,9 +288,24 @@ export function SchedulesView({ view, schedules, createSchedule }) {
   );
 }
 
-export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
+export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, refresh }) {
   const protocols = warsat?.protocols || [];
   const firstProtocol = protocols[0];
+  const [protocolId, setProtocolId] = useState(firstProtocol?.id || "");
+  const selectedProtocol = protocols.find((protocol) => protocol.id === protocolId) || firstProtocol;
+
+  useEffect(() => {
+    if (!protocolId && firstProtocol?.id) setProtocolId(firstProtocol.id);
+  }, [firstProtocol?.id, protocolId]);
+
+  function handleFormChange() {
+    if (plan || error) clearPlan?.();
+  }
+
+  async function handleCreatePlan(event) {
+    await createPlan(event);
+  }
+
   return (
     <section className={`app-view ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat" data-testid="warsat-view">
       <PageHeader
@@ -316,45 +331,63 @@ export function WarsatView({ view, warsat, plan, error, createPlan, refresh }) {
               </div>
               <Badge bg="warning">Approval required later</Badge>
             </div>
-            <Form className="mt-3" data-testid="warsat-plan-form" onSubmit={createPlan}>
-              <Row className="g-3 align-items-end">
-                <Col lg={4}>
+            <Form className="mt-3 warsat-plan-form" data-testid="warsat-plan-form" onSubmit={handleCreatePlan} onChange={handleFormChange}>
+              <Row className="g-3 align-items-start">
+                <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatProtocolId">Protocol</Form.Label>
-                  <Form.Select id="warsatProtocolId" name="protocolId" defaultValue={firstProtocol?.id || ""} required>
+                  <Form.Select
+                    id="warsatProtocolId"
+                    name="protocolId"
+                    value={protocolId}
+                    onChange={(event) => setProtocolId(event.target.value)}
+                    required
+                  >
                     <option value="" disabled>Choose a protocol</option>
                     {protocols.map((protocol) => (
                       <option key={protocol.id} value={protocol.id}>{protocol.name}</option>
                     ))}
                   </Form.Select>
                 </Col>
-                <Col lg={4}>
+                <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatModelRef">Model id</Form.Label>
                   <Form.Control id="warsatModelRef" name="modelRef" placeholder="Qwen/Qwen2.5-Coder-7B-Instruct" />
                   <Form.Text>Use this for vLLM or any Hugging Face based runtime.</Form.Text>
                 </Col>
-                <Col lg={4}>
+                <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatModelPath">Mounted model path</Form.Label>
                   <Form.Control id="warsatModelPath" name="modelPath" placeholder="models/my-model.gguf" />
                   <Form.Text>Use this for GGUF protocols or mounted model folders.</Form.Text>
                 </Col>
-                <Col md={3}>
+                <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatHostPort">Host port</Form.Label>
                   <Form.Control id="warsatHostPort" name="hostPort" type="number" min="1024" max="65535" placeholder="Auto" />
-                </Col>
-                <Col md={3}>
-                  <Form.Label htmlFor="warsatRole">Model role</Form.Label>
-                  <Form.Select id="warsatRole" name="role" defaultValue={firstProtocol?.defaultRole || "helper"}>
-                    {["main", "planner", "executor", "coder", "researcher", "summarizer", "memory", "embeddings", "helper"].map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </Form.Select>
+                  <Form.Text>Leave blank to use the protocol default.</Form.Text>
                 </Col>
                 <Col md={4}>
+                  <Form.Label htmlFor="warsatRole">Model role</Form.Label>
+                  <Form.Select id="warsatRole" name="role" defaultValue={selectedProtocol?.defaultRole || "helper"} key={selectedProtocol?.id || "role"}>
+                    <option value="main">Main model</option>
+                    <option value="planner">Planner</option>
+                    <option value="executor">Executor</option>
+                    <option value="coder">Coder</option>
+                    <option value="researcher">Researcher</option>
+                    <option value="summarizer">Summarizer</option>
+                    <option value="memory">Memory</option>
+                    <option value="embeddings">Embeddings</option>
+                    <option value="helper">Auxiliary</option>
+                  </Form.Select>
+                </Col>
+                <Col md={5}>
                   <Form.Label htmlFor="warsatContainerName">Container name</Form.Label>
                   <Form.Control id="warsatContainerName" name="containerName" placeholder="Auto" />
                 </Col>
-                <Col md={2}>
-                  <Button className="w-100" type="submit">Plan</Button>
+                <Col md={3} className="warsat-action-col">
+                  <Button className="w-100" type="submit">Create plan</Button>
+                  {(plan || error) && (
+                    <Button className="w-100 mt-2" variant="outline-secondary" type="button" onClick={clearPlan}>
+                      Clear plan
+                    </Button>
+                  )}
                 </Col>
               </Row>
             </Form>

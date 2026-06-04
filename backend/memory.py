@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 MEMORY_JSON = DATA_DIR / "memory.json"
 MEMORY_DIR = DATA_DIR / "memory"
+MASTER_CONTEXT_DIR = DATA_DIR / "warmind-context"
 
 KINDS = {
     "preference",
@@ -273,6 +274,81 @@ def export_markdown():
             lines.append(f"- {_text(item['content'])}")
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in wid)[:80] or "project"
         (MEMORY_DIR / "projects" / f"{safe}.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    export_master_context()
+
+
+def export_master_context():
+    store.init_db()
+    MASTER_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
+    with store._lock, store.connect() as conn:
+        sessions = conn.execute(
+            "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 200"
+        ).fetchall()
+        messages = conn.execute(
+            "SELECT * FROM messages ORDER BY created_at DESC LIMIT 800"
+        ).fetchall()
+        tasks = conn.execute(
+            "SELECT id,session_id,objective,model,mode,status,result,workspace,created_at,updated_at FROM tasks ORDER BY updated_at DESC LIMIT 300"
+        ).fetchall()
+        memory_rows = conn.execute(
+            "SELECT * FROM memory_items WHERE status='saved' ORDER BY updated_at DESC LIMIT 500"
+        ).fetchall()
+
+    session_lines = ["# Warmind Context", "", "Local cross-session context for Rasputin.", ""]
+    for session in sessions:
+        session_lines.extend([
+            f"## {session['title']}",
+            "",
+            f"- Session: `{session['id']}`",
+            f"- Model: `{session['model']}`",
+            f"- Workspace: `{session['workspace']}`",
+            f"- Mode: `{session['mode']}`",
+            f"- Status: `{session['status']}`",
+            "",
+        ])
+        related_messages = [m for m in messages if m["session_id"] == session["id"]]
+        for message in reversed(related_messages[-20:]):
+            session_lines.append(f"**{message['role']}**: {_text(message['content'])}")
+            session_lines.append("")
+
+    task_lines = ["# Task And Model Runs", ""]
+    for task in tasks:
+        task_lines.extend([
+            f"## {task['objective'][:160]}",
+            "",
+            f"- Task: `{task['id']}`",
+            f"- Session: `{task['session_id']}`",
+            f"- Model: `{task['model']}`",
+            f"- Mode: `{task['mode']}`",
+            f"- Workspace: `{task['workspace']}`",
+            f"- Status: `{task['status']}`",
+            "",
+        ])
+        if task["result"]:
+            task_lines.append(_text(task["result"]))
+            task_lines.append("")
+
+    memory_lines = ["# Saved Memory", ""]
+    for row in memory_rows:
+        item = _public(row)
+        memory_lines.append(f"- **{item['kind']}** `{item.get('workspace_id') or 'global'}`: {_text(item['content'])}")
+
+    readme_lines = [
+        "# Rasputin Master Context",
+        "",
+        "This folder is local-only and generated from Rasputin's SQLite runtime.",
+        "",
+        "- `sessions.md`: recent chat context across sessions.",
+        "- `tasks.md`: task results grouped by model, mode, and workspace.",
+        "- `memory.md`: saved Warmind recall items.",
+        "",
+        "Do not commit this folder. It lives under ignored local `data/` storage.",
+    ]
+
+    (MASTER_CONTEXT_DIR / "README.md").write_text("\n".join(readme_lines).strip() + "\n", encoding="utf-8")
+    (MASTER_CONTEXT_DIR / "sessions.md").write_text("\n".join(session_lines).strip() + "\n", encoding="utf-8")
+    (MASTER_CONTEXT_DIR / "tasks.md").write_text("\n".join(task_lines).strip() + "\n", encoding="utf-8")
+    (MASTER_CONTEXT_DIR / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
 
 
 init_memory()

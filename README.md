@@ -25,6 +25,7 @@ Rasputin now includes:
 - persistent approval queue for risky tool actions
 - optional Telegram approval integration using outbound Bot API polling only
 - Warmind recall store with review queue, SQLite search, and local Markdown exports
+- local master context export under `data/warmind-context/` for cross-session recall across chats, tasks, workspaces, and models
 - `SKILL.md` skill registry with built-in descriptors and session-to-skill previews
 - workspace registry for approved folders, read-only folder approvals, and GUI folder browsing
 - safety flags and audit log
@@ -198,7 +199,7 @@ When Rasputin runs in Docker, localhost model URLs are translated to:
 http://host.docker.internal:8000/v1
 ```
 
-GGUF helper models can be registered for llama.cpp. Starting/stopping model containers requires Docker control mode and the `allow_docker_control` safety flag.
+GGUF auxiliary models can be registered for llama.cpp. Starting/stopping model containers requires Docker control mode and the `allow_docker_control` safety flag.
 
 Warsat is the newer planning layer for model runtimes. It reads curated protocols from `warsat/protocols/`, generates safe launch plans, and previews the model registry entry Rasputin would create after the runtime is healthy. Warsat is currently plan-only; it does not pull images or start containers. See `docs/WARSAT_PROTOCOLS_PLAN.md`.
 

@@ -1,14 +1,19 @@
 import React from "react";
-import { PanelLeftOpen } from "lucide-react";
+import { PanelLeftOpen, X } from "lucide-react";
 import { Sidebar } from "./Sidebar.jsx";
 
-export function AppShell({ children, globalStatus, sidebarProps }) {
+export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps }) {
   return (
     <>
       <a className="skip-link" href="#mainContent">Skip to main content</a>
       {globalStatus && (
         <div id="globalStatus" className="global-status" role="status" aria-live="polite">
-          {globalStatus}
+          <span>{globalStatus}</span>
+          {clearGlobalStatus && (
+            <button type="button" aria-label="Dismiss status message" onClick={clearGlobalStatus}>
+              <X size={14} />
+            </button>
+          )}
         </div>
       )}
       <div className="app-frame" id="appFrame">

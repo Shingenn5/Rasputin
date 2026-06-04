@@ -9,6 +9,15 @@ import {
   runtimeStatus,
 } from "../../lib/display.js";
 
+const modeOptions = [
+  ["chat", "Chat"],
+  ["analyze", "Analyze"],
+  ["research", "Research"],
+  ["code", "Code"],
+  ["write", "Write"],
+  ["organize", "Organize"],
+];
+
 export function HomeView(props) {
   const {
     activeWorkspaceName,
@@ -115,21 +124,6 @@ export function HomeView(props) {
 
         <form id="taskForm" className="chat-composer" data-testid="chat-composer" onSubmit={sendTask}>
           <div className="composer-chip-row">
-            <label className="runtime-chip model-select-chip" data-testid="active-model-chip">
-              <Cpu size={15} />
-              <span className="chip-label">Model</span>
-              <select
-                id="model"
-                aria-label="Active model"
-                data-testid="model-select"
-                value={selectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
-              >
-                {visibleModels.map((model) => (
-                  <option key={model.key} value={model.key}>{displayModelName(model, models)} - {runtimeStatus(model)}</option>
-                ))}
-              </select>
-            </label>
             {approvalCount > 0 && (
               <button className="runtime-chip is-warn" type="button" onClick={() => go("activity")}>
                 {approvalCount} approval{approvalCount === 1 ? "" : "s"}
@@ -161,32 +155,61 @@ export function HomeView(props) {
             }}
           />
 
-          <div className="agent-control-row" aria-label="Agent run controls">
-            <label>
-              <SlidersHorizontal size={15} aria-hidden="true" />
-              <span>Mode</span>
-              <select value={taskMode} onChange={(event) => setTaskMode(event.target.value)} aria-label="Task mode">
-                <option value="chat">Chat</option>
-                <option value="analyze">Analyze files</option>
-                <option value="research">Research local knowledge</option>
-                <option value="code">Code</option>
-                <option value="write">Write</option>
-                <option value="organize">Organize</option>
+          <div className="composer-runbar" aria-label="Run settings">
+            <div className="mode-segment" role="radiogroup" aria-label="Task mode">
+              <span className="mode-segment-label">
+                <SlidersHorizontal size={15} aria-hidden="true" />
+                Mode
+              </span>
+              {modeOptions.map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={taskMode === value ? "mode-option is-active" : "mode-option"}
+                  aria-pressed={taskMode === value}
+                  onClick={() => setTaskMode(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label className="model-inline-select" data-testid="active-model-chip">
+              <Cpu size={15} />
+              <span>Model</span>
+              <select
+                id="model"
+                aria-label="Active model"
+                data-testid="model-select"
+                value={selectedModel}
+                onChange={(event) => setSelectedModel(event.target.value)}
+              >
+                {visibleModels.map((model) => (
+                  <option key={model.key} value={model.key}>{displayModelName(model, models)} - {runtimeStatus(model)}</option>
+                ))}
               </select>
             </label>
-            <label>
-              <Users size={15} aria-hidden="true" />
-              <span>Helpers</span>
-              <input
-                type="number"
-                min="0"
-                max="4"
-                value={subagentCount}
-                aria-label="Helper agents"
-                onChange={(event) => setSubagentCount(Math.max(0, Math.min(Number(event.target.value || 0), 4)))}
-              />
-            </label>
-            <span className="parallel-note">New messages start separate runs. Existing runs keep working.</span>
+
+            <details className="parallel-agent-options">
+              <summary>
+                <Users size={15} aria-hidden="true" />
+                Parallel agents
+              </summary>
+              <div className="parallel-agent-body">
+                <label>
+                  <span>Sub-agent count</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="4"
+                    value={subagentCount}
+                    aria-label="Sub-agent count"
+                    onChange={(event) => setSubagentCount(Math.max(0, Math.min(Number(event.target.value || 0), 4)))}
+                  />
+                </label>
+                <p>Sub-agents are isolated parallel tasks for larger non-chat jobs. Separate chat messages already run concurrently.</p>
+              </div>
+            </details>
           </div>
 
           <div className="composer-meta">

@@ -240,7 +240,7 @@ export function TaskDetailsDrawer({
                         <small>{displayModelName(child.model, models)} / {Number(child.progress || 0)}%</small>
                       </button>
                     ))}
-                    {!(detail.children || []).length && <EmptyInline text="No helper agents were spawned for this task." />}
+                    {!(detail.children || []).length && <EmptyInline text="No sub-agents were spawned for this task." />}
                   </div>
                 </section>
               )}
