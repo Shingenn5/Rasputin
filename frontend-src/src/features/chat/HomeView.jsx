@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Cpu, Folder, Pause, PanelLeftOpen, Play, Send, Settings, ShieldCheck, SlidersHorizontal, Square, Users } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
@@ -46,9 +46,13 @@ export function HomeView(props) {
     setSubagentCount,
     runningTasks,
     openTaskDetails,
+    setPrompt,
   } = props;
 
   const threadScrollRef = useRef(null);
+  const previousThreadVersionRef = useRef("");
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [hasNewActivity, setHasNewActivity] = useState(false);
   const orderedHomeTasks = useMemo(
     () => [...homeTasks].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
     [homeTasks],
@@ -65,10 +69,31 @@ export function HomeView(props) {
   useEffect(() => {
     if (view !== "home" || !threadScrollRef.current) return;
     const target = threadScrollRef.current;
-    window.requestAnimationFrame(() => {
-      target.scrollTop = target.scrollHeight;
-    });
-  }, [threadVersion, view]);
+    if (autoScroll) {
+      window.requestAnimationFrame(() => {
+        target.scrollTop = target.scrollHeight;
+      });
+    } else if (previousThreadVersionRef.current && previousThreadVersionRef.current !== threadVersion) {
+      setHasNewActivity(true);
+    }
+    previousThreadVersionRef.current = threadVersion;
+  }, [threadVersion, view, autoScroll]);
+
+  function handleThreadScroll(event) {
+    const target = event.currentTarget;
+    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    const atBottom = distanceFromBottom < 84;
+    setAutoScroll(atBottom);
+    if (atBottom) setHasNewActivity(false);
+  }
+
+  function jumpToLatest() {
+    const target = threadScrollRef.current;
+    if (!target) return;
+    target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
+    setAutoScroll(true);
+    setHasNewActivity(false);
+  }
 
   return (
     <section className={`app-view home-view ${view === "home" ? "active" : ""}`} id="homeView" data-app-view="home" tabIndex="-1">
@@ -102,7 +127,7 @@ export function HomeView(props) {
       </header>
 
       <section className="chat-shell" aria-label="Conversation">
-        <div className="thread-scroll" ref={threadScrollRef}>
+        <div className="thread-scroll" ref={threadScrollRef} onScroll={handleThreadScroll}>
           <section
             className={orderedHomeTasks.length ? "welcome-panel hidden" : "welcome-panel"}
             id="welcomePanel"
@@ -114,6 +139,20 @@ export function HomeView(props) {
             </div>
             <h1>What are we working on?</h1>
             <p>Ask a question, inspect an approved folder, or draft the next move.</p>
+            <div className="prompt-strip" aria-label="Quick actions">
+              <button type="button" className="prompt-chip" onClick={() => setPrompt?.("Inspect the active workspace and summarize the files you can see.", "analyze")}>
+                Inspect workspace
+              </button>
+              <button type="button" className="prompt-chip" onClick={() => go("workspaces")}>
+                Add folder
+              </button>
+              <button type="button" className="prompt-chip" onClick={() => setPrompt?.("Help me plan the next coding task for this project.", "code")}>
+                Plan coding work
+              </button>
+              <button type="button" className="prompt-chip" onClick={() => setPrompt?.("Draft a clean markdown document I can export later.", "write")}>
+                Draft document
+              </button>
+            </div>
           </section>
 
           <div id="tasks" className="thread-list" aria-live="polite">
@@ -138,8 +177,27 @@ export function HomeView(props) {
           </div>
         </div>
 
+        {hasNewActivity && (
+          <button className="jump-latest-button" type="button" onClick={jumpToLatest}>
+            Jump to latest
+          </button>
+        )}
+
         <form id="taskForm" className="chat-composer" data-testid="chat-composer" onSubmit={sendTask}>
           <div className="composer-chip-row">
+            <div className="composer-context-actions" aria-label="Workspace actions">
+              <button className="composer-link-button" type="button" onClick={() => go("workspaces")}>
+                <Folder size={14} />
+                Add folder
+              </button>
+              <button
+                className="composer-link-button"
+                type="button"
+                onClick={() => setPrompt?.("Inspect the active workspace and summarize the files you can see.", "analyze")}
+              >
+                Inspect workspace
+              </button>
+            </div>
             {approvalCount > 0 && (
               <button className="runtime-chip is-warn" type="button" onClick={() => go("activity")}>
                 {approvalCount} approval{approvalCount === 1 ? "" : "s"}

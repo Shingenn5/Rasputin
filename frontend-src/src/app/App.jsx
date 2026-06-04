@@ -393,6 +393,7 @@ export function App() {
       setHomeTaskIds((current) => new Set([...current, task.id]));
       setActiveChatSessionId(task.sessionId || activeChatSessionId);
       setObjective("");
+      api("/api/sessions").then(setSessions).catch(() => {});
       setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} sub-agent${subagentCount === 1 ? "" : "s"}.` : "Task started.");
     } catch (error) {
       setComposerStatus(error.message);
@@ -528,6 +529,26 @@ export function App() {
   async function loadSession(sessionId) {
     try {
       setSelectedSession(await api(`/api/sessions/${sessionId}`));
+    } catch (error) {
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function resumeSession(sessionId) {
+    try {
+      const detail = await api(`/api/sessions/${sessionId}`);
+      const sessionTasks = detail.tasks || [];
+      setSelectedSession(detail);
+      setActiveChatSessionId(sessionId);
+      setHomeTaskIds(new Set(sessionTasks.filter((task) => !task.parentId).map((task) => task.id)));
+      setTasks((current) => {
+        const next = new Map(current.map((task) => [task.id, task]));
+        sessionTasks.forEach((task) => next.set(task.id, task));
+        return Array.from(next.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+      });
+      setObjective("");
+      go("home");
+      setGlobalStatus("Chat restored.");
     } catch (error) {
       setGlobalStatus(error.message);
     }
@@ -676,6 +697,9 @@ export function App() {
           setMobileSidebarOpen(false);
           go("home");
         },
+        recentSessions: sessions?.sessions || [],
+        activeSessionId: activeChatSessionId,
+        resumeSession,
       }}
     >
       <HomeView

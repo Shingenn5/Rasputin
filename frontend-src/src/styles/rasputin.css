@@ -346,6 +346,7 @@ body.sidebar-collapsed .app-frame {
 
 .sidebar-head,
 .sidebar-nav,
+.sidebar-section,
 .sidebar-context,
 .new-task-btn {
   position: relative;
@@ -447,6 +448,7 @@ body.sidebar-collapsed .app-frame {
 }
 
 .sidebar-nav {
+  flex: 0 0 auto;
   display: grid;
   gap: .25rem;
 }
@@ -493,11 +495,106 @@ body.sidebar-collapsed .app-frame {
 }
 
 .sidebar-context {
+  flex: 0 0 auto;
   display: grid;
   gap: .45rem;
-  margin-top: auto;
+  margin-top: 0;
   border-top: 1px solid rgba(255, 255, 255, .08);
   padding-top: .7rem;
+}
+
+.sidebar-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+  padding-top: .65rem;
+}
+
+.sidebar-section[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sidebar-section summary {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  border-radius: 8px;
+  color: rgba(233, 237, 242, .70);
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 850;
+  list-style: none;
+  padding: 0 .45rem;
+  text-transform: uppercase;
+}
+
+.sidebar-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.sidebar-section summary:hover {
+  background: rgba(255, 255, 255, .045);
+  color: #fff4e6;
+}
+
+.sidebar-section-count {
+  min-width: 22px;
+  border: 1px solid rgba(255, 176, 92, .22);
+  border-radius: 999px;
+  color: #ffe3c5;
+  padding: .02rem .35rem;
+  text-align: center;
+}
+
+.sidebar-session-list {
+  display: grid;
+  gap: .32rem;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  padding-top: .35rem;
+}
+
+.sidebar-session {
+  width: 100%;
+  display: grid;
+  gap: .12rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(233, 237, 242, .78);
+  cursor: pointer;
+  padding: .48rem .55rem;
+  text-align: left;
+}
+
+.sidebar-session:hover,
+.sidebar-session.is-active {
+  border-color: rgba(255, 176, 92, .22);
+  background: rgba(255, 176, 92, .10);
+  color: #fff4e6;
+}
+
+.sidebar-session span,
+.sidebar-session small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-session small {
+  color: rgba(233, 237, 242, .54);
+  font-size: .72rem;
+}
+
+.sidebar-session.is-empty {
+  border-color: rgba(255, 255, 255, .08);
+  color: rgba(233, 237, 242, .58);
 }
 
 .context-line,
@@ -543,6 +640,7 @@ body.sidebar-collapsed .app-sidebar {
 body.sidebar-collapsed .sidebar-title,
 body.sidebar-collapsed .nav-label,
 body.sidebar-collapsed .nav-count,
+body.sidebar-collapsed .sidebar-section,
 body.sidebar-collapsed .sidebar-context {
   display: none !important;
 }
@@ -662,6 +760,7 @@ button.runtime-chip {
 }
 
 .chat-shell {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
@@ -750,7 +849,7 @@ button.runtime-chip {
 
 .prompt-strip {
   width: min(760px, 100%);
-  display: none;
+  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: .6rem;
   margin-top: .25rem;
@@ -922,6 +1021,52 @@ button.runtime-chip {
   display: none;
 }
 
+.composer-context-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+
+.composer-link-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: .38rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 26%, transparent);
+  color: var(--ras-muted);
+  cursor: pointer;
+  padding: 0 .58rem;
+  font-size: .82rem;
+  font-weight: 780;
+}
+
+.composer-link-button:hover {
+  border-color: color-mix(in srgb, var(--ras-accent) 44%, var(--ras-border));
+  color: var(--ras-accent);
+}
+
+.jump-latest-button {
+  position: absolute;
+  left: 50%;
+  bottom: 158px;
+  z-index: 3;
+  transform: translateX(-50%);
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 46%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-panel) 92%, transparent);
+  color: var(--ras-accent);
+  box-shadow: var(--ras-shadow);
+  cursor: pointer;
+  padding: 0 .75rem;
+  font-size: .84rem;
+  font-weight: 850;
+}
+
 .chat-composer textarea {
   width: 100%;
   min-height: 76px;
@@ -1041,11 +1186,10 @@ button.runtime-chip {
 }
 
 .composer-runbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(360px, 1.15fr) minmax(260px, .85fr);
   align-items: flex-start;
-  justify-content: space-between;
   gap: .65rem;
-  flex-wrap: wrap;
   border-top: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
   margin-top: .45rem;
   padding-top: .55rem;
@@ -1066,8 +1210,8 @@ button.runtime-chip {
 }
 
 .mode-segment {
-  flex: 1 1 420px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto repeat(6, minmax(0, 1fr));
   padding: .25rem;
 }
 
@@ -1082,6 +1226,7 @@ button.runtime-chip {
 
 .mode-option {
   min-height: 30px;
+  min-width: 0;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
@@ -1089,6 +1234,7 @@ button.runtime-chip {
   padding: 0 .58rem;
   cursor: pointer;
   font-weight: 800;
+  text-align: center;
 }
 
 .mode-option.is-active {
@@ -1098,7 +1244,6 @@ button.runtime-chip {
 }
 
 .model-inline-select {
-  flex: 1 1 260px;
   padding: .27rem .45rem;
 }
 
@@ -1117,7 +1262,8 @@ button.runtime-chip {
 
 .parallel-agent-options {
   position: relative;
-  flex: 0 1 220px;
+  grid-column: 1 / -1;
+  width: min(240px, 100%);
   display: block;
   padding: 0;
 }
@@ -2210,6 +2356,14 @@ button.helper-row:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .composer-runbar {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-segment {
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  }
+
   .settings-layout {
     grid-template-columns: 1fr;
   }
@@ -2282,6 +2436,10 @@ button.helper-row:hover {
   body.sidebar-collapsed .nav-count,
   body.sidebar-collapsed .sidebar-context {
     display: flex !important;
+  }
+
+  body.sidebar-collapsed .sidebar-section {
+    display: block !important;
   }
 
   body.sidebar-collapsed .nav-item,
@@ -2413,7 +2571,11 @@ button.helper-row:hover {
   }
 
   .mode-segment {
-    flex-basis: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mode-segment-label {
+    grid-column: 1 / -1;
   }
 
   .page-header,

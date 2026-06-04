@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { navItems } from "../lib/constants.js";
+import { displayWorkspaceName } from "../lib/display.js";
 
 const icons = {
   Home,
@@ -37,8 +38,12 @@ export function Sidebar({
   locked,
   newTask,
   mobileOpen,
+  recentSessions = [],
+  activeSessionId,
+  resumeSession,
 }) {
   const stateLabel = locked ? "Privacy locked" : "Review mode";
+  const visibleSessions = (recentSessions || []).slice(0, 6);
 
   function openNav(item) {
     go(item.view, item.section);
@@ -99,6 +104,37 @@ export function Sidebar({
           );
         })}
       </nav>
+
+      <details className="sidebar-section sidebar-recent-section" open={!collapsed}>
+        <summary>
+          <span className="nav-label">Recent Chats</span>
+          {visibleSessions.length > 0 && <span className="sidebar-section-count">{visibleSessions.length}</span>}
+        </summary>
+        <div className="sidebar-session-list">
+          {visibleSessions.map((session) => {
+            const active = session.id === activeSessionId;
+            return (
+              <button
+                key={session.id}
+                className={`sidebar-session ${active ? "is-active" : ""}`}
+                type="button"
+                title={session.title}
+                aria-current={active ? "page" : undefined}
+                onClick={() => resumeSession?.(session.id)}
+              >
+                <span>{session.title || "Untitled chat"}</span>
+                <small>{session.mode || "chat"} / {displayWorkspaceName(session.workspace)}</small>
+              </button>
+            );
+          })}
+          {!visibleSessions.length && (
+            <button className="sidebar-session is-empty" type="button" onClick={newTask}>
+              <span>No saved chats yet</span>
+              <small>Start with New Chat</small>
+            </button>
+          )}
+        </div>
+      </details>
 
       <div className="sidebar-context" aria-label="Current Rasputin state">
         <div className="context-line">
