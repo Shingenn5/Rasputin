@@ -18,7 +18,9 @@ def defaults():
         "activeWorkspace": ".",
         "skill": "general",
         "taskMode": "chat",
+        "modeModelOverrides": {},
         "subagents": 0,
+        "workspaceExplorer": {},
         "activeView": "home",
         "activeSettingsSection": "general",
     }
@@ -30,12 +32,18 @@ def _coerce(data):
         merged.update({k: data.get(k, v) for k, v in merged.items()})
     if merged["theme"] not in {"rasputin-light", "rasputin-dark", "contrast"}:
         merged["theme"] = "rasputin-light"
-    if merged["activeView"] not in {"home", "workspaces", "activity", "agents", "sessions", "tasks", "approvals", "memory", "skills", "telegram", "schedules", "warsat", "settings", "audit"}:
+    if merged["activeView"] not in {"home", "workspaces", "activity", "agents", "sessions", "tasks", "approvals", "memory", "skills", "telegram", "schedules", "models", "warsat", "settings", "audit"}:
         merged["activeView"] = "home"
+    if merged["activeSettingsSection"] not in {"general", "workspaces", "safety", "knowledge", "output", "appearance", "admin"}:
+        merged["activeSettingsSection"] = "general"
     try:
         merged["subagents"] = max(0, min(int(merged["subagents"]), 4))
     except Exception:
         merged["subagents"] = 0
+    if not isinstance(merged.get("modeModelOverrides"), dict):
+        merged["modeModelOverrides"] = {}
+    if not isinstance(merged.get("workspaceExplorer"), dict):
+        merged["workspaceExplorer"] = {}
     merged["sidebarCollapsed"] = bool(merged["sidebarCollapsed"])
     return merged
 

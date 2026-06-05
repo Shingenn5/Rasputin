@@ -2,8 +2,7 @@ export const navItems = [
   { view: "home", label: "Home", testId: "nav-home" },
   { view: "workspaces", label: "Workspaces", testId: "nav-workspaces" },
   { view: "activity", label: "Activity", testId: "nav-activity" },
-  { view: "settings", section: "knowledge", label: "Knowledge", testId: "nav-knowledge" },
-  { view: "settings", section: "models", label: "Models", testId: "nav-models" },
+  { view: "models", label: "Models", testId: "nav-models" },
   { view: "warsat", label: "Warsat", testId: "nav-warsat" },
   { view: "settings", section: "general", label: "Settings", testId: "nav-settings" },
 ];
@@ -11,7 +10,6 @@ export const navItems = [
 export const settingsItems = [
   ["general", "General", "task defaults"],
   ["workspaces", "Workspaces", "folder access"],
-  ["models", "Models", "runtime"],
   ["safety", "Safety", "permissions"],
   ["knowledge", "Knowledge", "RAG + graph"],
   ["output", "Output", "markdown"],

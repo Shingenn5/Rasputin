@@ -1,21 +1,74 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Cpu, Folder, Pause, PanelLeftOpen, Play, Send, Settings, ShieldCheck, SlidersHorizontal, Square, Users } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  Cpu,
+  Folder,
+  Pause,
+  PanelLeftOpen,
+  Play,
+  Send,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  Square,
+  Users,
+  X,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import {
   displayModelName,
+  displayModelSecondary,
   displayWorkspaceName,
+  labelize,
   modelHealthLine,
   runtimeStatus,
 } from "../../lib/display.js";
 
 const modeOptions = [
-  ["chat", "Chat"],
-  ["analyze", "Analyze"],
-  ["research", "Research"],
-  ["code", "Code"],
-  ["write", "Write"],
-  ["organize", "Organize"],
+  {
+    value: "chat",
+    label: "Chat",
+    role: "main",
+    description: "General conversation and local problem solving.",
+    permission: "Uses the active workspace only when a task needs it.",
+  },
+  {
+    value: "analyze",
+    label: "Analyze",
+    role: "executor",
+    description: "Inspect mounted files, summarize structure, and compare evidence.",
+    permission: "Read-only unless you approve a later mutation.",
+  },
+  {
+    value: "research",
+    label: "Research",
+    role: "researcher",
+    description: "Brokered research workflows with approval-gated web tools.",
+    permission: "Models stay offline; only approved tools can reach out.",
+  },
+  {
+    value: "code",
+    label: "Code",
+    role: "coder",
+    description: "Repo analysis, patch planning, test guidance, and coding tasks.",
+    permission: "Writes and shell execution remain approval-gated.",
+  },
+  {
+    value: "write",
+    label: "Write",
+    role: "summarizer",
+    description: "Draft Markdown, notes, summaries, and document outlines.",
+    permission: "Exports only go to approved output folders.",
+  },
+  {
+    value: "organize",
+    label: "Organize",
+    role: "executor",
+    description: "Plan folder cleanup and file organization from mounted roots.",
+    permission: "Folder changes require preview and approval.",
+  },
 ];
 
 export function HomeView(props) {
@@ -42,6 +95,9 @@ export function HomeView(props) {
     approvalCount,
     taskMode,
     setTaskMode,
+    modeModelOverrides,
+    setModeModelOverride,
+    modelKeyForMode,
     subagentCount,
     setSubagentCount,
     runningTasks,
@@ -50,9 +106,15 @@ export function HomeView(props) {
   } = props;
 
   const threadScrollRef = useRef(null);
+  const modeButtonRef = useRef(null);
+  const modePanelRef = useRef(null);
+  const modelButtonRef = useRef(null);
+  const modelPanelRef = useRef(null);
   const previousThreadVersionRef = useRef("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [hasNewActivity, setHasNewActivity] = useState(false);
+  const [modePanelOpen, setModePanelOpen] = useState(false);
+  const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const orderedHomeTasks = useMemo(
     () => [...homeTasks].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
     [homeTasks],
@@ -63,8 +125,10 @@ export function HomeView(props) {
   );
   const activeHomeTasks = orderedHomeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const latestActiveTask = activeHomeTasks[activeHomeTasks.length - 1] || runningTasks?.[0];
-  const privacyLabel = security.privacyLock ? "Privacy lock" : "Review mode";
+  const privacyTitle = security.privacyLock ? "Local-only" : "Review mode";
+  const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
   const disabledReason = healthy ? "" : "A healthy local model or Testing Mode is required before sending.";
+  const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
 
   useEffect(() => {
     if (view !== "home" || !threadScrollRef.current) return;
@@ -78,6 +142,34 @@ export function HomeView(props) {
     }
     previousThreadVersionRef.current = threadVersion;
   }, [threadVersion, view, autoScroll]);
+
+  useEffect(() => {
+    if (!modePanelOpen) return undefined;
+    const firstControl = modePanelRef.current?.querySelector("button, select, input");
+    firstControl?.focus();
+    function closeOnEscape(event) {
+      if (event.key === "Escape") {
+        setModePanelOpen(false);
+        window.requestAnimationFrame(() => modeButtonRef.current?.focus());
+      }
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [modePanelOpen]);
+
+  useEffect(() => {
+    if (!modelPanelOpen) return undefined;
+    const firstControl = modelPanelRef.current?.querySelector("button, select, input");
+    firstControl?.focus();
+    function closeOnEscape(event) {
+      if (event.key === "Escape") {
+        setModelPanelOpen(false);
+        window.requestAnimationFrame(() => modelButtonRef.current?.focus());
+      }
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [modelPanelOpen]);
 
   function handleThreadScroll(event) {
     const target = event.currentTarget;
@@ -116,10 +208,19 @@ export function HomeView(props) {
             <Folder size={15} />
             <span>{activeWorkspaceName || "No workspace selected"}</span>
           </button>
-          <span className={`runtime-chip ${security.privacyLock ? "is-safe" : "is-warn"}`}>
+          <button
+            className={`runtime-chip privacy-chip ${security.privacyLock ? "is-safe" : "is-warn"}`}
+            type="button"
+            onClick={() => go("settings", "safety")}
+            aria-label={`${privacyTitle}: ${privacyDetail}. Open safety settings.`}
+            title={`${privacyTitle}: ${privacyDetail}`}
+          >
             <ShieldCheck size={15} />
-            <span>{privacyLabel}</span>
-          </span>
+            <span>
+              <strong>{privacyTitle}</strong>
+              <small>{privacyDetail}</small>
+            </span>
+          </button>
           <button className="icon-button" type="button" aria-label="Open settings" onClick={() => go("settings", "general")}>
             <Settings size={18} />
           </button>
@@ -230,60 +331,43 @@ export function HomeView(props) {
           />
 
           <div className="composer-runbar" aria-label="Run settings">
-            <div className="mode-segment" role="radiogroup" aria-label="Task mode">
-              <span className="mode-segment-label">
-                <SlidersHorizontal size={15} aria-hidden="true" />
-                Mode
+            <button
+              ref={modeButtonRef}
+              type="button"
+              className="mode-trigger"
+              data-testid="chat-mode-chip"
+              aria-haspopup="dialog"
+              aria-expanded={modePanelOpen}
+              onClick={() => setModePanelOpen(true)}
+            >
+              <SlidersHorizontal size={16} aria-hidden="true" />
+              <span className="run-trigger-copy">
+                <small>Mode</small>
+                <strong>{activeMode.label}</strong>
+                <em>{labelize(activeMode.role)} route</em>
               </span>
-              {modeOptions.map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={taskMode === value ? "mode-option is-active" : "mode-option"}
-                  aria-pressed={taskMode === value}
-                  onClick={() => setTaskMode(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
 
-            <label className="model-inline-select" data-testid="active-model-chip">
-              <Cpu size={15} />
-              <span>Model</span>
-              <select
-                id="model"
-                aria-label="Active model"
-                data-testid="model-select"
-                value={selectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
-              >
-                {visibleModels.map((model) => (
-                  <option key={model.key} value={model.key}>{displayModelName(model, models)} - {runtimeStatus(model)}</option>
-                ))}
-              </select>
-            </label>
-
-            <details className="parallel-agent-options">
-              <summary>
-                <Users size={15} aria-hidden="true" />
-                Parallel agents
-              </summary>
-              <div className="parallel-agent-body">
-                <label>
-                  <span>Sub-agent count</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="4"
-                    value={subagentCount}
-                    aria-label="Sub-agent count"
-                    onChange={(event) => setSubagentCount(Math.max(0, Math.min(Number(event.target.value || 0), 4)))}
-                  />
-                </label>
-                <p>Sub-agents are isolated parallel tasks for larger non-chat jobs. Separate chat messages already run concurrently.</p>
-              </div>
-            </details>
+            <button
+              ref={modelButtonRef}
+              id="model"
+              className="model-trigger"
+              data-testid="active-model-chip"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={modelPanelOpen}
+              aria-label={`Active model: ${displayModelName(selectedModelObject, models)}. Open model selector.`}
+              onClick={() => setModelPanelOpen(true)}
+            >
+              <Cpu size={16} aria-hidden="true" />
+              <span className="run-trigger-copy">
+                <small>Model</small>
+                <strong>{displayModelName(selectedModelObject, models)}</strong>
+                <em>{runtimeStatus(selectedModelObject)}</em>
+              </span>
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
           </div>
 
           <div className="composer-meta">
@@ -310,9 +394,201 @@ export function HomeView(props) {
               </button>
             </div>
           </div>
+          {modePanelOpen && (
+            <ModeSidePanel
+              panelRef={modePanelRef}
+              modes={modeOptions}
+              activeMode={taskMode}
+              models={models}
+              visibleModels={visibleModels}
+              modeModelOverrides={modeModelOverrides || {}}
+              setModeModelOverride={setModeModelOverride}
+              modelKeyForMode={modelKeyForMode}
+              setTaskMode={(nextMode) => {
+                setTaskMode(nextMode);
+                setModePanelOpen(false);
+                window.requestAnimationFrame(() => modeButtonRef.current?.focus());
+              }}
+              subagentCount={subagentCount}
+              setSubagentCount={setSubagentCount}
+              close={() => {
+                setModePanelOpen(false);
+                window.requestAnimationFrame(() => modeButtonRef.current?.focus());
+              }}
+            />
+          )}
+          {modelPanelOpen && (
+            <ModelSidePanel
+              panelRef={modelPanelRef}
+              models={models}
+              visibleModels={visibleModels}
+              selectedModel={selectedModel}
+              setSelectedModel={(key) => {
+                setSelectedModel(key);
+                setModelPanelOpen(false);
+                window.requestAnimationFrame(() => modelButtonRef.current?.focus());
+              }}
+              close={() => {
+                setModelPanelOpen(false);
+                window.requestAnimationFrame(() => modelButtonRef.current?.focus());
+              }}
+            />
+          )}
         </form>
       </section>
     </section>
+  );
+}
+
+function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close }) {
+  const items = visibleModels.length ? visibleModels : models;
+  return (
+    <aside
+      ref={panelRef}
+      className="model-side-panel"
+      data-testid="model-side-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="modelPanelTitle"
+    >
+      <header className="mode-panel-head">
+        <div>
+          <span className="eyebrow">Runtime routing</span>
+          <h2 id="modelPanelTitle">Choose model</h2>
+        </div>
+        <button className="icon-button" type="button" aria-label="Close model panel" onClick={close}>
+          <X size={18} />
+        </button>
+      </header>
+      <div className="model-panel-list">
+        {items.map((model) => {
+          const selected = model.key === selectedModel;
+          const status = runtimeStatus(model);
+          return (
+            <button
+              key={model.key}
+              type="button"
+              className={selected ? "model-choice is-active" : "model-choice"}
+              data-testid="model-option"
+              aria-pressed={selected}
+              onClick={() => setSelectedModel(model.key)}
+            >
+              <span className={`model-choice-status status-${status}`} aria-hidden="true" />
+              <span>
+                <strong>{displayModelName(model, models)}</strong>
+                <small>{displayModelSecondary(model, models) || model.key}</small>
+              </span>
+              <em>{status}</em>
+            </button>
+          );
+        })}
+      </div>
+      <footer className="model-panel-footer">
+        <p>Only user-facing chat models appear here. Embeddings and raw registry entries stay in Models settings.</p>
+      </footer>
+    </aside>
+  );
+}
+
+function ModeSidePanel({
+  panelRef,
+  modes,
+  activeMode,
+  models,
+  visibleModels,
+  modeModelOverrides,
+  setModeModelOverride,
+  modelKeyForMode,
+  setTaskMode,
+  subagentCount,
+  setSubagentCount,
+  close,
+}) {
+  function modelForMode(mode) {
+    const key = modelKeyForMode?.(mode.value, modeModelOverrides);
+    return models.find((model) => model.key === key) || models.find((model) => model.role === mode.role) || null;
+  }
+
+  return (
+    <aside
+      ref={panelRef}
+      className="mode-side-panel"
+      data-testid="mode-side-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="modePanelTitle"
+    >
+      <header className="mode-panel-head">
+        <div>
+          <span className="eyebrow">Task routing</span>
+          <h2 id="modePanelTitle">Choose mode</h2>
+        </div>
+        <button className="icon-button" type="button" aria-label="Close mode panel" onClick={close}>
+          <X size={18} />
+        </button>
+      </header>
+
+      <div className="mode-panel-list">
+        {modes.map((mode) => {
+          const routed = modelForMode(mode);
+          const override = modeModelOverrides?.[mode.value] || "";
+          return (
+            <article className={activeMode === mode.value ? "mode-card is-active" : "mode-card"} key={mode.value} data-testid="mode-option">
+              <button type="button" className="mode-card-main" aria-pressed={activeMode === mode.value} onClick={() => setTaskMode(mode.value)}>
+                <Bot size={18} aria-hidden="true" />
+                <span>
+                  <strong>{mode.label}</strong>
+                  <small>{mode.description}</small>
+                </span>
+              </button>
+              <dl className="mode-route-grid">
+                <dt>Role</dt>
+                <dd>{labelize(mode.role)}</dd>
+                <dt>Model</dt>
+                <dd>{routed ? displayModelName(routed, models) : "No routed model"}</dd>
+                {routed && displayModelSecondary(routed, models) && (
+                  <>
+                    <dt>Registry</dt>
+                    <dd>{displayModelSecondary(routed, models)}</dd>
+                  </>
+                )}
+              </dl>
+              <label className="mode-model-override">
+                <span>Override model</span>
+                <select
+                  value={override}
+                  aria-label={`${mode.label} model override`}
+                  onChange={(event) => setModeModelOverride(mode.value, event.target.value)}
+                >
+                  <option value="">Use {labelize(mode.role)} route</option>
+                  {visibleModels.map((model) => (
+                    <option key={model.key} value={model.key}>{displayModelName(model, models)}</option>
+                  ))}
+                </select>
+              </label>
+              <p>{mode.permission}</p>
+            </article>
+          );
+        })}
+      </div>
+
+      <section className="mode-subagent-panel" aria-label="Parallel sub-agent controls">
+        <div>
+          <h3>Parallel sub-agents</h3>
+          <p>Use these for larger non-chat jobs. Normal chat messages can already run at the same time.</p>
+        </div>
+        <label>
+          <span>Count</span>
+          <input
+            type="number"
+            min="0"
+            max="4"
+            value={subagentCount}
+            onChange={(event) => setSubagentCount(Math.max(0, Math.min(Number(event.target.value || 0), 4)))}
+          />
+        </label>
+      </section>
+    </aside>
   );
 }
 

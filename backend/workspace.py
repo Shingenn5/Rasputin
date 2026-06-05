@@ -7,6 +7,13 @@ from threading import Lock
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 WORKSPACE_FILE = DATA_DIR / "workspace.json"
+IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".pytest_cache"}
+PREVIEW_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
+    ".json", ".csv", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".env", ".sql", ".sh",
+    ".ps1", ".bat", ".dockerfile", ".gitignore",
+}
+MAX_PREVIEW_BYTES = 128 * 1024
 
 _lock = Lock()
 
@@ -127,6 +134,41 @@ def _display_name(path):
     return target.name or str(target)
 
 
+def _extension(path):
+    name = path.name.lower()
+    if name in {".env", ".gitignore", "dockerfile"}:
+        return name
+    return path.suffix.lower()
+
+
+def _is_previewable(path):
+    return path.is_file() and _extension(path) in PREVIEW_EXTENSIONS
+
+
+def _entry(path, kind, read_only=False):
+    stat = None
+    try:
+        stat = path.stat()
+    except OSError:
+        pass
+    size = stat.st_size if stat and path.is_file() else None
+    modified = stat.st_mtime if stat else None
+    return {
+        "name": path.name,
+        "display_name": "Parent folder" if kind == "parent" else path.name,
+        "path": rel_path(path),
+        "absolute_path": str(path.resolve()),
+        "kind": kind,
+        "is_directory": kind in {"folder", "parent"},
+        "is_file": kind == "file",
+        "extension": "" if kind != "file" else _extension(path),
+        "size_bytes": size,
+        "modified_at": modified,
+        "read_only": bool(read_only),
+        "previewable": _is_previewable(path),
+    }
+
+
 def _workspace_dir():
     return (ROOT / "workspace").resolve()
 
@@ -146,6 +188,7 @@ def _root_entry(root_id, name, path, mounted=True):
         "is_mounted": bool(mounted),
         "read_only": False,
         "requires_restart": False,
+        "indexed": False,
     }
 
 
@@ -168,6 +211,7 @@ def approved_roots():
             "is_mounted": public["is_mounted"],
             "read_only": public["read_only"],
             "requires_restart": public["requires_restart"],
+            "indexed": public["indexed"],
         })
     workspace_dir = _workspace_dir()
     if workspace_dir.exists() and workspace_dir not in seen:
@@ -207,28 +251,68 @@ def browse(root_id=None, path=None):
     root, base, target = _browse_target(root_id, path)
     if not target.exists() or not target.is_dir():
         raise ValueError("folder missing")
+    read_only = bool(root.get("read_only", True))
     entries = []
     if target != base:
-        entries.append({
-            "name": "..",
-            "display_name": "Parent folder",
-            "path": rel_path(target.parent),
-            "kind": "parent",
-        })
-    for p in sorted(target.iterdir(), key=lambda x: x.name.lower()):
-        if p.is_dir() and p.name not in {".git", "__pycache__", "node_modules", ".pytest_cache"}:
-            entries.append({
-                "name": p.name,
-                "display_name": p.name,
-                "path": rel_path(p),
-                "kind": "dir",
-            })
+        entries.append(_entry(target.parent, "parent", read_only))
+    folders = []
+    files = []
+    for p in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+        if p.is_dir():
+            if p.name in IGNORED_DIRS:
+                continue
+            folders.append(_entry(p, "folder", read_only))
+        elif p.is_file():
+            files.append(_entry(p, "file", read_only))
+    entries.extend(folders)
+    entries.extend(files)
     return {
         "root": root,
         "path": rel_path(target),
         "display_name": _display_name(target),
         "absolute_path": str(target),
         "entries": entries,
+    }
+
+
+def preview_file(root_id=None, path=None, max_bytes=MAX_PREVIEW_BYTES):
+    if not path:
+        raise ValueError("file path is required")
+    root, base, target = _browse_target(root_id, path)
+    if not target.exists() or not target.is_file():
+        raise ValueError("file missing")
+    if target != base and not _is_relative_to(target, base):
+        raise ValueError("path outside approved root")
+    if not _is_previewable(target):
+        raise ValueError("file type is not previewable")
+    try:
+        stat = target.stat()
+    except OSError as exc:
+        raise ValueError("file cannot be read") from exc
+    limit = max(1, min(int(max_bytes or MAX_PREVIEW_BYTES), MAX_PREVIEW_BYTES))
+    if stat.st_size > limit:
+        raise ValueError(f"file is larger than the {limit} byte preview limit")
+    raw = target.read_bytes()
+    if b"\0" in raw:
+        raise ValueError("binary files cannot be previewed")
+    try:
+        text = raw.decode("utf-8")
+        encoding = "utf-8"
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+        encoding = "utf-8-replace"
+    return {
+        "root": root,
+        "path": rel_path(target),
+        "display_name": target.name,
+        "absolute_path": str(target),
+        "extension": _extension(target),
+        "size_bytes": stat.st_size,
+        "modified_at": stat.st_mtime,
+        "encoding": encoding,
+        "truncated": False,
+        "content": text,
+        "read_only": bool(root.get("read_only", True)),
     }
 
 

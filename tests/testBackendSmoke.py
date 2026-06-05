@@ -63,14 +63,15 @@ class BackendSmokeTests(unittest.TestCase):
             "skill": "general",
             "taskMode": "code",
             "subagents": 2,
-            "activeView": "settings",
-            "activeSettingsSection": "models",
+            "activeView": "models",
+            "activeSettingsSection": "safety",
         }))
         self.assertEqual(saved["theme"], "rasputin-dark")
         self.assertTrue(saved["sidebarCollapsed"])
         self.assertEqual(saved["taskMode"], "code")
         loaded = self.assertOk(self.client.get("/api/preferences"))
-        self.assertEqual(loaded["activeSettingsSection"], "models")
+        self.assertEqual(loaded["activeView"], "models")
+        self.assertEqual(loaded["activeSettingsSection"], "safety")
         self.assertOk(self.client.post("/api/preferences", json={
             "theme": "rasputin-light",
             "sidebarCollapsed": False,
@@ -190,13 +191,42 @@ class BackendSmokeTests(unittest.TestCase):
             "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
             "hostPort": 8020,
             "role": "coder",
+            "strengthProfile": "large",
+            "maxModelLen": 12288,
+            "gpuMemoryUtilization": 0.84,
+            "tensorParallelSize": 2,
+            "quantization": "awq",
+            "memoryLimitGb": 24,
+            "shmSizeGb": 8,
+            "gpuDevice": "0",
         }))
         self.assertEqual(plan["protocolId"], "vllmCudaOpenai")
+        self.assertEqual(plan["strengthProfile"], "large")
         self.assertFalse(plan["executionEnabled"])
         self.assertTrue(plan["requiresApproval"])
         self.assertTrue(plan["securityChecks"]["localhostOnly"])
         self.assertIn("127.0.0.1:8020:8000", " ".join(plan["commandPreview"]["run"]))
         self.assertEqual(plan["expectedModelRegistryEntry"]["role"], "coder")
+        self.assertEqual(plan["tuning"]["maxModelLen"], 12288)
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 2)
+        self.assertEqual(plan["containerLimits"]["memoryLimitGb"], 24)
+        self.assertIn("composePreview", plan)
+        self.assertIn("dockerfilePreview", plan)
+        self.assertIn("--max-model-len", plan["composePreview"])
+        self.assertIn("--quantization", plan["composePreview"])
+        self.assertIn("mem_limit", plan["composePreview"])
+        self.assertIn("NVIDIA_VISIBLE_DEVICES", plan["composePreview"])
+        self.assertTrue(any(item["kind"] == "compose" for item in plan["filesPreview"]))
+
+        gguf = self.assertOk(self.client.post("/api/warsat/plan", json={
+            "protocolId": "llamaCppGgufServer",
+            "modelPath": "models/tiny-helper.gguf",
+            "hostPort": 8091,
+            "strengthProfile": "small",
+        }))
+        self.assertIn("models:/models:ro", " ".join(gguf["commandPreview"]["run"]))
+        self.assertIn("/models/tiny-helper.gguf", " ".join(gguf["commandPreview"]["run"]))
+        self.assertIn("docker-compose.warsat.llamaCppGgufServer.small.yml", [item["path"] for item in gguf["filesPreview"]])
 
         missing = self.client.post("/api/warsat/plan", json={"protocolId": "missingProtocol", "modelRef": "x"})
         body = missing.json()
@@ -205,14 +235,42 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "warsatProtocolMissing")
 
     def testWorkspaceRootsBrowseAndMountPlan(self):
+        preview_file = main.ROOT / "workspace" / "smoke-preview.txt"
+        preview_file.parent.mkdir(parents=True, exist_ok=True)
+        preview_file.write_text("Rasputin workspace preview smoke.", encoding="utf-8")
         data = self.assertOk(self.client.get("/api/workspace/roots"))
         self.assertIn("roots", data)
         self.assertGreaterEqual(len(data["roots"]), 1)
-        root = next((item for item in data["roots"] if item["id"] == "workspace-folder"), data["roots"][0])
+        root = next(
+            (
+                item for item in data["roots"]
+                if item["id"] == "workspace-folder" or item["path"] == "workspace" or item["absolutePath"].replace("\\", "/").endswith("/workspace")
+            ),
+            data["roots"][0],
+        )
         root_id = root["id"]
-        browsed = self.assertOk(self.client.post("/api/workspace/browse", json={"rootId": root_id}))
+        browse_payload = {"rootId": root_id}
+        if root["path"] == ".":
+            browse_payload["path"] = "workspace"
+        browsed = self.assertOk(self.client.post("/api/workspace/browse", json=browse_payload))
         self.assertIn("entries", browsed)
         self.assertIn("displayName", browsed)
+        self.assertTrue(any(item["kind"] == "file" for item in browsed["entries"]))
+        found_preview = next(item for item in browsed["entries"] if item["path"].endswith("smoke-preview.txt"))
+        self.assertTrue(found_preview["previewable"])
+        preview = self.assertOk(self.client.post("/api/workspace/preview-file", json={
+            "rootId": root_id,
+            "path": found_preview["path"],
+        }))
+        self.assertIn("Rasputin workspace preview smoke.", preview["content"])
+        escaped = self.client.post("/api/workspace/preview-file", json={
+            "rootId": root_id,
+            "path": "backend/main.py",
+        })
+        if root["path"] != ".":
+            body = escaped.json()
+            self.assertEqual(escaped.status_code, 400)
+            self.assertFalse(body["ok"])
         approved = self.assertOk(self.client.post("/api/workspace/approve", json={
             "path": browsed["path"],
             "name": "Smoke Workspace",
@@ -279,6 +337,7 @@ class BackendSmokeTests(unittest.TestCase):
                 ("post", "/api/graph/search", {"query": "secret", "limit": 3}),
                 ("get", "/api/workspace/roots", None),
                 ("post", "/api/workspace/list", {"path": "."}),
+                ("post", "/api/workspace/preview-file", {"path": "workspace/smoke-preview.txt"}),
             ]:
                 response = getattr(self.client, method)(path, json=payload) if payload is not None else getattr(self.client, method)(path)
                 body = response.json()

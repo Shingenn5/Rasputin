@@ -52,37 +52,40 @@ export function ActivityView({
       </header>
 
       <div className="task-dashboard">
-        <div
-          className="activity-tabs"
-          role="tablist"
-          aria-label="Activity sections"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowRight") {
-              event.preventDefault();
-              moveTab(1);
-            }
-            if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              moveTab(-1);
-            }
-          }}
-        >
-          {activityTabs.map((item) => (
-            <button
-              key={item}
-              id={`activity-tab-${item.toLowerCase()}`}
-              type="button"
-              className={tab === item ? "activity-tab is-active" : "activity-tab"}
-              role="tab"
-              aria-selected={tab === item}
-              aria-controls={`activity-panel-${item.toLowerCase()}`}
-              tabIndex={tab === item ? 0 : -1}
-              onClick={() => setTab(item)}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        <nav className="activity-tab-shell" aria-label="Activity navigation">
+          <div
+            className="activity-tabs"
+            role="tablist"
+            aria-label="Activity sections"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                moveTab(1);
+              }
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                moveTab(-1);
+              }
+            }}
+          >
+            {activityTabs.map((item) => (
+              <button
+                key={item}
+                id={`activity-tab-${item.toLowerCase()}`}
+                type="button"
+                className={tab === item ? "activity-tab is-active" : "activity-tab"}
+                role="tab"
+                aria-selected={tab === item}
+                aria-controls={`activity-panel-${item.toLowerCase()}`}
+                tabIndex={tab === item ? 0 : -1}
+                onClick={() => setTab(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length)}</p>
+        </nav>
 
         {tab === "Runs" && (
           <section id="activity-panel-runs" role="tabpanel" aria-labelledby="activity-tab-runs" className="activity-panel">
@@ -210,10 +213,11 @@ function Stat({ id, label, value }) {
 function TaskRunCard({ task, helpers = [], models, cancelTask, pauseTask, resumeTask, openTaskDetails, compact = false }) {
   const status = task.status || "queued";
   const active = ["queued", "running", "paused"].includes(status);
+  const output = task.result || task.logs?.slice(-6).join("\n") || "Queued.";
   return (
     <article className={`task-card ${active ? "is-active" : ""} ${compact ? "is-compact" : ""}`}>
       <div className="task-card-head">
-        <div>
+        <div className="task-card-title">
           <span className={`status-pill status-${status}`}>{status}</span>
           <h2>{task.objective}</h2>
         </div>
@@ -237,20 +241,39 @@ function TaskRunCard({ task, helpers = [], models, cancelTask, pauseTask, resume
           </div>
         )}
       </div>
-      <div className="meta-row">
-        <span>{displayModelName(task.model, models)}</span>
-        <span>{displayWorkspaceName(task.workspace)}</span>
-        <span>{task.mode || "chat"}</span>
-        <span>{Number(task.progress || 0)}%</span>
+
+      <div className="task-run-info" aria-label="Run metadata">
+        <dl>
+          <div>
+            <dt>Model</dt>
+            <dd>{displayModelName(task.model, models)}</dd>
+          </div>
+          <div>
+            <dt>Workspace</dt>
+            <dd>{displayWorkspaceName(task.workspace)}</dd>
+          </div>
+          <div>
+            <dt>Mode</dt>
+            <dd>{task.mode || "chat"}</dd>
+          </div>
+          <div>
+            <dt>Progress</dt>
+            <dd>{Number(task.progress || 0)}%</dd>
+          </div>
+        </dl>
+        <div className="task-card-actions">
+          <button type="button" className="tiny-action" data-testid="activity-task-details" onClick={() => openTaskDetails(task.id)}>
+            Details
+          </button>
+        </div>
       </div>
-      <div className="task-card-actions">
-        <button type="button" className="tiny-action" data-testid="activity-task-details" onClick={() => openTaskDetails(task.id)}>
-          Details
-        </button>
-      </div>
+
       {!compact && (
         <>
-          <pre className="message-result">{task.result || task.logs?.slice(-6).join("\n") || "Queued."}</pre>
+          <section className="task-message-block" aria-label="Latest task message">
+            <span>Latest message</span>
+            <pre className="message-result">{output}</pre>
+          </section>
           {helpers.length > 0 && (
             <div className="helper-list" aria-label="Sub-agents">
               {helpers.map((helper) => (
@@ -266,6 +289,14 @@ function TaskRunCard({ task, helpers = [], models, cancelTask, pauseTask, resume
       )}
     </article>
   );
+}
+
+function activityContext(tab, runningCount, approvalCount) {
+  if (tab === "Runs") return runningCount ? `${runningCount} run${runningCount === 1 ? "" : "s"} active now.` : "No active runs right now.";
+  if (tab === "Approvals") return approvalCount ? `${approvalCount} approval${approvalCount === 1 ? "" : "s"} waiting.` : "No approvals waiting.";
+  if (tab === "Sessions") return "Recent local sessions and resumable work.";
+  if (tab === "Pipeline") return "How Rasputin routes planning, tools, approvals, execution, and memory.";
+  return "Local audit events for sensitive actions.";
 }
 
 function EmptyPanel({ title, text }) {

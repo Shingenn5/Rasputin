@@ -290,9 +290,13 @@ export function SchedulesView({ view, schedules, createSchedule }) {
 
 export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, refresh }) {
   const protocols = warsat?.protocols || [];
+  const strengthProfiles = warsat?.strengthProfiles || {};
   const firstProtocol = protocols[0];
   const [protocolId, setProtocolId] = useState(firstProtocol?.id || "");
+  const [strengthProfile, setStrengthProfile] = useState("balanced");
   const selectedProtocol = protocols.find((protocol) => protocol.id === protocolId) || firstProtocol;
+  const selectedProfile = strengthProfiles[strengthProfile] || strengthProfiles.balanced || {};
+  const recipeCount = protocols.length * Math.max(Object.keys(strengthProfiles).length, 1);
 
   useEffect(() => {
     if (!protocolId && firstProtocol?.id) setProtocolId(firstProtocol.id);
@@ -310,12 +314,12 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
     <section className={`app-view ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat" data-testid="warsat-view">
       <PageHeader
         title="Warsat"
-        text="Model runtime launch protocols for local Docker containers. Current mode is planning only."
+        text="Runtime recipes for local model containers. Generate plans first; execution stays approval-gated."
         action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Protocols</Button>}
       />
       <div className="task-dashboard warsat-dashboard">
         <Row className="g-3">
-          <MiniCard title="Launch protocols" value={warsat?.count || protocols.length} />
+          <MiniCard title="Runtime recipes" value={recipeCount || protocols.length} />
           <MiniCard title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
           <MiniCard title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
         </Row>
@@ -324,16 +328,21 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
           <Card.Body>
             <div className="section-row">
               <div>
-                <h2>Launch Plan</h2>
+                <h2>Launch Recipe</h2>
                 <p className="text-body-secondary mb-0">
-                  Generate a dry-run plan before Rasputin is allowed to pull images, start containers, or edit the model registry.
+                  Pick a runtime, choose the hardware profile, then override the specific Docker and model-server settings you care about.
                 </p>
               </div>
-              <Badge bg="warning">Approval required later</Badge>
+              <span className="warsat-approval-pill">Approval required before deploy</span>
             </div>
             <Form className="mt-3 warsat-plan-form" data-testid="warsat-plan-form" onSubmit={handleCreatePlan} onChange={handleFormChange}>
-              <Row className="g-3 align-items-start">
-                <Col xl={3} lg={6}>
+              <div className="warsat-form-section">
+                <div className="warsat-form-title">
+                  <strong>Recipe source</strong>
+                  <span>Choose the model server and the model reference it should expose.</span>
+                </div>
+                <Row className="g-3 align-items-start">
+                  <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatProtocolId">Protocol</Form.Label>
                   <Form.Select
                     id="warsatProtocolId"
@@ -347,23 +356,23 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
                       <option key={protocol.id} value={protocol.id}>{protocol.name}</option>
                     ))}
                   </Form.Select>
-                </Col>
-                <Col xl={3} lg={6}>
+                  </Col>
+                  <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatModelRef">Model id</Form.Label>
                   <Form.Control id="warsatModelRef" name="modelRef" placeholder="Qwen/Qwen2.5-Coder-7B-Instruct" />
                   <Form.Text>Use this for vLLM or any Hugging Face based runtime.</Form.Text>
-                </Col>
-                <Col xl={3} lg={6}>
+                  </Col>
+                  <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatModelPath">Mounted model path</Form.Label>
                   <Form.Control id="warsatModelPath" name="modelPath" placeholder="models/my-model.gguf" />
                   <Form.Text>Use this for GGUF protocols or mounted model folders.</Form.Text>
-                </Col>
-                <Col xl={3} lg={6}>
+                  </Col>
+                  <Col xl={3} lg={6}>
                   <Form.Label htmlFor="warsatHostPort">Host port</Form.Label>
                   <Form.Control id="warsatHostPort" name="hostPort" type="number" min="1024" max="65535" placeholder="Auto" />
                   <Form.Text>Leave blank to use the protocol default.</Form.Text>
-                </Col>
-                <Col md={4}>
+                  </Col>
+                  <Col md={3}>
                   <Form.Label htmlFor="warsatRole">Model role</Form.Label>
                   <Form.Select id="warsatRole" name="role" defaultValue={selectedProtocol?.defaultRole || "helper"} key={selectedProtocol?.id || "role"}>
                     <option value="main">Main model</option>
@@ -376,24 +385,161 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
                     <option value="embeddings">Embeddings</option>
                     <option value="helper">Auxiliary</option>
                   </Form.Select>
-                </Col>
-                <Col md={5}>
-                  <Form.Label htmlFor="warsatContainerName">Container name</Form.Label>
-                  <Form.Control id="warsatContainerName" name="containerName" placeholder="Auto" />
-                </Col>
-                <Col md={3} className="warsat-action-col">
-                  <Button className="w-100" type="submit">Create plan</Button>
-                  {(plan || error) && (
-                    <Button className="w-100 mt-2" variant="outline-secondary" type="button" onClick={clearPlan}>
-                      Clear plan
-                    </Button>
-                  )}
-                </Col>
-              </Row>
+                  </Col>
+                  <Col md={4}>
+                    <Form.Label htmlFor="warsatContainerName">Container name</Form.Label>
+                    <Form.Control id="warsatContainerName" name="containerName" placeholder="Auto" />
+                  </Col>
+                  <Col md={2} className="warsat-action-col">
+                    <Button className="w-100" type="submit">Create plan</Button>
+                    {(plan || error) && (
+                      <Button className="w-100 mt-2" variant="outline-secondary" type="button" onClick={clearPlan}>
+                        Clear plan
+                      </Button>
+                    )}
+                  </Col>
+                </Row>
+              </div>
+
+              <details className="warsat-tuning-panel" open>
+                <summary>Hardware and runtime tuning</summary>
+                <Row className="g-3 align-items-start mt-1">
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatStrengthProfile">Profile</Form.Label>
+                    <Form.Select
+                      id="warsatStrengthProfile"
+                      name="strengthProfile"
+                      value={strengthProfile}
+                      onChange={(event) => setStrengthProfile(event.target.value)}
+                    >
+                    {Object.entries(strengthProfiles).map(([key, profile]) => (
+                      <option key={key} value={key}>{profile.label || key}</option>
+                    ))}
+                    {!Object.keys(strengthProfiles).length && <option value="balanced">Balanced</option>}
+                    </Form.Select>
+                    <Form.Text>{selectedProfile.description || "Use profile defaults unless overridden."}</Form.Text>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatMaxModelLen">Max model length</Form.Label>
+                    <Form.Control id="warsatMaxModelLen" name="maxModelLen" type="number" min="512" placeholder={selectedProfile.maxModelLen || 8192} />
+                    <Form.Text>vLLM context ceiling.</Form.Text>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatContextWindow">GGUF context</Form.Label>
+                    <Form.Control id="warsatContextWindow" name="contextWindow" type="number" min="512" placeholder={selectedProfile.contextWindow || 4096} />
+                    <Form.Text>llama.cpp context size.</Form.Text>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatGpuMemoryUtilization">GPU utilization</Form.Label>
+                    <Form.Control
+                      id="warsatGpuMemoryUtilization"
+                      name="gpuMemoryUtilization"
+                      type="number"
+                      min="0"
+                      max="0.98"
+                      step="0.01"
+                      placeholder={selectedProfile.gpuMemoryUtilization ?? 0.82}
+                    />
+                    <Form.Text>vLLM VRAM fraction.</Form.Text>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatGpuLayers">GPU layers</Form.Label>
+                    <Form.Control id="warsatGpuLayers" name="gpuLayers" type="number" min="0" placeholder={selectedProfile.gpuLayers ?? "auto"} />
+                    <Form.Text>llama.cpp offload layers.</Form.Text>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatTensorParallelSize">Tensor parallel</Form.Label>
+                    <Form.Control id="warsatTensorParallelSize" name="tensorParallelSize" type="number" min="1" max="16" placeholder="1" />
+                    <Form.Text>Split vLLM across GPUs.</Form.Text>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatBatchSize">Batch size</Form.Label>
+                    <Form.Control id="warsatBatchSize" name="batchSize" type="number" min="1" placeholder={selectedProfile.batchSize || 512} />
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatMaxNumSeqs">Parallel sequences</Form.Label>
+                    <Form.Control id="warsatMaxNumSeqs" name="maxNumSeqs" type="number" min="1" placeholder={selectedProfile.maxNumSeqs || 32} />
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatDtype">Dtype</Form.Label>
+                    <Form.Select id="warsatDtype" name="dtype" defaultValue="auto">
+                      <option value="auto">Auto</option>
+                      <option value="float16">float16</option>
+                      <option value="bfloat16">bfloat16</option>
+                      <option value="float32">float32</option>
+                    </Form.Select>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatQuantization">Quantization</Form.Label>
+                    <Form.Select id="warsatQuantization" name="quantization" defaultValue="">
+                      <option value="">None / model default</option>
+                      <option value="awq">AWQ</option>
+                      <option value="gptq">GPTQ</option>
+                      <option value="fp8">FP8</option>
+                      <option value="bitsandbytes">bitsandbytes</option>
+                    </Form.Select>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatKvCacheDtype">KV cache</Form.Label>
+                    <Form.Select id="warsatKvCacheDtype" name="kvCacheDtype" defaultValue="auto">
+                      <option value="auto">Auto</option>
+                      <option value="fp8">FP8</option>
+                      <option value="fp8_e5m2">FP8 E5M2</option>
+                      <option value="fp8_e4m3">FP8 E4M3</option>
+                    </Form.Select>
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatSwapSpaceGb">Swap space GB</Form.Label>
+                    <Form.Control id="warsatSwapSpaceGb" name="swapSpaceGb" type="number" min="0" placeholder="0" />
+                  </Col>
+                </Row>
+              </details>
+
+              <details className="warsat-tuning-panel" open>
+                <summary>Container limits</summary>
+                <Row className="g-3 align-items-start mt-1">
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatMemoryLimitGb">Memory limit GB</Form.Label>
+                    <Form.Control id="warsatMemoryLimitGb" name="memoryLimitGb" type="number" min="0" placeholder="No hard cap" />
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatCpuLimit">CPU limit</Form.Label>
+                    <Form.Control id="warsatCpuLimit" name="cpuLimit" type="number" min="0" step="0.25" placeholder="No hard cap" />
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatCpuThreads">CPU threads</Form.Label>
+                    <Form.Control id="warsatCpuThreads" name="cpuThreads" type="number" min="0" placeholder="Auto" />
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatShmSizeGb">Shared memory GB</Form.Label>
+                    <Form.Control id="warsatShmSizeGb" name="shmSizeGb" type="number" min="0" placeholder="2" />
+                  </Col>
+                  <Col lg={3} md={6}>
+                    <Form.Label htmlFor="warsatGpuDevice">GPU device</Form.Label>
+                    <Form.Control id="warsatGpuDevice" name="gpuDevice" placeholder="all, 0, 1, or none" />
+                    <Form.Text>Optional NVIDIA_VISIBLE_DEVICES value.</Form.Text>
+                  </Col>
+                </Row>
+              </details>
             </Form>
             {error && <p className="text-danger mt-3 mb-0" role="alert">{error}</p>}
           </Card.Body>
         </Card>
+
+        <section className="warsat-profile-strip" aria-label="Warsat hardware profiles">
+          {Object.entries(strengthProfiles).map(([key, profile]) => (
+            <button
+              className={`warsat-profile-card ${key === strengthProfile ? "is-selected" : ""}`}
+              key={key}
+              type="button"
+              onClick={() => setStrengthProfile(key)}
+            >
+              <strong>{profile.label || key}</strong>
+              <span>{profile.description}</span>
+              <small>{profile.maxModelLen || profile.contextWindow} tokens / GPU {profile.gpuMemoryUtilization ?? "auto"}</small>
+            </button>
+          ))}
+        </section>
 
         <Row className="g-3 mt-1">
           {protocols.map((protocol) => (
@@ -408,10 +554,16 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
                     </div>
                     <Badge bg={protocol.gpu?.required ? "danger" : "success"}>{protocol.gpu?.required ? "GPU" : "CPU OK"}</Badge>
                   </div>
+                  {!!protocol.bestFor?.length && (
+                    <div className="warsat-best-for mt-3">
+                      {protocol.bestFor.map((item) => <span key={item}>{item}</span>)}
+                    </div>
+                  )}
                   <dl className="detail-grid mt-3 mb-0">
                     <dt>Image</dt><dd>{protocol.image}</dd>
                     <dt>Format</dt><dd>{protocol.modelFormat}</dd>
                     <dt>Default port</dt><dd>{protocol.defaultHostPort}</dd>
+                    <dt>Minimum VRAM</dt><dd>{protocol.gpu?.minVramGb || 0} GB</dd>
                     <dt>Capabilities</dt><dd>{(protocol.capabilities || []).join(", ") || "chat"}</dd>
                   </dl>
                   {!!protocol.notes?.length && (
@@ -430,7 +582,7 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
             <Card.Body>
               <div className="section-row">
                 <div>
-                  <Badge bg="warning">{plan.riskLevel}</Badge>
+                  <span className="warsat-risk-pill">{plan.riskLevel}</span>
                   <h2 className="mt-2">{plan.protocolName}</h2>
                   <p className="text-body-secondary mb-0">
                     {plan.runtime} on port {plan.hostPort}. Execution is {plan.executionEnabled ? "enabled" : "disabled"}.
@@ -447,13 +599,25 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
                   <dl className="detail-grid">
                     <dt>Name</dt><dd>{plan.expectedModelRegistryEntry?.name}</dd>
                     <dt>Role</dt><dd>{plan.expectedModelRegistryEntry?.role}</dd>
+                    <dt>Strength</dt><dd>{plan.resourceProfile?.label || plan.strengthProfile}</dd>
                     <dt>Endpoint</dt><dd>{plan.expectedModelRegistryEntry?.baseUrl}</dd>
                     <dt>Container</dt><dd>{plan.expectedModelRegistryEntry?.container}</dd>
                   </dl>
                 </Col>
                 <Col lg={6}>
-                  <h3>Safety Checks</h3>
+                  <h3>Tuning And Limits</h3>
                   <dl className="detail-grid">
+                    <dt>Max model length</dt><dd>{plan.tuning?.maxModelLen || "profile default"}</dd>
+                    <dt>GGUF context</dt><dd>{plan.tuning?.contextWindow || "profile default"}</dd>
+                    <dt>GPU utilization</dt><dd>{plan.tuning?.gpuMemoryUtilization ?? "profile default"}</dd>
+                    <dt>GPU layers</dt><dd>{plan.tuning?.gpuLayers ?? "auto"}</dd>
+                    <dt>Memory cap</dt><dd>{plan.containerLimits?.memoryLimitGb ? `${plan.containerLimits.memoryLimitGb} GB` : "none"}</dd>
+                    <dt>CPU cap</dt><dd>{plan.containerLimits?.cpuLimit || "none"}</dd>
+                  </dl>
+                </Col>
+                <Col xs={12}>
+                  <h3>Safety Checks</h3>
+                  <dl className="detail-grid warsat-safety-grid">
                     <dt>Approval</dt><dd>{plan.requiresApproval ? "Required" : "Not required"}</dd>
                     <dt>No new privileges</dt><dd>{plan.securityChecks?.noNewPrivileges ? "Yes" : "No"}</dd>
                     <dt>Host network</dt><dd>{plan.securityChecks?.hostNetwork ? "Requested" : "Blocked"}</dd>
@@ -466,6 +630,27 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
                 <summary>Command Preview</summary>
                 <pre className="log-box mt-3 mb-0">{formatCommandPreview(plan.commandPreview)}</pre>
               </details>
+
+              <details className="advanced-block mt-3" open>
+                <summary>Composefile Preview</summary>
+                <p className="text-body-secondary mt-2 mb-2">
+                  Safe generated draft. Rasputin is not writing this file or starting this container in planning mode.
+                </p>
+                <pre className="log-box mb-0" data-testid="warsat-compose-preview">{plan.composePreview}</pre>
+              </details>
+
+              <details className="advanced-block mt-3">
+                <summary>Generated Dockerfile Preview</summary>
+                <pre className="log-box mt-3 mb-0" data-testid="warsat-dockerfile-preview">{plan.dockerfilePreview}</pre>
+              </details>
+
+              {!!plan.filesPreview?.length && (
+                <div className="warsat-file-list mt-3">
+                  {plan.filesPreview.map((file) => (
+                    <span key={file.path}>{file.path}</span>
+                  ))}
+                </div>
+              )}
 
               {!!plan.warnings?.length && (
                 <div className="warsat-warning-list mt-3" role="status">

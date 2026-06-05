@@ -145,7 +145,7 @@ export function Sidebar({
           <Folder size={15} />
           <span className="nav-label">{workspaceName}</span>
         </button>
-        <button className="sidebar-chip" type="button" onClick={() => go("settings", "models")}>
+        <button className="sidebar-chip" type="button" onClick={() => go("models")}>
           <Sparkles size={15} />
           <span className="nav-label">{modelName}</span>
         </button>

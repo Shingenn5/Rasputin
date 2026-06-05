@@ -1,13 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "react-bootstrap";
 import { Moon, ShieldCheck, Sun } from "lucide-react";
 import { settingsItems } from "../../lib/constants.js";
-import {
-  displayModelName,
-  displayWorkspaceName,
-  isModelHealthy,
-  runtimeStatus,
-} from "../../lib/display.js";
+import { displayWorkspaceName } from "../../lib/display.js";
 
 export function SettingsView(props) {
   const { view, section, setSection } = props;
@@ -38,7 +33,6 @@ export function SettingsView(props) {
         <div className="settings-panels">
           {section === "general" && <GeneralSettings />}
           {section === "workspaces" && <WorkspaceSettings {...props} />}
-          {section === "models" && <ModelsSettings {...props} />}
           {section === "safety" && <SafetySettings {...props} />}
           {section === "knowledge" && <KnowledgeSettings {...props} />}
           {section === "output" && <OutputSettings {...props} />}
@@ -119,10 +113,16 @@ function WorkspaceSettings({ workspace, workspaceRoots, workspaceBrowse, browseW
               <ListGroup id="workspaceEntries" className="workspace-browser-list">
                 {(workspaceBrowse?.entries || []).map((entry) => (
                   <ListGroup.Item className="workspace-entry" key={entry.path}>
-                    <Button variant="link" className="entry-name text-start" type="button" onClick={() => browseWorkspace(workspaceBrowse?.root?.id, entry.path)}>
+                    <Button
+                      variant="link"
+                      className="entry-name text-start"
+                      type="button"
+                      disabled={entry.kind === "file"}
+                      onClick={() => browseWorkspace(workspaceBrowse?.root?.id, entry.path)}
+                    >
                       {entry.displayName || entry.name}
                     </Button>
-                    {entry.kind === "dir" && <Button variant="outline-secondary" size="sm" type="button" onClick={() => approvePath(entry.path)}>Use</Button>}
+                    {entry.kind === "folder" && <Button variant="outline-secondary" size="sm" type="button" onClick={() => approvePath(entry.path)}>Use</Button>}
                   </ListGroup.Item>
                 ))}
               </ListGroup>
@@ -157,76 +157,6 @@ function WorkspaceSettings({ workspace, workspaceRoots, workspaceBrowse, browseW
           </Card>
         </Col>
       </Row>
-    </section>
-  );
-}
-
-function ModelsSettings({ models, selectedModelObject, testingMode, setTestingMode, runModelAction, loadModels, scanGguf }) {
-  return (
-    <section className="settings-pane active" id="settings-models">
-      <div className="section-row">
-        <div><h2>Models</h2><p className="text-body-secondary mb-0">Choose and test the model Rasputin uses for chat.</p></div>
-        <Button variant="outline-secondary" onClick={loadModels}>Refresh Registry</Button>
-      </div>
-      <Card className="settings-card active-model-card shadow-sm" data-testid="active-model-card">
-        <Card.Body>
-          <div className="section-row">
-            <div>
-              <span className="eyebrow">Active Model</span>
-              <h3>{displayModelName(selectedModelObject, models)}</h3>
-              <p className="text-body-secondary mb-0">{isModelHealthy(selectedModelObject) ? "Ready for local chat tasks." : "Needs discovery or test."}</p>
-            </div>
-            <Stack direction="horizontal" gap={2} className="model-actions">
-              <Button variant="outline-secondary" onClick={() => runModelAction("test")}>Test</Button>
-              <Button variant="outline-secondary" onClick={() => runModelAction("discover")}>Discover</Button>
-              <Button variant="outline-secondary" onClick={() => runModelAction("repair")}>Use Found Model</Button>
-            </Stack>
-          </div>
-        </Card.Body>
-      </Card>
-      <Row className="g-3 workflow-grid mt-1">
-        <Col lg={6}>
-          <Card className="settings-card h-100 shadow-sm">
-            <Card.Body>
-              <div className="section-row">
-                <div><h3>GGUF Library</h3><p className="text-body-secondary mb-0">Scan mounted model files.</p></div>
-                <Button variant="outline-secondary" data-testid="gguf-scan" onClick={scanGguf}>Scan GGUF Library</Button>
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col lg={6}>
-          <details className="settings-card advanced-block card shadow-sm" data-testid="advanced-model-registry">
-            <summary>Advanced model registry</summary>
-            <div id="modelRegistry" className="model-list">
-              {models.map((model) => (
-                <Card className="model-row" key={model.key}>
-                  <Card.Body>
-                    <strong>{displayModelName(model, models)}</strong>
-                    <dl className="model-meta-grid mb-0">
-                      <dt>Purpose</dt><dd>{model.role || "chat"}</dd>
-                      <dt>Runtime</dt><dd>{model.runtime || model.provider || "local"}</dd>
-                      <dt>Health</dt><dd>{runtimeStatus(model)}</dd>
-                    </dl>
-                  </Card.Body>
-                </Card>
-              ))}
-            </div>
-          </details>
-        </Col>
-      </Row>
-      <details className="settings-card advanced-block card shadow-sm mt-3" data-testid="advanced-model-controls">
-        <summary>Advanced model controls</summary>
-        <Form.Check type="switch">
-          <Form.Check.Input
-            data-testid="testing-mode-toggle"
-            checked={testingMode}
-            onChange={(event) => setTestingMode(event.target.checked)}
-          />
-          <Form.Check.Label><strong>Testing Mode</strong> <small className="text-body-secondary">Show dry-run in the model picker.</small></Form.Check.Label>
-        </Form.Check>
-      </details>
-      <pre id="modelLogs" className="log-box mt-3" hidden />
     </section>
   );
 }
@@ -270,26 +200,83 @@ function SafetySettings({ security, saveSafety }) {
   );
 }
 
-function KnowledgeSettings({ ragStats, graphStats }) {
+function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnowledge, searchWorkspaceKnowledge, refreshKnowledgeStats }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [results, setResults] = useState(null);
+  const activePath = workspace?.activePath || ".";
+
+  async function indexActiveWorkspace() {
+    try {
+      setStatus("Indexing active workspace...");
+      const result = await indexWorkspaceKnowledge?.(activePath);
+      setStatus(`Indexed ${result?.ragResult?.docsIndexed || 0} docs for ${displayWorkspaceName(activePath)}.`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  async function searchKnowledge(event) {
+    event.preventDefault();
+    if (!query.trim()) return;
+    try {
+      setStatus("Searching local knowledge...");
+      const found = await searchWorkspaceKnowledge?.(query.trim(), activePath);
+      setResults(found);
+      setStatus(`${found?.ragResult?.hits?.length || 0} retrieval hits and ${found?.graphResult?.nodes?.length || 0} graph nodes.`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
   return (
     <section className="settings-pane active" id="settings-knowledge">
-      <PaneTitle title="Knowledge" text="Local retrieval and graph tools." />
+      <PaneTitle title="Knowledge" text="Workspace-aware retrieval, Graphify relationships, and local citation search." />
       <Row className="g-3">
-        <Col lg={6}>
+        <Col lg={7}>
           <Card className="settings-card h-100 shadow-sm">
             <Card.Body>
-              <h3>RAG Index</h3>
-              <form id="ragIngestForm" className="inline-form">
-                <Form.Control defaultValue="." />
-                <Button variant="outline-secondary">Index</Button>
-              </form>
-              <p className="text-body-secondary mt-3 mb-0">{ragStats ? `${ragStats.docs} docs, ${ragStats.chunks} chunks` : "No index loaded."}</p>
+              <div className="section-row">
+                <div>
+                  <h3>Active Workspace Knowledge</h3>
+                  <p className="text-body-secondary mb-0">{displayWorkspaceName(activePath)} is the current indexing scope.</p>
+                </div>
+                <Stack direction="horizontal" gap={2}>
+                  <Button variant="outline-secondary" onClick={refreshKnowledgeStats}>Refresh</Button>
+                  <Button id="ragIngestForm" variant="outline-secondary" onClick={indexActiveWorkspace}>Index Active Workspace</Button>
+                </Stack>
+              </div>
+              <dl className="detail-grid mt-3 mb-0">
+                <dt>Documents</dt><dd>{ragStats?.docs ?? 0}</dd>
+                <dt>Chunks</dt><dd>{ragStats?.chunks ?? 0}</dd>
+                <dt>Graph nodes</dt><dd>{graphStats?.nodes ?? 0}</dd>
+                <dt>Graph edges</dt><dd>{graphStats?.edges ?? 0}</dd>
+              </dl>
             </Card.Body>
           </Card>
         </Col>
-        <Col lg={6}>
+        <Col lg={5}>
           <Card className="settings-card h-100 shadow-sm">
-            <Card.Body><h3>Graphify</h3><p className="text-body-secondary mb-0">{graphStats ? `${graphStats.nodes} nodes, ${graphStats.edges} edges` : "No graph yet."}</p></Card.Body>
+            <Card.Body>
+              <h3>Search Knowledge</h3>
+              <form className="inline-form" onSubmit={searchKnowledge}>
+                <Form.Control value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search indexed local context" />
+                <Button variant="outline-secondary" type="submit">Search</Button>
+              </form>
+              {status && <p className="text-body-secondary mt-3 mb-0" role="status">{status}</p>}
+              {results && (
+                <Stack gap={2} className="mt-3">
+                  {(results.ragResult?.hits || []).slice(0, 3).map((hit) => (
+                    <Card className="message-card" key={`${hit.source}-${hit.chunk}`}>
+                      <Card.Body>
+                        <strong>{hit.path}</strong>
+                        <small className="d-block text-body-secondary">Lines {hit.lineStart}-{hit.lineEnd}</small>
+                      </Card.Body>
+                    </Card>
+                  ))}
+                </Stack>
+              )}
+            </Card.Body>
           </Card>
         </Col>
       </Row>

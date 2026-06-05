@@ -188,6 +188,12 @@ class WorkspaceBrowseIn(CamelModel):
     path: str | None = None
 
 
+class WorkspacePreviewIn(CamelModel):
+    root_id: str | None = None
+    path: str
+    max_bytes: int = 131072
+
+
 class WorkspaceApproveIn(CamelModel):
     path: str
     name: str | None = None
@@ -281,6 +287,23 @@ class WarsatPlanIn(CamelModel):
     protocol_id: str
     model_ref: str | None = None
     model_path: str | None = None
+    strength_profile: str | None = None
+    context_window: int | None = None
+    max_model_len: int | None = None
+    gpu_memory_utilization: float | None = None
+    gpu_layers: int | None = None
+    tensor_parallel_size: int | None = None
+    cpu_threads: int | None = None
+    batch_size: int | None = None
+    max_num_seqs: int | None = None
+    dtype: str | None = None
+    quantization: str | None = None
+    kv_cache_dtype: str | None = None
+    swap_space_gb: int | None = None
+    memory_limit_gb: int | None = None
+    cpu_limit: float | None = None
+    shm_size_gb: int | None = None
+    gpu_device: str | None = None
     host_port: int | None = None
     role: str | None = None
     container_name: str | None = None
@@ -648,6 +671,12 @@ async def workspace_roots(_user=Depends(current_user)):
 async def workspace_browse(req: WorkspaceBrowseIn, _user=Depends(current_user)):
     security.require("allow_file_read")
     return ok(workspace.browse(req.root_id, req.path))
+
+
+@app.post("/api/workspace/preview-file")
+async def workspace_preview_file(req: WorkspacePreviewIn, _user=Depends(current_user)):
+    security.require("allow_file_read")
+    return ok(workspace.preview_file(req.root_id, req.path, req.max_bytes))
 
 
 @app.post("/api/workspace/approve")

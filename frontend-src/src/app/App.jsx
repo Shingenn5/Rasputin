@@ -4,6 +4,7 @@ import { AppShell } from "../components/AppShell.jsx";
 import { api, postJson } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
+import { ModelsView } from "../features/models/ModelsView.jsx";
 import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
 import { TaskDetailsDrawer } from "../features/tasks/TaskDetailsDrawer.jsx";
@@ -42,6 +43,7 @@ export function App() {
   const [selectedModel, setSelectedModel] = useState("main-vllm");
   const [testingMode, setTestingMode] = useState(false);
   const [taskMode, setTaskMode] = useState("chat");
+  const [modeModelOverrides, setModeModelOverrides] = useState({});
   const [subagentCount, setSubagentCount] = useState(0);
   const [tasks, setTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -55,6 +57,7 @@ export function App() {
   const [workspace, setWorkspace] = useState({ activePath: ".", activeName: "Project Root", workspaces: [] });
   const [workspaceRoots, setWorkspaceRoots] = useState([]);
   const [workspaceBrowse, setWorkspaceBrowse] = useState(null);
+  const [workspaceExplorer, setWorkspaceExplorer] = useState({});
   const [mountPlan, setMountPlan] = useState(null);
   const [security, setSecurity] = useState({});
   const [auditEvents, setAuditEvents] = useState([]);
@@ -201,13 +204,15 @@ export function App() {
         activeWorkspace: workspace.activePath || ".",
         skill: "general",
         taskMode,
+        modeModelOverrides,
         subagents: subagentCount,
+        workspaceExplorer,
         activeView: view,
         activeSettingsSection: settingsSection,
       }).catch(() => {});
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, subagentCount, workspace.activePath, view, settingsSection, session, ready]);
+  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, session, ready]);
 
   async function boot() {
     try {
@@ -256,10 +261,12 @@ export function App() {
     setTestingMode(!!prefs.testingMode);
     setSelectedModel(prefs.selectedModel || "main-vllm");
     setTaskMode(prefs.taskMode || "chat");
+    setModeModelOverrides(prefs.modeModelOverrides || {});
     setSubagentCount(Math.max(0, Math.min(Number(prefs.subagents || 0), 4)));
+    setWorkspaceExplorer(prefs.workspaceExplorer || {});
     setView(prefs.activeView || "home");
     setSettingsSection(prefs.activeSettingsSection || "general");
-    await loadWorkspaceRoots(data.workspace?.activePath || ".");
+    await loadWorkspaceRoots(data.workspace?.activePath || ".", prefs.workspaceExplorer || {});
   }
 
   async function loadModels() {
@@ -280,16 +287,60 @@ export function App() {
     return nextEvents;
   }
 
-  async function loadWorkspaceRoots(activePath = workspace.activePath || ".") {
+  async function loadWorkspaceRoots(activePath = workspace.activePath || ".", explorer = workspaceExplorer) {
     const rootsPayload = await api("/api/workspace/roots");
     const roots = rootsPayload.roots || [];
     setWorkspaceRoots(roots);
-    const preferred = roots.find((root) => root.path === activePath) || roots[0];
+    const preferred = roots.find((root) => root.id === explorer?.rootId) || roots.find((root) => root.path === activePath) || roots[0];
     if (preferred) {
-      const browsed = await postJson("/api/workspace/browse", { rootId: preferred.id });
+      const browsePayload = { rootId: preferred.id };
+      if (explorer?.rootId === preferred.id && explorer?.path) browsePayload.path = explorer.path;
+      const browsed = await postJson("/api/workspace/browse", browsePayload);
       setWorkspaceBrowse(browsed);
+      setWorkspaceExplorer({ rootId: preferred.id, path: browsed.path });
     }
   }
+
+  const modelKeyForMode = useCallback((mode, overrides = modeModelOverrides) => {
+    const roles = {
+      chat: "main",
+      analyze: "executor",
+      research: "researcher",
+      code: "coder",
+      write: "summarizer",
+      organize: "executor",
+    };
+    const overrideKey = overrides?.[mode];
+    if (overrideKey && models.some((model) => model.key === overrideKey)) return overrideKey;
+    const role = roles[mode] || "main";
+    const roleModel = models.find((model) => model.role === role && isUserFacingModel(model, testingMode));
+    if (roleModel) return roleModel.key;
+    const mainModel = models.find((model) => model.role === "main" && isUserFacingModel(model, testingMode));
+    if (mainModel) return mainModel.key;
+    return selectedModel;
+  }, [models, modeModelOverrides, selectedModel, testingMode]);
+
+  const chooseTaskMode = useCallback((mode) => {
+    setTaskMode(mode);
+    const routedModel = modelKeyForMode(mode);
+    if (routedModel) setSelectedModel(routedModel);
+  }, [modelKeyForMode]);
+
+  const setModeModelOverride = useCallback((mode, modelKey) => {
+    setModeModelOverrides((current) => {
+      const next = { ...current };
+      if (!modelKey) {
+        delete next[mode];
+      } else {
+        next[mode] = modelKey;
+      }
+      if (mode === taskMode) {
+        const routedModel = modelKeyForMode(mode, next);
+        if (routedModel) setSelectedModel(routedModel);
+      }
+      return next;
+    });
+  }, [modelKeyForMode, taskMode]);
 
   function connectEvents() {
     eventSourceRef.current?.close();
@@ -456,6 +507,41 @@ export function App() {
   async function browseWorkspace(rootId, path) {
     const browsed = await postJson("/api/workspace/browse", { rootId, path });
     setWorkspaceBrowse(browsed);
+    setWorkspaceExplorer({ rootId, path: browsed.path });
+  }
+
+  async function previewWorkspaceFile(rootId, path) {
+    return postJson("/api/workspace/preview-file", { rootId, path });
+  }
+
+  async function refreshKnowledgeStats() {
+    const [nextRagStats, nextGraphStats] = await Promise.all([
+      api("/api/rag/stats"),
+      api("/api/graph/stats"),
+    ]);
+    setRagStats(nextRagStats);
+    setGraphStats(nextGraphStats);
+    return { ragStats: nextRagStats, graphStats: nextGraphStats };
+  }
+
+  async function indexWorkspaceKnowledge(path) {
+    const targetPath = path || workspace.activePath || ".";
+    const ragResult = await postJson("/api/rag/ingest", { path: targetPath, label: displayWorkspaceName(targetPath) });
+    const graphResult = await postJson("/api/graph/build", { path: targetPath });
+    await refreshKnowledgeStats();
+    setWorkspace(await api("/api/workspace"));
+    await loadWorkspaceRoots(workspace.activePath);
+    setGlobalStatus(`Knowledge indexed for ${displayWorkspaceName(targetPath)}.`);
+    return { ragResult, graphResult };
+  }
+
+  async function searchWorkspaceKnowledge(query, path) {
+    const targetPath = path || workspace.activePath || ".";
+    const [ragResult, graphResult] = await Promise.all([
+      postJson("/api/rag/search", { query, path: targetPath, limit: 5 }),
+      postJson("/api/graph/search", { query, limit: 8 }),
+    ]);
+    return { ragResult, graphResult };
   }
 
   async function approvePath(path) {
@@ -492,6 +578,22 @@ export function App() {
       setMountPlan(plan);
     } catch (error) {
       setMountPlan({ error: error.message });
+    }
+  }
+
+  async function requestMount(plan) {
+    if (!plan?.hostPath) return;
+    try {
+      const saved = await postJson("/api/workspace/mount-apply", {
+        hostPath: plan.hostPath,
+        name: plan.displayName || undefined,
+        readOnly: !!plan.readOnly,
+      });
+      setMountPlan({ ...saved, saved: true });
+      setGlobalStatus("Mount request saved. Restart Rasputin with the generated volume before browsing that folder.");
+    } catch (error) {
+      setMountPlan({ ...plan, applyError: error.message });
+      setGlobalStatus(error.message);
     }
   }
 
@@ -656,6 +758,23 @@ export function App() {
         protocolId: form.get("protocolId"),
         modelRef: form.get("modelRef") || undefined,
         modelPath: form.get("modelPath") || undefined,
+        strengthProfile: form.get("strengthProfile") || undefined,
+        contextWindow: Number(form.get("contextWindow") || 0) || undefined,
+        maxModelLen: Number(form.get("maxModelLen") || 0) || undefined,
+        gpuMemoryUtilization: Number(form.get("gpuMemoryUtilization") || 0) || undefined,
+        gpuLayers: form.get("gpuLayers") === "" ? undefined : Number(form.get("gpuLayers") || 0),
+        tensorParallelSize: Number(form.get("tensorParallelSize") || 0) || undefined,
+        cpuThreads: Number(form.get("cpuThreads") || 0) || undefined,
+        batchSize: Number(form.get("batchSize") || 0) || undefined,
+        maxNumSeqs: Number(form.get("maxNumSeqs") || 0) || undefined,
+        dtype: form.get("dtype") || undefined,
+        quantization: form.get("quantization") || undefined,
+        kvCacheDtype: form.get("kvCacheDtype") || undefined,
+        swapSpaceGb: Number(form.get("swapSpaceGb") || 0) || undefined,
+        memoryLimitGb: Number(form.get("memoryLimitGb") || 0) || undefined,
+        cpuLimit: Number(form.get("cpuLimit") || 0) || undefined,
+        shmSizeGb: Number(form.get("shmSizeGb") || 0) || undefined,
+        gpuDevice: form.get("gpuDevice") || undefined,
         hostPort: Number(form.get("hostPort") || 0) || undefined,
         role: form.get("role") || undefined,
         containerName: form.get("containerName") || undefined,
@@ -726,14 +845,17 @@ export function App() {
         composerStatus={composerStatus}
         approvalCount={approvalCount}
         taskMode={taskMode}
-        setTaskMode={setTaskMode}
+        setTaskMode={chooseTaskMode}
+        modeModelOverrides={modeModelOverrides}
+        setModeModelOverride={setModeModelOverride}
+        modelKeyForMode={modelKeyForMode}
         subagentCount={subagentCount}
         setSubagentCount={setSubagentCount}
         runningTasks={runningTasks}
         openTaskDetails={openTaskDetails}
         setPrompt={(prompt, mode) => {
           setObjective(prompt);
-          setTaskMode(mode === "analyze files" ? "analyze" : mode || "chat");
+          chooseTaskMode(mode === "analyze files" ? "analyze" : mode || "chat");
           go("home");
           setGlobalStatus(`${mode} prompt loaded.`);
         }}
@@ -744,11 +866,19 @@ export function App() {
         workspaceRoots={workspaceRoots}
         workspaceBrowse={workspaceBrowse}
         browseWorkspace={browseWorkspace}
+        previewWorkspaceFile={previewWorkspaceFile}
         approvePath={approvePath}
         selectWorkspace={selectWorkspace}
         loadWorkspaceRoots={() => loadWorkspaceRoots(workspace.activePath)}
         previewMount={previewMount}
+        requestMount={requestMount}
         mountPlan={mountPlan}
+        security={security}
+        ragStats={ragStats}
+        graphStats={graphStats}
+        indexWorkspaceKnowledge={indexWorkspaceKnowledge}
+        searchWorkspaceKnowledge={searchWorkspaceKnowledge}
+        refreshKnowledgeStats={refreshKnowledgeStats}
       />
       <AgentsView view={view} tasks={tasks} models={models} />
       <SessionsView
@@ -807,6 +937,17 @@ export function App() {
         }}
         refresh={loadWarsat}
       />
+      <ModelsView
+        view={view}
+        models={models}
+        selectedModelObject={selectedModelObject}
+        selectedModel={selectedModel}
+        testingMode={testingMode}
+        setTestingMode={setTestingMode}
+        runModelAction={runModelAction}
+        loadModels={loadModels}
+        scanGguf={scanGguf}
+      />
       <ActivityView
         view={view}
         tasks={tasks}
@@ -844,6 +985,9 @@ export function App() {
         saveSafety={saveSafety}
         ragStats={ragStats}
         graphStats={graphStats}
+        indexWorkspaceKnowledge={indexWorkspaceKnowledge}
+        searchWorkspaceKnowledge={searchWorkspaceKnowledge}
+        refreshKnowledgeStats={refreshKnowledgeStats}
         output={output}
         theme={theme}
         setTheme={setTheme}
