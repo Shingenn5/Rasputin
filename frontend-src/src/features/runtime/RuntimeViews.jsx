@@ -373,9 +373,27 @@ export function SchedulesView({ view, schedules, createSchedule }) {
   );
 }
 
-export function WarsatView({ view, warsat, plan, error, createPlan, deployPlan, deploying, deployment, approvals, clearPlan, refresh }) {
+export function WarsatView({
+  view,
+  warsat,
+  runtimes,
+  plan,
+  error,
+  createPlan,
+  deployPlan,
+  deploying,
+  deployment,
+  operation,
+  logs,
+  loadLogs,
+  runtimeAction,
+  approvals,
+  clearPlan,
+  refresh,
+}) {
   const protocols = warsat?.protocols || [];
   const strengthProfiles = warsat?.strengthProfiles || {};
+  const containers = runtimes?.containers || [];
   const firstProtocol = protocols[0];
   const [protocolId, setProtocolId] = useState(firstProtocol?.id || "");
   const [strengthProfile, setStrengthProfile] = useState("balanced");
@@ -393,6 +411,7 @@ export function WarsatView({ view, warsat, plan, error, createPlan, deployPlan, 
     : deployment?.approvalRequired
       ? approvalStatus === "approved" ? "Run approved deploy" : "Waiting for approval"
       : "Request deploy approval";
+  const operationApproval = (approvals?.approvals || []).find((item) => item.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
 
   useEffect(() => {
     if (!protocolId && firstProtocol?.id) setProtocolId(firstProtocol.id);
@@ -416,9 +435,73 @@ export function WarsatView({ view, warsat, plan, error, createPlan, deployPlan, 
       <div className="task-dashboard warsat-dashboard">
         <div className="warsat-summary-strip" aria-label="Warsat runtime status">
           <SummaryTile title="Runtime recipes" value={recipeCount || protocols.length} />
+          <SummaryTile title="Managed containers" value={containers.length} />
           <SummaryTile title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
           <SummaryTile title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
         </div>
+
+        <Card className="settings-card warsat-panel shadow-sm">
+          <Card.Body>
+            <div className="section-row align-items-start">
+              <div>
+                <h2>Managed Runtimes</h2>
+                <p className="text-body-secondary mb-0">
+                  Containers started by Warsat appear here. Stop and restart are approval-gated because they change local runtime state.
+                </p>
+              </div>
+              <Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh</Button>
+            </div>
+            {!runtimes?.executionEnabled && (
+              <p className="warsat-runtime-message mt-3 mb-0" role="status">
+                {runtimes?.message || "Start Rasputin with Docker control and enable it in Safety settings to manage containers."}
+              </p>
+            )}
+            {!!containers.length && (
+              <div className="warsat-runtime-list mt-3" data-testid="warsat-runtime-list">
+                {containers.map((container) => (
+                  <article className="warsat-runtime-card" key={container.name || container.id}>
+                    <div>
+                      <strong>{container.name || "Unnamed container"}</strong>
+                      <span>{container.image || "Unknown image"}</span>
+                    </div>
+                    <dl className="detail-grid mb-0">
+                      <dt>Status</dt><dd>{container.status || container.state || "unknown"}</dd>
+                      <dt>Runtime</dt><dd>{container.runtime || "unknown"}</dd>
+                      <dt>Protocol</dt><dd>{container.protocolId || "unknown"}</dd>
+                      <dt>Ports</dt><dd>{container.ports || "none"}</dd>
+                    </dl>
+                    <div className="warsat-runtime-actions">
+                      <Button size="sm" variant="outline-secondary" onClick={() => loadLogs?.(container.name)}>Logs</Button>
+                      <OperationButton
+                        action="stop"
+                        containerName={container.name}
+                        operation={operation}
+                        approval={operationApproval}
+                        runtimeAction={runtimeAction}
+                      />
+                      <OperationButton
+                        action="restart"
+                        containerName={container.name}
+                        operation={operation}
+                        approval={operationApproval}
+                        runtimeAction={runtimeAction}
+                      />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            {!containers.length && (
+              <p className="text-body-secondary mt-3 mb-0">No Warsat-managed model containers are currently visible.</p>
+            )}
+            {logs && (
+              <details className="advanced-block mt-3" open>
+                <summary>Logs for {logs.containerName}</summary>
+                <pre className="log-box mt-3 mb-0">{logs.logs || "No logs returned."}</pre>
+              </details>
+            )}
+          </Card.Body>
+        </Card>
 
         <Card className="settings-card warsat-panel shadow-sm">
           <Card.Body>
@@ -640,6 +723,10 @@ export function WarsatView({ view, warsat, plan, error, createPlan, deployPlan, 
           ))}
         </section>
 
+        <div className="warsat-section-title">
+          <h2>Runtime Protocols</h2>
+          <p>These are managed container recipes. For a model server you already started yourself, use Models / Local Endpoint.</p>
+        </div>
         <Row className="g-3 mt-1">
           {protocols.map((protocol) => (
             <Col xl={6} key={protocol.id}>
@@ -843,6 +930,29 @@ function SummaryTile({ title, value }) {
       <strong className="fs-4 lh-sm d-block text-break">{value}</strong>
       <span className="text-body-secondary d-block mt-1">{title}</span>
     </article>
+  );
+}
+
+function OperationButton({ action, containerName, operation, approval, runtimeAction }) {
+  const sameOperation = operation?.containerName === containerName && operation?.action === action;
+  const status = sameOperation ? approval?.status || operation?.status : "";
+  const waiting = sameOperation && operation?.approvalRequired && status !== "approved";
+  const label = sameOperation && operation?.approvalRequired
+    ? status === "approved"
+      ? `Run approved ${action}`
+      : `Waiting to ${action}`
+    : action === "restart"
+      ? "Restart"
+      : "Stop";
+  return (
+    <Button
+      size="sm"
+      variant={action === "stop" ? "outline-danger" : "outline-secondary"}
+      disabled={!containerName || waiting}
+      onClick={() => runtimeAction?.(action, containerName)}
+    >
+      {label}
+    </Button>
   );
 }
 

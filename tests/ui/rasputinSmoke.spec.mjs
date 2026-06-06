@@ -362,7 +362,8 @@ test("warsat protocols produce dry-run launch plans", async ({ page }) => {
 
   await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
-  await expect(page.locator("[data-testid='warsat-protocol-card']")).toHaveCount(2);
+  await expect(page.locator("[data-testid='warsat-view']")).toContainText("Ollama");
+  expect(await page.locator("[data-testid='warsat-protocol-card']").count()).toBeGreaterThanOrEqual(3);
   await expect(page.locator("[data-testid='warsat-view']")).toContainText("Plan only");
   await page.locator("#warsatProtocolId").selectOption("vllmCudaOpenai");
   await page.locator("#warsatModelRef").fill("Qwen/Qwen2.5-Coder-7B-Instruct");

@@ -44,6 +44,34 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("models", data)
         self.assertIsInstance(data["models"], list)
 
+    def testLocalOpenAiCompatibleModelCanBeRegistered(self):
+        with patch("backend.security.require", lambda flag: True):
+            registered = self.assertOk(self.client.post("/api/model-registry/upsert", json={
+                "name": "Smoke Local Endpoint",
+                "provider": "custom-local",
+                "role": "coder",
+                "baseUrl": "127.0.0.1:1234",
+                "model": "smoke-model",
+                "contextWindow": 4096,
+                "maxTokens": 512,
+                "managed": False,
+            }))
+        self.assertEqual(registered["baseUrl"], "http://127.0.0.1:1234/v1")
+        self.assertEqual(registered["runtime"], "external-local")
+        self.assertFalse(registered["managed"])
+
+        with patch("backend.security.require", lambda flag: True), \
+             patch("backend.security.load", return_value={"privacy_lock": True, "allow_remote_models": False}):
+            blocked = self.client.post("/api/model-registry/upsert", json={
+                "name": "Remote Endpoint",
+                "baseUrl": "https://example.com/v1",
+                "model": "remote",
+            })
+        body = blocked.json()
+        self.assertEqual(blocked.status_code, 403)
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"]["code"], "permissionDenied")
+
     def testModelPromptIsTrimmedForSmallContextWindow(self):
         message = {"role": "user", "content": "hello " + ("x" * 10000)}
         fitted = models._fit_messages([message], {"context_window": 1024}, 160)
@@ -200,9 +228,10 @@ class BackendSmokeTests(unittest.TestCase):
     def testWarsatProtocolsAndPlanAreSafeByDefault(self):
         with patch("backend.security.load", return_value={"allow_docker_control": False}):
             protocols = self.assertOk(self.client.get("/api/warsat/protocols"))
-            self.assertGreaterEqual(protocols["count"], 2)
+            self.assertGreaterEqual(protocols["count"], 3)
             self.assertFalse(protocols["executionEnabled"])
             self.assertTrue(any(item["id"] == "vllmCudaOpenai" for item in protocols["protocols"]))
+            self.assertTrue(any(item["id"] == "ollamaOpenaiServer" for item in protocols["protocols"]))
 
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
@@ -252,6 +281,18 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("models:/models:ro", " ".join(gguf["commandPreview"]["run"]))
         self.assertIn("/models/tiny-helper.gguf", " ".join(gguf["commandPreview"]["run"]))
         self.assertIn("docker-compose.warsat.llamaCppGgufServer.small.yml", [item["path"] for item in gguf["filesPreview"]])
+
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            ollama = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "ollamaOpenaiServer",
+                "modelRef": "llama3.2",
+                "hostPort": 11435,
+                "role": "helper",
+                "strengthProfile": "cpu",
+            }))
+        self.assertEqual(ollama["runtime"], "ollama")
+        self.assertEqual(ollama["expectedModelRegistryEntry"]["baseUrl"], "http://host.docker.internal:11435/v1")
+        self.assertIn("ollama/ollama:latest", " ".join(ollama["commandPreview"]["run"]))
 
         missing = self.client.post("/api/warsat/plan", json={"protocolId": "missingProtocol", "modelRef": "x"})
         body = missing.json()
@@ -314,6 +355,63 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(deployed["registryEntry"]["baseUrl"], plan["expectedModelRegistryEntry"]["baseUrl"])
         self.assertTrue(any(call[:2] == ["docker", "pull"] for call in docker_calls))
         self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
+
+    def testWarsatRuntimeLifecycleIsApprovalGated(self):
+        cfg = {
+            "allow_docker_control": True,
+            "allow_model_registry_edit": True,
+            "privacy_lock": True,
+            "allow_remote_models": False,
+        }
+        docker_calls = []
+
+        def fake_run(args, timeout=120, check=True):
+            docker_calls.append(args)
+            if args[:2] == ["docker", "ps"]:
+                return {
+                    "returnCode": 0,
+                    "stdout": '{"ID":"abc123","Names":"rasputin-vllm-8031","Image":"vllm/vllm-openai:latest","Status":"Up 10 seconds","Ports":"127.0.0.1:8031->8000/tcp"}',
+                    "stderr": "",
+                }
+            if args[:2] == ["docker", "inspect"]:
+                return {
+                    "returnCode": 0,
+                    "stdout": '{"rasputin.managed":"true","rasputin.protocol":"vllmCudaOpenai","rasputin.runtime":"vllm"}',
+                    "stderr": "",
+                }
+            if args[:2] == ["docker", "logs"]:
+                return {"returnCode": 0, "stdout": "server ready", "stderr": ""}
+            if args[:2] == ["docker", "stop"]:
+                return {"returnCode": 0, "stdout": "rasputin-vllm-8031", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            disabled = self.assertOk(self.client.get("/api/warsat/runtimes"))
+        self.assertEqual(disabled["containers"], [])
+        self.assertFalse(disabled["enabled"])
+
+        with patch("backend.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run):
+            runtimes = self.assertOk(self.client.get("/api/warsat/runtimes"))
+            self.assertEqual(runtimes["count"], 1)
+            self.assertEqual(runtimes["containers"][0]["protocolId"], "vllmCudaOpenai")
+            logs = self.assertOk(self.client.post("/api/warsat/logs", json={
+                "containerName": "rasputin-vllm-8031",
+            }))
+            self.assertIn("server ready", logs["logs"])
+            pending = self.assertOk(self.client.post("/api/warsat/stop", json={
+                "containerName": "rasputin-vllm-8031",
+            }))
+            self.assertTrue(pending["approvalRequired"])
+            self.assertEqual(pending["approval"]["actionType"], "warsat_stop")
+            self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
+            stopped = self.assertOk(self.client.post("/api/warsat/stop", json={
+                "containerName": "rasputin-vllm-8031",
+                "approvalId": pending["approval"]["id"],
+            }))
+        self.assertEqual(stopped["action"], "stop")
+        self.assertTrue(any(call[:2] == ["docker", "stop"] for call in docker_calls))
 
     def testWorkspaceRootsBrowseAndMountPlan(self):
         preview_file = main.ROOT / "workspace" / "smoke-preview.txt"

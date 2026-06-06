@@ -140,6 +140,23 @@ def _slug(text):
     return text[:60] or "model"
 
 
+def _normalize_base_url(base_url):
+    base = str(base_url or "").strip().rstrip("/")
+    if not base:
+        return ""
+    if "://" not in base:
+        base = f"http://{base}"
+    parsed = urlparse(base)
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("/chat/completions"):
+        path = path[: -len("/chat/completions")]
+    if path.endswith("/models"):
+        path = path[: -len("/models")]
+    if not path.endswith("/v1"):
+        path = (path + "/v1").replace("//", "/")
+    return urlunparse((parsed.scheme or "http", parsed.netloc, path, parsed.params, parsed.query, parsed.fragment)).rstrip("/")
+
+
 def _safe_file(path):
     target = Path(path).expanduser().resolve()
     if not target.exists() or not target.is_file():
@@ -315,14 +332,26 @@ def models_url(model):
 
 def upsert(model):
     security.require("allow_model_registry_edit")
-    base_url = model.get("base_url") or ""
+    model = {key: value for key, value in dict(model or {}).items() if value is not None}
+    base_url = _normalize_base_url(model.get("base_url") or "")
     if base_url:
         security.require_local_url(base_url)
+        model["base_url"] = base_url
     data = _load()
     key = model.get("key") or _slug(model.get("name") or model.get("model") or "model")
     model["key"] = key
+    if model.get("role") not in MODEL_ROLES:
+        model["role"] = "helper"
+    model.setdefault("provider", "openai-compatible")
+    model.setdefault("runtime", "external-local")
     model.setdefault("enabled", True)
     model.setdefault("managed", False)
+    if not model.get("name"):
+        model["name"] = model.get("model") or key
+    if model.get("context_window") in ("", None):
+        model.pop("context_window", None)
+    if model.get("max_tokens") in ("", None):
+        model.pop("max_tokens", None)
     kept = [m for m in data["models"] if m.get("key") != key]
     kept.append(model)
     data["models"] = kept

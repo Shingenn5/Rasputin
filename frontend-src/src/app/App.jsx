@@ -83,6 +83,9 @@ export function App() {
   const [warsatError, setWarsatError] = useState("");
   const [warsatDeployment, setWarsatDeployment] = useState(null);
   const [warsatDeploying, setWarsatDeploying] = useState(false);
+  const [warsatRuntimes, setWarsatRuntimes] = useState({ containers: [], count: 0 });
+  const [warsatLogs, setWarsatLogs] = useState(null);
+  const [warsatOperation, setWarsatOperation] = useState(null);
   const [globalStatus, setGlobalStatus] = useState("");
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -260,6 +263,7 @@ export function App() {
     setTelegramConfig(data.telegram || null);
     setSchedulesList(data.schedules || { schedules: [] });
     setWarsat(data.warsat || { protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
+    setWarsatRuntimes(data.warsat?.runtimes || { containers: [], count: 0 });
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
@@ -498,6 +502,40 @@ export function App() {
       await loadModels();
     } catch (error) {
       setGlobalStatus(error.message);
+    }
+  }
+
+  async function registerLocalModel(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const model = {
+      key: form.get("key") || undefined,
+      name: form.get("name") || form.get("model") || "Local Model",
+      provider: form.get("provider") || "openai-compatible",
+      role: form.get("role") || "helper",
+      baseUrl: form.get("baseUrl"),
+      model: form.get("model"),
+      runtime: "external-local",
+      contextWindow: Number(form.get("contextWindow") || 0) || undefined,
+      maxTokens: Number(form.get("maxTokens") || 0) || undefined,
+      enabled: true,
+      managed: false,
+      notes: form.get("notes") || "Connected from the Models tab.",
+    };
+    if (!model.baseUrl || !model.model) {
+      setGlobalStatus("Enter a local endpoint and model id.");
+      return null;
+    }
+    try {
+      const saved = await postJson("/api/model-registry/upsert", model);
+      await loadModels();
+      setSelectedModel(saved.key);
+      setGlobalStatus(`Connected ${saved.name || saved.model}. Run Test health next.`);
+      event.currentTarget.reset();
+      return saved;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
     }
   }
 
@@ -802,9 +840,53 @@ export function App() {
   }
 
   async function loadWarsat() {
-    const nextWarsat = await api("/api/warsat/protocols");
+    const [nextWarsat, runtimes] = await Promise.all([
+      api("/api/warsat/protocols"),
+      api("/api/warsat/runtimes"),
+    ]);
     setWarsat(nextWarsat);
+    setWarsatRuntimes(runtimes);
     return nextWarsat;
+  }
+
+  async function loadWarsatRuntimes() {
+    const runtimes = await api("/api/warsat/runtimes");
+    setWarsatRuntimes(runtimes);
+    return runtimes;
+  }
+
+  async function loadWarsatLogs(containerName) {
+    if (!containerName) return null;
+    try {
+      const logs = await postJson("/api/warsat/logs", { containerName, limit: 160 });
+      setWarsatLogs(logs);
+      return logs;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
+  async function requestWarsatOperation(action, containerName) {
+    if (!containerName) return null;
+    const currentApprovalId = warsatOperation?.containerName === containerName && warsatOperation?.action === action
+      ? warsatOperation?.approval?.id || warsatOperation?.approvalId
+      : null;
+    try {
+      const result = await postJson(`/api/warsat/${action}`, { containerName, approvalId: currentApprovalId });
+      setWarsatOperation({ ...result, action });
+      if (result.approvalRequired) {
+        await refreshApprovals();
+        setGlobalStatus(`Approval ${result.approval?.code || ""} created. Approve it before Warsat can ${action} ${containerName}.`);
+      } else {
+        await Promise.allSettled([loadWarsatRuntimes(), loadModels(), refreshApprovals()]);
+        setGlobalStatus(`Warsat ${action} completed for ${containerName}.`);
+      }
+      return result;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
   }
 
   async function createWarsatPlan(event) {
@@ -1023,12 +1105,17 @@ export function App() {
       <WarsatView
         view={view}
         warsat={warsat}
+        runtimes={warsatRuntimes}
         plan={warsatPlan}
         error={warsatError}
         createPlan={createWarsatPlan}
         deployPlan={deployWarsatPlan}
         deploying={warsatDeploying}
         deployment={warsatDeployment}
+        operation={warsatOperation}
+        logs={warsatLogs}
+        loadLogs={loadWarsatLogs}
+        runtimeAction={requestWarsatOperation}
         approvals={approvals}
         clearPlan={() => {
           setWarsatPlan(null);
@@ -1048,6 +1135,7 @@ export function App() {
         runModelAction={runModelAction}
         loadModels={loadModels}
         scanGguf={scanGguf}
+        registerLocalModel={registerLocalModel}
         openWarsat={() => go("warsat")}
       />
       <ActivityView

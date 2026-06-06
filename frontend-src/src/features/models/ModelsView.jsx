@@ -21,7 +21,7 @@ import {
 } from "../../lib/display.js";
 
 const deploymentSteps = [
-  ["Select", "Choose a Hugging Face model id or mounted GGUF file."],
+  ["Select", "Choose a managed runtime or connect an existing localhost endpoint."],
   ["Profile", "Pick a VRAM target, quantization preference, context length, and exposed local port."],
   ["Generate", "Create a Docker Compose launch plan and Dockerfile only when the selected runtime needs one."],
   ["Review", "Show mounts, environment variables, ports, and security flags before anything starts."],
@@ -31,7 +31,8 @@ const deploymentSteps = [
 const runtimeOptions = [
   ["vLLM CUDA", "Best for a larger primary chat or coding model with enough VRAM.", "Hugging Face model id"],
   ["llama.cpp GGUF", "Best for smaller helper models, quantized local files, and low VRAM.", "Mounted .gguf file"],
-  ["Embeddings", "Dedicated retrieval model for RAG and workspace search.", "Local embedding endpoint"],
+  ["Ollama", "Good for quick local model testing through Ollama's OpenAI-compatible API.", "Ollama model name"],
+  ["External local endpoint", "Use LM Studio, Ollama, text-generation-webui, or anything exposing a local /v1 API.", "localhost /v1 endpoint"],
 ];
 
 const hardwareProfiles = [
@@ -50,6 +51,7 @@ export function ModelsView({
   runModelAction,
   loadModels,
   scanGguf,
+  registerLocalModel,
   openWarsat,
 }) {
   const activeModel = selectedModelObject || models?.[0] || null;
@@ -217,6 +219,75 @@ export function ModelsView({
               </li>
             ))}
           </ol>
+        </section>
+
+        <section className="model-builder-panel local-model-panel" aria-labelledby="localModelTitle">
+          <div className="section-row">
+            <div>
+              <span className="eyebrow">Local Endpoint</span>
+              <h2 id="localModelTitle">Connect any OpenAI-compatible localhost model</h2>
+              <p>
+                Use this for models Rasputin does not launch itself: LM Studio, Ollama, text-generation-webui,
+                a custom server, or another local wrapper. The endpoint must stay local while privacy lock is on.
+              </p>
+            </div>
+          </div>
+          <form className="local-model-form" onSubmit={registerLocalModel} data-testid="local-model-form">
+            <label>
+              <span>Display name</span>
+              <input name="name" placeholder="My Local Coder" />
+            </label>
+            <label>
+              <span>Model id</span>
+              <input name="model" placeholder="qwen2.5-coder:7b" required />
+            </label>
+            <label>
+              <span>Base endpoint</span>
+              <input name="baseUrl" placeholder="http://127.0.0.1:1234/v1" required />
+            </label>
+            <label>
+              <span>Purpose</span>
+              <select name="role" defaultValue="helper">
+                <option value="main">Main</option>
+                <option value="planner">Planner</option>
+                <option value="executor">Executor</option>
+                <option value="coder">Coder</option>
+                <option value="researcher">Researcher</option>
+                <option value="summarizer">Summarizer</option>
+                <option value="memory">Memory</option>
+                <option value="helper">Helper</option>
+              </select>
+            </label>
+            <label>
+              <span>Provider</span>
+              <select name="provider" defaultValue="openai-compatible">
+                <option value="openai-compatible">OpenAI-compatible</option>
+                <option value="ollama">Ollama</option>
+                <option value="lm-studio">LM Studio</option>
+                <option value="text-generation-webui">text-generation-webui</option>
+                <option value="custom-local">Custom local</option>
+              </select>
+            </label>
+            <label>
+              <span>Context window</span>
+              <input name="contextWindow" type="number" min="512" placeholder="4096" />
+            </label>
+            <label>
+              <span>Max output tokens</span>
+              <input name="maxTokens" type="number" min="1" placeholder="512" />
+            </label>
+            <label className="local-model-notes">
+              <span>Notes</span>
+              <input name="notes" placeholder="Started outside Rasputin" />
+            </label>
+            <div className="local-model-actions">
+              <button className="ras-button primary" type="submit">
+                <CheckCircle2 size={17} aria-hidden="true" />
+                Connect local model
+              </button>
+              <small>After connecting, use Test health to verify `/models` and chat completion support.</small>
+            </div>
+          </form>
         </section>
 
         <details className="advanced-model-registry" data-testid="advanced-model-registry">

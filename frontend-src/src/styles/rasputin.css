@@ -3093,6 +3093,22 @@ button.runtime-chip {
   gap: .75rem;
 }
 
+.warsat-section-title {
+  display: grid;
+  gap: .15rem;
+  margin-top: .25rem;
+}
+
+.warsat-section-title h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.warsat-section-title p {
+  margin: 0;
+  color: var(--ras-muted);
+}
+
 .warsat-approval-pill,
 .warsat-risk-pill {
   display: inline-flex;
@@ -3162,6 +3178,45 @@ button.runtime-chip {
   color: var(--ras-text);
   font-size: .92rem;
   padding: .7rem .85rem;
+}
+
+.warsat-runtime-list {
+  display: grid;
+  gap: .75rem;
+}
+
+.warsat-runtime-card {
+  display: grid;
+  grid-template-columns: minmax(170px, .55fr) minmax(0, 1fr) auto;
+  gap: .85rem;
+  align-items: start;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 28%, transparent);
+  padding: .85rem;
+}
+
+.warsat-runtime-card > div:first-child {
+  display: grid;
+  gap: .15rem;
+}
+
+.warsat-runtime-card span,
+.warsat-runtime-card dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warsat-runtime-card span {
+  color: var(--ras-muted);
+  font-size: .86rem;
+}
+
+.warsat-runtime-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .4rem;
 }
 
 .warsat-tuning-panel summary {
@@ -3623,6 +3678,53 @@ button.runtime-chip {
 .advanced-model-registry {
   max-width: 1260px;
   margin-top: 1rem;
+}
+
+.local-model-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .85rem;
+  margin-top: 1rem;
+}
+
+.local-model-form label {
+  min-width: 0;
+  display: grid;
+  gap: .28rem;
+}
+
+.local-model-form label span {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.local-model-form input,
+.local-model-form select {
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  padding: 0 .7rem;
+}
+
+.local-model-notes {
+  grid-column: span 2;
+}
+
+.local-model-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.local-model-actions small {
+  color: var(--ras-muted);
 }
 
 .deployment-layout {
@@ -4460,7 +4562,8 @@ button.helper-row:hover {
 
   .model-command-top,
   .task-card-head,
-  .browser-head {
+  .browser-head,
+  .warsat-runtime-card {
     align-items: flex-start;
   }
 
@@ -4581,7 +4684,8 @@ button.helper-row:hover {
   }
 
   .models-grid,
-  .deployment-layout {
+  .deployment-layout,
+  .local-model-form {
     grid-template-columns: 1fr;
   }
 
@@ -4918,8 +5022,23 @@ button.helper-row:hover {
   .model-command-top,
   .model-truth-grid,
   .hardware-profile-grid,
-  .deployment-steps {
+  .deployment-steps,
+  .warsat-runtime-card {
     grid-template-columns: 1fr;
+  }
+
+  .local-model-form,
+  .local-model-notes {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+
+  .warsat-runtime-actions {
+    justify-content: stretch;
+  }
+
+  .warsat-runtime-actions .btn {
+    flex: 1 1 120px;
   }
 
   .detail-grid,

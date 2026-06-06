@@ -224,6 +224,12 @@ class ModelIn(CamelModel):
     role: str = "helper"
     base_url: str = ""
     model: str = ""
+    runtime: str | None = None
+    context_window: int | None = None
+    max_tokens: int | None = None
+    port: int | None = None
+    container: str | None = None
+    image: str | None = None
     enabled: bool = True
     managed: bool = False
     notes: str | None = None
@@ -326,6 +332,12 @@ class WarsatDeployIn(CamelModel):
     approval_id: str | None = None
 
 
+class WarsatContainerIn(CamelModel):
+    container_name: str
+    approval_id: str | None = None
+    limit: int = 120
+
+
 @app.get("/")
 async def index():
     return FileResponse(FRONTEND / "index.html")
@@ -342,6 +354,7 @@ async def health():
 
 @app.get("/api/ui/bootstrap")
 async def ui_bootstrap(_user=Depends(current_user)):
+    warsat_runtime_state = await asyncio.to_thread(warsat.containers)
     return ok({
         "models": model_registry.all_models(),
         "skills": skill_store.enabled_names(),
@@ -360,7 +373,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "skill_registry": skill_store.list_skills(),
         "telegram": telegram.public_config(),
         "schedules": schedules.list_schedules(),
-        "warsat": warsat.list_protocols(),
+        "warsat": {**warsat.list_protocols(), "runtimes": warsat_runtime_state},
         "chat_folders": hub.chat_folders(),
     })
 
@@ -665,6 +678,11 @@ async def warsat_protocols(_user=Depends(current_user)):
     return ok(warsat.list_protocols())
 
 
+@app.get("/api/warsat/runtimes")
+async def warsat_runtimes(_user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.containers))
+
+
 @app.post("/api/warsat/plan")
 async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
     return ok(warsat.make_plan(req.model_dump()))
@@ -673,6 +691,21 @@ async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
 @app.post("/api/warsat/deploy")
 async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
     return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
+
+
+@app.post("/api/warsat/logs")
+async def warsat_logs(req: WarsatContainerIn, _user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.logs, req.container_name, req.limit))
+
+
+@app.post("/api/warsat/stop")
+async def warsat_stop(req: WarsatContainerIn, _user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.stop, req.container_name, req.approval_id))
+
+
+@app.post("/api/warsat/restart")
+async def warsat_restart(req: WarsatContainerIn, _user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.restart, req.container_name, req.approval_id))
 
 
 @app.get("/api/rag/stats")

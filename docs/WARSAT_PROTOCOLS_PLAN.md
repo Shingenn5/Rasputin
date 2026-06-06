@@ -22,10 +22,14 @@ The current pass adds the safe foundation plus approval-gated deployment:
 - Backend protocol loading and validation in `backend/warsat/`.
 - `GET /api/warsat/status`.
 - `GET /api/warsat/protocols`.
+- `GET /api/warsat/runtimes`.
 - `POST /api/warsat/plan`.
 - `POST /api/warsat/deploy`.
+- `POST /api/warsat/logs`.
+- `POST /api/warsat/stop`.
+- `POST /api/warsat/restart`.
 - Bootstrap summary under `warsat`.
-- A React `Warsat` view with protocol cards, launch plans, deploy approval requests, and deploy status.
+- A React `Warsat` view with protocol cards, launch plans, deploy approval requests, runtime cards, logs, and approval-gated stop/restart controls.
 - Backend and Playwright smoke coverage.
 
 The planner returns:
@@ -47,6 +51,15 @@ Deployment is two-step:
 2. After the approval is approved, the same deploy request consumes the one-time approval, pulls the image, replaces the managed container name if it exists, starts the container, and writes the model registry entry.
 
 Docker execution is still blocked unless the wrapper is started with the docker-control compose overlay and Docker control is enabled in Safety settings.
+
+Stop and restart are also two-step operations:
+
+1. The UI requests an approval for a Warsat-managed container.
+2. After approval, the one-time approval id is consumed and Docker receives only the validated `stop` or `restart` command for that managed container.
+
+Warsat will not control arbitrary containers. The container must have the `rasputin.managed=true` label created by a Warsat launch plan.
+
+For models already running outside Rasputin, use the Models tab instead of Warsat. Rasputin can register any localhost OpenAI-compatible endpoint while privacy lock blocks remote model URLs by default.
 
 ## Protocol Format
 
@@ -92,9 +105,9 @@ Implemented controls:
 
 Remaining controls:
 
-- Add Warsat-specific stop, restart, logs, and status endpoints.
 - Run runtime health checks before presenting a deployed model as healthy.
 - Add hardware inventory for Docker, GPU runtime, and VRAM visibility.
+- Add richer non-vLLM recipes as they are validated locally.
 
 ## Next Build Phases
 
@@ -126,13 +139,20 @@ This should never install drivers or edit host config.
 
 ### Phase 3: Runtime Operations
 
-Add:
+Implemented:
 
+- `GET /api/warsat/runtimes`
+- `POST /api/warsat/logs`
 - `POST /api/warsat/stop`
-- `GET /api/warsat/containers`
-- `GET /api/warsat/logs/{containerId}`
+- `POST /api/warsat/restart`
 
-Operations must remain blocked unless Docker control is enabled and the approval is valid.
+Stop and restart remain blocked unless Docker control is enabled and the approval is valid.
+
+Remaining:
+
+- health polling after deploy
+- container resource usage display
+- hardware inventory and GPU visibility
 
 ### Phase 4: Rasputin Operation Protocols
 

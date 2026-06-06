@@ -18,6 +18,7 @@ BUILTIN_PROTOCOL_DIR = ROOT / "warsat" / "protocols"
 DATA_DIR = ROOT / "data" / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("WARSAT_DEPLOY_TIMEOUT", "1800"))
+LOG_LIMIT_MAX = 500
 
 STRENGTH_PROFILES = {
     "cpu": {
@@ -722,6 +723,158 @@ def _container_status(container_name):
     if not text:
         return "stopped"
     return text
+
+
+def _safe_container_name(value):
+    name = _slug(value)
+    if not name or name != str(value or ""):
+        raise AppError("warsat_container_name_rejected", "Container name must be a safe Warsat container name.", 400)
+    return name
+
+
+def _parse_json_lines(text):
+    rows = []
+    for line in str(text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            rows.append({"raw": line})
+    return rows
+
+
+def _inspect_labels(container_name):
+    result = _run_command(
+        ["docker", "inspect", "--format", "{{json .Config.Labels}}", container_name],
+        timeout=15,
+        check=False,
+    )
+    if result["returnCode"] != 0:
+        return {}
+    try:
+        return json.loads(result["stdout"] or "{}") or {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _managed_container(container_name):
+    name = _safe_container_name(container_name)
+    labels = _inspect_labels(name)
+    if labels.get("rasputin.managed") != "true":
+        raise AppError("warsat_container_unmanaged", "Warsat can only control containers it created.", 403)
+    return name, labels
+
+
+def containers():
+    execution = _docker_runtime_enabled()
+    if not execution["enabled"]:
+        return {
+            **execution,
+            "containers": [],
+            "message": f"Warsat runtime listing is unavailable. {execution['message']}",
+        }
+    result = _run_command(
+        ["docker", "ps", "-a", "--filter", "label=rasputin.managed=true", "--format", "{{json .}}"],
+        timeout=20,
+        check=False,
+    )
+    items = []
+    for row in _parse_json_lines(result["stdout"]):
+        name = row.get("Names") or row.get("Name") or ""
+        labels = _inspect_labels(name) if name else {}
+        status = row.get("Status") or ""
+        state = "running" if status.lower().startswith("up") else "stopped" if status else "unknown"
+        items.append({
+            "id": row.get("ID") or row.get("IDShort") or "",
+            "name": name,
+            "image": row.get("Image") or "",
+            "status": status or "unknown",
+            "state": state,
+            "ports": row.get("Ports") or "",
+            "protocolId": labels.get("rasputin.protocol", ""),
+            "runtime": labels.get("rasputin.runtime", ""),
+            "managed": labels.get("rasputin.managed") == "true",
+        })
+    return {
+        **execution,
+        "containers": items,
+        "count": len(items),
+    }
+
+
+def logs(container_name, limit=120):
+    execution = _docker_runtime_enabled()
+    if not execution["enabled"]:
+        raise AppError("warsat_execution_disabled", execution["message"], 403)
+    name, labels = _managed_container(container_name)
+    safe_limit = max(1, min(int(limit or 120), LOG_LIMIT_MAX))
+    result = _run_command(
+        ["docker", "logs", "--tail", str(safe_limit), name],
+        timeout=20,
+        check=False,
+    )
+    return {
+        "containerName": name,
+        "protocolId": labels.get("rasputin.protocol", ""),
+        "runtime": labels.get("rasputin.runtime", ""),
+        "ok": result["returnCode"] == 0,
+        "logs": (result["stdout"] + "\n" + result["stderr"]).strip(),
+    }
+
+
+def _operation_approval(action_type, container_name, labels):
+    return approvals.create(
+        action_type,
+        {
+            "container": container_name,
+            "protocolId": labels.get("rasputin.protocol", ""),
+            "runtime": labels.get("rasputin.runtime", ""),
+            "workspace": "Warsat runtime",
+        },
+        risk_level="approval_required",
+        workspace="Warsat runtime",
+        ttl=10 * 60,
+    )
+
+
+def _container_operation(container_name, action, approval_id=None):
+    execution = _docker_runtime_enabled()
+    if not execution["enabled"]:
+        raise AppError("warsat_execution_disabled", execution["message"], 403)
+    name, labels = _managed_container(container_name)
+    action_type = f"warsat_{action}"
+    if not approval_id:
+        approval = _operation_approval(action_type, name, labels)
+        audit.log(f"{action_type}_approval_requested", {"container": name, "approvalId": approval["id"]})
+        return {
+            "approvalRequired": True,
+            "status": "waitingForApproval",
+            "approval": approval,
+            "containerName": name,
+            "message": f"Approval created. Approve it before Warsat can {action} this container.",
+        }
+    approvals.require_approved(approval_id, action_type)
+    docker_action = "restart" if action == "restart" else "stop"
+    result = _run_command(["docker", docker_action, name], timeout=60, check=True)
+    status = _container_status(name)
+    audit.log(f"{action_type}_completed", {"container": name, "status": status})
+    return {
+        "approvalRequired": False,
+        "status": status,
+        "containerName": name,
+        "action": action,
+        "result": result,
+    }
+
+
+def stop(container_name, approval_id=None):
+    return _container_operation(container_name, "stop", approval_id)
+
+
+def restart(container_name, approval_id=None):
+    return _container_operation(container_name, "restart", approval_id)
 
 
 def _deployment_approval_detail(plan, protocol, container_name, registry_entry):

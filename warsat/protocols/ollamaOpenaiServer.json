@@ -1,0 +1,50 @@
+{
+  "id": "ollamaOpenaiServer",
+  "name": "Ollama OpenAI-Compatible Server",
+  "description": "Run an Ollama container and register its local OpenAI-compatible endpoint with Rasputin.",
+  "runtime": "ollama",
+  "category": "general-runtime",
+  "image": "ollama/ollama:latest",
+  "modelFormat": "ollama",
+  "defaultRole": "helper",
+  "defaultHostPort": 11434,
+  "containerPort": 11434,
+  "gpu": {
+    "required": false,
+    "modes": ["cpu", "nvidia"],
+    "minVramGb": 0
+  },
+  "capabilities": ["chat", "general-local", "openai-compatible", "model-library"],
+  "bestFor": [
+    "quick local model testing",
+    "existing Ollama model names",
+    "CPU fallback",
+    "small to medium helper models"
+  ],
+  "tradeoffs": [
+    "model pull is handled by Ollama, not by Warsat",
+    "performance depends on the model and host acceleration",
+    "not ideal for high-throughput serving"
+  ],
+  "dataMounts": [
+    {
+      "name": "ollamaData",
+      "hostPath": "./data/ollama",
+      "containerPath": "/root/.ollama",
+      "readOnly": false
+    }
+  ],
+  "defaultArguments": [],
+  "healthPath": "/v1/models",
+  "security": {
+    "hostBinding": "127.0.0.1",
+    "noNewPrivileges": true,
+    "hostNetwork": false
+  },
+  "notes": [
+    "Use a model name that Ollama can serve, such as llama3.2 or qwen2.5-coder.",
+    "Warsat starts the server container; model downloads still happen through Ollama workflows.",
+    "The registered endpoint uses the OpenAI-compatible /v1 API.",
+    "Keep Ollama data in local ignored data storage."
+  ]
+}
