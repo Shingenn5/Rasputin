@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   Activity,
   Brain,
@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Search,
   Satellite,
   Settings,
   Sparkles,
@@ -39,11 +40,38 @@ export function Sidebar({
   newTask,
   mobileOpen,
   recentSessions = [],
+  chatFolders = { folders: [] },
+  activeChatFolder = "all",
+  setActiveChatFolder,
   activeSessionId,
   resumeSession,
+  createChatFolder,
+  assignSessionFolder,
 }) {
   const stateLabel = locked ? "Privacy locked" : "Review mode";
-  const visibleSessions = (recentSessions || []).slice(0, 6);
+  const folders = chatFolders?.folders || [];
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [sessionSort, setSessionSort] = useState("newest");
+  const visibleSessions = useMemo(() => {
+    const query = sessionSearch.trim().toLowerCase();
+    return (recentSessions || [])
+      .filter((session) => {
+        if (activeChatFolder === "all") return true;
+        if (activeChatFolder === "unfiled") return !session.folder;
+        return session.folder === activeChatFolder;
+      })
+      .filter((session) => {
+        if (!query) return true;
+        const haystack = [
+          session.title,
+          session.mode,
+          session.workspace,
+          session.folder || "unfiled",
+        ].join(" ").toLowerCase();
+        return haystack.includes(query);
+      })
+      .sort((left, right) => sortSessions(left, right, sessionSort));
+  }, [activeChatFolder, recentSessions, sessionSearch, sessionSort]);
 
   function openNav(item) {
     go(item.view, item.section);
@@ -110,29 +138,112 @@ export function Sidebar({
           <span className="nav-label">Recent Chats</span>
           {visibleSessions.length > 0 && <span className="sidebar-section-count">{visibleSessions.length}</span>}
         </summary>
-        <div className="sidebar-session-list">
-          {visibleSessions.map((session) => {
-            const active = session.id === activeSessionId;
-            return (
-              <button
-                key={session.id}
-                className={`sidebar-session ${active ? "is-active" : ""}`}
-                type="button"
-                title={session.title}
-                aria-current={active ? "page" : undefined}
-                onClick={() => resumeSession?.(session.id)}
-              >
-                <span>{session.title || "Untitled chat"}</span>
-                <small>{session.mode || "chat"} / {displayWorkspaceName(session.workspace)}</small>
+        <div className="sidebar-recent-body">
+          <div className="sidebar-folder-tools" data-testid="sidebar-library-tools">
+            <label className="sidebar-search-field" htmlFor="sidebarSessionSearch">
+              <Search size={14} aria-hidden="true" />
+              <span className="visually-hidden">Search chats</span>
+              <input
+                id="sidebarSessionSearch"
+                data-testid="sidebar-session-search"
+                type="search"
+                value={sessionSearch}
+                placeholder="Search chats"
+                autoComplete="off"
+                onChange={(event) => setSessionSearch(event.target.value)}
+              />
+            </label>
+            <div className="sidebar-library-controls">
+              <label htmlFor="sidebarFolderFilter">
+                <span>Folder</span>
+                <select
+                  id="sidebarFolderFilter"
+                  className="sidebar-folder-filter"
+                  data-testid="sidebar-folder-filter"
+                  value={activeChatFolder}
+                  onChange={(event) => setActiveChatFolder?.(event.target.value)}
+                >
+                  <option value="all">All chats</option>
+                  <option value="unfiled">Unfiled</option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.name}>{folder.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label htmlFor="sidebarSessionSort">
+                <span>Sort</span>
+                <select
+                  id="sidebarSessionSort"
+                  data-testid="sidebar-session-sort"
+                  value={sessionSort}
+                  onChange={(event) => setSessionSort(event.target.value)}
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="az">A-Z</option>
+                </select>
+              </label>
+            </div>
+            <details className="sidebar-folder-create-shell">
+              <summary data-testid="sidebar-folder-create-toggle">
+                <Plus size={14} aria-hidden="true" />
+                <span>New folder</span>
+              </summary>
+              <form className="sidebar-folder-create" data-testid="sidebar-folder-create" onSubmit={createChatFolder}>
+                <label className="visually-hidden" htmlFor="sidebarFolderName">New chat folder</label>
+                <input id="sidebarFolderName" name="name" type="text" placeholder="Folder name" autoComplete="off" />
+                <button type="submit" aria-label="Create chat folder">Create</button>
+              </form>
+            </details>
+          </div>
+          <div className="sidebar-session-list" data-testid="sidebar-session-list">
+            {visibleSessions.map((session) => {
+              const active = session.id === activeSessionId;
+              return (
+                <div
+                  key={session.id}
+                  className={`sidebar-session-row ${active ? "is-active" : ""}`}
+                  data-testid="sidebar-session-row"
+                >
+                  <button
+                    className="sidebar-session"
+                    type="button"
+                    title={session.title}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => resumeSession?.(session.id)}
+                  >
+                    <span>{session.title || "Untitled chat"}</span>
+                    <small>{session.mode || "chat"} / {displayWorkspaceName(session.workspace)}</small>
+                  </button>
+                  <div className="sidebar-session-actions">
+                    <span className="sidebar-session-folder-badge" title={session.folder || "Unfiled"}>
+                      {session.folder || "Unfiled"}
+                    </span>
+                    <label className="visually-hidden" htmlFor={`sessionFolder-${session.id}`}>Move chat to folder</label>
+                    <select
+                      id={`sessionFolder-${session.id}`}
+                      className="sidebar-session-folder"
+                      data-testid="sidebar-session-folder"
+                      value={session.folder || ""}
+                      aria-label={`Move ${session.title || "Untitled chat"} to folder`}
+                      onChange={(event) => assignSessionFolder?.(session.id, event.target.value)}
+                    >
+                      <option value="">Move: Unfiled</option>
+                      {folders.map((folder) => (
+                        <option key={folder.id} value={folder.name}>Move: {folder.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+            {!visibleSessions.length && (
+              <button className="sidebar-session is-empty" type="button" onClick={newTask}>
+                <span>No saved chats yet</span>
+                <small>Start with New Chat</small>
               </button>
-            );
-          })}
-          {!visibleSessions.length && (
-            <button className="sidebar-session is-empty" type="button" onClick={newTask}>
-              <span>No saved chats yet</span>
-              <small>Start with New Chat</small>
-            </button>
-          )}
+            )}
+          </div>
         </div>
       </details>
 
@@ -156,4 +267,18 @@ export function Sidebar({
       </button>
     </aside>
   );
+}
+
+function sortSessions(left, right, mode) {
+  if (mode === "az") {
+    return String(left.title || "Untitled chat").localeCompare(String(right.title || "Untitled chat"));
+  }
+  const leftTime = sessionTime(left);
+  const rightTime = sessionTime(right);
+  if (mode === "oldest") return leftTime - rightTime;
+  return rightTime - leftTime;
+}
+
+function sessionTime(session) {
+  return Number(session.updatedAt ?? session.updated_at ?? session.createdAt ?? session.created_at ?? 0);
 }

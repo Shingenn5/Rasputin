@@ -26,6 +26,7 @@ test.beforeEach(async ({ request }) => {
       workspaceExplorer: {},
       activeView: "home",
       activeSettingsSection: "general",
+      activeChatFolder: "all",
     },
   });
 });
@@ -35,6 +36,53 @@ async function waitForAppReady(page) {
   await expect(page.locator("#workspacePill")).not.toContainText("loading", { timeout: 15000 });
   await expect(page.locator("#model")).not.toContainText("Main Local Model");
   await expect(page.locator("#selectedModelHealth")).not.toContainText("Checking selected model");
+}
+
+async function openShellView(page, testId) {
+  const isMobile = await page.evaluate(() => window.matchMedia("(max-width: 760px)").matches);
+  if (isMobile) {
+    await page.locator("[data-testid='mobile-sidebar-toggle']").click();
+  }
+  await page.locator(`[data-testid='${testId}']`).click();
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+}
+
+async function assertNoShellOverflow(page, label) {
+  const metrics = await page.evaluate((viewLabel) => {
+    const activeView = document.querySelector(".app-view.active");
+    const candidates = [
+      document.documentElement,
+      document.body,
+      document.querySelector(".app-frame"),
+      document.querySelector(".app-main"),
+      activeView,
+      activeView?.querySelector(".page-header"),
+      activeView?.querySelector(".home-commandbar"),
+      activeView?.querySelector(".chat-shell"),
+      activeView?.querySelector(".workspace-layout"),
+      activeView?.querySelector(".task-dashboard"),
+      activeView?.querySelector(".activity-panel"),
+      activeView?.querySelector(".models-content"),
+      activeView?.querySelector(".settings-layout"),
+      activeView?.querySelector(".settings-panels"),
+      activeView?.querySelector(".warsat-dashboard"),
+    ].filter(Boolean);
+    return {
+      label: viewLabel,
+      viewport: window.innerWidth,
+      documentOverflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+      offenders: candidates
+        .map((node) => ({
+          selector: node.id ? `#${node.id}` : node.className || node.tagName,
+          scrollWidth: Math.round(node.scrollWidth),
+          clientWidth: Math.round(node.clientWidth),
+          overflow: Math.round(node.scrollWidth - node.clientWidth),
+        }))
+        .filter((item) => item.overflow > 2),
+    };
+  }, label);
+  expect(metrics.documentOverflow, `${label} document overflow ${JSON.stringify(metrics)}`).toBeLessThanOrEqual(2);
+  expect(metrics.offenders, `${label} overflowing shell nodes`).toEqual([]);
 }
 
 test("home shell settings and dry-run task work", async ({ page }) => {
@@ -99,6 +147,7 @@ test("home shell settings and dry-run task work", async ({ page }) => {
 });
 
 test("sidebar collapse persists and themes switch", async ({ page }) => {
+  test.setTimeout(60000);
   await page.goto("/");
   await waitForAppReady(page);
 
@@ -116,6 +165,8 @@ test("sidebar collapse persists and themes switch", async ({ page }) => {
   await page.locator("[data-testid='settings-appearance']").click();
   await page.locator("[data-testid='theme-select']").selectOption("rasputin-dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "rasputin-dark");
+  await page.locator("[data-testid='theme-select']").selectOption("bootswatch-slate");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "bootswatch-slate");
   await page.locator("[data-testid='theme-select']").selectOption("contrast");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "contrast");
   await page.reload();
@@ -153,6 +204,18 @@ test("key settings destinations are reachable", async ({ page }) => {
   await page.locator("[data-testid='nav-settings']").click();
   await page.locator("[data-testid='settings-safety']").click();
   await expect(page.locator("#securityForm")).toBeVisible();
+  await expect(page.locator("[data-testid='save-safety']")).toBeDisabled();
+  await page.getByLabel("Docker control").check();
+  await expect(page.locator("#securityForm")).toContainText("Unsaved safety changes");
+  await expect(page.locator("[data-testid='save-safety']")).toBeEnabled();
+  await page.locator("#securityForm").getByRole("button", { name: "Reset" }).click();
+  await expect(page.locator("[data-testid='save-safety']")).toBeDisabled();
+
+  await page.locator("[data-testid='settings-output']").click();
+  await expect(page.locator("[data-testid='output-settings-form']")).toBeVisible();
+  await page.locator("#markdownFolder").fill("workspace/ui-output-smoke");
+  await page.locator("[data-testid='output-settings-form']").getByRole("button", { name: /Save Output/ }).click();
+  await expect(page.locator("#settings-output")).toContainText("Output folder saved");
 
   await page.locator("[data-testid='settings-knowledge']").click();
   await expect(page.locator("#ragIngestForm")).toBeVisible();
@@ -178,6 +241,119 @@ test("activity hub groups runtime pages", async ({ page }) => {
   await expect(page.locator("#activityView")).toContainText("Agent Runtime Pipeline");
   await page.getByRole("tab", { name: "Audit" }).click();
   await expect(page.locator("#activityAuditLog")).toBeVisible();
+});
+
+test("workspaces adapt to split-screen width", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 760 });
+  await page.goto("/");
+  await waitForAppReady(page);
+  await page.locator("[data-testid='nav-workspaces']").click();
+  await expect(page.locator("[data-testid='workspace-browser']")).toBeVisible();
+
+  const metrics = await page.locator(".workspace-layout").evaluate((layout) => {
+    const box = (selector) => {
+      const node = document.querySelector(selector);
+      const rect = node.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+      };
+    };
+    const style = window.getComputedStyle(layout);
+    return {
+      areas: style.gridTemplateAreas,
+      overflowX: layout.scrollWidth - layout.clientWidth,
+      main: box(".workspace-main"),
+      preview: box(".workspace-preview-panel"),
+    };
+  });
+
+  expect(metrics.areas).toContain("workspace-preview workspace-preview");
+  expect(metrics.main.width).toBeGreaterThanOrEqual(420);
+  expect(metrics.preview.width).toBeGreaterThanOrEqual(760);
+  expect(metrics.preview.top).toBeGreaterThan(metrics.main.top);
+  expect(metrics.overflowX).toBeLessThanOrEqual(2);
+});
+
+test("primary views stay responsive across desktop split tablet and mobile", async ({ page }) => {
+  test.setTimeout(90000);
+  const viewports = [
+    ["desktop", { width: 1440, height: 900 }],
+    ["split", { width: 1180, height: 760 }],
+    ["tablet", { width: 820, height: 900 }],
+    ["mobile", { width: 390, height: 844 }],
+  ];
+  const views = [
+    ["home", "nav-home", "#homeView"],
+    ["workspaces", "nav-workspaces", "#workspacesView"],
+    ["activity", "nav-activity", "#activityView"],
+    ["models", "nav-models", "#modelsView"],
+    ["warsat", "nav-warsat", "[data-testid='warsat-view']"],
+    ["settings", "nav-settings", "#settingsShell"],
+  ];
+
+  for (const [viewportName, viewport] of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await waitForAppReady(page);
+
+    for (const [viewName, navTestId, visibleSelector] of views) {
+      await openShellView(page, navTestId);
+      await expect(page.locator(visibleSelector)).toBeVisible();
+      await assertNoShellOverflow(page, `${viewportName}:${viewName}`);
+    }
+
+    await openShellView(page, "nav-settings");
+    await page.locator("[data-testid='settings-knowledge']").click();
+    await expect(page.locator("#settings-knowledge")).toBeVisible();
+    await assertNoShellOverflow(page, `${viewportName}:settings-knowledge`);
+  }
+});
+
+test("chat sessions can be categorized into folders", async ({ page, request }) => {
+  test.setTimeout(60000);
+  const base = `Folder smoke chat ${Date.now()}`;
+  const titles = Array.from({ length: 18 }, (_, index) => `${base} ${index + 1}`);
+  const folderName = `UI Folder Smoke ${Date.now()}`;
+  for (const title of titles) {
+    await request.post("/api/tasks", {
+      data: {
+        objective: title,
+        model: "dry-run",
+        skill: "general",
+        mode: "chat",
+        workspacePath: ".",
+      },
+    });
+  }
+
+  await page.goto("/");
+  await waitForAppReady(page);
+
+  await page.locator("[data-testid='sidebar-session-search']").fill(base);
+  await page.locator("[data-testid='sidebar-session-sort']").selectOption("az");
+  const smokeRows = page.locator("[data-testid='sidebar-session-row']").filter({ hasText: base });
+  await expect(smokeRows).toHaveCount(18);
+  await expect(smokeRows.first()).toContainText(titles[0]);
+  await expect.poll(async () => {
+    return page.locator("[data-testid='sidebar-session-list']").evaluate((node) => {
+      const style = window.getComputedStyle(node);
+      return style.overflowY === "scroll" && node.scrollHeight > node.clientHeight;
+    });
+  }).toBe(true);
+  const listHeight = await page.locator("[data-testid='sidebar-session-list']").evaluate((node) => node.clientHeight);
+  expect(listHeight).toBeGreaterThanOrEqual(220);
+
+  await page.locator("[data-testid='sidebar-folder-create-toggle']").click();
+  await page.locator("[data-testid='sidebar-folder-create'] input").fill(folderName);
+  await page.locator("[data-testid='sidebar-folder-create']").getByRole("button", { name: /Create chat folder/i }).click();
+  await expect(page.locator("[data-testid='sidebar-folder-filter']")).toContainText(folderName);
+
+  const targetRow = page.locator("[data-testid='sidebar-session-row']").filter({ hasText: titles[17] });
+  await targetRow.locator("[data-testid='sidebar-session-folder']").selectOption(folderName);
+  await page.locator("[data-testid='sidebar-folder-filter']").selectOption(folderName);
+  await expect(page.locator("[data-testid='sidebar-session-list']")).toContainText(titles[17]);
 });
 
 test("warsat protocols produce dry-run launch plans", async ({ page }) => {

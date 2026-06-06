@@ -128,11 +128,11 @@ class AgentHub:
         with store._lock, store.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET status=excluded.status, workspace=excluded.workspace, model=excluded.model, mode=excluded.mode, skill=excluded.skill, updated_at=excluded.updated_at
                 """,
-                (task.session_id, title, "active", task.workspace, task.model, task.mode, task.skill, "", stamp, stamp),
+                (task.session_id, title, "active", task.workspace, task.model, task.mode, task.skill, "", stamp, stamp, ""),
             )
             conn.commit()
 
@@ -360,6 +360,66 @@ class AgentHub:
             ).fetchall()
             tasks = conn.execute("SELECT * FROM tasks WHERE session_id=? ORDER BY created_at ASC", (session_id,)).fetchall()
         return {"session": dict(row), "messages": [dict(m) for m in messages], "tasks": [self._snapshot_from_db(t) for t in tasks]}
+
+    def chat_folders(self):
+        registry = store.get_kv("chat_folder_registry", [])
+        if not isinstance(registry, list):
+            registry = []
+        with store._lock, store.connect() as conn:
+            rows = conn.execute(
+                "SELECT folder, COUNT(*) AS session_count FROM sessions WHERE folder IS NOT NULL AND folder!='' GROUP BY folder"
+            ).fetchall()
+            unfiled = conn.execute(
+                "SELECT COUNT(*) AS count FROM sessions WHERE folder IS NULL OR folder=''"
+            ).fetchone()
+        counts = {str(row["folder"]): int(row["session_count"]) for row in rows}
+        names = []
+        seen = set()
+        for name in registry + list(counts.keys()):
+            cleaned = self._clean_folder_name(name)
+            key = cleaned.casefold()
+            if cleaned and key not in seen:
+                names.append(cleaned)
+                seen.add(key)
+        return {
+            "folders": [
+                {"id": name, "name": name, "session_count": counts.get(name, 0)}
+                for name in sorted(names, key=str.casefold)
+            ],
+            "unfiled_count": int(unfiled["count"] if unfiled else 0),
+        }
+
+    def _clean_folder_name(self, name):
+        return " ".join(str(name or "").split())[:80]
+
+    def create_chat_folder(self, name, color=""):
+        cleaned = self._clean_folder_name(name)
+        if not cleaned:
+            raise ValueError("folder name is required")
+        registry = store.get_kv("chat_folder_registry", [])
+        if not isinstance(registry, list):
+            registry = []
+        if cleaned.casefold() not in {str(item).casefold() for item in registry}:
+            registry.append(cleaned)
+            store.set_kv("chat_folder_registry", registry)
+        return self.chat_folders()
+
+    def assign_session_folder(self, session_id, folder=None):
+        target_folder = self._clean_folder_name(folder)
+        if target_folder.lower() in {"all", "unfiled"}:
+            target_folder = ""
+        with store._lock, store.connect() as conn:
+            session = conn.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if not session:
+                raise ValueError("session missing")
+            conn.execute(
+                "UPDATE sessions SET folder=?, updated_at=? WHERE id=?",
+                (target_folder, store.now(), session_id),
+            )
+            conn.commit()
+        if target_folder:
+            self.create_chat_folder(target_folder)
+        return self.session(session_id)
 
     def recent_messages(self, session_id, limit=10):
         with store._lock, store.connect() as conn:

@@ -10,6 +10,7 @@ from backend import main
 from backend import approvals
 from backend import model_registry
 from backend import models
+from backend import runtime_store
 from backend import telegram
 from backend.mcp_layer import McpLayer
 
@@ -57,7 +58,7 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testPreferencesRoundTrip(self):
         saved = self.assertOk(self.client.post("/api/preferences", json={
-            "theme": "rasputin-dark",
+            "theme": "bootswatch-slate",
             "sidebarCollapsed": True,
             "selectedModel": "dry-run",
             "skill": "general",
@@ -65,13 +66,18 @@ class BackendSmokeTests(unittest.TestCase):
             "subagents": 2,
             "activeView": "models",
             "activeSettingsSection": "safety",
+            "activeChatFolder": "unfiled",
         }))
-        self.assertEqual(saved["theme"], "rasputin-dark")
+        self.assertEqual(saved["theme"], "bootswatch-slate")
         self.assertTrue(saved["sidebarCollapsed"])
         self.assertEqual(saved["taskMode"], "code")
         loaded = self.assertOk(self.client.get("/api/preferences"))
         self.assertEqual(loaded["activeView"], "models")
         self.assertEqual(loaded["activeSettingsSection"], "safety")
+        self.assertEqual(loaded["activeChatFolder"], "unfiled")
+        stored = runtime_store.get_kv("userPreferences")
+        self.assertEqual(stored["theme"], "bootswatch-slate")
+        self.assertEqual(stored["activeChatFolder"], "unfiled")
         self.assertOk(self.client.post("/api/preferences", json={
             "theme": "rasputin-light",
             "sidebarCollapsed": False,
@@ -81,6 +87,7 @@ class BackendSmokeTests(unittest.TestCase):
             "subagents": 0,
             "activeView": "home",
             "activeSettingsSection": "general",
+            "activeChatFolder": "all",
         }))
 
     def testDryRunDiscovery(self):
@@ -154,6 +161,16 @@ class BackendSmokeTests(unittest.TestCase):
         sessions = self.assertOk(self.client.get("/api/sessions"))
         self.assertIn("sessions", sessions)
         self.assertTrue(any(item["id"] == task["sessionId"] for item in sessions["sessions"]))
+
+        folders = self.assertOk(self.client.get("/api/chat-folders"))
+        self.assertIn("folders", folders)
+        folder_name = f"Smoke Chats {task['sessionId'][-6:]}"
+        created = self.assertOk(self.client.post("/api/chat-folders", json={"name": folder_name}))
+        folder = next(item for item in created["folders"] if item["name"] == folder_name)
+        moved = self.assertOk(self.client.post(f"/api/sessions/{task['sessionId']}/folder", json={"folder": folder["name"]}))
+        self.assertEqual(moved["session"]["folder"], folder["name"])
+        updated = self.assertOk(self.client.get("/api/chat-folders"))
+        self.assertTrue(any(item["id"] == folder["id"] and item["sessionCount"] >= 1 for item in updated["folders"]))
 
         found = self.assertOk(self.client.post("/api/memory/search", json={
             "query": "concise",

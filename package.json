@@ -9,7 +9,8 @@
     "preview": "vite preview --config vite.config.mjs --host 127.0.0.1",
     "testUi": "playwright test",
     "testUiHeaded": "playwright test --headed",
-    "testHarness": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1"
+    "testHarness": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1",
+    "checkRepoSafety": "powershell -ExecutionPolicy Bypass -File ./scripts/check-repo-safety.ps1"
   },
   "dependencies": {
     "@fontsource/rajdhani": "^5.2.7",

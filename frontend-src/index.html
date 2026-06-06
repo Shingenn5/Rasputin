@@ -8,13 +8,24 @@
     <script>
       (function () {
         var saved = localStorage.getItem("rasputin-theme") || "rasputin-light";
-        if (saved !== "rasputin-light" && saved !== "rasputin-dark" && saved !== "contrast") saved = "rasputin-light";
+        var themes = {
+          "rasputin-light": ["#d9d3c8", false],
+          "rasputin-dark": ["#090b0f", true],
+          "contrast": ["#ffffff", false],
+          "bootswatch-slate": ["#272b30", true],
+          "bootswatch-cyborg": ["#060606", true],
+          "bootswatch-darkly": ["#222222", true],
+          "bootswatch-lux": ["#f7f7f7", false],
+          "bootswatch-solar": ["#002b36", true],
+          "bootswatch-superhero": ["#2b3e50", true]
+        };
+        if (!themes[saved]) saved = "rasputin-light";
         var root = document.documentElement;
         root.dataset.theme = saved;
-        root.dataset.bsTheme = saved === "rasputin-dark" ? "dark" : "light";
-        root.style.background = saved === "rasputin-dark" ? "#090b0f" : "#d9d3c8";
+        root.dataset.bsTheme = themes[saved][1] ? "dark" : "light";
+        root.style.background = themes[saved][0];
         var meta = document.querySelector("meta[name='theme-color']");
-        if (meta) meta.setAttribute("content", saved === "rasputin-dark" ? "#090b0f" : "#d9d3c8");
+        if (meta) meta.setAttribute("content", themes[saved][0]);
       })();
     </script>
     <style>
@@ -27,6 +38,10 @@
       html[data-theme="rasputin-dark"] body {
         background: #090b0f;
         color: #e9edf2;
+      }
+      html[data-theme^="bootswatch-"] body {
+        background: #111;
+        color: #f4f4f4;
       }
       #rasputinLoader {
         position: fixed;
@@ -43,6 +58,7 @@
         transition: opacity .24s ease, visibility .24s ease;
       }
       html[data-theme="rasputin-dark"] #rasputinLoader { --loader-bg: #090b0f; }
+      html[data-theme^="bootswatch-"] #rasputinLoader { --loader-bg: #111; }
       body[data-ready="true"] #rasputinLoader {
         opacity: 0;
         visibility: hidden;

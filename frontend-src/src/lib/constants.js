@@ -17,6 +17,27 @@ export const settingsItems = [
   ["admin", "Admin", "session"],
 ];
 
+export const themeOptions = [
+  ["rasputin-light", "Rasputin Light", "Warm graphite on light shell"],
+  ["rasputin-dark", "Rasputin Dark", "Default Warmind dark"],
+  ["bootswatch-slate", "Slate Ops", "Bootswatch Slate inspired"],
+  ["bootswatch-cyborg", "Cyborg Redline", "Bootswatch Cyborg inspired"],
+  ["bootswatch-darkly", "Darkly Forge", "Bootswatch Darkly inspired"],
+  ["bootswatch-lux", "Lux Archive", "Bootswatch Lux inspired"],
+  ["bootswatch-solar", "Solar Archive", "Bootswatch Solar inspired"],
+  ["bootswatch-superhero", "Superhero Night", "Bootswatch Superhero inspired"],
+  ["contrast", "High Contrast", "Accessibility-first contrast"],
+];
+
+export const darkThemes = new Set([
+  "rasputin-dark",
+  "bootswatch-slate",
+  "bootswatch-cyborg",
+  "bootswatch-darkly",
+  "bootswatch-solar",
+  "bootswatch-superhero",
+]);
+
 export const quickPrompts = [
   ["Analyze Files", "Summarize this workspace and tell me what looks important.", "analyze files"],
   ["Organize", "Draft a safe folder organization plan for this workspace. Do not move anything yet.", "organize"],

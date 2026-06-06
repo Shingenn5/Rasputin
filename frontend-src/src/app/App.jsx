@@ -22,6 +22,10 @@ import {
 } from "../features/runtime/RuntimeViews.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
 import {
+  darkThemes,
+  themeOptions,
+} from "../lib/constants.js";
+import {
   displayModelName,
   displayWorkspaceName,
   isModelHealthy,
@@ -38,7 +42,7 @@ export function App() {
   const [settingsSection, setSettingsSection] = useState("general");
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageFlag("rasputin-sidebar-collapsed", false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState(() => localStorage.getItem("rasputin-theme") || "rasputin-light");
+  const [theme, setTheme] = useState(() => normalizeTheme(localStorage.getItem("rasputin-theme") || "rasputin-light"));
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState("main-vllm");
   const [testingMode, setTestingMode] = useState(false);
@@ -65,6 +69,8 @@ export function App() {
   const [graphStats, setGraphStats] = useState(null);
   const [output, setOutput] = useState(null);
   const [sessions, setSessions] = useState({ sessions: [] });
+  const [chatFolders, setChatFolders] = useState({ folders: [], unfiledCount: 0 });
+  const [activeChatFolder, setActiveChatFolder] = useState("all");
   const [selectedSession, setSelectedSession] = useState(null);
   const [approvals, setApprovals] = useState({ approvals: [] });
   const [memoryReview, setMemoryReview] = useState({ items: [] });
@@ -146,7 +152,7 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.bsTheme = theme === "rasputin-dark" ? "dark" : "light";
+    document.documentElement.dataset.bsTheme = darkThemes.has(theme) ? "dark" : "light";
     document.documentElement.dataset.contrast = theme === "contrast" ? "true" : "false";
     document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed);
     document.body.classList.toggle("mobile-sidebar-open", mobileSidebarOpen);
@@ -209,10 +215,11 @@ export function App() {
         workspaceExplorer,
         activeView: view,
         activeSettingsSection: settingsSection,
+        activeChatFolder,
       }).catch(() => {});
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, session, ready]);
+  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, session, ready]);
 
   async function boot() {
     try {
@@ -248,6 +255,7 @@ export function App() {
     setGraphStats(data.graphStats || null);
     setOutput(data.output || null);
     setSessions(data.sessions || { sessions: [] });
+    setChatFolders(data.chatFolders || { folders: [], unfiledCount: 0 });
     setApprovals(data.approvals || { approvals: [] });
     setMemoryReview(data.memoryReview || { items: [] });
     setSkillRegistry(data.skillRegistry || { skills: [] });
@@ -256,7 +264,7 @@ export function App() {
     setWarsat(data.warsat || { protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
-    setTheme(localTheme || prefs.theme || "rasputin-light");
+    setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
     setSidebarCollapsed(localSidebarCollapsed === null ? !!prefs.sidebarCollapsed : localSidebarCollapsed);
     setTestingMode(!!prefs.testingMode);
     setSelectedModel(prefs.selectedModel || "main-vllm");
@@ -266,6 +274,7 @@ export function App() {
     setWorkspaceExplorer(prefs.workspaceExplorer || {});
     setView(prefs.activeView || "home");
     setSettingsSection(prefs.activeSettingsSection || "general");
+    setActiveChatFolder(prefs.activeChatFolder || "all");
     await loadWorkspaceRoots(data.workspace?.activePath || ".", prefs.workspaceExplorer || {});
   }
 
@@ -598,22 +607,38 @@ export function App() {
   }
 
   async function saveSafety(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const keys = [
-      "privacyLock", "allowFileRead", "allowFileWrite", "allowFileReorganize", "allowShellExecution",
-      "allowWebSearch", "allowDockerControl", "allowModelTests", "allowModelRegistryEdit", "allowRemoteModels",
-      "approvalRequiredFileWrite", "approvalRequiredFileMove", "approvalRequiredWebSearch", "auditEnabled",
-    ];
-    const payload = Object.fromEntries(keys.map((key) => [key, form.get(key) === "on"]));
-    payload.webSearchMaxChars = Number(form.get("webSearchMaxChars") || 180);
+    let payload = event;
+    if (event?.preventDefault) {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const keys = [
+        "privacyLock", "allowFileRead", "allowFileWrite", "allowFileReorganize", "allowShellExecution",
+        "allowWebSearch", "allowDockerControl", "allowModelTests", "allowModelRegistryEdit", "allowRemoteModels",
+        "approvalRequiredFileWrite", "approvalRequiredFileMove", "approvalRequiredWebSearch", "auditEnabled",
+      ];
+      payload = Object.fromEntries(keys.map((key) => [key, form.get(key) === "on"]));
+      payload.webSearchMaxChars = Number(form.get("webSearchMaxChars") || 180);
+    }
     setSecurity(await postJson("/api/security", payload));
     setGlobalStatus("Safety settings saved.");
   }
 
+  async function saveOutputConfig(payload) {
+    try {
+      const saved = await postJson("/api/output", payload);
+      setOutput(saved);
+      setGlobalStatus("Output settings saved.");
+      return saved;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      throw error;
+    }
+  }
+
   async function loadRuntimeData() {
-    const [nextSessions, nextApprovals, nextMemoryReview, nextSkills, nextTelegram, nextSchedules] = await Promise.all([
+    const [nextSessions, nextChatFolders, nextApprovals, nextMemoryReview, nextSkills, nextTelegram, nextSchedules] = await Promise.all([
       api("/api/sessions"),
+      api("/api/chat-folders"),
       api("/api/approvals"),
       api("/api/memory/review"),
       api("/api/skills"),
@@ -621,11 +646,46 @@ export function App() {
       api("/api/schedules"),
     ]);
     setSessions(nextSessions);
+    setChatFolders(nextChatFolders);
     setApprovals(nextApprovals);
     setMemoryReview(nextMemoryReview);
     setSkillRegistry(nextSkills);
     setTelegramConfig(nextTelegram);
     setSchedulesList(nextSchedules);
+  }
+
+  async function loadChatFolders() {
+    const [nextSessions, nextFolders] = await Promise.all([
+      api("/api/sessions"),
+      api("/api/chat-folders"),
+    ]);
+    setSessions(nextSessions);
+    setChatFolders(nextFolders);
+    return { sessions: nextSessions, chatFolders: nextFolders };
+  }
+
+  async function createChatFolder(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") || "").trim();
+    if (!name) {
+      setGlobalStatus("Enter a folder name.");
+      return null;
+    }
+    const nextFolders = await postJson("/api/chat-folders", { name });
+    setChatFolders(nextFolders);
+    event.currentTarget.reset();
+    setGlobalStatus("Chat folder created.");
+    return nextFolders;
+  }
+
+  async function assignSessionFolder(sessionId, folder) {
+    if (!sessionId) return null;
+    const detail = await postJson(`/api/sessions/${sessionId}/folder`, { folder: folder || "" });
+    await loadChatFolders();
+    if (selectedSession?.session?.id === sessionId) setSelectedSession(detail);
+    setGlobalStatus(folder ? "Chat moved to folder." : "Chat moved to Unfiled.");
+    return detail;
   }
 
   async function loadSession(sessionId) {
@@ -817,8 +877,13 @@ export function App() {
           go("home");
         },
         recentSessions: sessions?.sessions || [],
+        chatFolders,
+        activeChatFolder,
+        setActiveChatFolder,
         activeSessionId: activeChatSessionId,
         resumeSession,
+        createChatFolder,
+        assignSessionFolder,
       }}
     >
       <HomeView
@@ -884,8 +949,14 @@ export function App() {
       <SessionsView
         view={view}
         sessions={sessions}
+        chatFolders={chatFolders}
+        activeChatFolder={activeChatFolder}
+        setActiveChatFolder={setActiveChatFolder}
         selectedSession={selectedSession}
         loadSession={loadSession}
+        resumeSession={resumeSession}
+        createChatFolder={createChatFolder}
+        assignSessionFolder={assignSessionFolder}
         createSkillFromSession={createSkillFromSession}
       />
       <ApprovalsView
@@ -989,6 +1060,8 @@ export function App() {
         searchWorkspaceKnowledge={searchWorkspaceKnowledge}
         refreshKnowledgeStats={refreshKnowledgeStats}
         output={output}
+        saveOutputConfig={saveOutputConfig}
+        themeOptions={themeOptions}
         theme={theme}
         setTheme={setTheme}
         logout={logout}
@@ -1025,10 +1098,23 @@ async function fetchAuditEvents() {
   return audit.events || [];
 }
 
+function normalizeTheme(value) {
+  return themeOptions.some(([key]) => key === value) ? value : "rasputin-light";
+}
+
 function updateThemeChrome(theme) {
-  const dark = theme === "rasputin-dark";
-  const accent = theme === "contrast" ? "#005fcc" : dark ? "#d85b32" : "#bd4a28";
-  const bg = theme === "contrast" ? "#ffffff" : dark ? "#090b0f" : "#d9d3c8";
+  const map = {
+    "rasputin-light": ["#d9d3c8", "#bd4a28"],
+    "rasputin-dark": ["#090b0f", "#d85b32"],
+    contrast: ["#ffffff", "#005fcc"],
+    "bootswatch-slate": ["#272b30", "#d85b32"],
+    "bootswatch-cyborg": ["#060606", "#ff5b45"],
+    "bootswatch-darkly": ["#222222", "#00bc8c"],
+    "bootswatch-lux": ["#f7f7f7", "#1a1a1a"],
+    "bootswatch-solar": ["#002b36", "#b58900"],
+    "bootswatch-superhero": ["#2b3e50", "#df691a"],
+  };
+  const [bg, accent] = map[theme] || map["rasputin-light"];
   let meta = document.querySelector("meta[name='theme-color']");
   if (!meta) {
     meta = document.createElement("meta");

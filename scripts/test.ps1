@@ -22,6 +22,8 @@ function Invoke-NativeChecked {
 }
 
 try {
+  Invoke-NativeChecked "powershell" @("-ExecutionPolicy", "Bypass", "-File", "./scripts/check-repo-safety.ps1")
+
   if ($Ui) {
     Invoke-NativeChecked "npm" @("run", "build")
   }

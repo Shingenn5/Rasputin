@@ -20,7 +20,7 @@ Rasputin now includes:
 - session expiry plus a small local login-failure throttle
 - structured API responses
 - task manager with live SSE updates, cancellation, modes, traces, and outputs
-- SQLite-backed agent runtime in `data/rasputin.db` for sessions, tasks, messages, approvals, memory, skills, schedules, traces, and outputs
+- SQLite-backed local runtime in `data/rasputin.db` for sessions, tasks, messages, approvals, memory, skills, schedules, traces, outputs, and user preferences
 - pause/resume task controls and durable session history
 - persistent approval queue for risky tool actions
 - optional Telegram approval integration using outbound Bot API polling only
@@ -233,6 +233,7 @@ Before pushing:
 
 ```powershell
 git status --short
+npm run checkRepoSafety
 ```
 
 The staged set should include source, docs, Docker files, scripts, examples, and placeholder folders only. It should not include:
@@ -245,3 +246,5 @@ The staged set should include source, docs, Docker files, scripts, examples, and
 - local memory
 - private model registry state
 - local auth files
+
+Rasputin stores private runtime state under ignored local `data/` storage. User preferences are imported from legacy `data/preferences.json` when present, then persisted in SQLite under `data/rasputin.db`. The legacy JSON file is not required for new preference writes and must not be committed.

@@ -30,23 +30,86 @@ export function AgentsView({ view, tasks, models }) {
   );
 }
 
-export function SessionsView({ view, sessions, selectedSession, loadSession, createSkillFromSession }) {
+export function SessionsView({
+  view,
+  sessions,
+  chatFolders,
+  activeChatFolder,
+  setActiveChatFolder,
+  selectedSession,
+  loadSession,
+  resumeSession,
+  createChatFolder,
+  assignSessionFolder,
+  createSkillFromSession,
+}) {
+  const folders = chatFolders?.folders || [];
+  const sessionItems = sessions?.sessions || [];
+  const filteredSessions = sessionItems.filter((session) => {
+    if (activeChatFolder === "all") return true;
+    if (activeChatFolder === "unfiled") return !session.folder;
+    return session.folder === activeChatFolder;
+  });
   return (
     <section className={`app-view ${view === "sessions" ? "active" : ""}`} id="sessionsView" data-app-view="sessions">
-      <PageHeader title="Sessions" text="Persistent conversations and task history stored in SQLite." />
+      <PageHeader title="Sessions" text="Persistent conversations, chat folders, and task history stored locally in SQLite." />
       <div className="task-dashboard">
         <Row className="g-3">
           <Col lg={4}>
             <Card className="settings-card shadow-sm h-100">
               <Card.Body>
-                <h2>Recent Sessions</h2>
+                <div className="section-row">
+                  <div>
+                    <h2>Chat Folders</h2>
+                    <p className="text-body-secondary mb-0">Organize conversations without moving message data.</p>
+                  </div>
+                </div>
+                <form className="chat-folder-create" data-testid="chat-folder-create" onSubmit={createChatFolder}>
+                  <Form.Label htmlFor="chatFolderName">New folder</Form.Label>
+                  <div>
+                    <Form.Control id="chatFolderName" name="name" placeholder="Writing, Coding, Research" />
+                    <Button type="submit">Create</Button>
+                  </div>
+                </form>
+                <div className="chat-folder-list" data-testid="chat-folder-list" aria-label="Chat folders">
+                  <button type="button" className={activeChatFolder === "all" ? "is-active" : ""} onClick={() => setActiveChatFolder?.("all")}>
+                    <span>All chats</span>
+                    <small>{sessionItems.length}</small>
+                  </button>
+                  <button type="button" className={activeChatFolder === "unfiled" ? "is-active" : ""} onClick={() => setActiveChatFolder?.("unfiled")}>
+                    <span>Unfiled</span>
+                    <small>{chatFolders?.unfiledCount || 0}</small>
+                  </button>
+                  {folders.map((folder) => (
+                    <button key={folder.id} type="button" className={activeChatFolder === folder.name ? "is-active" : ""} onClick={() => setActiveChatFolder?.(folder.name)}>
+                      <span>{folder.name}</span>
+                      <small>{folder.sessionCount || 0}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <h2 className="mt-4">Chats</h2>
                 <ListGroup className="runtime-list">
-                  {(sessions?.sessions || []).map((session) => (
-                    <ListGroup.Item key={session.id} action onClick={() => loadSession(session.id)}>
-                      <strong>{session.title}</strong>
-                      <small className="d-block text-body-secondary">{session.status} / {session.mode} / {session.workspace}</small>
+                  {filteredSessions.map((session) => (
+                    <ListGroup.Item key={session.id} className="session-list-item">
+                      <button type="button" className="session-open-button" onClick={() => loadSession(session.id)}>
+                        <strong>{session.title}</strong>
+                        <small>{session.status} / {session.mode} / {displayWorkspaceName(session.workspace)}</small>
+                      </button>
+                      <Form.Select
+                        size="sm"
+                        aria-label={`Move ${session.title} to folder`}
+                        value={session.folder || ""}
+                        onChange={(event) => assignSessionFolder?.(session.id, event.target.value || null)}
+                      >
+                        <option value="">Unfiled</option>
+                        {folders.map((folder) => <option key={folder.id} value={folder.name}>{folder.name}</option>)}
+                      </Form.Select>
                     </ListGroup.Item>
                   ))}
+                  {!filteredSessions.length && (
+                    <ListGroup.Item className="text-body-secondary">No chats in this folder.</ListGroup.Item>
+                  )}
                 </ListGroup>
               </Card.Body>
             </Card>
@@ -57,10 +120,32 @@ export function SessionsView({ view, sessions, selectedSession, loadSession, cre
                 <div className="section-row">
                   <div>
                     <h2>{selectedSession?.session?.title || "Select a session"}</h2>
-                    <p className="text-body-secondary mb-0">{selectedSession?.session?.summary || "Review messages, tasks, and saved context."}</p>
+                    <p className="text-body-secondary mb-0">
+                      {selectedSession?.session
+                        ? `${sessionFolderName(selectedSession.session.folder)} / ${displayWorkspaceName(selectedSession.session.workspace)}`
+                        : "Review messages, tasks, and saved context."}
+                    </p>
                   </div>
-                  {selectedSession?.session && <Button variant="outline-secondary" onClick={() => createSkillFromSession(selectedSession.session.id)}>Preview Skill</Button>}
+                  {selectedSession?.session && (
+                    <Stack direction="horizontal" gap={2}>
+                      <Button variant="outline-secondary" onClick={() => resumeSession?.(selectedSession.session.id)}>Resume Chat</Button>
+                      <Button variant="outline-secondary" onClick={() => createSkillFromSession(selectedSession.session.id)}>Preview Skill</Button>
+                    </Stack>
+                  )}
                 </div>
+                {selectedSession?.session && (
+                  <div className="session-folder-control mt-3">
+                    <Form.Label htmlFor="selectedSessionFolder">Folder</Form.Label>
+                    <Form.Select
+                      id="selectedSessionFolder"
+                      value={selectedSession.session.folder || ""}
+                      onChange={(event) => assignSessionFolder?.(selectedSession.session.id, event.target.value || null)}
+                    >
+                      <option value="">Unfiled</option>
+                      {folders.map((folder) => <option key={folder.id} value={folder.name}>{folder.name}</option>)}
+                    </Form.Select>
+                  </div>
+                )}
                 <Stack gap={2} className="mt-3">
                   {(selectedSession?.messages || []).map((message, index) => (
                     <Card className="message-card" key={`${message.createdAt || message.created_at}-${index}`}>
@@ -712,6 +797,10 @@ function summarizeApproval(value) {
     .slice(0, 6)
     .map(([key, item]) => `${key}: ${typeof item === "object" ? JSON.stringify(item) : item}`)
     .join(" / ") || "No redacted details.";
+}
+
+function sessionFolderName(folder) {
+  return folder || "Unfiled";
 }
 
 function formatCommandPreview(commandPreview) {

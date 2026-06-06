@@ -283,6 +283,16 @@ class ScheduleIn(CamelModel):
     enabled: bool = False
 
 
+class ChatFolderIn(CamelModel):
+    name: str
+    color: str | None = ""
+
+
+class SessionFolderIn(CamelModel):
+    folder: str | None = None
+    folder_id: str | None = None
+
+
 class WarsatPlanIn(CamelModel):
     protocol_id: str
     model_ref: str | None = None
@@ -344,6 +354,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "telegram": telegram.public_config(),
         "schedules": schedules.list_schedules(),
         "warsat": warsat.list_protocols(),
+        "chat_folders": hub.chat_folders(),
     })
 
 
@@ -504,6 +515,24 @@ async def sessions_get(limit: int = 100, _user=Depends(current_user)):
 @app.get("/api/sessions/{session_id}")
 async def session_get(session_id: str, _user=Depends(current_user)):
     return ok(hub.session(session_id))
+
+
+@app.get("/api/chat-folders")
+async def chat_folders_get(_user=Depends(current_user)):
+    return ok(hub.chat_folders())
+
+
+@app.post("/api/chat-folders")
+async def chat_folders_post(req: ChatFolderIn, _user=Depends(current_user)):
+    audit.log("chat_folder_created", {"name": req.name})
+    return ok(hub.create_chat_folder(req.name, req.color or ""))
+
+
+@app.post("/api/sessions/{session_id}/folder")
+async def session_folder_post(session_id: str, req: SessionFolderIn, _user=Depends(current_user)):
+    folder = req.folder if req.folder is not None else req.folder_id
+    audit.log("session_folder_changed", {"session_id": session_id, "folder": folder})
+    return ok(hub.assign_session_folder(session_id, folder))
 
 
 @app.get("/api/approvals")

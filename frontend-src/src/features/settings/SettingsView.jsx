@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "react-bootstrap";
-import { Moon, ShieldCheck, Sun } from "lucide-react";
+import { CheckCircle2, Moon, RotateCcw, Save, ShieldAlert, ShieldCheck, Sun } from "lucide-react";
 import { settingsItems } from "../../lib/constants.js";
 import { displayWorkspaceName } from "../../lib/display.js";
 
@@ -162,24 +162,102 @@ function WorkspaceSettings({ workspace, workspaceRoots, workspaceBrowse, browseW
 }
 
 function SafetySettings({ security, saveSafety }) {
+  const [draft, setDraft] = useState(() => security || {});
+  const [status, setStatus] = useState("");
   const groups = [
-    ["Local file access", [["privacyLock", "Privacy lock"], ["allowFileRead", "File read"], ["allowFileWrite", "File write"], ["allowFileReorganize", "Reorganize"]]],
-    ["Tools and runtime", [["allowShellExecution", "Shell execution"], ["allowWebSearch", "Web search"], ["allowDockerControl", "Docker control"], ["allowModelTests", "Model tests"], ["allowModelRegistryEdit", "Registry edits"], ["allowRemoteModels", "Remote models"]]],
-    ["Approvals and audit", [["approvalRequiredFileWrite", "Approve writes"], ["approvalRequiredFileMove", "Approve moves"], ["approvalRequiredWebSearch", "Approve web"], ["auditEnabled", "Audit log"]]],
+    ["Local file access", "Controls what approved workspaces can expose to tools.", [
+      ["privacyLock", "Privacy lock", "Blocks non-local model endpoints while enabled."],
+      ["allowFileRead", "File read", "Allows local browsing, RAG, Graphify, and file previews."],
+      ["allowFileWrite", "File write", "Required before Markdown exports or future file edits can save."],
+      ["allowFileReorganize", "Reorganize", "Future folder move plans still require approval."],
+    ]],
+    ["Tools and runtime", "High-impact capabilities stay intentionally obvious.", [
+      ["allowShellExecution", "Shell execution", "Runs local commands. Keep off unless you are testing coding workflows."],
+      ["allowWebSearch", "Brokered web search", "Lets only the MCP broker reach the internet after query checks."],
+      ["allowDockerControl", "Docker control", "Lets Rasputin request model container operations."],
+      ["allowModelTests", "Model health tests", "Allows tiny local test prompts against model endpoints."],
+      ["allowModelRegistryEdit", "Registry edits", "Allows model registry changes from the UI."],
+      ["allowRemoteModels", "Remote models", "Allows non-local model endpoints. Usually keep off."],
+    ]],
+    ["Approvals and audit", "Risky actions should leave a local trail.", [
+      ["approvalRequiredFileWrite", "Approve writes", "User approval before writing files."],
+      ["approvalRequiredFileMove", "Approve moves", "User approval before moving or reorganizing files."],
+      ["approvalRequiredWebSearch", "Approve web", "User approval before brokered internet search."],
+      ["auditEnabled", "Audit log", "Records sensitive local operations."],
+    ]],
   ];
+  const dirty = useMemo(() => JSON.stringify(normalizeSecurityDraft(draft)) !== JSON.stringify(normalizeSecurityDraft(security || {})), [draft, security]);
+
+  useEffect(() => {
+    setDraft(security || {});
+    setStatus("");
+  }, [security]);
+
+  function updateFlag(key, value) {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setStatus("Unsaved changes. Review and press Save Safety to apply.");
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setStatus("Saving safety settings...");
+    try {
+      await saveSafety(normalizeSecurityDraft(draft));
+      setStatus("Safety settings saved.");
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  function reset() {
+    setDraft(security || {});
+    setStatus("Changes reset.");
+  }
+
   return (
     <section className="settings-pane active" id="settings-safety">
-      <PaneTitle title="Safety" text="Local-only protections and sensitive permissions." />
-      <form id="securityForm" onSubmit={saveSafety}>
+      <PaneTitle title="Safety" text="Local-only protections and sensitive permissions. Switches are drafts until saved." />
+      <form id="securityForm" className="safety-form" onSubmit={submit}>
+        <div className={`settings-save-strip ${dirty ? "is-dirty" : "is-clean"}`} role="status" aria-live="polite">
+          <div>
+            <strong>{dirty ? "Unsaved safety changes" : "Safety settings are saved"}</strong>
+            <span>{dirty ? "Nothing changes on the backend until you press Save Safety." : "Current permissions match the saved configuration."}</span>
+          </div>
+          <Stack direction="horizontal" gap={2}>
+            <Button variant="outline-secondary" type="button" onClick={reset} disabled={!dirty}>
+              <RotateCcw size={16} />
+              Reset
+            </Button>
+            <Button type="submit" disabled={!dirty} data-testid="save-safety">
+              <Save size={16} />
+              Save Safety
+            </Button>
+          </Stack>
+        </div>
         <Row className="g-3">
-          {groups.map(([title, items]) => (
+          {groups.map(([title, text, items]) => (
             <Col lg={4} key={title}>
-              <Card className="settings-card h-100 shadow-sm">
+              <Card className="settings-card safety-card h-100 shadow-sm">
                 <Card.Body>
                   <h3>{title}</h3>
-                  <Stack gap={2}>
-                    {items.map(([key, label]) => <Form.Check key={key} type="switch" name={key} defaultChecked={!!security[key]} label={label} />)}
-                  </Stack>
+                  <p className="text-body-secondary">{text}</p>
+                  <div className="safety-switch-list">
+                    {items.map(([key, label, help]) => (
+                      <label className={`safety-switch ${draft[key] ? "is-on" : "is-off"}`} key={key}>
+                        <span>
+                          <strong>{label}</strong>
+                          <small>{help}</small>
+                        </span>
+                        <input
+                          type="checkbox"
+                          name={key}
+                          checked={!!draft[key]}
+                          onChange={(event) => updateFlag(key, event.target.checked)}
+                        />
+                        <em>{draft[key] ? "On" : "Off"}</em>
+                      </label>
+                    ))}
+                  </div>
                 </Card.Body>
               </Card>
             </Col>
@@ -188,8 +266,24 @@ function SafetySettings({ security, saveSafety }) {
             <Card className="settings-card shadow-sm">
               <Card.Body>
                 <Row className="g-3 align-items-end">
-                  <Col md={4}><Form.Label>Query chars</Form.Label><Form.Control type="number" name="webSearchMaxChars" defaultValue={security.webSearchMaxChars || 180} /></Col>
-                  <Col md={8}><Button type="submit">Save Safety</Button></Col>
+                  <Col md={4}>
+                    <Form.Label htmlFor="webSearchMaxChars">Web query character limit</Form.Label>
+                    <Form.Control
+                      id="webSearchMaxChars"
+                      type="number"
+                      name="webSearchMaxChars"
+                      min="40"
+                      max="2000"
+                      value={draft.webSearchMaxChars || 180}
+                      onChange={(event) => updateFlag("webSearchMaxChars", Number(event.target.value || 180))}
+                    />
+                  </Col>
+                  <Col md={8}>
+                    <div className="safety-state-note">
+                      {dirty ? <ShieldAlert size={18} /> : <CheckCircle2 size={18} />}
+                      <span>{status || "Review changes carefully before saving."}</span>
+                    </div>
+                  </Col>
                 </Row>
               </Card.Body>
             </Card>
@@ -198,6 +292,17 @@ function SafetySettings({ security, saveSafety }) {
       </form>
     </section>
   );
+}
+
+function normalizeSecurityDraft(value) {
+  const keys = [
+    "privacyLock", "allowFileRead", "allowFileWrite", "allowFileReorganize", "allowShellExecution",
+    "allowWebSearch", "allowDockerControl", "allowModelTests", "allowModelRegistryEdit", "allowRemoteModels",
+    "approvalRequiredFileWrite", "approvalRequiredFileMove", "approvalRequiredWebSearch", "auditEnabled",
+  ];
+  const out = Object.fromEntries(keys.map((key) => [key, !!value?.[key]]));
+  out.webSearchMaxChars = Number(value?.webSearchMaxChars || 180);
+  return out;
 }
 
 function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnowledge, searchWorkspaceKnowledge, refreshKnowledgeStats }) {
@@ -284,16 +389,88 @@ function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnow
   );
 }
 
-function OutputSettings({ output }) {
+function OutputSettings({ output, saveOutputConfig, security }) {
+  const [folder, setFolder] = useState(output?.markdownFolder || "workspace/markdown-output");
+  const [status, setStatus] = useState("");
+  const canWrite = !!security?.allowFileWrite;
+
+  useEffect(() => {
+    setFolder(output?.markdownFolder || "workspace/markdown-output");
+  }, [output?.markdownFolder]);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!canWrite) {
+      setStatus("File write is disabled in Safety. Enable it before changing output folders.");
+      return;
+    }
+    try {
+      setStatus("Saving output folder...");
+      const saved = await saveOutputConfig?.({ markdownFolder: folder });
+      setStatus(`Output folder saved: ${saved?.markdownFolder || folder}`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
   return (
     <section className="settings-pane active" id="settings-output">
-      <PaneTitle title="Output" text="Completed task results can be written as Markdown." />
-      <Card className="settings-card shadow-sm"><Card.Body><p className="mb-0">{output?.markdownFolder || "workspace/markdown-output"}</p></Card.Body></Card>
+      <PaneTitle title="Output" text="Control where generated Markdown exports are written locally." />
+      <Row className="g-3">
+        <Col lg={7}>
+          <Card className="settings-card output-card shadow-sm">
+            <Card.Body>
+              <div className="section-row">
+                <div>
+                  <h3>Markdown Export Folder</h3>
+                  <p className="text-body-secondary mb-0">Exports stay inside Rasputin-visible folders. The backend rejects paths outside the project root.</p>
+                </div>
+                <Badge bg={canWrite ? "success" : "secondary"}>{canWrite ? "Write enabled" : "Write disabled"}</Badge>
+              </div>
+              <form className="output-settings-form mt-3" data-testid="output-settings-form" onSubmit={submit}>
+                <Form.Label htmlFor="markdownFolder">Relative folder</Form.Label>
+                <div className="output-folder-row">
+                  <Form.Control
+                    id="markdownFolder"
+                    value={folder}
+                    onChange={(event) => {
+                      setFolder(event.target.value);
+                      setStatus("Unsaved output folder.");
+                    }}
+                    placeholder="workspace/markdown-output"
+                  />
+                  <Button type="submit" disabled={!canWrite}>
+                    <Save size={16} />
+                    Save Output
+                  </Button>
+                </div>
+                <Form.Text>
+                  Use an approved workspace subfolder when you want exported summaries to be easy to find.
+                </Form.Text>
+              </form>
+              {status && <p className="settings-inline-status mt-3 mb-0" role="status">{status}</p>}
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col lg={5}>
+          <Card className="settings-card output-card h-100 shadow-sm">
+            <Card.Body>
+              <h3>Current Output State</h3>
+              <dl className="detail-grid mt-3 mb-0">
+                <dt>Folder</dt><dd>{output?.markdownFolder || "workspace/markdown-output"}</dd>
+                <dt>Resolved path</dt><dd>{output?.absolutePath || "Not loaded"}</dd>
+                <dt>Export format</dt><dd>Markdown task summaries</dd>
+                <dt>Permission</dt><dd>{canWrite ? "Allowed by Safety" : "Blocked by Safety"}</dd>
+              </dl>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
     </section>
   );
 }
 
-function AppearanceSettings({ theme, setTheme }) {
+function AppearanceSettings({ theme, setTheme, themeOptions = [] }) {
   return (
     <section className="settings-pane active" id="settings-appearance">
       <PaneTitle title="Appearance" text="Saved to Rasputin preferences and restored after sign-in." />
@@ -301,16 +478,27 @@ function AppearanceSettings({ theme, setTheme }) {
         <Card.Body>
           <Form.Label htmlFor="themeSelect">Theme</Form.Label>
           <Form.Select id="themeSelect" data-testid="theme-select" value={theme} onChange={(event) => setTheme(event.target.value)}>
-            <option value="rasputin-light">Rasputin Light</option>
-            <option value="rasputin-dark">Rasputin Dark</option>
-            <option value="contrast">High Contrast</option>
+            {themeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </Form.Select>
         </Card.Body>
       </Card>
       <Row className="g-3 theme-grid">
-        <Col md={4}><Button variant="outline-secondary" className="theme-card" onClick={() => setTheme("rasputin-light")}><Sun size={18} />Rasputin Light</Button></Col>
-        <Col md={4}><Button variant="outline-secondary" className="theme-card" onClick={() => setTheme("rasputin-dark")}><Moon size={18} />Rasputin Dark</Button></Col>
-        <Col md={4}><Button variant="outline-secondary" className="theme-card" onClick={() => setTheme("contrast")}><ShieldCheck size={18} />High Contrast</Button></Col>
+        {themeOptions.map(([value, label, description]) => (
+          <Col md={4} key={value}>
+            <Button
+              variant={theme === value ? "primary" : "outline-secondary"}
+              className="theme-card"
+              data-testid={`theme-card-${value}`}
+              onClick={() => setTheme(value)}
+            >
+              {value === "contrast" ? <ShieldCheck size={18} /> : value.includes("dark") || value.includes("slate") || value.includes("cyborg") || value.includes("solar") || value.includes("superhero") ? <Moon size={18} /> : <Sun size={18} />}
+              <span>
+                <strong>{label}</strong>
+                <small>{description}</small>
+              </span>
+            </Button>
+          </Col>
+        ))}
       </Row>
     </section>
   );

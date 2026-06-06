@@ -188,6 +188,45 @@ def init_db():
             );
             """
         )
+        session_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "folder" not in session_columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+        if "folder_id" in session_columns:
+            old_table = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_folders'"
+            ).fetchone()
+            if old_table:
+                old_names = [
+                    str(row["name"])
+                    for row in conn.execute("SELECT name FROM chat_folders WHERE name IS NOT NULL AND name!=''").fetchall()
+                ]
+                if old_names:
+                    kv = conn.execute("SELECT value FROM runtime_kv WHERE key=?", ("chat_folder_registry",)).fetchone()
+                    registry = _loads(kv["value"], []) if kv else []
+                    if not isinstance(registry, list):
+                        registry = []
+                    seen = {str(item).casefold() for item in registry}
+                    for name in old_names:
+                        if name.casefold() not in seen:
+                            registry.append(name)
+                            seen.add(name.casefold())
+                    conn.execute(
+                        "INSERT INTO runtime_kv(key,value,updated_at) VALUES(?,?,?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                        ("chat_folder_registry", _json(registry), now()),
+                    )
+                conn.execute(
+                    """
+                    UPDATE sessions
+                    SET folder=(
+                      SELECT name FROM chat_folders WHERE chat_folders.id=sessions.folder_id
+                    )
+                    WHERE (folder IS NULL OR folder='') AND folder_id IS NOT NULL AND folder_id!=''
+                    """
+                )
+                conn.execute("DROP TABLE IF EXISTS chat_folders")
         legacy_output_table = "arti" + "facts"
         existing = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
