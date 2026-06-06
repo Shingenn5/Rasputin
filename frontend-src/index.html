@@ -7,25 +7,45 @@
     <title>Rasputin</title>
     <script>
       (function () {
-        var saved = localStorage.getItem("rasputin-theme") || "rasputin-light";
         var themes = {
-          "rasputin-light": ["#d9d3c8", false],
-          "rasputin-dark": ["#090b0f", true],
-          "contrast": ["#ffffff", false],
-          "bootswatch-slate": ["#272b30", true],
-          "bootswatch-cyborg": ["#060606", true],
-          "bootswatch-darkly": ["#222222", true],
-          "bootswatch-lux": ["#f7f7f7", false],
-          "bootswatch-solar": ["#002b36", true],
-          "bootswatch-superhero": ["#2b3e50", true]
+          "rasputin-light": { bg: "#d9d3c8", accent: "#bd4a28", dark: false },
+          "rasputin-dark": { bg: "#090b0f", accent: "#d85b32", dark: true },
+          "contrast": { bg: "#ffffff", accent: "#005fcc", dark: false },
+          "bootswatch-slate": { bg: "#272b30", accent: "#d85b32", dark: true },
+          "bootswatch-cyborg": { bg: "#060606", accent: "#ff5b45", dark: true },
+          "bootswatch-darkly": { bg: "#222222", accent: "#00bc8c", dark: true },
+          "bootswatch-lux": { bg: "#f7f7f7", accent: "#1a1a1a", dark: false },
+          "bootswatch-solar": { bg: "#002b36", accent: "#b58900", dark: true },
+          "bootswatch-superhero": { bg: "#2b3e50", accent: "#df691a", dark: true }
         };
-        if (!themes[saved]) saved = "rasputin-light";
-        var root = document.documentElement;
-        root.dataset.theme = saved;
-        root.dataset.bsTheme = themes[saved][1] ? "dark" : "light";
-        root.style.background = themes[saved][0];
-        var meta = document.querySelector("meta[name='theme-color']");
-        if (meta) meta.setAttribute("content", themes[saved][0]);
+        function normalize(theme) {
+          return themes[theme] ? theme : "rasputin-light";
+        }
+        function ensure(selector, tag, attrs) {
+          var node = document.querySelector(selector);
+          if (!node) {
+            node = document.createElement(tag);
+            Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+            document.head.appendChild(node);
+          }
+          return node;
+        }
+        function apply(theme) {
+          var selected = normalize(theme);
+          var cfg = themes[selected];
+          var root = document.documentElement;
+          root.dataset.theme = selected;
+          root.dataset.bsTheme = cfg.dark ? "dark" : "light";
+          root.dataset.contrast = selected === "contrast" ? "true" : "false";
+          root.style.background = cfg.bg;
+          ensure("meta[name='theme-color']", "meta", { name: "theme-color" }).setAttribute("content", cfg.bg);
+          var icon = ensure("link[rel='icon']", "link", { rel: "icon" });
+          var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="' + cfg.bg + '"/><path d="M14 32h36M32 14v36M20 20l24 24M44 20 20 44" stroke="' + cfg.accent + '" stroke-width="3" stroke-linecap="round" opacity=".72"/><circle cx="32" cy="32" r="11" fill="none" stroke="' + cfg.accent + '" stroke-width="4"/><text x="32" y="37" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="' + cfg.accent + '">R</text></svg>';
+          icon.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svg));
+          return selected;
+        }
+        window.rasputinTheme = { apply: apply, normalize: normalize, themes: themes };
+        apply(localStorage.getItem("rasputin-theme") || "rasputin-light");
       })();
     </script>
     <style>

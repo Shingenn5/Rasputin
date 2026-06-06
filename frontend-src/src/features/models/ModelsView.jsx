@@ -50,6 +50,7 @@ export function ModelsView({
   runModelAction,
   loadModels,
   scanGguf,
+  openWarsat,
 }) {
   const activeModel = selectedModelObject || models?.[0] || null;
   const activeName = displayModelName(activeModel, models);
@@ -153,8 +154,8 @@ export function ModelsView({
             <span className="eyebrow">Safety State</span>
             <h2>Local runtime control stays gated.</h2>
             <p>
-              Rasputin can prepare Docker launch files from this screen, but starting containers stays behind the
-              Docker-control permission and an explicit review step.
+              Rasputin prepares and deploys Docker model runtimes through Warsat. Starting containers stays behind
+              Docker-control permission and an explicit approval step.
             </p>
             <div className="safety-stack">
               <span><ShieldCheck size={16} aria-hidden="true" /> Ports bind to 127.0.0.1</span>
@@ -168,15 +169,15 @@ export function ModelsView({
           <div className="section-row">
             <div>
               <span className="eyebrow">Warsat Deployment Plan</span>
-              <h2 id="modelBuilderTitle">Generate model containers from the Models menu</h2>
+              <h2 id="modelBuilderTitle">Generate and deploy model containers with Warsat</h2>
               <p>
-                This is the planned flow for selecting a model, choosing hardware limits, generating Docker assets,
-                and deploying it as a local-only runtime.
+                Use Warsat to select a runtime, choose hardware limits, review the Docker command, request approval,
+                and deploy a local-only model endpoint.
               </p>
             </div>
-            <button className="ras-button primary" type="button" disabled title="The backend deploy workflow is planned, not enabled yet.">
+            <button className="ras-button primary" type="button" onClick={openWarsat}>
               <Play size={17} aria-hidden="true" />
-              Deploy flow pending
+              Open Warsat
             </button>
           </div>
 

@@ -100,6 +100,8 @@ async def production_headers(request: Request, call_next):
     try:
         if request.url.path == "/api/events":
             response = await call_next(request)
+        elif request.url.path == "/api/warsat/deploy":
+            response = await asyncio.wait_for(call_next(request), timeout=float(os.environ.get("WARSAT_DEPLOY_HTTP_TIMEOUT", "1900")))
         else:
             response = await asyncio.wait_for(call_next(request), timeout=timeout)
     except asyncio.TimeoutError:
@@ -317,6 +319,11 @@ class WarsatPlanIn(CamelModel):
     host_port: int | None = None
     role: str | None = None
     container_name: str | None = None
+
+
+class WarsatDeployIn(CamelModel):
+    plan: dict
+    approval_id: str | None = None
 
 
 @app.get("/")
@@ -661,6 +668,11 @@ async def warsat_protocols(_user=Depends(current_user)):
 @app.post("/api/warsat/plan")
 async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
     return ok(warsat.make_plan(req.model_dump()))
+
+
+@app.post("/api/warsat/deploy")
+async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
 
 
 @app.get("/api/rag/stats")

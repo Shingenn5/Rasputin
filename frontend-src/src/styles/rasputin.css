@@ -3076,14 +3076,21 @@ button.runtime-chip {
   box-shadow: none !important;
 }
 
-.warsat-dashboard .settings-card {
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--ras-panel) 92%, var(--ras-accent) 8%), var(--ras-panel));
-}
-
 .warsat-panel,
 .warsat-plan-card {
   border-color: color-mix(in srgb, var(--ras-accent) 26%, var(--ras-border));
+}
+
+.warsat-dashboard {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
+.warsat-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .75rem;
 }
 
 .warsat-approval-pill,
@@ -3146,6 +3153,15 @@ button.runtime-chip {
 
 .warsat-form-title span {
   color: var(--ras-muted);
+}
+
+.warsat-runtime-message {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 28%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-blue) 8%, var(--ras-panel));
+  color: var(--ras-text);
+  font-size: .92rem;
+  padding: .7rem .85rem;
 }
 
 .warsat-tuning-panel summary {
@@ -3234,6 +3250,33 @@ button.runtime-chip {
 .warsat-warning-list p {
   color: var(--ras-text);
   font-weight: 750;
+}
+
+.warsat-deploy-strip,
+.warsat-deployment-result {
+  display: grid;
+  gap: .85rem;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 30%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-accent) 9%, var(--ras-panel));
+  padding: .85rem;
+}
+
+.warsat-deploy-strip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.warsat-deploy-strip > div,
+.warsat-deployment-result > div {
+  display: grid;
+  gap: .15rem;
+}
+
+.warsat-deploy-strip span,
+.warsat-deployment-result span {
+  color: var(--ras-muted);
+  font-size: .92rem;
 }
 
 .warsat-safety-grid {
@@ -4759,6 +4802,7 @@ button.helper-row:hover {
   .workspace-guide,
   .mount-form,
   .run-summary-grid,
+  .warsat-deploy-strip,
   .warsat-profile-strip {
     grid-template-columns: 1fr;
   }

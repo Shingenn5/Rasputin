@@ -16,15 +16,16 @@ Rasputin is a companion, not an autopilot.
 
 ## Current Implementation
 
-The current pass adds the safe foundation:
+The current pass adds the safe foundation plus approval-gated deployment:
 
 - Built-in protocol files in `warsat/protocols/`.
 - Backend protocol loading and validation in `backend/warsat/`.
 - `GET /api/warsat/status`.
 - `GET /api/warsat/protocols`.
 - `POST /api/warsat/plan`.
+- `POST /api/warsat/deploy`.
 - Bootstrap summary under `warsat`.
-- A React `Warsat` view with protocol cards and dry-run launch plans.
+- A React `Warsat` view with protocol cards, launch plans, deploy approval requests, and deploy status.
 - Backend and Playwright smoke coverage.
 
 The planner returns:
@@ -40,7 +41,12 @@ The planner returns:
 - warnings
 - next steps
 
-It does not execute Docker.
+Deployment is two-step:
+
+1. A deploy request validates the generated plan and creates a redacted `warsat_deploy` approval.
+2. After the approval is approved, the same deploy request consumes the one-time approval, pulls the image, replaces the managed container name if it exists, starts the container, and writes the model registry entry.
+
+Docker execution is still blocked unless the wrapper is started with the docker-control compose overlay and Docker control is enabled in Safety settings.
 
 ## Protocol Format
 
@@ -71,18 +77,24 @@ Important optional fields:
 
 ## Warsat Execution Requirements
 
-Before Rasputin can pull images or start containers, add these controls:
+Implemented controls:
 
 1. Docker control remains disabled by default.
 2. Docker socket access is available only through the explicit docker-control compose profile.
-3. Every pull/start/stop action creates an approval.
-4. Approved actions use one-time approval ids with TTL.
+3. Deploy creates an approval before pull/start.
+4. Approved deploy actions use one-time approval ids with TTL.
 5. Containers bind only to `127.0.0.1`.
 6. Host networking is rejected by default.
 7. Model folders mount read-only.
 8. Container commands are generated from validated protocols, not raw user shell.
-9. Runtime health is tested before model registry registration.
+9. Model registry writes require the model registry edit permission.
 10. Every action is audited.
+
+Remaining controls:
+
+- Add Warsat-specific stop, restart, logs, and status endpoints.
+- Run runtime health checks before presenting a deployed model as healthy.
+- Add hardware inventory for Docker, GPU runtime, and VRAM visibility.
 
 ## Next Build Phases
 
@@ -112,18 +124,15 @@ Add a read-only hardware probe:
 
 This should never install drivers or edit host config.
 
-### Phase 3: Approval-Gated Execution
+### Phase 3: Runtime Operations
 
 Add:
 
-- `POST /api/warsat/pull`
-- `POST /api/warsat/start`
 - `POST /api/warsat/stop`
 - `GET /api/warsat/containers`
 - `GET /api/warsat/logs/{containerId}`
-- `POST /api/warsat/register-model`
 
-Execution must be blocked unless Docker control is enabled and the approval is valid.
+Operations must remain blocked unless Docker control is enabled and the approval is valid.
 
 ### Phase 4: Rasputin Operation Protocols
 

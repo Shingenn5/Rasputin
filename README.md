@@ -32,7 +32,7 @@ Rasputin now includes:
 - local RAG index with citations and hash-vector retrieval
 - typed Graphify nodes/edges with evidence
 - vLLM/GGUF model registry and health checks
-- Warsat model-runtime protocols and dry-run Docker launch plans
+- Warsat model-runtime protocols, safe Docker launch plans, and approval-gated deployment
 - Docker model controls blocked unless explicitly enabled
 - Docker Compose localhost deployment
 - React + Vite frontend source in `frontend-src/`, built into `frontend/` for FastAPI
@@ -201,7 +201,7 @@ http://host.docker.internal:8000/v1
 
 GGUF auxiliary models can be registered for llama.cpp. Starting/stopping model containers requires Docker control mode and the `allow_docker_control` safety flag.
 
-Warsat is the newer planning layer for model runtimes. It reads curated protocols from `warsat/protocols/`, generates safe launch plans, and previews the model registry entry Rasputin would create after the runtime is healthy. Warsat is currently plan-only; it does not pull images or start containers. See `docs/WARSAT_PROTOCOLS_PLAN.md`.
+Warsat is the model-runtime control layer. It reads curated protocols from `warsat/protocols/`, generates safe launch plans, creates an approval before Docker execution, and registers the model endpoint after the container starts. Deployment requires the docker-control compose overlay, Docker control enabled in Safety, and an approved `warsat_deploy` request. See `docs/WARSAT_PROTOCOLS_PLAN.md`.
 
 ## Safety Defaults
 

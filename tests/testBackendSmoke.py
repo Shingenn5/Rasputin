@@ -198,25 +198,26 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(schedule["name"], "Smoke Schedule")
 
     def testWarsatProtocolsAndPlanAreSafeByDefault(self):
-        protocols = self.assertOk(self.client.get("/api/warsat/protocols"))
-        self.assertGreaterEqual(protocols["count"], 2)
-        self.assertFalse(protocols["executionEnabled"])
-        self.assertTrue(any(item["id"] == "vllmCudaOpenai" for item in protocols["protocols"]))
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            protocols = self.assertOk(self.client.get("/api/warsat/protocols"))
+            self.assertGreaterEqual(protocols["count"], 2)
+            self.assertFalse(protocols["executionEnabled"])
+            self.assertTrue(any(item["id"] == "vllmCudaOpenai" for item in protocols["protocols"]))
 
-        plan = self.assertOk(self.client.post("/api/warsat/plan", json={
-            "protocolId": "vllmCudaOpenai",
-            "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
-            "hostPort": 8020,
-            "role": "coder",
-            "strengthProfile": "large",
-            "maxModelLen": 12288,
-            "gpuMemoryUtilization": 0.84,
-            "tensorParallelSize": 2,
-            "quantization": "awq",
-            "memoryLimitGb": 24,
-            "shmSizeGb": 8,
-            "gpuDevice": "0",
-        }))
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "hostPort": 8020,
+                "role": "coder",
+                "strengthProfile": "large",
+                "maxModelLen": 12288,
+                "gpuMemoryUtilization": 0.84,
+                "tensorParallelSize": 2,
+                "quantization": "awq",
+                "memoryLimitGb": 24,
+                "shmSizeGb": 8,
+                "gpuDevice": "0",
+            }))
         self.assertEqual(plan["protocolId"], "vllmCudaOpenai")
         self.assertEqual(plan["strengthProfile"], "large")
         self.assertFalse(plan["executionEnabled"])
@@ -234,13 +235,20 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("mem_limit", plan["composePreview"])
         self.assertIn("NVIDIA_VISIBLE_DEVICES", plan["composePreview"])
         self.assertTrue(any(item["kind"] == "compose" for item in plan["filesPreview"]))
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            blocked = self.client.post("/api/warsat/deploy", json={"plan": plan})
+        blocked_body = blocked.json()
+        self.assertEqual(blocked.status_code, 403)
+        self.assertFalse(blocked_body["ok"])
+        self.assertEqual(blocked_body["error"]["code"], "permissionDenied")
 
-        gguf = self.assertOk(self.client.post("/api/warsat/plan", json={
-            "protocolId": "llamaCppGgufServer",
-            "modelPath": "models/tiny-helper.gguf",
-            "hostPort": 8091,
-            "strengthProfile": "small",
-        }))
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            gguf = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/tiny-helper.gguf",
+                "hostPort": 8091,
+                "strengthProfile": "small",
+            }))
         self.assertIn("models:/models:ro", " ".join(gguf["commandPreview"]["run"]))
         self.assertIn("/models/tiny-helper.gguf", " ".join(gguf["commandPreview"]["run"]))
         self.assertIn("docker-compose.warsat.llamaCppGgufServer.small.yml", [item["path"] for item in gguf["filesPreview"]])
@@ -250,6 +258,62 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 404)
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "warsatProtocolMissing")
+
+    def testWarsatDeployCanRegisterGeneratedContainerWhenDockerControlIsEnabled(self):
+        cfg = {
+            "allow_docker_control": True,
+            "allow_model_registry_edit": True,
+            "privacy_lock": True,
+            "allow_remote_models": False,
+        }
+
+        docker_calls = []
+
+        def fake_run(args, timeout=120, check=True):
+            docker_calls.append(args)
+            if args[:2] == ["docker", "pull"]:
+                return {"returnCode": 0, "stdout": "pulled", "stderr": ""}
+            if args[:3] == ["docker", "rm", "-f"]:
+                return {"returnCode": 0, "stdout": "", "stderr": ""}
+            if args[:3] == ["docker", "run", "-d"]:
+                return {"returnCode": 0, "stdout": "container-123", "stderr": ""}
+            if args[:2] == ["docker", "ps"]:
+                return {"returnCode": 0, "stdout": "Up 2 seconds", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        with patch("backend.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.model_registry.upsert", side_effect=lambda entry: dict(entry)):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8031,
+                "role": "helper",
+                "strengthProfile": "small",
+                "gpuMemoryUtilization": 0.70,
+                "gpuDevice": "0",
+            }))
+            self.assertTrue(plan["executionEnabled"])
+            pending = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": plan}))
+            self.assertTrue(pending["approvalRequired"])
+            self.assertEqual(pending["status"], "waitingForApproval")
+            self.assertEqual(pending["approval"]["actionType"], "warsat_deploy")
+            self.assertEqual(pending["approval"]["workspace"], "Warsat runtime")
+            self.assertEqual(pending["approval"]["redactedDetail"]["workspace"], "Warsat runtime")
+            self.assertEqual(docker_calls, [])
+            self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
+            deployed = self.assertOk(self.client.post("/api/warsat/deploy", json={
+                "plan": plan,
+                "approvalId": pending["approval"]["id"],
+            }))
+
+        self.assertEqual(deployed["containerId"], "container-123")
+        self.assertEqual(deployed["containerName"], plan["containerName"])
+        self.assertEqual(deployed["modelKey"], plan["expectedModelRegistryEntry"]["key"])
+        self.assertEqual(deployed["registryEntry"]["baseUrl"], plan["expectedModelRegistryEntry"]["baseUrl"])
+        self.assertTrue(any(call[:2] == ["docker", "pull"] for call in docker_calls))
+        self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
 
     def testWorkspaceRootsBrowseAndMountPlan(self):
         preview_file = main.ROOT / "workspace" / "smoke-preview.txt"

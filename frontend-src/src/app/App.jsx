@@ -22,7 +22,6 @@ import {
 } from "../features/runtime/RuntimeViews.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
 import {
-  darkThemes,
   themeOptions,
 } from "../lib/constants.js";
 import {
@@ -82,6 +81,8 @@ export function App() {
   const [warsat, setWarsat] = useState({ protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
   const [warsatPlan, setWarsatPlan] = useState(null);
   const [warsatError, setWarsatError] = useState("");
+  const [warsatDeployment, setWarsatDeployment] = useState(null);
+  const [warsatDeploying, setWarsatDeploying] = useState(false);
   const [globalStatus, setGlobalStatus] = useState("");
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -151,9 +152,6 @@ export function App() {
   });
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.bsTheme = darkThemes.has(theme) ? "dark" : "light";
-    document.documentElement.dataset.contrast = theme === "contrast" ? "true" : "false";
     document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed);
     document.body.classList.toggle("mobile-sidebar-open", mobileSidebarOpen);
     document.body.dataset.ready = ready ? "true" : "false";
@@ -840,12 +838,39 @@ export function App() {
         containerName: form.get("containerName") || undefined,
       });
       setWarsatPlan(plan);
+      setWarsatDeployment(null);
       setGlobalStatus("Warsat launch plan created.");
       return plan;
     } catch (error) {
       setWarsatError(error.message);
       setWarsatPlan(null);
       return null;
+    }
+  }
+
+  async function deployWarsatPlan() {
+    if (!warsatPlan) return null;
+    setWarsatError("");
+    setWarsatDeploying(true);
+    const approvalId = warsatDeployment?.approval?.id || warsatDeployment?.approvalId;
+    setGlobalStatus(approvalId ? "Warsat is pulling the image and starting the container. This can take several minutes." : "Creating Warsat deployment approval.");
+    try {
+      const deployment = await postJson("/api/warsat/deploy", { plan: warsatPlan, approvalId });
+      setWarsatDeployment(deployment);
+      if (deployment.approvalRequired) {
+        await refreshApprovals();
+        setGlobalStatus(`Approval ${deployment.approval?.code || ""} created. Approve it from Activity, then return to Warsat to start the container.`);
+      } else {
+        await Promise.allSettled([loadWarsat(), loadModels(), refreshApprovals()]);
+        setGlobalStatus(`Warsat started ${deployment.containerName}. Test ${deployment.modelKey} from Models when it finishes loading.`);
+      }
+      return deployment;
+    } catch (error) {
+      setWarsatError(error.message);
+      setGlobalStatus(error.message);
+      return null;
+    } finally {
+      setWarsatDeploying(false);
     }
   }
 
@@ -1001,9 +1026,14 @@ export function App() {
         plan={warsatPlan}
         error={warsatError}
         createPlan={createWarsatPlan}
+        deployPlan={deployWarsatPlan}
+        deploying={warsatDeploying}
+        deployment={warsatDeployment}
+        approvals={approvals}
         clearPlan={() => {
           setWarsatPlan(null);
           setWarsatError("");
+          setWarsatDeployment(null);
           setGlobalStatus("");
         }}
         refresh={loadWarsat}
@@ -1018,6 +1048,7 @@ export function App() {
         runModelAction={runModelAction}
         loadModels={loadModels}
         scanGguf={scanGguf}
+        openWarsat={() => go("warsat")}
       />
       <ActivityView
         view={view}
@@ -1099,36 +1130,9 @@ async function fetchAuditEvents() {
 }
 
 function normalizeTheme(value) {
-  return themeOptions.some(([key]) => key === value) ? value : "rasputin-light";
+  return window.rasputinTheme?.normalize?.(value) || (themeOptions.some(([key]) => key === value) ? value : "rasputin-light");
 }
 
 function updateThemeChrome(theme) {
-  const map = {
-    "rasputin-light": ["#d9d3c8", "#bd4a28"],
-    "rasputin-dark": ["#090b0f", "#d85b32"],
-    contrast: ["#ffffff", "#005fcc"],
-    "bootswatch-slate": ["#272b30", "#d85b32"],
-    "bootswatch-cyborg": ["#060606", "#ff5b45"],
-    "bootswatch-darkly": ["#222222", "#00bc8c"],
-    "bootswatch-lux": ["#f7f7f7", "#1a1a1a"],
-    "bootswatch-solar": ["#002b36", "#b58900"],
-    "bootswatch-superhero": ["#2b3e50", "#df691a"],
-  };
-  const [bg, accent] = map[theme] || map["rasputin-light"];
-  let meta = document.querySelector("meta[name='theme-color']");
-  if (!meta) {
-    meta = document.createElement("meta");
-    meta.setAttribute("name", "theme-color");
-    document.head.appendChild(meta);
-  }
-  meta.setAttribute("content", bg);
-
-  let icon = document.querySelector("link[rel='icon']");
-  if (!icon) {
-    icon = document.createElement("link");
-    icon.setAttribute("rel", "icon");
-    document.head.appendChild(icon);
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${bg}"/><path d="M14 32h36M32 14v36M20 20l24 24M44 20 20 44" stroke="${accent}" stroke-width="3" stroke-linecap="round" opacity=".72"/><circle cx="32" cy="32" r="11" fill="none" stroke="${accent}" stroke-width="4"/><text x="32" y="37" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="${accent}">R</text></svg>`;
-  icon.setAttribute("href", `data:image/svg+xml,${encodeURIComponent(svg)}`);
+  window.rasputinTheme?.apply?.(theme);
 }

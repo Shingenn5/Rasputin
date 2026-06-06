@@ -373,7 +373,7 @@ export function SchedulesView({ view, schedules, createSchedule }) {
   );
 }
 
-export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, refresh }) {
+export function WarsatView({ view, warsat, plan, error, createPlan, deployPlan, deploying, deployment, approvals, clearPlan, refresh }) {
   const protocols = warsat?.protocols || [];
   const strengthProfiles = warsat?.strengthProfiles || {};
   const firstProtocol = protocols[0];
@@ -382,6 +382,17 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
   const selectedProtocol = protocols.find((protocol) => protocol.id === protocolId) || firstProtocol;
   const selectedProfile = strengthProfiles[strengthProfile] || strengthProfiles.balanced || {};
   const recipeCount = protocols.length * Math.max(Object.keys(strengthProfiles).length, 1);
+  const canDeployPlan = !!plan?.executionEnabled && !!plan?.dockerControlEnabled && !!plan?.dockerCliAvailable;
+  const deploymentApprovalId = deployment?.approval?.id || deployment?.approvalId;
+  const currentApproval = (approvals?.approvals || []).find((item) => item.id === deploymentApprovalId) || deployment?.approval;
+  const approvalStatus = currentApproval?.status;
+  const approvalReady = !deployment?.approvalRequired || approvalStatus === "approved";
+  const deployDisabled = !canDeployPlan || deploying || !approvalReady;
+  const deployLabel = deploying
+    ? "Deploying..."
+    : deployment?.approvalRequired
+      ? approvalStatus === "approved" ? "Run approved deploy" : "Waiting for approval"
+      : "Request deploy approval";
 
   useEffect(() => {
     if (!protocolId && firstProtocol?.id) setProtocolId(firstProtocol.id);
@@ -403,13 +414,13 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
         action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Protocols</Button>}
       />
       <div className="task-dashboard warsat-dashboard">
-        <Row className="g-3">
-          <MiniCard title="Runtime recipes" value={recipeCount || protocols.length} />
-          <MiniCard title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
-          <MiniCard title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
-        </Row>
+        <div className="warsat-summary-strip" aria-label="Warsat runtime status">
+          <SummaryTile title="Runtime recipes" value={recipeCount || protocols.length} />
+          <SummaryTile title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
+          <SummaryTile title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
+        </div>
 
-        <Card className="settings-card warsat-panel shadow-sm mt-3">
+        <Card className="settings-card warsat-panel shadow-sm">
           <Card.Body>
             <div className="section-row">
               <div>
@@ -420,6 +431,9 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
               </div>
               <span className="warsat-approval-pill">Approval required before deploy</span>
             </div>
+            {warsat?.message && (
+              <p className="warsat-runtime-message mt-3 mb-0" role="status">{warsat.message}</p>
+            )}
             <Form className="mt-3 warsat-plan-form" data-testid="warsat-plan-form" onSubmit={handleCreatePlan} onChange={handleFormChange}>
               <div className="warsat-form-section">
                 <div className="warsat-form-title">
@@ -678,6 +692,36 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
                 </Badge>
               </div>
 
+              <div className="warsat-deploy-strip mt-3" role="region" aria-label="Warsat deployment controls">
+                <div>
+                  <strong>{deployment?.approvalRequired ? `Approval ${approvalStatus || "pending"}` : canDeployPlan ? "Ready for approval" : "Plan ready, execution unavailable"}</strong>
+                  <span>
+                    {deployment?.approvalRequired
+                      ? approvalStatus === "approved"
+                        ? "Approval is ready. The next click will pull the image, start the container, and register the model."
+                        : `Approve code ${currentApproval?.code || "pending"} from Activity before Docker execution is allowed.`
+                      : canDeployPlan
+                        ? "The first click creates a redacted approval request. Docker will not run until that approval is approved."
+                      : plan.dockerControlEnabled
+                        ? "Restart Rasputin with the docker-control profile so the wrapper has Docker CLI access."
+                        : "Enable Docker control in Safety settings before deploying model containers."}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant={canDeployPlan ? "primary" : "outline-secondary"}
+                  disabled={deployDisabled}
+                  onClick={deployPlan}
+                  data-testid="warsat-deploy-button"
+                  aria-describedby="warsatDeployHelp"
+                >
+                  {deployLabel}
+                </Button>
+              </div>
+              <p id="warsatDeployHelp" className="visually-hidden">
+                Docker deployment requires Docker control enabled and the wrapper started with Docker CLI access.
+              </p>
+
               <Row className="g-3 mt-1">
                 <Col lg={6}>
                   <h3>Model Registry Entry</h3>
@@ -719,7 +763,7 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
               <details className="advanced-block mt-3" open>
                 <summary>Composefile Preview</summary>
                 <p className="text-body-secondary mt-2 mb-2">
-                  Safe generated draft. Rasputin is not writing this file or starting this container in planning mode.
+                  Standalone draft for review. The deploy button uses the generated Docker command directly after safety validation.
                 </p>
                 <pre className="log-box mb-0" data-testid="warsat-compose-preview">{plan.composePreview}</pre>
               </details>
@@ -740,6 +784,29 @@ export function WarsatView({ view, warsat, plan, error, createPlan, clearPlan, r
               {!!plan.warnings?.length && (
                 <div className="warsat-warning-list mt-3" role="status">
                   {plan.warnings.map((warning) => <p key={warning} className="mb-1">{warning}</p>)}
+                </div>
+              )}
+
+              {deployment && (
+                <div className="warsat-deployment-result mt-3" data-testid="warsat-deployment-result" role="status">
+                  <div>
+                    <strong>{deployment.approvalRequired ? "Deploy approval requested" : "Container started"}</strong>
+                    <span>{deployment.containerName} / {deployment.status}</span>
+                  </div>
+                  <dl className="detail-grid mb-0">
+                    {deployment.approvalRequired && <><dt>Approval code</dt><dd>{currentApproval?.code || deployment.approval?.code}</dd></>}
+                    {deployment.approvalRequired && <><dt>Approval status</dt><dd>{approvalStatus || "pending"}</dd></>}
+                    <dt>Model key</dt><dd>{deployment.modelKey}</dd>
+                    <dt>Endpoint</dt><dd>{deployment.endpoint}</dd>
+                    {!deployment.approvalRequired && <><dt>Health</dt><dd>{deployment.healthUrl}</dd></>}
+                    {!deployment.approvalRequired && <><dt>Container id</dt><dd>{deployment.containerId || "pending"}</dd></>}
+                  </dl>
+                  {deployment.message && <p className="workspace-help-text mb-0">{deployment.message}</p>}
+                  {!!deployment.nextSteps?.length && (
+                    <ul className="warsat-note-list mt-3 mb-0">
+                      {deployment.nextSteps.map((step) => <li key={step}>{step}</li>)}
+                    </ul>
+                  )}
                 </div>
               )}
             </Card.Body>
@@ -767,6 +834,15 @@ function MiniCard({ title, value }) {
     <Col md={4}>
       <Card className="settings-card shadow-sm h-100"><Card.Body><strong className="fs-4">{value}</strong><span className="text-body-secondary d-block">{title}</span></Card.Body></Card>
     </Col>
+  );
+}
+
+function SummaryTile({ title, value }) {
+  return (
+    <article className="border rounded-2 bg-body p-3">
+      <strong className="fs-4 lh-sm d-block text-break">{value}</strong>
+      <span className="text-body-secondary d-block mt-1">{title}</span>
+    </article>
   );
 }
 

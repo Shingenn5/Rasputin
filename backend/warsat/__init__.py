@@ -1,11 +1,15 @@
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 import uuid
 from pathlib import Path
 
+from .. import approvals
 from .. import audit
+from .. import model_registry
 from .. import security
 from ..response import AppError
 
@@ -13,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PROTOCOL_DIR = ROOT / "warsat" / "protocols"
 DATA_DIR = ROOT / "data" / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
+DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("WARSAT_DEPLOY_TIMEOUT", "1800"))
 
 STRENGTH_PROFILES = {
     "cpu": {
@@ -105,6 +110,34 @@ def _protocol_files():
     return files
 
 
+def _docker_cli_path():
+    return shutil.which("docker")
+
+
+def _docker_runtime_enabled():
+    cfg = security.load()
+    if not cfg.get("allow_docker_control", False):
+        return {
+            "enabled": False,
+            "dockerControlEnabled": False,
+            "dockerCliAvailable": bool(_docker_cli_path()),
+            "message": "Docker control is disabled in Safety settings.",
+        }
+    if not _docker_cli_path():
+        return {
+            "enabled": False,
+            "dockerControlEnabled": True,
+            "dockerCliAvailable": False,
+            "message": "Docker control is enabled, but the Docker CLI is not available inside this Rasputin runtime. Restart with the docker-control compose overlay.",
+        }
+    return {
+        "enabled": True,
+        "dockerControlEnabled": True,
+        "dockerCliAvailable": True,
+        "message": "Warsat can pull images and start containers after you create a launch plan.",
+    }
+
+
 def _normalize_protocol(protocol, source="builtin"):
     required = ["id", "name", "runtime", "image", "modelFormat", "defaultHostPort", "containerPort"]
     missing = [key for key in required if not protocol.get(key)]
@@ -135,13 +168,18 @@ def list_protocols():
         seen.add(protocol["id"])
         protocols.append(protocol)
     protocols.sort(key=lambda item: (item.get("runtime", ""), item.get("name", "")))
+    execution = _docker_runtime_enabled()
+    message = execution["message"]
+    if not execution["enabled"]:
+        message = f"Warsat is in safe planning mode. {message}"
     return {
         "protocols": protocols,
         "count": len(protocols),
         "strengthProfiles": STRENGTH_PROFILES,
-        "dockerControlEnabled": bool(security.load().get("allow_docker_control", False)),
-        "executionEnabled": False,
-        "message": "Warsat is in safe planning mode. It can generate launch plans but will not pull images or start containers yet.",
+        "dockerControlEnabled": execution["dockerControlEnabled"],
+        "dockerCliAvailable": execution["dockerCliAvailable"],
+        "executionEnabled": execution["enabled"],
+        "message": message,
     }
 
 
@@ -345,8 +383,12 @@ def _docker_run_preview(protocol, model_ref, model_path, host_port, container_na
     command = [
         "docker", "run", "-d",
         "--name", container_name,
+        "--restart", "unless-stopped",
         "-p", f"{protocol['hostBinding']}:{host_port}:{protocol['containerPort']}",
         "--security-opt", "no-new-privileges",
+        "--label", "rasputin.managed=true",
+        "--label", f"rasputin.protocol={protocol['id']}",
+        "--label", f"rasputin.runtime={protocol['runtime']}",
     ]
     if _uses_gpu(protocol, tuning, limits):
         command.extend(["--gpus", "all"])
@@ -468,10 +510,13 @@ def make_plan(payload):
     docker_run = _docker_run_preview(protocol, model_ref, model_path, host_port, container_name, tuning, limits)
     compose_preview = _compose_preview(protocol, model_ref, model_path, host_port, container_name, strength, tuning, limits)
     dockerfile_preview = _dockerfile_preview(protocol)
-    docker_control_enabled = bool(security.load().get("allow_docker_control", False))
+    execution = _docker_runtime_enabled()
+    docker_control_enabled = execution["dockerControlEnabled"]
     warnings = []
     if not docker_control_enabled:
         warnings.append("Docker control is disabled. This plan cannot be executed from Rasputin yet.")
+    elif not execution["dockerCliAvailable"]:
+        warnings.append("Docker control is enabled, but the wrapper was not started with Docker CLI access.")
     if protocol.get("hostBinding") != "127.0.0.1":
         warnings.append("Protocol does not bind to 127.0.0.1. Review before execution.")
     if protocol.get("hostNetwork"):
@@ -508,8 +553,9 @@ def make_plan(payload):
         "healthUrl": endpoint.rstrip("/v1") + protocol.get("healthPath", "/v1/models"),
         "riskLevel": "approvalRequired",
         "requiresApproval": True,
-        "executionEnabled": False,
+        "executionEnabled": execution["enabled"],
         "dockerControlEnabled": docker_control_enabled,
+        "dockerCliAvailable": execution["dockerCliAvailable"],
         "commandPreview": {
             "pull": ["docker", "pull", protocol["image"]],
             "run": docker_run,
@@ -540,6 +586,9 @@ def make_plan(payload):
             "runtime": f"warsat-{protocol['runtime']}",
             "container": container_name,
             "port": host_port,
+            "image": protocol["image"],
+            "contextWindow": tuning.get("contextWindow") or tuning.get("maxModelLen"),
+            "maxTokens": 512,
         },
         "securityChecks": {
             "localhostOnly": protocol.get("hostBinding") == "127.0.0.1",
@@ -551,9 +600,9 @@ def make_plan(payload):
         "nextSteps": [
             "Review the launch plan.",
             "Copy or export the compose preview if you want a standalone model compose file.",
-            "Enable Docker control only if you want Rasputin to manage containers.",
-            "Require approval before pulling images or starting containers.",
-            "After the runtime is healthy, register the endpoint as a model role.",
+            "Enable Docker control and restart with the docker-control profile if you want Rasputin to manage containers.",
+            "Deploy only after reviewing the image, port, resource limits, and model id.",
+            "After the runtime is healthy, test the model from the Models page.",
         ],
     }
     audit.log("warsat_plan_created", {
@@ -564,3 +613,200 @@ def make_plan(payload):
         "executionEnabled": plan["executionEnabled"],
     })
     return plan
+
+
+def _command_output(proc):
+    return (proc.stdout or "").strip() or (proc.stderr or "").strip()
+
+
+def _run_command(args, timeout=120, check=True):
+    if not isinstance(args, list) or not args or args[0] != "docker":
+        raise AppError("warsat_command_rejected", "Warsat can only execute generated Docker commands.", 400)
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise AppError("warsat_docker_unavailable", "Docker CLI is not available to Rasputin. Restart with the docker-control profile.", 503)
+    except subprocess.TimeoutExpired:
+        raise AppError("warsat_docker_timeout", "Docker command timed out before it finished.", 504)
+    if check and proc.returncode != 0:
+        raise AppError("warsat_docker_failed", _command_output(proc) or "Docker command failed.", 502)
+    return {
+        "returnCode": proc.returncode,
+        "stdout": (proc.stdout or "").strip(),
+        "stderr": (proc.stderr or "").strip(),
+    }
+
+
+def _validate_deploy_plan(plan):
+    if not isinstance(plan, dict):
+        raise AppError("warsat_plan_invalid", "Create a launch plan before deploying.", 400)
+    security.require("allow_docker_control")
+    security.require("allow_model_registry_edit")
+    execution = _docker_runtime_enabled()
+    if not execution["enabled"]:
+        raise AppError("warsat_execution_disabled", execution["message"], 403)
+
+    protocol = get_protocol(plan.get("protocolId"))
+    checks = plan.get("securityChecks") or {}
+    if not checks.get("localhostOnly"):
+        raise AppError("warsat_binding_rejected", "Warsat only deploys containers bound to 127.0.0.1.", 400)
+    if checks.get("hostNetwork"):
+        raise AppError("warsat_host_network_rejected", "Warsat will not deploy containers with host networking.", 400)
+    if not checks.get("noNewPrivileges", True):
+        raise AppError("warsat_privileges_rejected", "Warsat requires no-new-privileges for model containers.", 400)
+
+    endpoint = plan.get("endpoint") or (plan.get("expectedModelRegistryEntry") or {}).get("baseUrl")
+    security.require_local_url(endpoint)
+
+    run_cmd = ((plan.get("commandPreview") or {}).get("run") or [])
+    pull_cmd = ((plan.get("commandPreview") or {}).get("pull") or [])
+    if pull_cmd[:2] != ["docker", "pull"] or pull_cmd[-1] != protocol["image"]:
+        raise AppError("warsat_command_rejected", "Docker pull command does not match the selected protocol image.", 400)
+    if run_cmd[:3] != ["docker", "run", "-d"]:
+        raise AppError("warsat_command_rejected", "Docker run command must be generated by Warsat.", 400)
+    forbidden = {"--privileged", "--network=host", "--pid=host", "--ipc=host"}
+    if any(item in forbidden for item in run_cmd):
+        raise AppError("warsat_command_rejected", "Docker run command contains a forbidden host-level option.", 400)
+    if "--network" in run_cmd:
+        idx = run_cmd.index("--network")
+        if idx + 1 < len(run_cmd) and run_cmd[idx + 1] == "host":
+            raise AppError("warsat_command_rejected", "Docker host networking is not allowed.", 400)
+    port_spec = f"127.0.0.1:{int(plan.get('hostPort'))}:{int(plan.get('containerPort'))}"
+    if port_spec not in run_cmd:
+        raise AppError("warsat_binding_rejected", "Docker run command must bind the model to 127.0.0.1.", 400)
+    if "--security-opt" not in run_cmd or "no-new-privileges" not in run_cmd:
+        raise AppError("warsat_privileges_rejected", "Docker run command must include no-new-privileges.", 400)
+    if protocol["image"] not in run_cmd:
+        raise AppError("warsat_command_rejected", "Docker run command does not match the selected protocol image.", 400)
+
+    container_name = _slug(plan.get("containerName"))
+    if not container_name or container_name != plan.get("containerName"):
+        raise AppError("warsat_container_name_rejected", "Container name must be a safe generated name.", 400)
+    if "--name" not in run_cmd or run_cmd[run_cmd.index("--name") + 1] != container_name:
+        raise AppError("warsat_command_rejected", "Docker run command container name does not match the launch plan.", 400)
+    return protocol, pull_cmd, run_cmd, container_name
+
+
+def _registry_entry_from_plan(plan):
+    entry = dict(plan.get("expectedModelRegistryEntry") or {})
+    if not entry.get("key"):
+        raise AppError("warsat_registry_entry_missing", "Launch plan is missing the model registry entry.", 400)
+    base_url = entry.get("baseUrl") or entry.get("base_url") or plan.get("endpoint") or ""
+    security.require_local_url(base_url)
+    return {
+        "key": entry.get("key"),
+        "name": entry.get("name") or plan.get("protocolName") or entry.get("key"),
+        "provider": entry.get("provider") or plan.get("runtime") or "openai-compatible",
+        "role": entry.get("role") or plan.get("role") or "helper",
+        "base_url": base_url,
+        "model": entry.get("model") or plan.get("modelRef") or "",
+        "enabled": bool(entry.get("enabled", True)),
+        "managed": True,
+        "runtime": entry.get("runtime") or f"warsat-{plan.get('runtime')}",
+        "container": entry.get("container") or plan.get("containerName"),
+        "port": int(entry.get("port") or plan.get("hostPort")),
+        "image": entry.get("image") or plan.get("image"),
+        "context_window": int(entry.get("contextWindow") or plan.get("tuning", {}).get("contextWindow") or plan.get("tuning", {}).get("maxModelLen") or 4096),
+        "max_tokens": int(entry.get("maxTokens") or 512),
+        "notes": "Managed by Warsat. Review Docker control before changing this entry.",
+    }
+
+
+def _container_status(container_name):
+    result = _run_command(
+        ["docker", "ps", "-a", "--filter", f"name=^{container_name}$", "--format", "{{.Status}}"],
+        timeout=15,
+        check=False,
+    )
+    text = result["stdout"].strip()
+    if not text:
+        return "stopped"
+    return text
+
+
+def _deployment_approval_detail(plan, protocol, container_name, registry_entry):
+    return {
+        "planId": plan.get("planId"),
+        "protocolId": protocol["id"],
+        "runtime": protocol["runtime"],
+        "image": protocol["image"],
+        "container": container_name,
+        "modelKey": registry_entry["key"],
+        "model": registry_entry.get("model"),
+        "endpoint": registry_entry.get("base_url"),
+        "hostPort": plan.get("hostPort"),
+        "role": registry_entry.get("role"),
+        "workspace": "Warsat runtime",
+    }
+
+
+def deploy(plan, approval_id=None):
+    protocol, pull_cmd, run_cmd, container_name = _validate_deploy_plan(plan)
+    registry_entry = _registry_entry_from_plan(plan)
+    approval_detail = _deployment_approval_detail(plan, protocol, container_name, registry_entry)
+
+    if not approval_id:
+        approval = approvals.create(
+            "warsat_deploy",
+            approval_detail,
+            risk_level="approval_required",
+            workspace="Warsat runtime",
+            ttl=15 * 60,
+        )
+        audit.log("warsat_deploy_approval_requested", {
+            "planId": plan.get("planId"),
+            "approvalId": approval["id"],
+            "container": container_name,
+            "modelKey": registry_entry["key"],
+        })
+        return {
+            "approvalRequired": True,
+            "status": "waitingForApproval",
+            "approval": approval,
+            "containerName": container_name,
+            "modelKey": registry_entry["key"],
+            "endpoint": registry_entry["base_url"],
+            "message": "Approval created. Approve it from Activity or Approvals, then run the deploy again.",
+        }
+
+    approvals.require_approved(approval_id, "warsat_deploy")
+
+    audit.log("warsat_deploy_started", {
+        "planId": plan.get("planId"),
+        "approvalId": approval_id,
+        "protocolId": protocol["id"],
+        "image": protocol["image"],
+        "container": container_name,
+        "modelKey": registry_entry["key"],
+    })
+
+    pull = _run_command(pull_cmd, timeout=DEPLOY_TIMEOUT_SECONDS)
+    _run_command(["docker", "rm", "-f", container_name], timeout=60, check=False)
+    started = _run_command(run_cmd, timeout=120)
+    saved = model_registry.upsert(registry_entry)
+    status = _container_status(container_name)
+
+    result = {
+        "planId": plan.get("planId"),
+        "status": "starting" if status.lower().startswith("up") else status,
+        "containerId": started["stdout"],
+        "containerName": container_name,
+        "modelKey": saved["key"],
+        "registryEntry": saved,
+        "endpoint": registry_entry["base_url"],
+        "healthUrl": plan.get("healthUrl"),
+        "pull": pull,
+        "run": started,
+        "nextSteps": [
+            "Wait for the model server to finish loading.",
+            "Open Models and run Discover/Test on the new Warsat model.",
+            "Select the model in chat after it reports healthy.",
+        ],
+    }
+    audit.log("warsat_deploy_completed", {
+        "planId": plan.get("planId"),
+        "container": container_name,
+        "modelKey": saved["key"],
+        "status": result["status"],
+    })
+    return result
