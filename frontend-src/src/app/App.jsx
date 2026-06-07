@@ -43,6 +43,7 @@ export function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => normalizeTheme(localStorage.getItem("rasputin-theme") || "rasputin-light"));
   const [models, setModels] = useState([]);
+  const [modelProviders, setModelProviders] = useState([]);
   const [selectedModel, setSelectedModel] = useState("main-vllm");
   const [testingMode, setTestingMode] = useState(false);
   const [taskMode, setTaskMode] = useState("chat");
@@ -245,6 +246,7 @@ export function App() {
     const data = await api("/api/ui/bootstrap");
     const prefs = data.preferences || {};
     setModels(data.models || []);
+    setModelProviders(data.modelProviders || []);
     setTasks(data.tasks || []);
     queryClient.setQueryData(["model-registry"], data.models || []);
     queryClient.setQueryData(["tasks"], data.tasks || []);
@@ -531,6 +533,50 @@ export function App() {
       await loadModels();
       setSelectedModel(saved.key);
       setGlobalStatus(`Connected ${saved.name || saved.model}. Run Test health next.`);
+      event.currentTarget.reset();
+      return saved;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
+  async function registerApiModel(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const provider = form.get("provider") || "openai";
+    const modelId = form.get("model");
+    const apiKey = form.get("apiKey");
+    const apiKeyEnv = form.get("apiKeyEnv");
+    const model = {
+      name: form.get("name") || modelId || "API Model",
+      provider,
+      role: form.get("role") || "helper",
+      baseUrl: form.get("baseUrl"),
+      model: modelId,
+      apiKey: apiKey || undefined,
+      apiKeyEnv: apiKeyEnv || undefined,
+      anthropicVersion: form.get("anthropicVersion") || undefined,
+      runtime: "remote-api",
+      contextWindow: Number(form.get("contextWindow") || 0) || undefined,
+      maxTokens: Number(form.get("maxTokens") || 0) || undefined,
+      enabled: true,
+      managed: false,
+      notes: form.get("notes") || "External API model. Requires remote models to be enabled in Safety.",
+    };
+    if (!model.model) {
+      setGlobalStatus("Enter a provider model id.");
+      return null;
+    }
+    if (!model.apiKey && !model.apiKeyEnv) {
+      setGlobalStatus("Use an environment variable name or paste a key into the local secret store.");
+      return null;
+    }
+    try {
+      const saved = await postJson("/api/model-registry/upsert", model);
+      await loadModels();
+      setSelectedModel(saved.key);
+      setGlobalStatus(`Registered ${saved.name || saved.model}. Run Test health after Safety allows remote models.`);
       event.currentTarget.reset();
       return saved;
     } catch (error) {
@@ -1136,6 +1182,9 @@ export function App() {
         loadModels={loadModels}
         scanGguf={scanGguf}
         registerLocalModel={registerLocalModel}
+        registerApiModel={registerApiModel}
+        modelProviders={modelProviders}
+        security={security}
         openWarsat={() => go("warsat")}
       />
       <ActivityView

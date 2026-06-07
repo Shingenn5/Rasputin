@@ -10,6 +10,8 @@ from threading import Lock
 from urllib.parse import urlparse, urlunparse
 
 from . import audit
+from . import model_providers
+from . import model_secrets
 from . import security
 from . import workspace
 from .response import AppError
@@ -157,6 +159,27 @@ def _normalize_base_url(base_url):
     return urlunparse((parsed.scheme or "http", parsed.netloc, path, parsed.params, parsed.query, parsed.fragment)).rstrip("/")
 
 
+def _normalize_provider(provider):
+    aliases = {
+        "google": "gemini",
+        "google-gemini": "gemini",
+        "claude": "anthropic",
+        "openai-compatible-api": "openai-compatible-remote",
+    }
+    value = str(provider or "openai-compatible").strip().lower()
+    return aliases.get(value, value)
+
+
+def _normalize_model_payload(model):
+    out = {}
+    for key, value in dict(model or {}).items():
+        if value is None:
+            continue
+        normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(key)).lower()
+        out[normalized] = value
+    return out
+
+
 def _safe_file(path):
     target = Path(path).expanduser().resolve()
     if not target.exists() or not target.is_file():
@@ -276,6 +299,9 @@ def all_models():
             item["runtime_status"] = "reachable"
         else:
             item["runtime_status"] = item.get("runtime_status") or "unknown"
+        if model_providers.is_api_provider(item):
+            item.update(model_secrets.public_state(item))
+            item.pop("secret_ref", None)
         out.append(item)
     return out
 
@@ -311,6 +337,8 @@ def key_for_role(role, fallback="main-vllm"):
 
 
 def chat_url(model):
+    if model_providers.is_api_provider(model):
+        return model_providers.chat_url(model)
     base = _runtime_base_url((model.get("base_url") or "").rstrip("/"))
     if not base:
         return ""
@@ -320,6 +348,8 @@ def chat_url(model):
 
 
 def models_url(model):
+    if model_providers.is_api_provider(model):
+        return model_providers.models_url(model)
     base = _runtime_base_url((model.get("base_url") or "").rstrip("/"))
     if not base:
         return ""
@@ -332,8 +362,16 @@ def models_url(model):
 
 def upsert(model):
     security.require("allow_model_registry_edit")
-    model = {key: value for key, value in dict(model or {}).items() if value is not None}
-    base_url = _normalize_base_url(model.get("base_url") or "")
+    model = _normalize_model_payload(model)
+    api_key = str(model.pop("api_key", "") or "").strip()
+    clear_api_key = bool(model.pop("clear_api_key", False))
+    provider = _normalize_provider(model.get("provider"))
+    model["provider"] = provider
+    if provider in model_providers.API_PROVIDERS:
+        model.setdefault("runtime", "remote-api")
+        model.setdefault("model", model_providers.default_model(provider))
+    base_url = model.get("base_url") or model_providers.default_base_url(provider)
+    base_url = _normalize_base_url(base_url) if provider not in model_providers.NATIVE_API_PROVIDERS else str(base_url or "").strip().rstrip("/")
     if base_url:
         security.require_local_url(base_url)
         model["base_url"] = base_url
@@ -352,6 +390,14 @@ def upsert(model):
         model.pop("context_window", None)
     if model.get("max_tokens") in ("", None):
         model.pop("max_tokens", None)
+    if api_key:
+        model_secrets.set_api_key(key, api_key)
+        model["secret_ref"] = f"model:{key}"
+    elif clear_api_key:
+        model_secrets.clear_api_key(key)
+        model.pop("secret_ref", None)
+    elif model_secrets.public_state({**model, "key": key}).get("has_api_key"):
+        model["secret_ref"] = f"model:{key}"
     kept = [m for m in data["models"] if m.get("key") != key]
     kept.append(model)
     data["models"] = kept
@@ -397,9 +443,12 @@ def discover_model(key, require_permission=True):
     security.require_local_url(url)
     try:
         start = time.perf_counter()
-        payload = _open_json(url, timeout=10)
+        if model_providers.is_api_provider(model):
+            ids = model_providers.discover_models(model)
+        else:
+            payload = _open_json(url, timeout=10)
+            ids = _parse_model_ids(payload)
         latency_ms = round((time.perf_counter() - start) * 1000)
-        ids = _parse_model_ids(payload)
         status = "reachable" if ids else "unhealthy"
         error = "" if ids else "Endpoint responded but did not list any models."
         _store_health(key, status, latency_ms, error, ids)
@@ -472,6 +521,7 @@ def auto_repair_obvious():
         m for m in data.get("models", [])
         if m.get("enabled", True)
         and m.get("provider") not in {"mock", "hash-vector"}
+        and not model_providers.is_api_provider(m)
         and (m.get("key") == "main-vllm" or m.get("role") == "main")
     ]
     results = []
@@ -672,16 +722,19 @@ def test_model(key):
         return {"ok": True, "status": "reachable", "latency_ms": 0, "message": f"{key} is local-only and available"}
     url = chat_url(model)
     security.require_local_url(url)
-    payload = {
-        "model": model.get("model"),
-        "messages": [{"role": "user", "content": "Say ok."}],
-        "temperature": 0,
-        "stream": False,
-        "max_tokens": 8,
-    }
     try:
         start = time.perf_counter()
-        data = _open_json(url, method="POST", payload=payload, timeout=20)
+        if model_providers.is_api_provider(model):
+            data = model_providers.chat_sync(model, [{"role": "user", "content": "Say ok."}], 8, 0)
+        else:
+            payload = {
+                "model": model.get("model"),
+                "messages": [{"role": "user", "content": "Say ok."}],
+                "temperature": 0,
+                "stream": False,
+                "max_tokens": 8,
+            }
+            data = _open_json(url, method="POST", payload=payload, timeout=20)
         latency_ms = round((time.perf_counter() - start) * 1000)
     except urllib.error.HTTPError as exc:
         err = _http_error_payload(exc)

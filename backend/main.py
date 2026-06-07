@@ -16,6 +16,7 @@ from .response import AppError, error_handler, fail, http_error_handler, ok
 from . import auth
 from . import approvals
 from . import model_registry
+from . import model_providers
 from . import rag
 from . import graphify
 from . import workspace
@@ -224,6 +225,10 @@ class ModelIn(CamelModel):
     role: str = "helper"
     base_url: str = ""
     model: str = ""
+    api_key: str | None = None
+    api_key_env: str | None = None
+    anthropic_version: str | None = None
+    clear_api_key: bool = False
     runtime: str | None = None
     context_window: int | None = None
     max_tokens: int | None = None
@@ -357,6 +362,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
     warsat_runtime_state = await asyncio.to_thread(warsat.containers)
     return ok({
         "models": model_registry.all_models(),
+        "model_providers": model_providers.public_provider_options(),
         "skills": skill_store.enabled_names(),
         "tasks": hub.all_tasks(),
         "memory": load_memory(),
@@ -424,7 +430,12 @@ async def models(_user=Depends(current_user)):
 
 @app.get("/api/model-registry")
 async def model_registry_list(_user=Depends(current_user)):
-    return ok({"models": model_registry.all_models()})
+    return ok({"models": model_registry.all_models(), "providers": model_providers.public_provider_options()})
+
+
+@app.get("/api/model-providers")
+async def model_provider_list(_user=Depends(current_user)):
+    return ok({"providers": model_providers.public_provider_options()})
 
 
 @app.post("/api/model-registry/upsert")

@@ -6,6 +6,7 @@ import urllib.request
 
 from . import audit
 from . import model_registry
+from . import model_providers
 
 
 def LOCAL_MODELS():
@@ -133,16 +134,33 @@ async def chat(model_key, messages, temperature=0.2):
     if model_key == "dry-run" or cfg.get("provider") == "mock" or not url:
         user_msg = messages[-1]["content"] if messages else ""
         return _dry_run_response(user_msg)
-    from . import security
-    security.require_local_url(url)
 
     max_tokens = min(
         _as_int(cfg.get("max_tokens") or cfg.get("maxTokens") or os.environ.get("RASPUTIN_MAX_OUTPUT_TOKENS"), 160),
         512,
     )
+    fitted_messages = _fit_messages(messages, cfg, max_tokens)
+
+    if model_providers.is_api_provider(cfg):
+        try:
+            return await model_providers.chat(cfg, fitted_messages, max_tokens, temperature)
+        except Exception as exc:
+            message = _model_failure_message(model_key, cfg, url, exc)
+            audit.log("model_chat_failed", {
+                "key": model_key,
+                "model": cfg.get("model"),
+                "url": url,
+                "provider": cfg.get("provider"),
+                "error": message,
+            })
+            raise RuntimeError(message) from None
+
+    from . import security
+    security.require_local_url(url)
+
     payload = {
         "model": cfg["model"],
-        "messages": _fit_messages(messages, cfg, max_tokens),
+        "messages": fitted_messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,

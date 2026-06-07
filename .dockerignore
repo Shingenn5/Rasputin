@@ -31,6 +31,7 @@ auth.json
 telegram.json
 security.json
 models.json
+model_secrets.json
 workspace.json
 preferences.json
 output.json

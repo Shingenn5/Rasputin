@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend import approvals
 from backend import model_registry
+from backend import model_providers
 from backend import models
 from backend import runtime_store
 from backend import telegram
@@ -71,6 +72,48 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(blocked.status_code, 403)
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "permissionDenied")
+
+    def testApiProviderRegistrationKeepsApiKeyOutOfRegistry(self):
+        saved = {}
+        with patch("backend.security.require", lambda flag: True), \
+             patch("backend.security.load", return_value={"privacy_lock": False, "allow_remote_models": True}), \
+             patch("backend.model_secrets.set_api_key", side_effect=lambda key, api_key: saved.update({key: api_key}) or True):
+            registered = self.assertOk(self.client.post("/api/model-registry/upsert", json={
+                "name": "Smoke OpenAI",
+                "provider": "openai",
+                "role": "helper",
+                "model": "gpt-4o-mini",
+                "apiKey": "test-api-secret",
+                "maxTokens": 128,
+                "managed": False,
+            }))
+        self.assertEqual(registered["provider"], "openai")
+        self.assertEqual(registered["runtime"], "remote-api")
+        self.assertEqual(registered["baseUrl"], "https://api.openai.com/v1")
+        self.assertEqual(registered["secretRef"], f"model:{registered['key']}")
+        self.assertNotIn("apiKey", registered)
+        self.assertEqual(saved[registered["key"]], "test-api-secret")
+
+    def testApiProviderAdaptersParseText(self):
+        with patch("backend.model_secrets.api_key_for", return_value=("secret", "stored")), \
+             patch("backend.security.require_local_url", lambda url: True), \
+             patch("backend.model_providers._request_json", return_value={"content": [{"type": "text", "text": "anthropic ok"}]}):
+            text = asyncio.run(model_providers.chat({
+                "provider": "anthropic",
+                "base_url": "https://api.anthropic.com/v1",
+                "model": "claude-3-5-sonnet-20241022",
+            }, [{"role": "system", "content": "be terse"}, {"role": "user", "content": "hello"}], 32, 0))
+        self.assertEqual(text, "anthropic ok")
+
+        with patch("backend.model_secrets.api_key_for", return_value=("secret", "stored")), \
+             patch("backend.security.require_local_url", lambda url: True), \
+             patch("backend.model_providers._request_json", return_value={"candidates": [{"content": {"parts": [{"text": "gemini ok"}]}}]}):
+            text = asyncio.run(model_providers.chat({
+                "provider": "gemini",
+                "base_url": "https://generativelanguage.googleapis.com/v1beta",
+                "model": "gemini-2.5-flash",
+            }, [{"role": "user", "content": "hello"}], 32, 0))
+        self.assertEqual(text, "gemini ok")
 
     def testModelPromptIsTrimmedForSmallContextWindow(self):
         message = {"role": "user", "content": "hello " + ("x" * 10000)}

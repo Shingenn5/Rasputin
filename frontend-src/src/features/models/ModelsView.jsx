@@ -1,8 +1,10 @@
 import React from "react";
 import {
   CheckCircle2,
+  Cloud,
   Cpu,
   HardDrive,
+  KeyRound,
   Play,
   RefreshCw,
   Search,
@@ -52,6 +54,9 @@ export function ModelsView({
   loadModels,
   scanGguf,
   registerLocalModel,
+  registerApiModel,
+  modelProviders,
+  security,
   openWarsat,
 }) {
   const activeModel = selectedModelObject || models?.[0] || null;
@@ -61,6 +66,13 @@ export function ModelsView({
   const status = runtimeStatus(activeModel);
   const mismatch = modelMismatchLine(activeModel);
   const discovered = discoveredModelIds(activeModel);
+  const apiProviders = modelProviders?.length ? modelProviders : [
+    { id: "openai", name: "OpenAI", defaultBaseUrl: "https://api.openai.com/v1", defaultKeyEnv: "OPENAI_API_KEY" },
+    { id: "anthropic", name: "Anthropic", defaultBaseUrl: "https://api.anthropic.com/v1", defaultKeyEnv: "ANTHROPIC_API_KEY" },
+    { id: "gemini", name: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta", defaultKeyEnv: "GEMINI_API_KEY" },
+    { id: "openai-compatible-remote", name: "Other OpenAI-compatible API", defaultBaseUrl: "", defaultKeyEnv: "" },
+  ];
+  const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
 
   return (
     <section className={`app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
@@ -290,6 +302,103 @@ export function ModelsView({
           </form>
         </section>
 
+        <section className="model-builder-panel api-model-panel" aria-labelledby="apiModelTitle">
+          <div className="section-row">
+            <div>
+              <span className="eyebrow">API Providers</span>
+              <h2 id="apiModelTitle">Connect OpenAI, Anthropic, Gemini, or another API</h2>
+              <p>
+                Use this only when you intentionally want Rasputin to call an external provider. Keys are stored as
+                environment references or in Rasputin's ignored local secret store, never in the model registry.
+              </p>
+            </div>
+            <span className={`model-health-pill ${remoteBlocked ? "is-unhealthy" : "is-healthy"}`}>
+              {remoteBlocked ? "Remote blocked" : "Remote allowed"}
+            </span>
+          </div>
+          {remoteBlocked && (
+            <div className="model-warning" role="status">
+              <ShieldCheck size={17} aria-hidden="true" />
+              <span>Safety currently blocks remote model endpoints. Disable Privacy lock and enable Remote models before testing an API provider.</span>
+            </div>
+          )}
+          <form className="local-model-form" onSubmit={registerApiModel} data-testid="api-model-form">
+            <label>
+              <span>Provider</span>
+              <select name="provider" defaultValue="openai">
+                {apiProviders.map((provider) => (
+                  <option value={provider.id} key={provider.id}>{provider.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Display name</span>
+              <input name="name" placeholder="Claude Writer" />
+            </label>
+            <label>
+              <span>Model id</span>
+              <input name="model" placeholder="gpt-4o-mini / claude-3-5-sonnet-20241022 / gemini-2.5-flash" required />
+            </label>
+            <label>
+              <span>Base endpoint</span>
+              <input name="baseUrl" placeholder="Leave blank for provider default" />
+            </label>
+            <label>
+              <span>Purpose</span>
+              <select name="role" defaultValue="helper">
+                <option value="main">Main</option>
+                <option value="planner">Planner</option>
+                <option value="executor">Executor</option>
+                <option value="coder">Coder</option>
+                <option value="researcher">Researcher</option>
+                <option value="summarizer">Summarizer</option>
+                <option value="memory">Memory</option>
+                <option value="helper">Helper</option>
+              </select>
+            </label>
+            <label>
+              <span>API key environment variable</span>
+              <input name="apiKeyEnv" placeholder="OPENAI_API_KEY" />
+            </label>
+            <label>
+              <span>Or local secret key</span>
+              <input name="apiKey" type="password" autoComplete="off" placeholder="Stored in ignored local secrets" />
+            </label>
+            <label>
+              <span>Anthropic version</span>
+              <input name="anthropicVersion" placeholder="2023-06-01" />
+            </label>
+            <label>
+              <span>Context window</span>
+              <input name="contextWindow" type="number" min="512" placeholder="8192" />
+            </label>
+            <label>
+              <span>Max output tokens</span>
+              <input name="maxTokens" type="number" min="1" placeholder="512" />
+            </label>
+            <label className="local-model-notes">
+              <span>Notes</span>
+              <input name="notes" placeholder="External API; do not use for private local files" />
+            </label>
+            <div className="local-model-actions">
+              <button className="ras-button primary" type="submit">
+                <KeyRound size={17} aria-hidden="true" />
+                Register API model
+              </button>
+              <small>Use env vars for shared setups. Use the local secret field for one-machine testing only.</small>
+            </div>
+          </form>
+          <div className="api-provider-grid" aria-label="Supported API provider styles">
+            {apiProviders.map((provider) => (
+              <article className="runtime-option" key={provider.id}>
+                <strong><Cloud size={15} aria-hidden="true" /> {provider.name}</strong>
+                <p>{provider.apiStyle || "OpenAI-compatible"}</p>
+                <small>{provider.defaultKeyEnv || "custom key source"}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+
         <details className="advanced-model-registry" data-testid="advanced-model-registry">
           <summary>
             <SlidersHorizontal size={17} aria-hidden="true" />
@@ -316,6 +425,7 @@ export function ModelsView({
                     <dt>Purpose</dt><dd>{labelize(model.role || "chat")}</dd>
                     <dt>Runtime</dt><dd>{model.runtime || model.provider || "local"}</dd>
                     <dt>Health</dt><dd>{runtimeStatus(model)}</dd>
+                    {model.runtime === "remote-api" && <><dt>API key</dt><dd>{model.hasApiKey ? `Configured (${model.apiKeySource || "secret"})` : "Missing"}</dd></>}
                     <dt>Key</dt><dd>{model.key}</dd>
                   </dl>
                 </article>

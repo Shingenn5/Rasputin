@@ -685,7 +685,13 @@ It supports:
 
 - dry-run mock model
 - OpenAI-compatible model endpoints
+- API-key providers through adapters:
+  - OpenAI-compatible remote APIs
+  - Anthropic Messages API
+  - Gemini GenerateContent API
 - clean handling for model HTTP errors
+
+API keys do not belong in `models.json`. A registry entry may point to an environment variable such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`, or to Rasputin's ignored local secret store at `data/model_secrets.json`. Remote providers remain blocked while Privacy lock is enabled or Remote models are disabled.
 
 ### agent.py
 

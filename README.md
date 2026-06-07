@@ -205,6 +205,14 @@ Warsat is the model-runtime control layer. It reads curated protocols from `wars
 
 For model servers Rasputin does not launch itself, use the Models tab's local endpoint form. Any localhost OpenAI-compatible endpoint can be registered, tested, and selected while privacy lock blocks remote model URLs by default. Examples include LM Studio, Ollama, text-generation-webui, or a custom local server that exposes `/v1/models` and `/v1/chat/completions`.
 
+Rasputin can also register external API providers from the Models tab:
+
+- OpenAI and other OpenAI-compatible remote APIs
+- Anthropic Messages API
+- Google Gemini GenerateContent API
+
+External providers are intentionally gated. They only work after Safety allows remote model endpoints, which means Privacy lock must be off and Remote models must be on. API keys are never stored in `models.json`; use environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`, or paste a key into Rasputin's ignored local secret store at `data/model_secrets.json`.
+
 See `docs/WARSAT_PROTOCOLS_PLAN.md`.
 
 ## Safety Defaults
@@ -222,6 +230,7 @@ See `docs/WARSAT_PROTOCOLS_PLAN.md`.
 - Markdown output writes are blocked when file write is disabled.
 - Docker model logs/status calls are blocked when Docker control is disabled.
 - Local memory, RAG indexes, graph indexes, model registry state, workspaces, and model files are ignored by Git.
+- External API secrets are ignored by Git and should live only in env vars or `data/model_secrets.json`.
 
 ## Production Hardening Notes
 
