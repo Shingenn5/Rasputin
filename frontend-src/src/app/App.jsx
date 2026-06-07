@@ -987,7 +987,7 @@ export function App() {
       setWarsatDeployment(deployment);
       if (deployment.approvalRequired) {
         await refreshApprovals();
-        setGlobalStatus(`Approval ${deployment.approval?.code || ""} created. Approve it from Activity, then return to Warsat to start the container.`);
+        setGlobalStatus(`Approval ${deployment.approval?.code || ""} created. Approve it in Warsat, then run the approved deploy.`);
       } else {
         await Promise.allSettled([loadWarsat(), loadModels(), refreshApprovals()]);
         setGlobalStatus(`Warsat started ${deployment.containerName}. Test ${deployment.modelKey} from Models when it finishes loading.`);
@@ -1163,6 +1163,8 @@ export function App() {
         loadLogs={loadWarsatLogs}
         runtimeAction={requestWarsatOperation}
         approvals={approvals}
+        approveApproval={approveApproval}
+        denyApproval={denyApproval}
         clearPlan={() => {
           setWarsatPlan(null);
           setWarsatError("");

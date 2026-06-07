@@ -388,6 +388,8 @@ export function WarsatView({
   loadLogs,
   runtimeAction,
   approvals,
+  approveApproval,
+  denyApproval,
   clearPlan,
   refresh,
 }) {
@@ -404,12 +406,15 @@ export function WarsatView({
   const deploymentApprovalId = deployment?.approval?.id || deployment?.approvalId;
   const currentApproval = (approvals?.approvals || []).find((item) => item.id === deploymentApprovalId) || deployment?.approval;
   const approvalStatus = currentApproval?.status;
-  const approvalReady = !deployment?.approvalRequired || approvalStatus === "approved";
-  const deployDisabled = !canDeployPlan || deploying || !approvalReady;
+  const approvalPending = deployment?.approvalRequired && (!approvalStatus || approvalStatus === "pending");
+  const approvalApproved = deployment?.approvalRequired && approvalStatus === "approved";
+  const approvalClosed = deployment?.approvalRequired && ["denied", "expired", "executed"].includes(approvalStatus);
+  const approvalReady = !deployment?.approvalRequired || approvalApproved;
+  const deployDisabled = !canDeployPlan || deploying || !approvalReady || approvalClosed;
   const deployLabel = deploying
     ? "Deploying..."
     : deployment?.approvalRequired
-      ? approvalStatus === "approved" ? "Run approved deploy" : "Waiting for approval"
+      ? approvalStatus === "approved" ? "Run approved deploy" : approvalClosed ? "Approval closed" : "Waiting for approval"
       : "Request deploy approval";
   const operationApproval = (approvals?.approvals || []).find((item) => item.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
 
@@ -432,7 +437,7 @@ export function WarsatView({
         text="Runtime recipes for local model containers. Generate plans first; execution stays approval-gated."
         action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Protocols</Button>}
       />
-      <div className="task-dashboard warsat-dashboard">
+      <div className={`task-dashboard warsat-dashboard ${plan ? "has-plan" : ""}`}>
         <div className="warsat-summary-strip" aria-label="Warsat runtime status">
           <SummaryTile title="Runtime recipes" value={recipeCount || protocols.length} />
           <SummaryTile title="Managed containers" value={containers.length} />
@@ -708,60 +713,68 @@ export function WarsatView({
           </Card.Body>
         </Card>
 
-        <section className="warsat-profile-strip" aria-label="Warsat hardware profiles">
-          {Object.entries(strengthProfiles).map(([key, profile]) => (
-            <button
-              className={`warsat-profile-card ${key === strengthProfile ? "is-selected" : ""}`}
-              key={key}
-              type="button"
-              onClick={() => setStrengthProfile(key)}
-            >
-              <strong>{profile.label || key}</strong>
-              <span>{profile.description}</span>
-              <small>{profile.maxModelLen || profile.contextWindow} tokens / GPU {profile.gpuMemoryUtilization ?? "auto"}</small>
-            </button>
-          ))}
-        </section>
+        <details className="warsat-library-panel">
+          <summary>
+            <span>Hardware profile presets</span>
+            <small>{Object.keys(strengthProfiles).length || 0} presets. The selected preset is already applied in the Launch Recipe form.</small>
+          </summary>
+          <section className="warsat-profile-strip" aria-label="Warsat hardware profiles">
+            {Object.entries(strengthProfiles).map(([key, profile]) => (
+              <button
+                className={`warsat-profile-card ${key === strengthProfile ? "is-selected" : ""}`}
+                key={key}
+                type="button"
+                onClick={() => setStrengthProfile(key)}
+              >
+                <strong>{profile.label || key}</strong>
+                <span>{profile.description}</span>
+                <small>{profile.maxModelLen || profile.contextWindow} tokens / GPU {profile.gpuMemoryUtilization ?? "auto"}</small>
+              </button>
+            ))}
+          </section>
+        </details>
 
-        <div className="warsat-section-title">
-          <h2>Runtime Protocols</h2>
-          <p>These are managed container recipes. For a model server you already started yourself, use Models / Local Endpoint.</p>
-        </div>
-        <Row className="g-3 mt-1">
-          {protocols.map((protocol) => (
-            <Col xl={6} key={protocol.id}>
-              <Card className="settings-card warsat-protocol-card shadow-sm h-100" data-testid="warsat-protocol-card">
-                <Card.Body>
-                  <div className="section-row align-items-start">
-                    <div>
-                      <Badge bg="secondary">{protocol.runtime}</Badge>
-                      <h2 className="mt-2">{protocol.name}</h2>
-                      <p className="text-body-secondary mb-0">{protocol.description}</p>
+        <details className="warsat-library-panel">
+          <summary>
+            <span>Runtime protocol library</span>
+            <small>{protocols.length} managed recipes. Use Models / Local Endpoint for servers you started yourself.</small>
+          </summary>
+          <Row className="g-3 mt-1">
+            {protocols.map((protocol) => (
+              <Col xl={6} key={protocol.id}>
+                <Card className="settings-card warsat-protocol-card shadow-sm h-100" data-testid="warsat-protocol-card">
+                  <Card.Body>
+                    <div className="section-row align-items-start">
+                      <div>
+                        <Badge bg="secondary">{protocol.runtime}</Badge>
+                        <h2 className="mt-2">{protocol.name}</h2>
+                        <p className="text-body-secondary mb-0">{protocol.description}</p>
+                      </div>
+                      <Badge bg={protocol.gpu?.required ? "danger" : "success"}>{protocol.gpu?.required ? "GPU" : "CPU OK"}</Badge>
                     </div>
-                    <Badge bg={protocol.gpu?.required ? "danger" : "success"}>{protocol.gpu?.required ? "GPU" : "CPU OK"}</Badge>
-                  </div>
-                  {!!protocol.bestFor?.length && (
-                    <div className="warsat-best-for mt-3">
-                      {protocol.bestFor.map((item) => <span key={item}>{item}</span>)}
-                    </div>
-                  )}
-                  <dl className="detail-grid mt-3 mb-0">
-                    <dt>Image</dt><dd>{protocol.image}</dd>
-                    <dt>Format</dt><dd>{protocol.modelFormat}</dd>
-                    <dt>Default port</dt><dd>{protocol.defaultHostPort}</dd>
-                    <dt>Minimum VRAM</dt><dd>{protocol.gpu?.minVramGb || 0} GB</dd>
-                    <dt>Capabilities</dt><dd>{(protocol.capabilities || []).join(", ") || "chat"}</dd>
-                  </dl>
-                  {!!protocol.notes?.length && (
-                    <ul className="warsat-note-list mt-3 mb-0">
-                      {protocol.notes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}
-                    </ul>
-                  )}
-                </Card.Body>
-              </Card>
-            </Col>
-          ))}
-        </Row>
+                    {!!protocol.bestFor?.length && (
+                      <div className="warsat-best-for mt-3">
+                        {protocol.bestFor.map((item) => <span key={item}>{item}</span>)}
+                      </div>
+                    )}
+                    <dl className="detail-grid mt-3 mb-0">
+                      <dt>Image</dt><dd>{protocol.image}</dd>
+                      <dt>Format</dt><dd>{protocol.modelFormat}</dd>
+                      <dt>Default port</dt><dd>{protocol.defaultHostPort}</dd>
+                      <dt>Minimum VRAM</dt><dd>{protocol.gpu?.minVramGb || 0} GB</dd>
+                      <dt>Capabilities</dt><dd>{(protocol.capabilities || []).join(", ") || "chat"}</dd>
+                    </dl>
+                    {!!protocol.notes?.length && (
+                      <ul className="warsat-note-list mt-3 mb-0">
+                        {protocol.notes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}
+                      </ul>
+                    )}
+                  </Card.Body>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </details>
 
         {plan && (
           <Card className="settings-card warsat-plan-card shadow-sm mt-3" data-testid="warsat-launch-plan">
@@ -781,12 +794,22 @@ export function WarsatView({
 
               <div className="warsat-deploy-strip mt-3" role="region" aria-label="Warsat deployment controls">
                 <div>
-                  <strong>{deployment?.approvalRequired ? `Approval ${approvalStatus || "pending"}` : canDeployPlan ? "Ready for approval" : "Plan ready, execution unavailable"}</strong>
+                  <strong>
+                    {deployment?.approvalRequired
+                      ? approvalClosed
+                        ? `Approval ${approvalStatus}`
+                        : `Approval ${approvalStatus || "pending"}`
+                      : canDeployPlan
+                        ? "Ready for approval"
+                        : "Plan ready, execution unavailable"}
+                  </strong>
                   <span>
                     {deployment?.approvalRequired
                       ? approvalStatus === "approved"
                         ? "Approval is ready. The next click will pull the image, start the container, and register the model."
-                        : `Approve code ${currentApproval?.code || "pending"} from Activity before Docker execution is allowed.`
+                        : approvalClosed
+                          ? "This approval can no longer be used. Clear the plan or request a new approval after reviewing the settings."
+                          : `Approve code ${currentApproval?.code || "pending"} here or from Activity before Docker execution is allowed.`
                       : canDeployPlan
                         ? "The first click creates a redacted approval request. Docker will not run until that approval is approved."
                       : plan.dockerControlEnabled
@@ -794,20 +817,61 @@ export function WarsatView({
                         : "Enable Docker control in Safety settings before deploying model containers."}
                   </span>
                 </div>
-                <Button
-                  type="button"
-                  variant={canDeployPlan ? "primary" : "outline-secondary"}
-                  disabled={deployDisabled}
-                  onClick={deployPlan}
-                  data-testid="warsat-deploy-button"
-                  aria-describedby="warsatDeployHelp"
-                >
-                  {deployLabel}
-                </Button>
+                <div className="warsat-deploy-actions">
+                  {approvalPending && currentApproval?.id && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="success"
+                        onClick={() => approveApproval?.(currentApproval.id)}
+                        data-testid="warsat-approve-deploy"
+                      >
+                        Approve deploy
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline-danger"
+                        onClick={() => denyApproval?.(currentApproval.id)}
+                        data-testid="warsat-deny-deploy"
+                      >
+                        Deny
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    type="button"
+                    variant={canDeployPlan ? "primary" : "outline-secondary"}
+                    disabled={deployDisabled}
+                    onClick={deployPlan}
+                    data-testid="warsat-deploy-button"
+                    aria-describedby="warsatDeployHelp"
+                  >
+                    {deployLabel}
+                  </Button>
+                </div>
               </div>
               <p id="warsatDeployHelp" className="visually-hidden">
                 Docker deployment requires Docker control enabled and the wrapper started with Docker CLI access.
               </p>
+
+              <div className="warsat-plan-summary" data-testid="warsat-plan-summary">
+                <div>
+                  <span>Model</span>
+                  <strong>{plan.modelRef || plan.modelPath || plan.expectedModelRegistryEntry?.model || "Not set"}</strong>
+                </div>
+                <div>
+                  <span>Container</span>
+                  <strong>{plan.containerName}</strong>
+                </div>
+                <div>
+                  <span>Endpoint</span>
+                  <strong>{plan.expectedModelRegistryEntry?.baseUrl || plan.endpoint}</strong>
+                </div>
+                <div>
+                  <span>Profile</span>
+                  <strong>{plan.resourceProfile?.label || plan.strengthProfile}</strong>
+                </div>
+              </div>
 
               <Row className="g-3 mt-1">
                 <Col lg={6}>
@@ -842,12 +906,12 @@ export function WarsatView({
                 </Col>
               </Row>
 
-              <details className="advanced-block mt-3" open>
+              <details className="advanced-block mt-3">
                 <summary>Command Preview</summary>
                 <pre className="log-box mt-3 mb-0">{formatCommandPreview(plan.commandPreview)}</pre>
               </details>
 
-              <details className="advanced-block mt-3" open>
+              <details className="advanced-block mt-3">
                 <summary>Composefile Preview</summary>
                 <p className="text-body-secondary mt-2 mb-2">
                   Standalone draft for review. The deploy button uses the generated Docker command directly after safety validation.
