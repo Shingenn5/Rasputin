@@ -85,7 +85,7 @@ async function assertNoShellOverflow(page, label) {
   expect(metrics.offenders, `${label} overflowing shell nodes`).toEqual([]);
 }
 
-test("home shell settings and dry-run task work", async ({ page }) => {
+test("home shell settings and dry-run task work", async ({ page, request }) => {
   await page.goto("/");
   await waitForAppReady(page);
   await expect(page).toHaveTitle("Rasputin");
@@ -108,6 +108,12 @@ test("home shell settings and dry-run task work", async ({ page }) => {
   await expect(page.locator("#welcomePanel")).toBeAttached();
   await expect(page.locator("#welcomePanel")).toBeVisible();
   await expect(page.locator("#tasks")).not.toContainText("Testing the Rasputin live smoke harness.");
+  await page.locator("[data-testid='new-task']").click();
+  await expect(page.locator("#globalStatus")).toContainText("New chat created.");
+  const sessionsResponse = await request.get("/api/sessions");
+  const sessionsBody = await sessionsResponse.json();
+  expect(sessionsBody.ok).toBe(true);
+  expect(sessionsBody.data.sessions.some((session) => session.title === "New chat")).toBe(true);
 
   await page.locator("[data-testid='nav-models']").click();
   await expect(page.locator("#modelsView")).toBeVisible();
@@ -363,15 +369,14 @@ test("warsat protocols produce dry-run launch plans", async ({ page }) => {
   await page.goto("/");
   await waitForAppReady(page);
 
-  await page.locator("[data-testid='nav-models']").click();
-  await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
-  await page.locator("[data-testid='catalog-model-card']").filter({ hasText: "Qwen2.5 Coder" }).click();
-  await page.locator("[data-testid='catalog-send-to-warsat']").click();
+  await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-model-finder']")).toBeVisible();
+  await page.locator("[data-testid='warsat-catalog-card']").filter({ hasText: "Qwen2.5 Coder" }).click();
+  await page.locator("[data-testid='warsat-catalog-create-plan']").click();
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("Qwen/Qwen2.5-Coder-7B-Instruct");
   await page.locator("[data-testid='warsat-view']").getByRole("button", { name: "Clear plan" }).click();
 
-  await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
   await expect(page.locator("[data-testid='warsat-view']")).toContainText("Ollama");
   expect(await page.locator("[data-testid='warsat-protocol-card']").count()).toBeGreaterThanOrEqual(3);

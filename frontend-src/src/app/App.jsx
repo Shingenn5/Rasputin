@@ -456,6 +456,31 @@ export function App() {
     setLoginVisible(true);
   }
 
+  async function startNewChat() {
+    try {
+      const detail = await postJson("/api/sessions", {
+        title: "New chat",
+        workspace: workspace.activePath || ".",
+        model: selectedModel,
+        mode: taskMode,
+        skill: "general",
+        folder: activeChatFolder && !["all", "unfiled"].includes(activeChatFolder) ? activeChatFolder : "",
+      });
+      const sessionId = detail?.session?.id;
+      setHomeTaskIds(new Set());
+      setSelectedSession(detail);
+      setActiveChatSessionId(sessionId || null);
+      setObjective("");
+      await loadChatFolders();
+      go("home");
+      setGlobalStatus("New chat created.");
+      return detail;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
   async function sendTask(event) {
     event.preventDefault();
     if (!healthy) {
@@ -1081,13 +1106,7 @@ export function App() {
         modelName: displayModelName(selectedModelObject, models),
         locked: security.privacyLock,
         mobileOpen: mobileSidebarOpen,
-        newTask: () => {
-          setHomeTaskIds(new Set());
-          setActiveChatSessionId(null);
-          setObjective("");
-          setMobileSidebarOpen(false);
-          go("home");
-        },
+        newTask: startNewChat,
         recentSessions: sessions?.sessions || [],
         chatFolders,
         activeChatFolder,
@@ -1231,6 +1250,11 @@ export function App() {
           setGlobalStatus("");
         }}
         refresh={loadWarsat}
+        modelCatalog={modelCatalog}
+        modelCatalogLoading={modelCatalogLoading}
+        modelCatalogError={modelCatalogError}
+        loadModelCatalog={loadModelCatalog}
+        prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
       />
       <ModelsView
         view={view}

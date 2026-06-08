@@ -130,7 +130,17 @@ class AgentHub:
                 """
                 INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(id) DO UPDATE SET status=excluded.status, workspace=excluded.workspace, model=excluded.model, mode=excluded.mode, skill=excluded.skill, updated_at=excluded.updated_at
+                ON CONFLICT(id) DO UPDATE SET
+                  title=CASE
+                    WHEN sessions.title IN ('New chat','Untitled chat','Rasputin session') THEN excluded.title
+                    ELSE sessions.title
+                  END,
+                  status=excluded.status,
+                  workspace=excluded.workspace,
+                  model=excluded.model,
+                  mode=excluded.mode,
+                  skill=excluded.skill,
+                  updated_at=excluded.updated_at
                 """,
                 (task.session_id, title, "active", task.workspace, task.model, task.mode, task.skill, "", stamp, stamp, ""),
             )
@@ -360,6 +370,33 @@ class AgentHub:
             ).fetchall()
             tasks = conn.execute("SELECT * FROM tasks WHERE session_id=? ORDER BY created_at ASC", (session_id,)).fetchall()
         return {"session": dict(row), "messages": [dict(m) for m in messages], "tasks": [self._snapshot_from_db(t) for t in tasks]}
+
+    def create_session(self, title="New chat", workspace=".", model="dry-run", mode="chat", skill="general", folder=""):
+        stamp = store.now()
+        session_id = store.new_id("sess")
+        clean_title = str(title or "New chat").strip()[:140] or "New chat"
+        with store._lock, store.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    session_id,
+                    clean_title,
+                    "active",
+                    workspace or ".",
+                    model or "dry-run",
+                    mode or "chat",
+                    skill or "general",
+                    "",
+                    stamp,
+                    stamp,
+                    self._clean_folder_name(folder),
+                ),
+            )
+            conn.commit()
+        return self.session(session_id)
 
     def chat_folders(self):
         registry = store.get_kv("chat_folder_registry", [])

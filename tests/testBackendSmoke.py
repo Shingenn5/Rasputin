@@ -253,6 +253,31 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "taskNotFound")
 
+    def testBlankSessionCanBeCreatedAndRenamedByFirstTask(self):
+        created = self.assertOk(self.client.post("/api/sessions", json={
+            "title": "New chat",
+            "workspace": ".",
+            "model": "dry-run",
+            "mode": "chat",
+            "skill": "general",
+        }))
+        session_id = created["session"]["id"]
+        self.assertEqual(created["session"]["title"], "New chat")
+        self.assertEqual(created["messages"], [])
+
+        task = self.assertOk(self.client.post("/api/tasks", json={
+            "objective": "Rename this new chat from first message",
+            "model": "dry-run",
+            "skill": "general",
+            "mode": "chat",
+            "workspacePath": ".",
+            "sessionId": session_id,
+        }))
+        self.assertEqual(task["sessionId"], session_id)
+        detail = self.assertOk(self.client.get(f"/api/sessions/{session_id}"))
+        self.assertEqual(detail["session"]["title"], "Rename this new chat from first message")
+        self.assertTrue(any(message["role"] == "user" for message in detail["messages"]))
+
     def testRuntimeSessionsMemorySkillsAndSchedules(self):
         task = self.assertOk(self.client.post("/api/tasks", json={
             "objective": "Remember that I prefer concise local summaries.",

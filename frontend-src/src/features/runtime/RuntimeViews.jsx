@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-bootstrap";
-import { displayWorkspaceName } from "../../lib/display.js";
+import { displayWorkspaceName, labelize } from "../../lib/display.js";
 
 export function AgentsView({ view, tasks, models }) {
   const running = tasks.filter((task) => task.status === "running");
@@ -392,15 +392,45 @@ export function WarsatView({
   denyApproval,
   clearPlan,
   refresh,
+  modelCatalog,
+  modelCatalogLoading,
+  modelCatalogError,
+  loadModelCatalog,
+  prepareCatalogModelForWarsat,
 }) {
   const protocols = warsat?.protocols || [];
   const strengthProfiles = warsat?.strengthProfiles || {};
   const containers = runtimes?.containers || [];
+  const catalogItems = modelCatalog?.items || [];
+  const catalogCategories = modelCatalog?.categories || [];
   const firstProtocol = protocols[0];
   const [protocolId, setProtocolId] = useState(firstProtocol?.id || "");
   const [strengthProfile, setStrengthProfile] = useState("balanced");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogPurpose, setCatalogPurpose] = useState("all");
+  const [selectedCatalogId, setSelectedCatalogId] = useState(catalogItems[0]?.id || "");
   const selectedProtocol = protocols.find((protocol) => protocol.id === protocolId) || firstProtocol;
   const selectedProfile = strengthProfiles[strengthProfile] || strengthProfiles.balanced || {};
+  const warsatCatalogItems = useMemo(() => {
+    const search = catalogSearch.trim().toLowerCase();
+    return catalogItems
+      .filter((item) => item.deployable)
+      .filter((item) => catalogPurpose === "all" || item.purpose === catalogPurpose)
+      .filter((item) => {
+        if (!search) return true;
+        return [
+          item.name,
+          item.id,
+          item.modelId,
+          item.provider,
+          item.purpose,
+          ...(item.capabilities || []),
+        ].join(" ").toLowerCase().includes(search);
+      });
+  }, [catalogItems, catalogPurpose, catalogSearch]);
+  const selectedCatalogModel = warsatCatalogItems.find((item) => item.id === selectedCatalogId)
+    || warsatCatalogItems[0]
+    || null;
   const recipeCount = protocols.length * Math.max(Object.keys(strengthProfiles).length, 1);
   const canDeployPlan = !!plan?.executionEnabled && !!plan?.dockerControlEnabled && !!plan?.dockerCliAvailable;
   const deploymentApprovalId = deployment?.approval?.id || deployment?.approvalId;
@@ -444,6 +474,121 @@ export function WarsatView({
           <SummaryTile title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
           <SummaryTile title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
         </div>
+
+        <Card className="settings-card warsat-panel warsat-model-finder shadow-sm" data-testid="warsat-model-finder">
+          <Card.Body>
+            <div className="section-row align-items-start">
+              <div>
+                <h2>Find A Model</h2>
+                <p className="text-body-secondary mb-0">
+                  Search deployable catalog entries and create a Warsat launch plan without leaving this screen.
+                </p>
+              </div>
+              <Stack direction="horizontal" gap={2} className="warsat-model-finder-actions">
+                <Button variant="outline-secondary" size="sm" onClick={() => loadModelCatalog?.(false)}>
+                  Local catalog
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => loadModelCatalog?.(true)}
+                  disabled={modelCatalogLoading}
+                  data-testid="warsat-catalog-refresh"
+                >
+                  {modelCatalogLoading ? "Refreshing..." : "Refresh models.dev"}
+                </Button>
+              </Stack>
+            </div>
+            <div className="warsat-model-finder-meta" role="status">
+              <span>{warsatCatalogItems.length} deployable shown</span>
+              <span>{modelCatalog?.count || catalogItems.length || 0} catalog entries</span>
+              <span>Source: {modelCatalog?.source?.status || "local fallback"}</span>
+              {modelCatalogError && <strong>{modelCatalogError}</strong>}
+            </div>
+            <div className="warsat-model-finder-grid">
+              <aside className="warsat-model-filters" aria-label="Warsat model filters">
+                <label>
+                  <span>Search</span>
+                  <input
+                    value={catalogSearch}
+                    onChange={(event) => setCatalogSearch(event.target.value)}
+                    placeholder="qwen, coder, 7b, vision"
+                  />
+                </label>
+                <label>
+                  <span>Use</span>
+                  <select value={catalogPurpose} onChange={(event) => setCatalogPurpose(event.target.value)}>
+                    <option value="all">All deployable</option>
+                    {catalogCategories.map((category) => (
+                      <option key={category.id} value={category.id}>{category.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="ras-button ghost"
+                  onClick={() => {
+                    setCatalogSearch("");
+                    setCatalogPurpose("all");
+                  }}
+                >
+                  Clear
+                </button>
+              </aside>
+              <div className="warsat-model-result-list" aria-label="Deployable model results">
+                {warsatCatalogItems.slice(0, 24).map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={`warsat-model-result ${selectedCatalogModel?.id === item.id ? "is-selected" : ""}`}
+                    onClick={() => setSelectedCatalogId(item.id)}
+                    data-testid="warsat-catalog-card"
+                  >
+                    <span>
+                      <strong>{item.name}</strong>
+                      <small>{item.modelId || item.id}</small>
+                    </span>
+                    <span className="warsat-model-result-tags">
+                      <em>{labelize(item.purpose || "chat")}</em>
+                      <em>{item.vramEstimateGb ? `${item.vramEstimateGb} GB` : "VRAM unknown"}</em>
+                      <em>{item.recommendedProtocol || "Warsat"}</em>
+                    </span>
+                  </button>
+                ))}
+                {!warsatCatalogItems.length && (
+                  <p className="workspace-help-text mb-0">
+                    No deployable models match the current filters. Refresh models.dev or clear the filter.
+                  </p>
+                )}
+              </div>
+              <aside className="warsat-model-selected" aria-label="Selected deployable model">
+                {selectedCatalogModel ? (
+                  <>
+                    <span className="eyebrow">{selectedCatalogModel.source || "catalog"}</span>
+                    <h3>{selectedCatalogModel.name}</h3>
+                    <p>{selectedCatalogModel.summary || "No summary available."}</p>
+                    <dl className="detail-grid mb-0">
+                      <dt>Model</dt><dd>{selectedCatalogModel.modelId || selectedCatalogModel.id}</dd>
+                      <dt>Use</dt><dd>{labelize(selectedCatalogModel.purpose || "chat")}</dd>
+                      <dt>Profile</dt><dd>{selectedCatalogModel.recommendedProfile || "balanced"}</dd>
+                      <dt>Runtime</dt><dd>{selectedCatalogModel.recommendedProtocol || "vllmCudaOpenai"}</dd>
+                    </dl>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => prepareCatalogModelForWarsat?.(selectedCatalogModel)}
+                      data-testid="warsat-catalog-create-plan"
+                    >
+                      Create Warsat plan
+                    </Button>
+                  </>
+                ) : (
+                  <p className="workspace-help-text mb-0">Select a deployable catalog model.</p>
+                )}
+              </aside>
+            </div>
+          </Card.Body>
+        </Card>
 
         <Card className="settings-card warsat-panel shadow-sm">
           <Card.Body>

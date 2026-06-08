@@ -311,6 +311,15 @@ class SessionFolderIn(CamelModel):
     folder_id: str | None = None
 
 
+class SessionCreateIn(CamelModel):
+    title: str | None = "New chat"
+    workspace: str | None = "."
+    model: str | None = "dry-run"
+    mode: str | None = "chat"
+    skill: str | None = "general"
+    folder: str | None = ""
+
+
 class ModelCatalogRefreshIn(CamelModel):
     force: bool = False
 
@@ -578,6 +587,13 @@ async def skills_disable(name: str, _user=Depends(current_user)):
 @app.get("/api/sessions")
 async def sessions_get(limit: int = 100, _user=Depends(current_user)):
     return ok(hub.sessions(limit))
+
+
+@app.post("/api/sessions")
+async def sessions_create(req: SessionCreateIn, _user=Depends(current_user)):
+    detail = hub.create_session(req.title, req.workspace, req.model, req.mode, req.skill, req.folder)
+    audit.log("session_created", {"session_id": detail["session"]["id"], "title": detail["session"]["title"]})
+    return ok(detail)
 
 
 @app.get("/api/sessions/{session_id}")
