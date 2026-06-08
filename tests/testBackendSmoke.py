@@ -1,5 +1,7 @@
 import asyncio
+import sys
 import tempfile
+import urllib.parse
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +15,7 @@ from backend import context_governor
 from backend import model_catalog
 from backend import model_registry
 from backend import model_providers
+from backend import mcp_relay
 from backend import models
 from backend import rag
 from backend import runtime_store
@@ -257,7 +260,7 @@ class BackendSmokeTests(unittest.TestCase):
         with self.assertRaises(AppError):
             asyncio.run(McpLayer().call_tool("missing_tool", {}))
 
-    def testMcpRelayRegistryExposesInternalRelayOnly(self):
+    def testMcpRelayRegistryAndLocalStdioFlow(self):
         servers = self.assertOk(self.client.get("/api/mcp/servers"))
         self.assertTrue(any(item["id"] == "rasputin-tool-relay" for item in servers["servers"]))
 
@@ -265,24 +268,72 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertGreaterEqual(len(discovered["tools"]), 1)
         self.assertIn("Internal Tool Relay", discovered["message"])
 
+        script = main.ROOT / "workspace" / "fake_mcp_smoke.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            "\n".join([
+                "import json, sys",
+                "for line in sys.stdin:",
+                "    if not line.strip():",
+                "        continue",
+                "    msg = json.loads(line)",
+                "    mid = msg.get('id')",
+                "    method = msg.get('method')",
+                "    if method == 'initialize':",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'protocolVersion':'2025-06-18','capabilities':{'tools':{}},'serverInfo':{'name':'fake-smoke','version':'1'}}}), flush=True)",
+                "    elif method == 'tools/list':",
+                "        tool = {'name':'echo','description':'Echo a short message','inputSchema':{'type':'object','properties':{'message':{'type':'string'}},'required':['message']}}",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'tools':[tool]}}), flush=True)",
+                "    elif method == 'tools/call':",
+                "        args = (msg.get('params') or {}).get('arguments') or {}",
+                "        text = args.get('message', '')",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'content':[{'type':'text','text':text}], 'structuredContent': {'echo': text}}}), flush=True)",
+            ]),
+            encoding="utf-8",
+        )
         relay_id = f"smoke-relay-{runtime_store.new_id('relay')[-6:]}"
         registered = self.assertOk(self.client.post("/api/mcp/servers", json={
             "id": relay_id,
             "name": "Smoke Relay",
             "transport": "stdio",
-            "command": "node smoke-mcp.js",
+            "command": f"{sys.executable} {script}",
             "enabled": False,
         }))
         self.assertEqual(registered["id"], relay_id)
         self.assertFalse(registered["enabled"])
+        self.assertFalse(registered["commandApproved"])
+        self.assertTrue(registered["pendingApprovalId"])
         disabled = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/discover"))
         self.assertEqual(disabled["tools"], [])
-        self.assertIn("disabled", disabled["message"])
-        enabled = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/enable"))
-        self.assertTrue(enabled["enabled"])
-        stdio = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/discover"))
-        self.assertEqual(stdio["tools"], [])
-        self.assertIn("not enabled in this V1 pass", stdio["message"])
+        self.assertIn("disabled", disabled["message"].lower())
+        blocked_start = self.client.post(f"/api/mcp/servers/{relay_id}/start", json={})
+        self.assertEqual(blocked_start.status_code, 403)
+        self.assertFalse(blocked_start.json()["ok"])
+
+        approvals.approve(registered["pendingApprovalId"])
+
+        async def flow():
+            started = await mcp_relay.start(relay_id, registered["pendingApprovalId"])
+            self.assertEqual(started["status"], "running")
+            stdio = await mcp_relay.discover(relay_id)
+            self.assertEqual(len(stdio["tools"]), 1)
+            tool_id = stdio["tools"][0]["id"]
+            self.assertFalse(stdio["tools"][0]["available"])
+            server_tools = self.assertOk(self.client.get(f"/api/mcp/servers/{relay_id}/tools"))
+            self.assertEqual(server_tools["tools"][0]["id"], tool_id)
+            encoded_tool_id = urllib.parse.quote(tool_id, safe="")
+            classified = self.assertOk(self.client.post(f"/api/mcp/tools/{encoded_tool_id}/classify", json={
+                "risk": "guarded",
+                "permissionFlag": "allow_file_read",
+                "enabled": True,
+            }))
+            self.assertTrue(classified["available"])
+            result = await McpLayer().call_tool(tool_id, {"message": "mcp ok"})
+            self.assertEqual(result["structuredContent"]["echo"], "mcp ok")
+            stopped = await mcp_relay.stop(relay_id)
+            self.assertEqual(stopped["status"], "stopped")
+
+        asyncio.run(flow())
 
     def testModelCatalogFitScoringAndHardwareHints(self):
         hardware = {"detectedHardware": {"gpus": [{"memoryTotalMb": 24576}]}}

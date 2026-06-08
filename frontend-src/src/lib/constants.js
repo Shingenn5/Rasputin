@@ -13,6 +13,7 @@ export const settingsItems = [
   ["general", "General", "task defaults"],
   ["workspaces", "Workspaces", "folder access"],
   ["safety", "Safety", "permissions"],
+  ["tool-relays", "Tool Relays", "MCP servers"],
   ["knowledge", "Knowledge", "RAG + graph"],
   ["output", "Output", "markdown"],
   ["appearance", "Appearance", "themes"],

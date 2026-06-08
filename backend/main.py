@@ -370,7 +370,20 @@ class McpRelayIn(CamelModel):
     name: str | None = None
     transport: str = "stdio"
     command: str | None = None
+    args: list[str] | str | None = None
+    env: dict | None = None
+    cwd: str | None = None
     enabled: bool = False
+
+
+class McpServerActionIn(CamelModel):
+    approval_id: str | None = None
+
+
+class McpToolClassifyIn(CamelModel):
+    risk: str = "approval_required"
+    permission_flag: str | None = None
+    enabled: bool = True
 
 
 class ArchiveSessionIn(CamelModel):
@@ -614,7 +627,32 @@ async def mcp_servers_disable(server_id: str, _user=Depends(current_user)):
 
 @app.post("/api/mcp/servers/{server_id}/discover")
 async def mcp_servers_discover(server_id: str, _user=Depends(current_user)):
-    return ok(mcp_relay.discover(server_id))
+    return ok(await mcp_relay.discover(server_id))
+
+
+@app.post("/api/mcp/servers/{server_id}/start")
+async def mcp_servers_start(server_id: str, req: McpServerActionIn | None = None, _user=Depends(current_user)):
+    return ok(await mcp_relay.start(server_id, approval_id=req.approval_id if req else None))
+
+
+@app.post("/api/mcp/servers/{server_id}/stop")
+async def mcp_servers_stop(server_id: str, _user=Depends(current_user)):
+    return ok(await mcp_relay.stop(server_id))
+
+
+@app.post("/api/mcp/servers/{server_id}/restart")
+async def mcp_servers_restart(server_id: str, req: McpServerActionIn | None = None, _user=Depends(current_user)):
+    return ok(await mcp_relay.restart(server_id, approval_id=req.approval_id if req else None))
+
+
+@app.get("/api/mcp/servers/{server_id}/tools")
+async def mcp_server_tools(server_id: str, _user=Depends(current_user)):
+    return ok(mcp_relay.server_tools(server_id))
+
+
+@app.post("/api/mcp/tools/{tool_id:path}/classify")
+async def mcp_tool_classify(tool_id: str, req: McpToolClassifyIn, _user=Depends(current_user)):
+    return ok(mcp_relay.classify_tool(tool_id, req.model_dump()))
 
 
 @app.get("/api/skills")

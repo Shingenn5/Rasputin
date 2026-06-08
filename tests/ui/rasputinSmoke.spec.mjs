@@ -239,6 +239,10 @@ test("key settings destinations are reachable", async ({ page }) => {
   await page.locator("#securityForm").getByRole("button", { name: "Reset" }).click();
   await expect(page.locator("[data-testid='save-safety']")).toBeDisabled();
 
+  await page.locator("[data-testid='settings-tool-relays']").click();
+  await expect(page.locator("#settings-tool-relays")).toBeVisible();
+  await expect(page.locator("[data-testid='mcp-register-form']")).toBeVisible();
+
   await page.locator("[data-testid='settings-output']").click();
   await expect(page.locator("[data-testid='output-settings-form']")).toBeVisible();
   await page.locator("#markdownFolder").fill("workspace/ui-output-smoke");

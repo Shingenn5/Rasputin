@@ -3237,6 +3237,30 @@ button.runtime-chip {
   color: var(--ras-danger, #b42318);
 }
 
+.mcp-server-list {
+  display: grid;
+  gap: .85rem;
+}
+
+.mcp-server-card {
+  display: grid;
+  gap: .75rem;
+  padding: .95rem;
+  border: 1px solid var(--ras-border);
+  border-radius: var(--ras-radius);
+  background: var(--ras-surface-soft);
+}
+
+.mcp-command {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: .55rem .65rem;
+  border: 1px solid var(--ras-border);
+  border-radius: .45rem;
+  background: var(--ras-code-bg, rgba(0, 0, 0, .08));
+  color: var(--ras-text);
+}
+
 .risk-safe {
   color: var(--ras-success, #287d3c);
 }

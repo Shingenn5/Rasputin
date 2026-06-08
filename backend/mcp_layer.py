@@ -15,6 +15,7 @@ from . import approvals
 from . import memory
 from . import model_registry
 from . import tool_relay
+from . import mcp_relay
 from . import runtime_store as store
 from .response import AppError
 
@@ -53,7 +54,8 @@ class McpLayer:
 
     async def call_tool(self, name, args):
         definition = tool_relay.require_definition(name)
-        if name not in self.tools:
+        external = mcp_relay.is_external_tool(name)
+        if name not in self.tools and not external:
             raise AppError("tool_unavailable", f"Tool '{name}' is not executable in this MCP layer.", 501)
         args = dict(args or {})
         task_id = args.pop("_task_id", None)
@@ -63,7 +65,10 @@ class McpLayer:
             if not tool_relay.permission_allowed(definition):
                 flag = definition.get("permission_flag") or "tool"
                 raise PermissionError(f"{flag} is disabled")
-            result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id)
+            if external:
+                result = await mcp_relay.call_tool(name, args, task_id=task_id, tool_call_id=tool_call_id)
+            else:
+                result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id)
             status = "pending_approval" if isinstance(result, dict) and result.get("approval_id") else "done"
             self._finish_tool(tool_call_id, status, result, result.get("approval_id") if isinstance(result, dict) else None)
             return result

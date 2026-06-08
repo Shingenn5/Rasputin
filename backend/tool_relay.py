@@ -341,7 +341,13 @@ TOOL_SPECS = {
 
 
 def get(tool_id):
-    return _DEFINITIONS.get(tool_id)
+    definition = _DEFINITIONS.get(tool_id)
+    if definition:
+        return definition
+    if str(tool_id or "").startswith("mcp:"):
+        from . import mcp_relay
+        return mcp_relay.get_tool_definition(tool_id)
+    return None
 
 
 def require_definition(tool_id):
@@ -382,9 +388,15 @@ def public_definition(definition, cfg=None):
     return item
 
 
-def catalog():
+def catalog(include_external=True):
     cfg = security.load()
     tools = [public_definition(item, cfg) for item in TOOL_DEFINITIONS]
+    if include_external:
+        try:
+            from . import mcp_relay
+            tools.extend(mcp_relay.external_tool_definitions())
+        except Exception:
+            pass
     categories = []
     for item in tools:
         if item["category"] not in categories:

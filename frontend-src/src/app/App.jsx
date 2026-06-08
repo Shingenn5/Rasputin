@@ -368,8 +368,50 @@ export function App() {
     return nextTools;
   }
 
+  async function loadMcpRelays() {
+    const nextRelays = await api("/api/mcp/servers");
+    setMcpRelays(nextRelays || { servers: [] });
+    return nextRelays;
+  }
+
+  async function registerMcpRelay(payload) {
+    const registered = await postJson("/api/mcp/servers", payload);
+    await Promise.allSettled([loadMcpRelays(), refreshApprovals()]);
+    setGlobalStatus(registered.approval?.code ? `MCP registration approval ${registered.approval.code} created.` : "MCP server registered.");
+    return registered;
+  }
+
+  async function startMcpRelay(server) {
+    const approvalId = server?.pendingApprovalId || "";
+    const started = await postJson(`/api/mcp/servers/${server.id}/start`, { approvalId });
+    await Promise.allSettled([loadMcpRelays(), loadTools(), refreshApprovals()]);
+    setGlobalStatus(`${started.name || server.id} started.`);
+    return started;
+  }
+
+  async function stopMcpRelay(server) {
+    const stopped = await postJson(`/api/mcp/servers/${server.id}/stop`, {});
+    await Promise.allSettled([loadMcpRelays(), loadTools()]);
+    setGlobalStatus(`${stopped.name || server.id} stopped.`);
+    return stopped;
+  }
+
+  async function discoverMcpRelay(server) {
+    const discovered = await postJson(`/api/mcp/servers/${server.id}/discover`, {});
+    await Promise.allSettled([loadMcpRelays(), loadTools()]);
+    setGlobalStatus(discovered.message || `Discovered tools for ${server.name || server.id}.`);
+    return discovered;
+  }
+
+  async function classifyMcpTool(toolId, payload) {
+    const classified = await postJson(`/api/mcp/tools/${encodeURIComponent(toolId)}/classify`, payload);
+    await Promise.allSettled([loadMcpRelays(), loadTools()]);
+    setGlobalStatus(`${classified.displayName || classified.id} classified.`);
+    return classified;
+  }
+
   async function refreshActivity() {
-    const [nextTasks] = await Promise.all([loadTasks(), loadTools()]);
+    const [nextTasks] = await Promise.all([loadTasks(), loadTools(), loadMcpRelays()]);
     return nextTasks;
   }
 
@@ -1492,6 +1534,15 @@ export function App() {
         setTheme={setTheme}
         logout={logout}
         loadModels={loadModels}
+        tools={tools}
+        mcpRelays={mcpRelays}
+        registerMcpRelay={registerMcpRelay}
+        startMcpRelay={startMcpRelay}
+        stopMcpRelay={stopMcpRelay}
+        discoverMcpRelay={discoverMcpRelay}
+        classifyMcpTool={classifyMcpTool}
+        approveApproval={approveApproval}
+        refreshApprovals={refreshApprovals}
       />
       <AuditView view={view} events={auditEvents} refresh={loadAuditEvents} />
       <TaskDetailsDrawer

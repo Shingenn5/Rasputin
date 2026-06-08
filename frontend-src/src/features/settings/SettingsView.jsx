@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "react-bootstrap";
-import { CheckCircle2, Moon, RotateCcw, Save, ShieldAlert, ShieldCheck, Sun } from "lucide-react";
+import { CheckCircle2, Moon, Play, RotateCcw, Save, ShieldAlert, ShieldCheck, Square, Sun, Wrench } from "lucide-react";
 import { settingsItems } from "../../lib/constants.js";
 import { displayWorkspaceName } from "../../lib/display.js";
 
@@ -34,6 +34,7 @@ export function SettingsView(props) {
           {section === "general" && <GeneralSettings />}
           {section === "workspaces" && <WorkspaceSettings {...props} />}
           {section === "safety" && <SafetySettings {...props} />}
+          {section === "tool-relays" && <ToolRelaySettings {...props} />}
           {section === "knowledge" && <KnowledgeSettings {...props} />}
           {section === "output" && <OutputSettings {...props} />}
           {section === "appearance" && <AppearanceSettings {...props} />}
@@ -157,6 +158,195 @@ function WorkspaceSettings({ workspace, workspaceRoots, workspaceBrowse, browseW
           </Card>
         </Col>
       </Row>
+    </section>
+  );
+}
+
+function ToolRelaySettings({
+  mcpRelays,
+  tools,
+  registerMcpRelay,
+  startMcpRelay,
+  stopMcpRelay,
+  discoverMcpRelay,
+  classifyMcpTool,
+  approveApproval,
+}) {
+  const [status, setStatus] = useState("");
+  const servers = mcpRelays?.servers || [];
+  const externalTools = (tools?.tools || []).filter((tool) => tool.external);
+
+  async function submit(event) {
+    event.preventDefault();
+    setStatus("Registering MCP server...");
+    const form = new FormData(event.currentTarget);
+    try {
+      await registerMcpRelay({
+        id: form.get("id"),
+        name: form.get("name"),
+        transport: "stdio",
+        command: form.get("command"),
+        cwd: form.get("cwd") || ".",
+      });
+      event.currentTarget.reset();
+      setStatus("Registration preview created. Approve before starting.");
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  async function run(label, action) {
+    setStatus(`${label}...`);
+    try {
+      await action();
+      setStatus(`${label} complete.`);
+    } catch (error) {
+      setStatus(error.message);
+    }
+  }
+
+  return (
+    <section className="settings-pane active" id="settings-tool-relays">
+      <PaneTitle title="Tool Relays" text="Register local stdio MCP servers. Commands require approval before Rasputin can start them." />
+      <Row className="g-3">
+        <Col lg={5}>
+          <Card className="settings-card h-100 shadow-sm">
+            <Card.Body>
+              <div className="section-row">
+                <div>
+                  <h3>Add Local MCP Server</h3>
+                  <p className="text-body-secondary mb-0">Use commands visible inside the Rasputin container or local runtime.</p>
+                </div>
+                <Wrench size={20} aria-hidden="true" />
+              </div>
+              <form className="mt-3" data-testid="mcp-register-form" onSubmit={submit}>
+                <Stack gap={3}>
+                  <Form.Group>
+                    <Form.Label htmlFor="mcpServerId">Server id</Form.Label>
+                    <Form.Control id="mcpServerId" name="id" placeholder="filesystem-local" required />
+                  </Form.Group>
+                  <Form.Group>
+                    <Form.Label htmlFor="mcpServerName">Display name</Form.Label>
+                    <Form.Control id="mcpServerName" name="name" placeholder="Filesystem MCP" />
+                  </Form.Group>
+                  <Form.Group>
+                    <Form.Label htmlFor="mcpServerCommand">Command</Form.Label>
+                    <Form.Control id="mcpServerCommand" name="command" placeholder="npx -y @modelcontextprotocol/server-filesystem ." required />
+                    <Form.Text>Rasputin uses shell-free stdio execution. Package-manager commands are approval-gated per server.</Form.Text>
+                  </Form.Group>
+                  <Form.Group>
+                    <Form.Label htmlFor="mcpServerCwd">Working directory</Form.Label>
+                    <Form.Control id="mcpServerCwd" name="cwd" placeholder="." />
+                  </Form.Group>
+                  <Button type="submit" variant="primary">Preview Registration</Button>
+                </Stack>
+              </form>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col lg={7}>
+          <Card className="settings-card h-100 shadow-sm">
+            <Card.Body>
+              <div className="section-row">
+                <div>
+                  <h3>Registered Relays</h3>
+                  <p className="text-body-secondary mb-0">Start only approved local stdio servers, then discover and classify tools.</p>
+                </div>
+                <Badge bg="secondary">{servers.length} server{servers.length === 1 ? "" : "s"}</Badge>
+              </div>
+              <div className="mcp-server-list mt-3" data-testid="mcp-server-list">
+                {servers.map((server) => (
+                  <article className="mcp-server-card" key={server.id} data-testid="mcp-server-card">
+                    <div className="section-row">
+                      <div>
+                        <strong>{server.name || server.id}</strong>
+                        <p className="text-body-secondary mb-0">{server.transport} / {server.status} / {server.health}</p>
+                      </div>
+                      <Badge bg={server.commandApproved ? "success" : "warning"}>{server.commandApproved ? "Approved" : "Approval required"}</Badge>
+                    </div>
+                    {server.command && <code className="mcp-command">{server.command}</code>}
+                    {server.lastError && <p className="text-danger mb-0">{server.lastError}</p>}
+                    {server.pendingApprovalId && (
+                      <p className="text-body-secondary mb-0">Approval code: <strong>{server.pendingApprovalCode}</strong></p>
+                    )}
+                    <Stack direction="horizontal" gap={2} className="flex-wrap">
+                      {server.pendingApprovalId && (
+                        <Button
+                          size="sm"
+                          variant="warning"
+                          type="button"
+                          onClick={() => run("Approve and start MCP server", async () => {
+                            await approveApproval(server.pendingApprovalId);
+                            await startMcpRelay(server);
+                          })}
+                        >
+                          <Play size={14} />
+                          Approve + Start
+                        </Button>
+                      )}
+                      {!server.pendingApprovalId && server.transport !== "internal" && (
+                        <Button size="sm" variant="outline-primary" type="button" onClick={() => run("Start MCP server", () => startMcpRelay(server))}>
+                          <Play size={14} />
+                          Start
+                        </Button>
+                      )}
+                      {server.transport !== "internal" && (
+                        <Button size="sm" variant="outline-secondary" type="button" onClick={() => run("Stop MCP server", () => stopMcpRelay(server))}>
+                          <Square size={14} />
+                          Stop
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline-secondary" type="button" onClick={() => run("Discover MCP tools", () => discoverMcpRelay(server))}>
+                        Discover Tools
+                      </Button>
+                    </Stack>
+                    {!!server.logs?.length && <pre className="log-box mt-2 mb-0">{server.logs.join("\n")}</pre>}
+                  </article>
+                ))}
+                {!servers.length && <p className="text-body-secondary mb-0">No MCP relays are registered yet.</p>}
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col xs={12}>
+          <Card className="settings-card shadow-sm">
+            <Card.Body>
+              <div className="section-row">
+                <div>
+                  <h3>Discovered MCP Tools</h3>
+                  <p className="text-body-secondary mb-0">External tools stay disabled until you classify their risk and permission.</p>
+                </div>
+                <Badge bg="secondary">{externalTools.length} tool{externalTools.length === 1 ? "" : "s"}</Badge>
+              </div>
+              <div className="tool-relay-grid mt-3">
+                {externalTools.map((tool) => (
+                  <article className="tool-relay-card" key={tool.id}>
+                    <div className="tool-relay-card-head">
+                      <div>
+                        <span className={`status-pill risk-${tool.risk}`}>{labelize(tool.risk)}</span>
+                        <h4>{tool.displayName || tool.id}</h4>
+                      </div>
+                      <span className={`status-pill ${tool.available ? "status-done" : "status-error"}`}>{tool.available ? "Available" : "Blocked"}</span>
+                    </div>
+                    <p>{tool.description}</p>
+                    {tool.disabledReason && <p className="tool-relay-reason">{tool.disabledReason}</p>}
+                    <Stack direction="horizontal" gap={2} className="flex-wrap">
+                      <Button size="sm" variant="outline-secondary" type="button" onClick={() => run("Classify guarded read tool", () => classifyMcpTool(tool.id, { risk: "guarded", permissionFlag: "allow_file_read", enabled: true }))}>
+                        Guarded Read
+                      </Button>
+                      <Button size="sm" variant="outline-warning" type="button" onClick={() => run("Classify approval tool", () => classifyMcpTool(tool.id, { risk: "approval_required", permissionFlag: "", enabled: true }))}>
+                        Approval Required
+                      </Button>
+                    </Stack>
+                  </article>
+                ))}
+                {!externalTools.length && <p className="text-body-secondary mb-0">No external MCP tools discovered yet.</p>}
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
+      <p className="settings-status mt-3" role="status" aria-live="polite">{status}</p>
     </section>
   );
 }
@@ -520,4 +710,10 @@ function PaneTitle({ title, text }) {
       <p className="text-body-secondary mb-0">{text}</p>
     </div>
   );
+}
+
+function labelize(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
