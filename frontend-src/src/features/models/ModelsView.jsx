@@ -48,6 +48,8 @@ export function ModelsView({
   view,
   models,
   selectedModelObject,
+  selectedModel,
+  setSelectedModel,
   testingMode,
   setTestingMode,
   runModelAction,
@@ -85,6 +87,19 @@ export function ModelsView({
   const [catalogPurpose, setCatalogPurpose] = React.useState("all");
   const [catalogRuntime, setCatalogRuntime] = React.useState("deployable");
   const [selectedCatalogId, setSelectedCatalogId] = React.useState(catalogItems[0]?.id || "");
+  const updateTestingMode = React.useCallback((enabled) => {
+    const next = !!enabled;
+    setTestingMode(next);
+    if (next && models?.some((model) => model.key === "dry-run")) {
+      setSelectedModel?.("dry-run");
+      return;
+    }
+    if (!next && selectedModel === "dry-run") {
+      const fallback = (models || []).find((model) => model.role === "main" && model.key !== "dry-run")
+        || (models || []).find((model) => model.key !== "dry-run" && model.role !== "embeddings");
+      if (fallback) setSelectedModel?.(fallback.key);
+    }
+  }, [models, selectedModel, setSelectedModel, setTestingMode]);
   const filteredCatalogItems = React.useMemo(() => {
     const search = catalogSearch.trim().toLowerCase();
     return catalogItems.filter((item) => {
@@ -299,6 +314,7 @@ export function ModelsView({
                   </span>
                   <span className="model-catalog-row-meta">
                     <em>{labelize(item.purpose || "chat")}</em>
+                    <em>{item.fitLabel ? `${item.fitLabel} ${item.fitScore ?? ""}`.trim() : "Fit unknown"}</em>
                     <em>{item.vramEstimateGb ? `${item.vramEstimateGb} GB est.` : "VRAM unknown"}</em>
                     <em>{item.deployable ? "Warsat-ready" : "API only"}</em>
                   </span>
@@ -321,8 +337,16 @@ export function ModelsView({
                     <dt>Use</dt><dd>{labelize(selectedCatalogModel.purpose || "chat")}</dd>
                     <dt>Context</dt><dd>{selectedCatalogModel.contextWindow ? Number(selectedCatalogModel.contextWindow).toLocaleString() : "Unknown"}</dd>
                     <dt>VRAM</dt><dd>{selectedCatalogModel.vramEstimateGb ? `${selectedCatalogModel.vramEstimateGb} GB estimated` : "Unknown"}</dd>
+                    <dt>Fit</dt><dd>{selectedCatalogModel.fitLabel ? `${selectedCatalogModel.fitLabel} (${selectedCatalogModel.fitScore ?? 0})` : "Unknown"}</dd>
                     <dt>Runtime</dt><dd>{selectedCatalogModel.recommendedProtocol || "API only"}</dd>
                   </dl>
+                  {!!(selectedCatalogModel.fitReasons || selectedCatalogModel.blockedReasons || []).length && (
+                    <ul className="model-catalog-note-list">
+                      {[...(selectedCatalogModel.blockedReasons || []), ...(selectedCatalogModel.fitReasons || [])].slice(0, 4).map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  )}
                   <div className="model-catalog-capabilities">
                     {(selectedCatalogModel.capabilities || []).slice(0, 8).map((capability) => (
                       <span key={capability}>{labelize(capability)}</span>
@@ -575,18 +599,30 @@ export function ModelsView({
             Advanced model registry
           </summary>
           <div className="advanced-model-body">
-            <label className="testing-mode-control">
-              <input
-                data-testid="testing-mode-toggle"
-                type="checkbox"
-                checked={testingMode}
-                onChange={(event) => setTestingMode(event.target.checked)}
-              />
-              <span>
-                <strong>Testing Mode</strong>
-                <small>Show dry-run in the chat model picker.</small>
-              </span>
-            </label>
+            <div className="testing-mode-control">
+              <label className="testing-mode-label">
+                <input
+                  data-testid="testing-mode-toggle"
+                  type="checkbox"
+                  checked={testingMode}
+                  onClick={(event) => updateTestingMode(event.currentTarget.checked)}
+                  onInput={(event) => updateTestingMode(event.currentTarget.checked)}
+                  onChange={(event) => updateTestingMode(event.currentTarget.checked)}
+                />
+                <span>
+                  <strong>Testing Mode</strong>
+                  <small>Show dry-run in the chat model picker and select it for local smoke tests.</small>
+                </span>
+              </label>
+              <button
+                className="ras-button ghost small-button"
+                type="button"
+                data-testid="testing-mode-action"
+                onClick={() => updateTestingMode(!testingMode)}
+              >
+                {testingMode ? "Disable" : "Enable"}
+              </button>
+            </div>
             <div id="modelRegistry" className="model-list registry-grid">
               {(models || []).map((model) => (
                 <article className="model-row registry-row" key={model.key}>

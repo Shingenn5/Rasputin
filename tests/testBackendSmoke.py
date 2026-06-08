@@ -10,9 +10,11 @@ from backend import main
 from backend import approvals
 from backend import agent
 from backend import context_governor
+from backend import model_catalog
 from backend import model_registry
 from backend import model_providers
 from backend import models
+from backend import rag
 from backend import runtime_store
 from backend import security
 from backend import telegram
@@ -254,6 +256,116 @@ class BackendSmokeTests(unittest.TestCase):
 
         with self.assertRaises(AppError):
             asyncio.run(McpLayer().call_tool("missing_tool", {}))
+
+    def testMcpRelayRegistryExposesInternalRelayOnly(self):
+        servers = self.assertOk(self.client.get("/api/mcp/servers"))
+        self.assertTrue(any(item["id"] == "rasputin-tool-relay" for item in servers["servers"]))
+
+        discovered = self.assertOk(self.client.post("/api/mcp/servers/rasputin-tool-relay/discover"))
+        self.assertGreaterEqual(len(discovered["tools"]), 1)
+        self.assertIn("Internal Tool Relay", discovered["message"])
+
+        relay_id = f"smoke-relay-{runtime_store.new_id('relay')[-6:]}"
+        registered = self.assertOk(self.client.post("/api/mcp/servers", json={
+            "id": relay_id,
+            "name": "Smoke Relay",
+            "transport": "stdio",
+            "command": "node smoke-mcp.js",
+            "enabled": False,
+        }))
+        self.assertEqual(registered["id"], relay_id)
+        self.assertFalse(registered["enabled"])
+        disabled = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/discover"))
+        self.assertEqual(disabled["tools"], [])
+        self.assertIn("disabled", disabled["message"])
+        enabled = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/enable"))
+        self.assertTrue(enabled["enabled"])
+        stdio = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/discover"))
+        self.assertEqual(stdio["tools"], [])
+        self.assertIn("not enabled in this V1 pass", stdio["message"])
+
+    def testModelCatalogFitScoringAndHardwareHints(self):
+        hardware = {"detectedHardware": {"gpus": [{"memoryTotalMb": 24576}]}}
+        payload = model_catalog._catalog_payload(model_catalog._curated_items(), hardware=hardware)
+        self.assertTrue(payload["items"])
+        fit_item = next(item for item in payload["items"] if item["modelId"] == "Qwen/Qwen2.5-Coder-7B-Instruct")
+        self.assertIn("fitScore", fit_item)
+        self.assertIn("fitLabel", fit_item)
+        self.assertGreaterEqual(fit_item["fitScore"], 70)
+        self.assertTrue(any("VRAM" in reason for reason in fit_item["fitReasons"]))
+
+        with patch("backend.warsat.hardware_probe", return_value=hardware):
+            routed = self.assertOk(self.client.get("/api/model-catalog?fit=true"))
+        self.assertIn("fitScore", routed["items"][0])
+
+    def testRagIngestAddsIncrementalDocumentIntel(self):
+        target_dir = main.ROOT / "workspace" / f"rag-smoke-{runtime_store.new_id('rag')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "notes.md").write_text("Rasputin archive recall smoke document.\n" * 4, encoding="utf-8")
+        (target_dir / "future.pdf").write_text("not a real pdf", encoding="utf-8")
+        rel_path = str(target_dir.relative_to(main.ROOT)).replace("\\", "/")
+
+        self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": rel_path,
+            "name": "RAG Smoke",
+            "readOnly": True,
+        }))
+        self.assertOk(self.client.post("/api/workspace/select", json={"path": rel_path}))
+
+        first = self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Smoke RAG"}))
+        self.assertEqual(first["indexBackend"], "local-hash-vector-json")
+        self.assertEqual(first["parserStatus"]["pdf"], "not_enabled")
+        self.assertGreaterEqual(first["docsIndexed"], 1)
+        self.assertTrue(any(item["parser"] == "pdf" for item in first["skipped"]))
+
+        second = self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Smoke RAG"}))
+        self.assertGreaterEqual(second["docsSkippedUnchanged"], 1)
+
+        stats = self.assertOk(self.client.get("/api/rag/stats"))
+        self.assertEqual(stats["indexBackend"], "local-hash-vector-json")
+        self.assertEqual(stats["parserStatus"]["docx"], "not_enabled")
+
+    def testArchiveSessionsSaveAndExportWithPermission(self):
+        title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"
+        saved = self.assertOk(self.client.post("/api/archive/sessions", json={
+            "title": title,
+            "content": "# Smoke\n\nArchive editor content.",
+        }))
+        self.assertEqual(saved["title"], title)
+        sessions = self.assertOk(self.client.get("/api/archive/sessions"))
+        self.assertTrue(any(item["id"] == saved["id"] for item in sessions["sessions"]))
+
+        def deny_file_write(flag):
+            if flag == "allow_file_write":
+                raise PermissionError("file write disabled for archive smoke")
+            return True
+
+        with patch("backend.security.require", deny_file_write):
+            denied = self.client.post("/api/archive/export", json={"id": saved["id"], "folder": "workspace/archive-smoke"})
+        self.assertEqual(denied.status_code, 403)
+        with patch("backend.security.require", lambda flag: True):
+            exported = self.assertOk(self.client.post("/api/archive/export", json={
+                "id": saved["id"],
+                "folder": "workspace/archive-smoke",
+            }))
+        self.assertTrue(exported["path"].endswith(".md"))
+        self.assertIn("archive-smoke", exported["path"])
+
+    def testTrialsCompareIsBlindUntilReveal(self):
+        compared = self.assertOk(self.client.post("/api/trials/compare", json={
+            "prompt": "Compare this answer style.",
+            "modelKeys": ["dry-run"],
+        }))
+        self.assertFalse(compared["revealed"])
+        self.assertEqual(len(compared["outputs"]), 1)
+        self.assertNotIn("modelKey", compared["outputs"][0])
+
+        runs = self.assertOk(self.client.get("/api/trials"))
+        self.assertTrue(any(item["id"] == compared["id"] for item in runs["runs"]))
+
+        revealed = self.assertOk(self.client.post(f"/api/trials/{compared['id']}/reveal"))
+        self.assertTrue(revealed["revealed"])
+        self.assertEqual(revealed["outputs"][0]["modelKey"], "dry-run")
 
     def testPreferencesRoundTrip(self):
         saved = self.assertOk(self.client.post("/api/preferences", json={

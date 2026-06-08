@@ -3,6 +3,7 @@ import {
   Activity,
   Brain,
   ChevronLeft,
+  FileText,
   Folder,
   Home,
   PanelLeftClose,
@@ -10,6 +11,7 @@ import {
   Plus,
   Search,
   Satellite,
+  Scale,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -23,6 +25,8 @@ const icons = {
   Knowledge: Brain,
   Models: Sparkles,
   Warsat: Satellite,
+  Archive: FileText,
+  Trials: Scale,
   Settings,
 };
 

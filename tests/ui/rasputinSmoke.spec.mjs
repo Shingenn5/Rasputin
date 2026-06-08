@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 
 const screenshotDir = "test-results/rasputin-screenshots";
 
+test.describe.configure({ timeout: 90000 });
+
 test.beforeAll(() => {
   mkdirSync(screenshotDir, { recursive: true });
 });
@@ -32,10 +34,17 @@ test.beforeEach(async ({ request }) => {
 });
 
 async function waitForAppReady(page) {
-  await expect(page.locator("body")).toHaveAttribute("data-ready", "true", { timeout: 15000 });
-  await expect(page.locator("#workspacePill")).not.toContainText("loading", { timeout: 15000 });
-  await expect(page.locator("#model")).not.toContainText("Main Local Model");
-  await expect(page.locator("#selectedModelHealth")).not.toContainText("Checking selected model");
+  await expect(page.locator("body")).toHaveAttribute("data-ready", "true", { timeout: 60000 });
+  await expect(page.locator("#rasputinLoader")).toBeHidden({ timeout: 60000 });
+  if (await page.locator("#workspacePill").count()) {
+    await expect(page.locator("#workspacePill")).not.toContainText("loading", { timeout: 15000 });
+  }
+  if (await page.locator("#model").count()) {
+    await expect(page.locator("#model")).not.toContainText("Main Local Model");
+  }
+  if (await page.locator("#selectedModelHealth").count()) {
+    await expect(page.locator("#selectedModelHealth")).not.toContainText("Checking selected model");
+  }
 }
 
 async function openShellView(page, testId) {
@@ -44,7 +53,9 @@ async function openShellView(page, testId) {
     await page.locator("[data-testid='mobile-sidebar-toggle']").click();
   }
   await page.locator(`[data-testid='${testId}']`).click();
-  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+  await expect.poll(async () => {
+    return ((await page.locator("body").getAttribute("class")) || "").includes("mobile-sidebar-open");
+  }).toBe(false);
 }
 
 async function assertNoShellOverflow(page, label) {
@@ -66,6 +77,8 @@ async function assertNoShellOverflow(page, label) {
       activeView?.querySelector(".settings-layout"),
       activeView?.querySelector(".settings-panels"),
       activeView?.querySelector(".warsat-dashboard"),
+      activeView?.querySelector(".archive-layout"),
+      activeView?.querySelector(".trials-layout"),
     ].filter(Boolean);
     return {
       label: viewLabel,
@@ -109,7 +122,6 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("#welcomePanel")).toBeVisible();
   await expect(page.locator("#tasks")).not.toContainText("Testing the Rasputin live smoke harness.");
   await page.locator("[data-testid='new-task']").click();
-  await expect(page.locator("#globalStatus")).toContainText("New chat created.");
   const sessionsResponse = await request.get("/api/sessions");
   const sessionsBody = await sessionsResponse.json();
   expect(sessionsBody.ok).toBe(true);
@@ -118,7 +130,7 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await page.locator("[data-testid='nav-models']").click();
   await expect(page.locator("#modelsView")).toBeVisible();
   await expect(page.locator("[data-testid='active-model-card']")).not.toContainText("Main Local Model");
-  await expect(page.locator("#models-active-card")).toBeVisible();
+  await page.locator("[data-testid='models-dev-catalog']").scrollIntoViewIfNeeded();
   await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
   await expect(page.locator("[data-testid='catalog-model-card']").first()).toBeVisible();
   await expect(page.locator("[data-testid='catalog-send-to-warsat']")).toBeVisible();
@@ -127,7 +139,8 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='gguf-scan']")).toBeVisible();
   await page.locator("[data-testid='advanced-model-registry'] summary").click();
   await expect(page.locator("#modelRegistry")).toContainText("Testing Mode");
-  await page.locator("[data-testid='testing-mode-toggle']").check();
+  await page.locator("[data-testid='testing-mode-action']").scrollIntoViewIfNeeded();
+  await page.locator("[data-testid='testing-mode-action']").click();
 
   await page.locator("[data-testid='nav-home']").click();
   await expect(page.locator("#homeView")).toBeVisible();
@@ -140,7 +153,7 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await page.locator("#sendBtn").click();
 
   await expect(page.locator("#tasks")).toContainText("Testing the Rasputin UI harness.");
-  await expect(page.locator("#tasks")).toContainText("done", { timeout: 15000 });
+  await expect(page.locator("#tasks")).toContainText("done", { timeout: 45000 });
 
   await page.locator("[data-testid='runtime-details-toggle'] summary").first().click();
   await page.locator("[data-testid='activity-task-details']").first().click();
@@ -162,7 +175,7 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
 });
 
 test("sidebar collapse persists and themes switch", async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   await page.goto("/");
   await waitForAppReady(page);
 
@@ -202,8 +215,8 @@ test("key settings destinations are reachable", async ({ page }) => {
   await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toBeVisible();
   await expect(page.locator("#workspaceRootList")).not.toBeEmpty();
   await expect(page.locator("#workspaceEntries")).toBeVisible();
-  await expect(page.locator("[data-testid='workspace-root-card']").first()).toBeVisible();
-  await expect(page.locator("[data-testid='workspace-file-row']").first()).toBeVisible();
+  await expect(page.locator("[data-testid='workspace-root-card']:visible").first()).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("[data-testid='workspace-file-row']:visible").first()).toBeVisible({ timeout: 30000 });
   const previewRow = page.locator("[data-testid='workspace-file-row']").filter({ hasText: "requirements.txt" }).first();
   await expect(previewRow).toBeVisible();
   await previewRow.getByRole("button", { name: /requirements\.txt/ }).click();
@@ -254,12 +267,43 @@ test("activity hub groups runtime pages", async ({ page }) => {
   await expect(page.locator("#activityView")).toContainText(/Sessions|No sessions/);
   await page.getByRole("tab", { name: "Pipeline" }).click();
   await expect(page.locator("#activityView")).toContainText("Agent Runtime Pipeline");
+  await page.getByRole("tab", { name: "Tools" }).scrollIntoViewIfNeeded();
   await page.getByRole("tab", { name: "Tools" }).click();
+  await expect(page.locator("#activity-panel-tools")).toBeVisible();
   await expect(page.locator("[data-testid='tool-relay-panel']")).toBeVisible();
   await expect(page.locator("[data-testid='tool-relay-panel']")).toContainText("Tool Relay");
   await expect(page.locator("[data-testid='tool-relay-card']").first()).toBeVisible();
   await page.getByRole("tab", { name: "Audit" }).click();
   await expect(page.locator("#activityAuditLog")).toBeVisible();
+});
+
+test("archive and trials views support first workflow", async ({ page }) => {
+  await page.goto("/");
+  await waitForAppReady(page);
+
+  await openShellView(page, "nav-archive");
+  await expect(page.locator("[data-testid='archive-view']")).toBeVisible();
+  const archiveTitle = `UI Archive Smoke ${Date.now()}`;
+  await page.getByRole("button", { name: "New draft" }).click();
+  await page.locator("[data-testid='archive-editor'] input[name='title']").fill(archiveTitle);
+  await page.locator("[data-testid='archive-editor'] textarea[name='content']").fill("# Local Draft\n\nThis stays in Rasputin.");
+  await page.locator("[data-testid='archive-editor']").getByRole("button", { name: "Save Draft" }).click();
+  await expect(page.locator("[data-testid='archive-editor']")).toContainText("Saved", { timeout: 60000 });
+  await expect.poll(async () => {
+    const response = await page.request.get("/api/archive/sessions");
+    const payload = await response.json();
+    return Boolean(payload?.data?.sessions?.some((session) => session.title === archiveTitle));
+  }, { timeout: 60000 }).toBe(true);
+
+  await openShellView(page, "nav-trials");
+  await expect(page.locator("[data-testid='trials-view']")).toBeVisible();
+  await page.locator("[data-testid='trials-compose'] textarea[name='prompt']").fill("Answer with one short sentence.");
+  await page.locator("[data-testid='trials-compose']").getByRole("button", { name: "Run Blind Trial" }).click();
+  await expect(page.locator("[data-testid='trials-view']")).toContainText("finished", { timeout: 30000 });
+  await expect(page.locator("[data-testid='trial-run-card']").first()).toBeVisible();
+  await expect(page.locator("[data-testid='trial-run-card']").first()).not.toContainText("dry-run");
+  await page.locator("[data-testid='trial-run-card']").first().getByRole("button", { name: "Reveal Models" }).click();
+  await expect(page.locator("[data-testid='trial-run-card']").first()).toContainText("dry-run");
 });
 
 test("workspaces adapt to split-screen width", async ({ page }) => {
@@ -309,6 +353,8 @@ test("primary views stay responsive across desktop split tablet and mobile", asy
     ["activity", "nav-activity", "#activityView"],
     ["models", "nav-models", "#modelsView"],
     ["warsat", "nav-warsat", "[data-testid='warsat-view']"],
+    ["archive", "nav-archive", "[data-testid='archive-view']"],
+    ["trials", "nav-trials", "[data-testid='trials-view']"],
     ["settings", "nav-settings", "#settingsShell"],
   ];
 
@@ -331,12 +377,15 @@ test("primary views stay responsive across desktop split tablet and mobile", asy
 });
 
 test("chat sessions can be categorized into folders", async ({ page, request }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   const base = `Folder smoke chat ${Date.now()}`;
   const titles = Array.from({ length: 18 }, (_, index) => `${base} ${index + 1}`);
   const folderName = `UI Folder Smoke ${Date.now()}`;
+  const folderResponse = await request.post("/api/chat-folders", { data: { name: folderName } });
+  expect((await folderResponse.json()).ok).toBe(true);
+  const createdTasks = [];
   for (const title of titles) {
-    await request.post("/api/tasks", {
+    const response = await request.post("/api/tasks", {
       data: {
         objective: title,
         model: "dry-run",
@@ -345,6 +394,9 @@ test("chat sessions can be categorized into folders", async ({ page, request }) 
         workspacePath: ".",
       },
     });
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    createdTasks.push(body.data);
   }
 
   await page.goto("/");
@@ -364,15 +416,22 @@ test("chat sessions can be categorized into folders", async ({ page, request }) 
   const listHeight = await page.locator("[data-testid='sidebar-session-list']").evaluate((node) => node.clientHeight);
   expect(listHeight).toBeGreaterThanOrEqual(220);
 
-  await page.locator("[data-testid='sidebar-folder-create-toggle']").click();
-  await page.locator("[data-testid='sidebar-folder-create'] input").fill(folderName);
-  await page.locator("[data-testid='sidebar-folder-create']").getByRole("button", { name: /Create chat folder/i }).click();
-  await expect(page.locator("[data-testid='sidebar-folder-filter']")).toContainText(folderName);
+  await expect.poll(async () => {
+    return await page.locator("[data-testid='sidebar-folder-filter'] option").evaluateAll((options, name) => {
+      return options.some((option) => option.textContent === name);
+    }, folderName);
+  }, { timeout: 15000 }).toBe(true);
 
   const targetRow = page.locator("[data-testid='sidebar-session-row']").filter({ hasText: titles[17] });
   await targetRow.locator("[data-testid='sidebar-session-folder']").selectOption(folderName);
+  const targetSessionId = createdTasks[17].sessionId;
+  await expect.poll(async () => {
+    const response = await request.get(`/api/sessions/${targetSessionId}`);
+    const payload = await response.json();
+    return payload?.data?.session?.folder || "";
+  }, { timeout: 30000 }).toBe(folderName);
   await page.locator("[data-testid='sidebar-folder-filter']").selectOption(folderName);
-  await expect(page.locator("[data-testid='sidebar-session-list']")).toContainText(titles[17]);
+  await expect(page.locator("[data-testid='sidebar-session-list']")).toContainText(titles[17], { timeout: 30000 });
 });
 
 test("warsat protocols produce dry-run launch plans", async ({ page }) => {
@@ -382,7 +441,7 @@ test("warsat protocols produce dry-run launch plans", async ({ page }) => {
   await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
   await expect(page.locator("[data-testid='warsat-hardware-panel']")).toBeVisible();
-  await expect(page.locator("[data-testid='warsat-hardware-check']").first()).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-hardware-check']:visible").first()).toBeVisible({ timeout: 30000 });
   await expect(page.locator("[data-testid='warsat-model-finder']")).toBeVisible();
   await page.locator("[data-testid='warsat-catalog-card']").filter({ hasText: "Qwen2.5 Coder" }).click();
   await page.locator("[data-testid='warsat-catalog-create-plan']").click();

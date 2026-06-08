@@ -84,6 +84,7 @@ class AgentHub:
         self.tasks = {}
         self.listeners = set()
         self.mcp = McpLayer()
+        self._memory_export_task = None
         self._mark_interrupted()
 
     def _mark_interrupted(self):
@@ -163,8 +164,24 @@ class AgentHub:
             except Exception:
                 pass
             conn.commit()
+        self._schedule_master_context_export()
+
+    def _schedule_master_context_export(self):
         try:
-            memory.export_master_context()
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                memory.export_master_context()
+            except Exception:
+                pass
+            return
+        if self._memory_export_task and not self._memory_export_task.done():
+            return
+        self._memory_export_task = loop.create_task(self._export_master_context())
+
+    async def _export_master_context(self):
+        try:
+            await asyncio.to_thread(memory.export_master_context)
         except Exception:
             pass
 
@@ -232,8 +249,31 @@ class AgentHub:
             "createdAt": task.created_at,
         }
 
-    def _snapshot_from_db(self, row):
+    def _snapshot_from_db(self, row, include_details=True):
         task = dict(row)
+        base = {
+            "id": task["id"],
+            "sessionId": task["session_id"],
+            "objective": task["objective"],
+            "model": task["model"],
+            "skill": task["skill"],
+            "mode": task["mode"],
+            "status": task["status"],
+            "progress": task["progress"],
+            "logs": [],
+            "result": task["result"],
+            "sources": [],
+            "graph": [],
+            "outputs": [],
+            "trace": [],
+            "permissionSnapshot": store._loads(task["permission_snapshot"], {}),
+            "workspace": task["workspace"],
+            "parentId": task["parent_id"],
+            "paused": bool(task["paused"]),
+            "createdAt": task["created_at"],
+        }
+        if not include_details:
+            return base
         with store._lock, store.connect() as conn:
             events = conn.execute(
                 "SELECT kind,detail,created_at FROM task_events WHERE task_id=? ORDER BY id DESC LIMIT 80",
@@ -252,19 +292,8 @@ class AgentHub:
             detail = store._loads(event["detail"], {})
             if event["kind"] == "log":
                 logs.append(detail.get("message", ""))
-        return {
-            "id": task["id"],
-            "sessionId": task["session_id"],
-            "objective": task["objective"],
-            "model": task["model"],
-            "skill": task["skill"],
-            "mode": task["mode"],
-            "status": task["status"],
-            "progress": task["progress"],
+        base.update({
             "logs": logs,
-            "result": task["result"],
-            "sources": [],
-            "graph": [],
             "outputs": [
                 {"kind": a["kind"], "title": a["title"], "content": a["content"], "createdAt": a["created_at"]}
                 for a in outputs
@@ -273,18 +302,15 @@ class AgentHub:
                 {"at": t["created_at"], "kind": t["kind"], "detail": store._loads(t["detail"], {})}
                 for t in reversed(traces)
             ],
-            "permissionSnapshot": store._loads(task["permission_snapshot"], {}),
-            "workspace": task["workspace"],
-            "parentId": task["parent_id"],
-            "paused": bool(task["paused"]),
-            "createdAt": task["created_at"],
-        }
+        })
+        return base
 
-    def all_tasks(self):
+    def all_tasks(self, limit=100, include_details=False):
         store.init_db()
+        limit = max(1, min(int(limit or 100), 500))
         with store._lock, store.connect() as conn:
-            rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT 250").fetchall()
-        return [self._snapshot_from_db(row) for row in rows]
+            rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        return [self._snapshot_from_db(row, include_details=include_details) for row in rows]
 
     def get_task(self, task_id):
         task = self.tasks.get(task_id)

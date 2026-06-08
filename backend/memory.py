@@ -280,7 +280,8 @@ def export_markdown():
 def export_master_context():
     store.init_db()
     MASTER_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
-    with store._lock, store.connect() as conn:
+    # read-only-ish export; don't block normal task writes
+    with store.connect() as conn:
         sessions = conn.execute(
             "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 200"
         ).fetchall()

@@ -12,12 +12,14 @@ import { WorkspacesView } from "../features/workspaces/WorkspacesView.jsx";
 import { AuditView } from "../features/audit/AuditView.jsx";
 import {
   AgentsView,
+  ArchiveView,
   ApprovalsView,
   MemoryView,
   SchedulesView,
   SessionsView,
   SkillsView,
   TelegramView,
+  TrialsView,
   WarsatView,
 } from "../features/runtime/RuntimeViews.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
@@ -92,10 +94,16 @@ export function App() {
   const [warsatLogs, setWarsatLogs] = useState(null);
   const [warsatOperation, setWarsatOperation] = useState(null);
   const [tools, setTools] = useState({ tools: [], groups: [] });
+  const [mcpRelays, setMcpRelays] = useState({ servers: [] });
+  const [archiveSessions, setArchiveSessions] = useState({ sessions: [] });
+  const [archiveStatus, setArchiveStatus] = useState("");
+  const [trialsRuns, setTrialsRuns] = useState({ runs: [] });
+  const [trialsStatus, setTrialsStatus] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
+  const bootPhaseRef = useRef("starting");
   const authenticated = !!session?.authenticated && !loginVisible;
 
   const selectedModelObject = useMemo(
@@ -105,8 +113,12 @@ export function App() {
 
   const visibleModels = useMemo(() => {
     const shown = models.filter((model) => isUserFacingModel(model, testingMode));
+    const selected = models.find((model) => model.key === selectedModel);
+    if (selected && selected.key !== "local-embeddings" && !shown.some((model) => model.key === selected.key)) {
+      return [selected, ...shown];
+    }
     return shown.length ? shown : models.filter((model) => model.key !== "local-embeddings");
-  }, [models, testingMode]);
+  }, [models, selectedModel, testingMode]);
 
   const activeWorkspaceName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const healthy = isModelHealthy(selectedModelObject);
@@ -180,6 +192,18 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (ready) return undefined;
+    const timer = window.setTimeout(() => {
+      const loginRendered = document.querySelector("#loginShell");
+      if (loginRendered && ["login", "error"].includes(bootPhaseRef.current)) {
+        document.body.dataset.ready = "true";
+        setReady(true);
+      }
+    }, 12000);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
+
+  useEffect(() => {
     if (modelsQuery.data) setModels(modelsQuery.data);
   }, [modelsQuery.data]);
 
@@ -229,21 +253,30 @@ export function App() {
   }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, session, ready]);
 
   async function boot() {
+    const markReady = () => {
+      document.body.dataset.ready = "true";
+      setReady(true);
+    };
     try {
+      bootPhaseRef.current = "starting";
       const authSession = await api("/api/auth/session");
       setSession(authSession);
       if (!authSession.authenticated) {
+        bootPhaseRef.current = "login";
         setLoginVisible(true);
-        setReady(true);
+        markReady();
         return;
       }
-      setLoginVisible(false);
+      bootPhaseRef.current = "loadingApp";
       await loadBasics();
+      setLoginVisible(false);
       connectEvents();
-      setReady(true);
+      bootPhaseRef.current = "ready";
+      markReady();
     } catch (error) {
+      bootPhaseRef.current = "error";
       setLoginStatus(error.message);
-      setReady(true);
+      markReady();
     }
   }
 
@@ -273,6 +306,9 @@ export function App() {
     setWarsat(data.warsat || { protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
     setWarsatRuntimes(data.warsat?.runtimes || { containers: [], count: 0 });
     setTools(data.tools || { tools: [], groups: [] });
+    setMcpRelays(data.mcpRelays || { servers: [] });
+    setArchiveSessions(data.archive || { sessions: [] });
+    setTrialsRuns(data.trials || { runs: [] });
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
@@ -286,7 +322,11 @@ export function App() {
     setView(prefs.activeView || "home");
     setSettingsSection(prefs.activeSettingsSection || "general");
     setActiveChatFolder(prefs.activeChatFolder || "all");
-    await loadWorkspaceRoots(data.workspace?.activePath || ".", prefs.workspaceExplorer || {});
+    loadWorkspaceRoots(data.workspace?.activePath || ".", prefs.workspaceExplorer || {}).catch((error) => {
+      setWorkspaceRoots([]);
+      setWorkspaceBrowse(null);
+      setGlobalStatus(`Workspace browser will retry when opened: ${error.message}`);
+    });
   }
 
   async function loadModels() {
@@ -430,6 +470,12 @@ export function App() {
     if (["activity", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"].includes(nextView)) {
       loadRuntimeData().catch((error) => setGlobalStatus(error.message));
     }
+    if (nextView === "archive") {
+      loadArchive().catch((error) => setGlobalStatus(error.message));
+    }
+    if (nextView === "trials") {
+      loadTrials().catch((error) => setGlobalStatus(error.message));
+    }
     if (nextView === "warsat") {
       loadWarsat().catch((error) => setGlobalStatus(error.message));
     }
@@ -485,8 +531,8 @@ export function App() {
       setSelectedSession(detail);
       setActiveChatSessionId(sessionId || null);
       setObjective("");
-      await loadChatFolders();
       go("home");
+      loadChatFolders().catch((error) => setGlobalStatus(error.message));
       setGlobalStatus("New chat created.");
       return detail;
     } catch (error) {
@@ -497,18 +543,42 @@ export function App() {
 
   async function sendTask(event) {
     event.preventDefault();
+    const message = objective.trim();
     if (!healthy) {
       setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
       return;
     }
-    if (!objective.trim()) {
+    if (!message) {
       setComposerStatus("Write a message first.");
       return;
     }
+    const tempId = `pending-${Date.now()}`;
+    const tempTask = {
+      id: tempId,
+      sessionId: activeChatSessionId,
+      objective: message,
+      model: selectedModel,
+      skill: "general",
+      mode: taskMode,
+      status: "queued",
+      progress: 0,
+      logs: ["queued"],
+      result: "",
+      outputs: [],
+      sources: [],
+      graph: [],
+      trace: [],
+      workspace: workspace.activePath || ".",
+      parentId: null,
+      createdAt: Date.now() / 1000,
+    };
+    setTasks((current) => [tempTask, ...current.filter((item) => item.id !== tempId)]);
+    setHomeTaskIds((current) => new Set([...current, tempId]));
+    setObjective("");
     try {
       setComposerStatus("");
       const task = await postJson("/api/tasks", {
-        objective: objective.trim(),
+        objective: message,
         model: selectedModel,
         skill: "general",
         mode: taskMode,
@@ -516,14 +586,25 @@ export function App() {
         workspacePath: workspace.activePath || ".",
         sessionId: activeChatSessionId || undefined,
       });
-      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
-      queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id)]);
-      setHomeTaskIds((current) => new Set([...current, task.id]));
+      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
+      queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
+      setHomeTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(tempId);
+        next.add(task.id);
+        return next;
+      });
       setActiveChatSessionId(task.sessionId || activeChatSessionId);
-      setObjective("");
       api("/api/sessions").then(setSessions).catch(() => {});
       setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} sub-agent${subagentCount === 1 ? "" : "s"}.` : "Task started.");
     } catch (error) {
+      setTasks((current) => current.filter((item) => item.id !== tempId));
+      setHomeTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(tempId);
+        return next;
+      });
+      setObjective(message);
       setComposerStatus(error.message);
     }
   }
@@ -798,6 +879,48 @@ export function App() {
     setSkillRegistry(nextSkills);
     setTelegramConfig(nextTelegram);
     setSchedulesList(nextSchedules);
+  }
+
+  async function loadArchive() {
+    const nextArchive = await api("/api/archive/sessions");
+    setArchiveSessions(nextArchive);
+    return nextArchive;
+  }
+
+  async function saveArchiveDraft(payload) {
+    setArchiveStatus("");
+    const saved = await postJson("/api/archive/sessions", payload);
+    const nextArchive = await loadArchive();
+    setArchiveStatus(`Saved ${saved.title}.`);
+    return { saved, archive: nextArchive };
+  }
+
+  async function exportArchiveDraft(id) {
+    setArchiveStatus("");
+    const exported = await postJson("/api/archive/export", { id });
+    setArchiveStatus(`Exported to ${exported.path}.`);
+    return exported;
+  }
+
+  async function loadTrials() {
+    const nextTrials = await api("/api/trials");
+    setTrialsRuns(nextTrials);
+    return nextTrials;
+  }
+
+  async function runTrialCompare(payload) {
+    setTrialsStatus("Running blind comparison.");
+    const run = await postJson("/api/trials/compare", payload);
+    const nextTrials = await loadTrials();
+    setTrialsStatus(`Trial ${run.id} finished.`);
+    return { run, trials: nextTrials };
+  }
+
+  async function revealTrial(runId) {
+    const run = await postJson(`/api/trials/${runId}/reveal`, {});
+    await loadTrials();
+    setTrialsStatus(`Revealed trial ${run.id}.`);
+    return run;
   }
 
   async function loadChatFolders() {
@@ -1284,11 +1407,27 @@ export function App() {
         loadModelCatalog={loadModelCatalog}
         prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
       />
+      <ArchiveView
+        view={view}
+        archive={archiveSessions}
+        status={archiveStatus}
+        saveArchiveDraft={saveArchiveDraft}
+        exportArchiveDraft={exportArchiveDraft}
+      />
+      <TrialsView
+        view={view}
+        trials={trialsRuns}
+        models={visibleModels}
+        status={trialsStatus}
+        runTrialCompare={runTrialCompare}
+        revealTrial={revealTrial}
+      />
       <ModelsView
         view={view}
         models={models}
         selectedModelObject={selectedModelObject}
         selectedModel={selectedModel}
+        setSelectedModel={setSelectedModel}
         testingMode={testingMode}
         setTestingMode={setTestingMode}
         runModelAction={runModelAction}

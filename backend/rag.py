@@ -19,6 +19,7 @@ TEXT_EXTS = {
     ".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".csv", ".tsv",
     ".yml", ".yaml", ".toml", ".ini", ".sql", ".xml", ".svg"
 }
+FUTURE_DOCUMENT_EXTS = {".pdf", ".docx", ".xlsx"}
 VECTOR_DIMS = 384
 
 _lock = Lock()
@@ -82,20 +83,30 @@ def _cosine(left, right):
     return sum(value * right.get(key, 0) for key, value in left.items())
 
 
+def _parser_status(path):
+    ext = path.suffix.lower()
+    if ext in TEXT_EXTS:
+        return {"supported": True, "parser": "text", "reason": ""}
+    if ext in FUTURE_DOCUMENT_EXTS:
+        return {"supported": False, "parser": ext.lstrip("-."), "reason": "parser_not_enabled"}
+    return {"supported": False, "parser": "unsupported", "reason": "unsupported_extension"}
+
+
 def _read_text(path):
-    if path.suffix.lower() not in TEXT_EXTS:
-        return None
+    status = _parser_status(path)
+    if not status["supported"]:
+        return None, status
     if path.stat().st_size > 1_500_000:
-        return None
+        return None, {"supported": False, "parser": "text", "reason": "too_large"}
     try:
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8"), status
     except UnicodeDecodeError:
         try:
-            return path.read_text(encoding="utf-8", errors="ignore")
+            return path.read_text(encoding="utf-8", errors="ignore"), {**status, "reason": "encoding_replaced"}
         except Exception:
-            return None
+            return None, {"supported": False, "parser": "text", "reason": "decode_failed"}
     except Exception:
-        return None
+        return None, {"supported": False, "parser": "text", "reason": "read_failed"}
 
 
 def _chunk_text(text, lines_per_chunk=80, overlap=12):
@@ -153,24 +164,37 @@ def ingest(path=".", label=None):
     index = _load()
     files = _walk(target)
     touched = []
+    unchanged = []
     new_chunks = []
     docs = []
+    skipped = []
+    existing = {doc.get("source"): doc for doc in index.get("docs", [])}
 
     for file_path in files:
-        text = _read_text(file_path)
-        if text is None:
-            continue
         source = _source(file_path, item, root)
-        touched.append(source)
         rel = str(file_path.relative_to(root)).replace("\\", "/")
+        stat = file_path.stat()
+        existing_doc = existing.get(source)
+        if existing_doc and existing_doc.get("mtime") == stat.st_mtime and existing_doc.get("bytes") == stat.st_size:
+            unchanged.append(source)
+            continue
+        text, parser = _read_text(file_path)
+        if text is None:
+            skipped.append({"path": rel, "reason": parser.get("reason"), "parser": parser.get("parser")})
+            continue
+        touched.append(source)
+        content_hash = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
         doc = {
             "source": source,
             "workspace_id": item.get("id"),
             "workspace_name": item.get("name"),
             "path": rel,
             "label": label or rel,
-            "mtime": file_path.stat().st_mtime,
-            "bytes": file_path.stat().st_size,
+            "mtime": stat.st_mtime,
+            "bytes": stat.st_size,
+            "content_hash": content_hash,
+            "parser": parser.get("parser"),
+            "parser_status": parser.get("reason") or "ok",
         }
         docs.append(doc)
         for n, (chunk, line_start, line_end) in enumerate(_chunk_text(text)):
@@ -189,7 +213,8 @@ def ingest(path=".", label=None):
                 "terms": dict(terms),
                 "term_count": sum(terms.values()),
                 "vector": _embed(chunk),
-                "mtime": file_path.stat().st_mtime,
+                "mtime": stat.st_mtime,
+                "content_hash": content_hash,
             })
 
     kept_docs = [d for d in index["docs"] if d.get("source") not in touched]
@@ -203,9 +228,19 @@ def ingest(path=".", label=None):
         "workspace_id": item.get("id"),
         "files_seen": len(files),
         "docs_indexed": len(docs),
+        "docs_skipped_unchanged": len(unchanged),
+        "docs_skipped": len(skipped),
+        "skipped": skipped[:50],
         "chunks_indexed": len(new_chunks),
         "total_docs": len(index["docs"]),
         "total_chunks": len(index["chunks"]),
+        "index_backend": "local-hash-vector-json",
+        "parser_status": {
+            "text": "enabled",
+            "pdf": "not_enabled",
+            "docx": "not_enabled",
+            "xlsx": "not_enabled",
+        },
     }
 
 
@@ -213,10 +248,17 @@ def stats():
     index = _load()
     return {
         "version": index.get("version", 2),
+        "index_backend": "local-hash-vector-json",
         "docs": len(index["docs"]),
         "chunks": len(index["chunks"]),
         "updated_at": index.get("updated_at"),
         "sources": index["docs"][-25:],
+        "parser_status": {
+            "text": "enabled",
+            "pdf": "not_enabled",
+            "docx": "not_enabled",
+            "xlsx": "not_enabled",
+        },
     }
 
 

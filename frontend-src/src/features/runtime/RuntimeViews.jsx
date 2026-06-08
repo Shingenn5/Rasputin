@@ -373,6 +373,134 @@ export function SchedulesView({ view, schedules, createSchedule }) {
   );
 }
 
+export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArchiveDraft }) {
+  const [activeId, setActiveId] = useState("");
+  const sessions = archive?.sessions || [];
+  const creatingNew = activeId === "__new__";
+  const active = creatingNew ? null : sessions.find((item) => item.id === activeId) || sessions[0] || null;
+
+  useEffect(() => {
+    if (!activeId && sessions[0]?.id) setActiveId(sessions[0].id);
+  }, [activeId, sessions]);
+
+  async function submit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await saveArchiveDraft?.({
+      id: active?.id || undefined,
+      title: form.get("title"),
+      content: form.get("content"),
+    });
+    if (result?.saved?.id) setActiveId(result.saved.id);
+  }
+
+  return (
+    <section className={`app-view ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive" data-testid="archive-view">
+      <PageHeader title="Archive" text="Local markdown drafting with export. AI suggestions and DOCX/PDF editing come after the safe editor base is stable." />
+      <div className="archive-layout">
+        <aside className="archive-sidebar">
+          <button className="ras-button primary w-100" type="button" onClick={() => setActiveId("__new__")}>New draft</button>
+          <div className="archive-session-list">
+            {sessions.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`archive-session ${!creatingNew && active?.id === item.id ? "is-active" : ""}`}
+                onClick={() => setActiveId(item.id)}
+              >
+                <strong>{item.title}</strong>
+                <span>{item.wordCount || item.word_count || 0} words</span>
+              </button>
+            ))}
+            {!sessions.length && <p className="empty-inline">No archive drafts yet.</p>}
+          </div>
+        </aside>
+        <form className="archive-editor" onSubmit={submit} data-testid="archive-editor">
+          <label>
+            <span>Title</span>
+            <input name="title" defaultValue={active?.title || ""} placeholder="Draft title" key={`title-${active?.id || "new"}`} />
+          </label>
+          <label>
+            <span>Markdown</span>
+            <textarea name="content" defaultValue={active?.content || ""} placeholder="# Start writing" key={`content-${active?.id || "new"}`} />
+          </label>
+          <div className="archive-actions">
+            <button className="ras-button primary" type="submit">Save Draft</button>
+            <button className="ras-button ghost" type="button" disabled={!active?.id} onClick={() => exportArchiveDraft?.(active.id)}>Export Markdown</button>
+            {status && <span role="status">{status}</span>}
+          </div>
+        </form>
+        <article className="archive-preview">
+          <span className="eyebrow">Preview</span>
+          <pre>{active?.content || "Save a draft to preview stored markdown here."}</pre>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+export function TrialsView({ view, trials, models, status, runTrialCompare, revealTrial }) {
+  const runs = trials?.runs || [];
+  const selectable = (models || []).filter((model) => model.key !== "local-embeddings").slice(0, 8);
+
+  function submit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const modelKeys = form.getAll("modelKeys");
+    runTrialCompare?.({ prompt: form.get("prompt"), modelKeys });
+  }
+
+  return (
+    <section className={`app-view ${view === "trials" ? "active" : ""}`} id="trialsView" data-app-view="trials" data-testid="trials-view">
+      <PageHeader title="Trials" text="Blind prompt comparison for local and approved API models." />
+      <div className="trials-layout">
+        <form className="trials-compose" onSubmit={submit} data-testid="trials-compose">
+          <label>
+            <span>Prompt</span>
+            <textarea name="prompt" required placeholder="Ask one prompt and compare responses blind." />
+          </label>
+          <fieldset>
+            <legend>Models</legend>
+            {selectable.map((model) => (
+              <label className="trial-model-option" key={model.key}>
+                <input type="checkbox" name="modelKeys" value={model.key} defaultChecked={model.key === "dry-run"} />
+                <span>{model.name || model.model || model.key}</span>
+              </label>
+            ))}
+          </fieldset>
+          <button className="ras-button primary" type="submit">Run Blind Trial</button>
+          {status && <p role="status">{status}</p>}
+        </form>
+        <div className="trial-run-list">
+          {runs.map((run) => (
+            <article className="trial-run-card" key={run.id} data-testid="trial-run-card">
+              <div className="section-row">
+                <div>
+                  <span className="eyebrow">Trial {run.id}</span>
+                  <h2>{run.prompt}</h2>
+                </div>
+                <button className="ras-button ghost" type="button" onClick={() => revealTrial?.(run.id)}>
+                  {run.revealed ? "Revealed" : "Reveal Models"}
+                </button>
+              </div>
+              <div className="trial-output-grid">
+                {(run.outputs || []).map((output) => (
+                  <section key={output.id} className="trial-output">
+                    <strong>Option {output.label}{output.modelKey ? ` / ${output.modelKey}` : ""}</strong>
+                    <span>{output.status} / {output.latencyMs} ms</span>
+                    <p>{output.error || output.text || "No output."}</p>
+                  </section>
+                ))}
+              </div>
+            </article>
+          ))}
+          {!runs.length && <EmptyCard title="No trials yet" text="Run a blind comparison to evaluate model behavior without labels." />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function WarsatView({
   view,
   warsat,
@@ -558,6 +686,7 @@ export function WarsatView({
                     </span>
                     <span className="warsat-model-result-tags">
                       <em>{labelize(item.purpose || "chat")}</em>
+                      <em>{item.fitLabel ? `${item.fitLabel} ${item.fitScore ?? ""}`.trim() : "Fit unknown"}</em>
                       <em>{item.vramEstimateGb ? `${item.vramEstimateGb} GB` : "VRAM unknown"}</em>
                       <em>{item.recommendedProtocol || "Warsat"}</em>
                     </span>
@@ -578,6 +707,7 @@ export function WarsatView({
                     <dl className="detail-grid mb-0">
                       <dt>Model</dt><dd>{selectedCatalogModel.modelId || selectedCatalogModel.id}</dd>
                       <dt>Use</dt><dd>{labelize(selectedCatalogModel.purpose || "chat")}</dd>
+                      <dt>Fit</dt><dd>{selectedCatalogModel.fitLabel ? `${selectedCatalogModel.fitLabel} (${selectedCatalogModel.fitScore ?? 0})` : "Unknown"}</dd>
                       <dt>Profile</dt><dd>{selectedCatalogModel.recommendedProfile || "balanced"}</dd>
                       <dt>Runtime</dt><dd>{selectedCatalogModel.recommendedProtocol || "vllmCudaOpenai"}</dd>
                     </dl>

@@ -719,6 +719,12 @@ body.sidebar-collapsed .app-frame {
   cursor: pointer;
 }
 
+.nav-item svg,
+.nav-item .nav-label,
+.nav-item .nav-count {
+  pointer-events: none;
+}
+
 .nav-item:hover,
 .nav-item.is-active {
   color: var(--ras-sidebar-text);
@@ -3243,6 +3249,206 @@ button.runtime-chip {
   color: var(--ras-accent);
 }
 
+.archive-layout,
+.trials-layout {
+  display: grid;
+  align-items: start;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.archive-layout {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 360px);
+}
+
+.trials-layout {
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+}
+
+.archive-sidebar,
+.archive-editor,
+.archive-preview,
+.trials-compose,
+.trial-run-card {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-panel) 94%, var(--ras-accent) 6%), var(--ras-panel));
+  padding: .9rem;
+}
+
+.archive-sidebar,
+.archive-editor,
+.archive-preview,
+.trials-compose,
+.trial-run-list {
+  display: grid;
+  align-content: start;
+  gap: .85rem;
+}
+
+.archive-session-list,
+.trial-run-list {
+  min-height: 0;
+  max-height: calc(100dvh - 220px);
+  overflow: auto;
+  padding-right: .15rem;
+}
+
+.archive-session {
+  display: grid;
+  gap: .22rem;
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 40%, transparent);
+  color: var(--ras-text);
+  padding: .7rem;
+  text-align: left;
+}
+
+.archive-session:hover,
+.archive-session:focus-visible,
+.archive-session.is-active {
+  border-color: color-mix(in srgb, var(--ras-accent) 52%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 9%, var(--ras-panel));
+}
+
+.archive-session span {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.archive-editor label,
+.trials-compose label {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+}
+
+.archive-editor label > span,
+.trials-compose label > span,
+.trials-compose legend {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.archive-editor input,
+.archive-editor textarea,
+.trials-compose textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-input-bg);
+  color: var(--ras-text);
+  padding: .7rem .78rem;
+}
+
+.archive-editor textarea {
+  min-height: min(54dvh, 620px);
+  resize: vertical;
+}
+
+.trials-compose textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+}
+
+.archive-actions [role="status"],
+.trials-compose [role="status"] {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .84rem;
+  font-weight: 750;
+}
+
+.archive-preview pre,
+.trial-output p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.archive-preview pre {
+  max-height: min(58dvh, 680px);
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  color: var(--ras-text);
+  padding: .85rem;
+}
+
+.trials-compose fieldset {
+  display: grid;
+  gap: .45rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  padding: .75rem;
+}
+
+.trial-model-option {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 34%, transparent);
+  color: var(--ras-text);
+  padding: .55rem .65rem;
+}
+
+.trial-model-option input {
+  width: 18px;
+  height: 18px;
+}
+
+.trial-run-card {
+  display: grid;
+  gap: .9rem;
+}
+
+.trial-run-card h2 {
+  margin: .15rem 0 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.trial-output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .7rem;
+}
+
+.trial-output {
+  display: grid;
+  gap: .45rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 38%, transparent);
+  padding: .75rem;
+}
+
+.trial-output span {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 800;
+}
+
 .settings-card,
 .stat-card,
 .task-card {
@@ -4094,6 +4300,12 @@ button.runtime-chip {
   background: transparent;
 }
 
+.ras-button.small-button {
+  min-height: 34px;
+  padding: .43rem .62rem;
+  font-size: .82rem;
+}
+
 .ras-button:disabled {
   cursor: not-allowed;
   opacity: .58;
@@ -4321,6 +4533,19 @@ button.runtime-chip {
 .model-catalog-note {
   margin: .25rem 0 0;
   color: var(--ras-muted);
+}
+
+.model-catalog-note-list {
+  display: grid;
+  gap: .35rem;
+  margin: .15rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ras-muted);
+  font-size: .84rem;
+}
+
+.model-catalog-note-list li::marker {
+  color: var(--ras-accent);
 }
 
 .model-catalog-actions,
@@ -4633,6 +4858,7 @@ button.runtime-chip {
 .testing-mode-control {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: .65rem;
   border: 1px solid var(--ras-border);
   border-radius: 8px;
@@ -4640,7 +4866,15 @@ button.runtime-chip {
   padding: .75rem;
 }
 
+.testing-mode-label {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin: 0;
+}
+
 .testing-mode-control input {
+  flex: 0 0 auto;
   width: 1.2rem;
   height: 1.2rem;
   accent-color: var(--ras-accent);
@@ -7459,6 +7693,14 @@ button.helper-row:hover {
   .model-catalog-detail {
     grid-column: 1 / -1;
   }
+
+  .archive-layout {
+    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  }
+
+  .archive-preview {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 980px) {
@@ -7564,8 +7806,16 @@ button.helper-row:hover {
 
   .models-grid,
   .deployment-layout,
+  .archive-layout,
+  .trials-layout,
   .local-model-form {
     grid-template-columns: 1fr;
+  }
+
+  .archive-session-list,
+  .trial-run-list {
+    max-height: none;
+    overflow: visible;
   }
 
   .deployment-steps {

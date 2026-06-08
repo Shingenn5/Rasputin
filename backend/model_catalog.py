@@ -223,6 +223,85 @@ def _curated_items():
     return items
 
 
+def _hardware_vram_gb(hardware=None):
+    env_vram = os.environ.get("WARSAT_AVAILABLE_VRAM_GB")
+    if env_vram:
+        try:
+            return float(env_vram)
+        except ValueError:
+            pass
+    gpus = ((hardware or {}).get("detected_hardware") or (hardware or {}).get("detectedHardware") or {}).get("gpus") or []
+    values = []
+    for gpu in gpus:
+        mb = gpu.get("memory_total_mb") or gpu.get("memoryTotalMb")
+        try:
+            if mb:
+                values.append(float(mb) / 1024)
+        except Exception:
+            continue
+    return max(values) if values else None
+
+
+def _fit_item(item, hardware=None):
+    item = dict(item)
+    blocked = []
+    reasons = []
+    score = 50
+    vram = item.get("vramEstimateGb")
+    available = _hardware_vram_gb(hardware)
+    if not item.get("deployable"):
+        blocked.append("No local Warsat runtime is known for this catalog entry.")
+        score -= 45
+    if vram:
+        if available:
+            margin = available - float(vram)
+            if margin >= 4:
+                score += 35
+                reasons.append(f"Estimated {vram} GB VRAM fits inside detected {available:.1f} GB.")
+            elif margin >= 0:
+                score += 18
+                reasons.append(f"Estimated {vram} GB VRAM fits, but headroom is tight.")
+            else:
+                score -= 40
+                blocked.append(f"Estimated {vram} GB VRAM exceeds detected {available:.1f} GB.")
+        else:
+            score += 10 if float(vram) <= 12 else -5
+            reasons.append(f"Estimated {vram} GB VRAM; run Warsat readiness for hardware-specific fit.")
+    else:
+        reasons.append("VRAM estimate is unknown.")
+    purpose = item.get("purpose")
+    if purpose in {"coding", "reasoning", "research"}:
+        score += 8
+        reasons.append(f"Useful for {purpose} workflows.")
+    if item.get("recommendedProtocol") == "ollamaOpenaiServer":
+        score += 5
+        reasons.append("Ollama target is useful for quick local experiments.")
+    score = max(0, min(100, int(score)))
+    if blocked:
+        label = "Blocked"
+    elif score >= 82:
+        label = "Strong fit"
+    elif score >= 62:
+        label = "Good fit"
+    elif score >= 42:
+        label = "Possible"
+    else:
+        label = "Weak fit"
+    item.update({
+        "fitScore": score,
+        "fitLabel": label,
+        "fitReasons": reasons[:4],
+        "blockedReasons": blocked,
+    })
+    return item
+
+
+def _apply_fit(items, hardware=None):
+    fitted = [_fit_item(item, hardware) for item in items]
+    fitted.sort(key=lambda item: (bool(item.get("blockedReasons")), -int(item.get("fitScore") or 0), item.get("name", "")))
+    return fitted
+
+
 def _read_cache():
     if not CACHE_FILE.exists():
         return None
@@ -263,12 +342,12 @@ def _remote_items(raw):
     return items
 
 
-def _catalog_payload(remote_items=None, source_status="fallback", source_error=""):
+def _catalog_payload(remote_items=None, source_status="fallback", source_error="", hardware=None):
     curated = _curated_items()
     remote_items = remote_items or []
     seen = {item["id"] for item in curated}
     merged_remote = [item for item in remote_items if item["id"] not in seen]
-    items = curated + merged_remote
+    items = _apply_fit(curated + merged_remote, hardware)
     return {
         "items": items,
         "count": len(items),
@@ -286,25 +365,25 @@ def _catalog_payload(remote_items=None, source_status="fallback", source_error="
     }
 
 
-def catalog(refresh=False, force=False):
+def catalog(refresh=False, force=False, hardware=None):
     cached = _read_cache()
     cache_age = _now() - int((cached or {}).get("source", {}).get("updatedAt") or 0)
     if cached and not refresh and cache_age < CACHE_TTL_SECONDS:
-        return {**cached, "source": {**cached.get("source", {}), "status": "cache"}}
+        return {**cached, "items": _apply_fit(cached.get("items", []), hardware), "source": {**cached.get("source", {}), "status": "cache"}}
     if not refresh and cached:
-        return {**cached, "source": {**cached.get("source", {}), "status": "staleCache"}}
+        return {**cached, "items": _apply_fit(cached.get("items", []), hardware), "source": {**cached.get("source", {}), "status": "staleCache"}}
     if not refresh and not cached:
-        return _catalog_payload(source_status="fallback")
+        return _catalog_payload(source_status="fallback", hardware=hardware)
 
     try:
         raw = _fetch_models_dev()
-        payload = _catalog_payload(_remote_items(raw), source_status="fresh")
+        payload = _catalog_payload(_remote_items(raw), source_status="fresh", hardware=hardware)
         _write_cache(payload)
         audit.log("model_catalog_refreshed", {"source": MODELS_DEV_URL, "count": payload["count"]})
         return payload
     except Exception as exc:
         audit.log("model_catalog_refresh_failed", {"source": MODELS_DEV_URL, "error": str(exc)})
         if cached and not force:
-            return {**cached, "source": {**cached.get("source", {}), "status": "cacheAfterRefreshError", "error": str(exc)}}
-        payload = _catalog_payload(source_status="fallbackAfterRefreshError", source_error=str(exc))
+            return {**cached, "items": _apply_fit(cached.get("items", []), hardware), "source": {**cached.get("source", {}), "status": "cacheAfterRefreshError", "error": str(exc)}}
+        payload = _catalog_payload(source_status="fallbackAfterRefreshError", source_error=str(exc), hardware=hardware)
         return payload

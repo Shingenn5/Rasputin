@@ -4,6 +4,8 @@ export const navItems = [
   { view: "activity", label: "Activity", testId: "nav-activity" },
   { view: "models", label: "Models", testId: "nav-models" },
   { view: "warsat", label: "Warsat", testId: "nav-warsat" },
+  { view: "archive", label: "Archive", testId: "nav-archive" },
+  { view: "trials", label: "Trials", testId: "nav-trials" },
   { view: "settings", section: "general", label: "Settings", testId: "nav-settings" },
 ];
 

@@ -31,6 +31,9 @@ from . import skill_store
 from . import telegram
 from . import warsat
 from . import tool_relay
+from . import mcp_relay
+from . import archive
+from . import trials
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -362,6 +365,30 @@ class WarsatContainerIn(CamelModel):
     limit: int = 120
 
 
+class McpRelayIn(CamelModel):
+    id: str | None = None
+    name: str | None = None
+    transport: str = "stdio"
+    command: str | None = None
+    enabled: bool = False
+
+
+class ArchiveSessionIn(CamelModel):
+    id: str | None = None
+    title: str = "Untitled archive draft"
+    content: str = ""
+
+
+class ArchiveExportIn(CamelModel):
+    id: str
+    folder: str | None = None
+
+
+class TrialCompareIn(CamelModel):
+    prompt: str
+    model_keys: list[str] | None = None
+
+
 @app.get("/")
 async def index():
     return FileResponse(FRONTEND / "index.html")
@@ -400,7 +427,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "model_providers": model_providers.public_provider_options(),
         "model_catalog": model_catalog.catalog(refresh=False),
         "skills": skill_store.enabled_names(),
-        "tasks": hub.all_tasks(),
+        "tasks": hub.all_tasks(limit=80, include_details=False),
         "memory": load_memory(),
         "memory_review": memory_store.pending_review(),
         "rag_stats": rag.stats(),
@@ -418,6 +445,9 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "warsat": {**warsat.list_protocols(), "runtimes": warsat_runtime_state},
         "chat_folders": hub.chat_folders(),
         "tools": tool_relay.catalog(),
+        "mcp_relays": mcp_relay.servers(),
+        "archive": archive.sessions(),
+        "trials": trials.runs(),
         "ui_preview_enabled": _ui_preview_enabled(),
     })
 
@@ -477,8 +507,9 @@ async def model_provider_list(_user=Depends(current_user)):
 
 
 @app.get("/api/model-catalog")
-async def model_catalog_get(_user=Depends(current_user)):
-    return ok(model_catalog.catalog(refresh=False))
+async def model_catalog_get(fit: bool = False, _user=Depends(current_user)):
+    hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
+    return ok(model_catalog.catalog(refresh=False, hardware=hardware))
 
 
 @app.post("/api/model-catalog/refresh")
@@ -559,6 +590,31 @@ async def audit_get(limit: int = 100, _user=Depends(current_user)):
 @app.get("/api/tools")
 async def tools_get(_user=Depends(current_user)):
     return ok(tool_relay.catalog())
+
+
+@app.get("/api/mcp/servers")
+async def mcp_servers(_user=Depends(current_user)):
+    return ok(mcp_relay.servers())
+
+
+@app.post("/api/mcp/servers")
+async def mcp_servers_create(req: McpRelayIn, _user=Depends(current_user)):
+    return ok(mcp_relay.register(req.model_dump()))
+
+
+@app.post("/api/mcp/servers/{server_id}/enable")
+async def mcp_servers_enable(server_id: str, _user=Depends(current_user)):
+    return ok(mcp_relay.set_enabled(server_id, True))
+
+
+@app.post("/api/mcp/servers/{server_id}/disable")
+async def mcp_servers_disable(server_id: str, _user=Depends(current_user)):
+    return ok(mcp_relay.set_enabled(server_id, False))
+
+
+@app.post("/api/mcp/servers/{server_id}/discover")
+async def mcp_servers_discover(server_id: str, _user=Depends(current_user)):
+    return ok(mcp_relay.discover(server_id))
 
 
 @app.get("/api/skills")
@@ -668,8 +724,8 @@ async def resume_task(task_id: str, _user=Depends(current_user)):
 
 
 @app.get("/api/tasks")
-async def tasks(_user=Depends(current_user)):
-    return ok(hub.all_tasks())
+async def tasks(limit: int = 100, details: bool = False, _user=Depends(current_user)):
+    return ok(hub.all_tasks(limit=limit, include_details=details))
 
 
 @app.get("/api/tasks/{task_id}")
@@ -909,12 +965,43 @@ async def output_export_task(req: ExportTaskIn, _user=Depends(current_user)):
     return ok(output.export_markdown(task, req.folder))
 
 
+@app.get("/api/archive/sessions")
+async def archive_sessions(_user=Depends(current_user)):
+    return ok(archive.sessions())
+
+
+@app.post("/api/archive/sessions")
+async def archive_sessions_save(req: ArchiveSessionIn, _user=Depends(current_user)):
+    return ok(archive.save_session(req.model_dump()))
+
+
+@app.post("/api/archive/export")
+async def archive_export(req: ArchiveExportIn, _user=Depends(current_user)):
+    security.require("allow_file_write")
+    return ok(archive.export_session(req.id, req.folder))
+
+
+@app.get("/api/trials")
+async def trials_get(_user=Depends(current_user)):
+    return ok(trials.runs())
+
+
+@app.post("/api/trials/compare")
+async def trials_compare(req: TrialCompareIn, _user=Depends(current_user)):
+    return ok(await trials.compare(req.prompt, req.model_keys or []))
+
+
+@app.post("/api/trials/{run_id}/reveal")
+async def trials_reveal(run_id: str, _user=Depends(current_user)):
+    return ok(trials.reveal(run_id))
+
+
 @app.get("/api/events")
 async def events(request: Request, _user=Depends(current_user)):
     q = await hub.subscribe()
 
     async def gen():
-        yield f"data: {json.dumps({'hello': True, 'tasks': hub.all_tasks(), 'approvals': approvals.list_approvals('pending'), 'memoryReview': memory_store.pending_review(), 'telegram': telegram.public_config()})}\n\n"
+        yield f"data: {json.dumps({'hello': True, 'tasks': hub.all_tasks(limit=100, include_details=False), 'approvals': approvals.list_approvals('pending'), 'memoryReview': memory_store.pending_review(), 'telegram': telegram.public_config()})}\n\n"
         while True:
             if await request.is_disconnected():
                 break
