@@ -475,6 +475,14 @@ class BackendSmokeTests(unittest.TestCase):
         with patch("backend.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
              patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.warsat._probe_model_endpoint", return_value={
+                 "ok": True,
+                 "status": "reachable",
+                 "attempts": 1,
+                 "latencyMs": 4,
+                 "availableModels": ["Qwen/Qwen2.5-0.5B-Instruct"],
+                 "message": "model ready",
+             }), \
              patch("backend.model_registry.upsert", side_effect=lambda entry: dict(entry)):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
@@ -499,12 +507,67 @@ class BackendSmokeTests(unittest.TestCase):
                 "approvalId": pending["approval"]["id"],
             }))
 
+        self.assertEqual(deployed["status"], "registered")
+        self.assertEqual(deployed["phase"], "registered")
+        self.assertTrue(deployed["health"]["ok"])
+        self.assertTrue(any(item["id"] == "probing" and item["status"] == "done" for item in deployed["lifecycle"]))
         self.assertEqual(deployed["containerId"], "container-123")
         self.assertEqual(deployed["containerName"], plan["containerName"])
         self.assertEqual(deployed["modelKey"], plan["expectedModelRegistryEntry"]["key"])
         self.assertEqual(deployed["registryEntry"]["baseUrl"], plan["expectedModelRegistryEntry"]["baseUrl"])
         self.assertTrue(any(call[:2] == ["docker", "pull"] for call in docker_calls))
         self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
+
+    def testWarsatDeployDoesNotRegisterWhenHealthProbeFails(self):
+        cfg = {
+            "allow_docker_control": True,
+            "allow_model_registry_edit": True,
+            "privacy_lock": True,
+            "allow_remote_models": False,
+        }
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:2] == ["docker", "pull"]:
+                return {"returnCode": 0, "stdout": "pulled", "stderr": ""}
+            if args[:3] == ["docker", "rm", "-f"]:
+                return {"returnCode": 0, "stdout": "", "stderr": ""}
+            if args[:3] == ["docker", "run", "-d"]:
+                return {"returnCode": 0, "stdout": "container-456", "stderr": ""}
+            if args[:2] == ["docker", "ps"]:
+                return {"returnCode": 0, "stdout": "Up 2 seconds", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        with patch("backend.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.warsat._probe_model_endpoint", return_value={
+                 "ok": False,
+                 "status": "unhealthy",
+                 "attempts": 2,
+                 "latencyMs": 20,
+                 "lastError": "connection refused",
+                 "message": "Container started, but the model endpoint did not pass the health probe.",
+             }), \
+             patch("backend.model_registry.upsert", side_effect=AssertionError("unhealthy model should not register")):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8032,
+                "role": "helper",
+                "strengthProfile": "small",
+            }))
+            pending = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": plan}))
+            self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
+            failed = self.assertOk(self.client.post("/api/warsat/deploy", json={
+                "plan": plan,
+                "approvalId": pending["approval"]["id"],
+            }))
+
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["failedPhase"], "probing")
+        self.assertFalse(failed["health"]["ok"])
+        self.assertNotIn("registryEntry", failed)
+        self.assertTrue(any(item["id"] == "probing" and item["status"] == "error" for item in failed["lifecycle"]))
 
     def testWarsatRuntimeLifecycleIsApprovalGated(self):
         cfg = {

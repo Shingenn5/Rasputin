@@ -403,6 +403,8 @@ test("warsat protocols produce dry-run launch plans", async ({ page }) => {
   await page.locator("[data-testid='warsat-plan-form']").evaluate(form => form.requestSubmit());
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toBeVisible();
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("vLLM CUDA OpenAI Server");
+  await expect(page.locator("[data-testid='warsat-lifecycle']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-lifecycle']")).toContainText("Probe health");
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("Tuning And Limits");
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("localhost only");
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("127.0.0.1:8020:8000");

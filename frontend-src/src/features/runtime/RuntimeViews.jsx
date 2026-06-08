@@ -441,10 +441,15 @@ export function WarsatView({
   const approvalClosed = deployment?.approvalRequired && ["denied", "expired", "executed"].includes(approvalStatus);
   const approvalReady = !deployment?.approvalRequired || approvalApproved;
   const deployDisabled = !canDeployPlan || deploying || !approvalReady || approvalClosed;
+  const lifecycle = deployment?.lifecycle || plan?.lifecycle || [];
+  const deploymentFailed = deployment?.status === "failed";
+  const deploymentRegistered = deployment?.status === "registered";
   const deployLabel = deploying
     ? "Deploying..."
     : deployment?.approvalRequired
       ? approvalStatus === "approved" ? "Run approved deploy" : approvalClosed ? "Approval closed" : "Waiting for approval"
+      : deploymentFailed ? "Request retry approval"
+      : deploymentRegistered ? "Request redeploy approval"
       : "Request deploy approval";
   const operationApproval = (approvals?.approvals || []).find((item) => item.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
 
@@ -999,6 +1004,8 @@ export function WarsatView({
                 Docker deployment requires Docker control enabled and the wrapper started with Docker CLI access.
               </p>
 
+              {!!lifecycle.length && <WarsatLifecycle lifecycle={lifecycle} />}
+
               <div className="warsat-plan-summary" data-testid="warsat-plan-summary">
                 <div>
                   <span>Model</span>
@@ -1086,18 +1093,37 @@ export function WarsatView({
               {deployment && (
                 <div className="warsat-deployment-result mt-3" data-testid="warsat-deployment-result" role="status">
                   <div>
-                    <strong>{deployment.approvalRequired ? "Deploy approval requested" : "Container started"}</strong>
-                    <span>{deployment.containerName} / {deployment.status}</span>
+                    <strong>{deploymentTitle(deployment)}</strong>
+                    <span>{deployment.containerName} / {labelize(deployment.status || deployment.phase)}</span>
                   </div>
                   <dl className="detail-grid mb-0">
                     {deployment.approvalRequired && <><dt>Approval code</dt><dd>{currentApproval?.code || deployment.approval?.code}</dd></>}
                     {deployment.approvalRequired && <><dt>Approval status</dt><dd>{approvalStatus || "pending"}</dd></>}
                     <dt>Model key</dt><dd>{deployment.modelKey}</dd>
                     <dt>Endpoint</dt><dd>{deployment.endpoint}</dd>
-                    {!deployment.approvalRequired && <><dt>Health</dt><dd>{deployment.healthUrl}</dd></>}
+                    {!deployment.approvalRequired && <><dt>Health</dt><dd>{deployment.health?.status || deployment.healthUrl}</dd></>}
+                    {deployment.failedPhase && <><dt>Failed phase</dt><dd>{labelize(deployment.failedPhase)}</dd></>}
+                    {deployment.lastError && <><dt>Last error</dt><dd>{deployment.lastError}</dd></>}
                     {!deployment.approvalRequired && <><dt>Container id</dt><dd>{deployment.containerId || "pending"}</dd></>}
                   </dl>
                   {deployment.message && <p className="workspace-help-text mb-0">{deployment.message}</p>}
+                  {!!deployment.logs?.length && (
+                    <details className="advanced-block mt-3">
+                      <summary>Deployment logs</summary>
+                      <div className="warsat-deployment-log-list mt-3">
+                        {deployment.logs.map((item, index) => (
+                          <article className="warsat-deployment-log" key={`${item.phase}-${index}`}>
+                            <span className={`status-pill status-${item.status}`}>{labelize(item.phase)} / {labelize(item.status)}</span>
+                            {item.message && <p>{item.message}</p>}
+                            {item.command && <code>{item.command}</code>}
+                            {(item.stdout || item.stderr || item.error) && (
+                              <pre className="log-box mb-0">{[item.stdout, item.stderr, item.error].filter(Boolean).join("\n")}</pre>
+                            )}
+                          </article>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                   {!!deployment.nextSteps?.length && (
                     <ul className="warsat-note-list mt-3 mb-0">
                       {deployment.nextSteps.map((step) => <li key={step}>{step}</li>)}
@@ -1131,6 +1157,30 @@ function MiniCard({ title, value }) {
       <Card className="settings-card shadow-sm h-100"><Card.Body><strong className="fs-4">{value}</strong><span className="text-body-secondary d-block">{title}</span></Card.Body></Card>
     </Col>
   );
+}
+
+function WarsatLifecycle({ lifecycle }) {
+  return (
+    <ol className="warsat-lifecycle" data-testid="warsat-lifecycle" aria-label="Warsat deployment lifecycle">
+      {lifecycle.map((phase) => (
+        <li className={`warsat-lifecycle-step is-${phase.status || "pending"}`} key={phase.id}>
+          <span aria-hidden="true" />
+          <div>
+            <strong>{phase.label || labelize(phase.id)}</strong>
+            <small>{labelize(phase.status || "pending")}</small>
+            <p>{phase.message}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function deploymentTitle(deployment) {
+  if (deployment.approvalRequired) return "Deploy approval requested";
+  if (deployment.status === "failed") return "Deployment failed";
+  if (deployment.status === "registered") return "Model registered";
+  return "Deployment updated";
 }
 
 function SummaryTile({ title, value }) {

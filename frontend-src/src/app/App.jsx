@@ -1085,9 +1085,12 @@ export function App() {
       if (deployment.approvalRequired) {
         await refreshApprovals();
         setGlobalStatus(`Approval ${deployment.approval?.code || ""} created. Approve it in Warsat, then run the approved deploy.`);
+      } else if (deployment.status === "failed") {
+        await Promise.allSettled([loadWarsat(), refreshApprovals()]);
+        setGlobalStatus(`Warsat deployment failed during ${deployment.failedPhase || deployment.phase || "deployment"}. Check the launch plan details.`);
       } else {
         await Promise.allSettled([loadWarsat(), loadModels(), refreshApprovals()]);
-        setGlobalStatus(`Warsat started ${deployment.containerName}. Test ${deployment.modelKey} from Models when it finishes loading.`);
+        setGlobalStatus(`Warsat registered ${deployment.modelKey}. You can test and select it from Models.`);
       }
       return deployment;
     } catch (error) {

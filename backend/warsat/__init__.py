@@ -4,6 +4,8 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -18,7 +20,19 @@ BUILTIN_PROTOCOL_DIR = ROOT / "warsat" / "protocols"
 DATA_DIR = ROOT / "data" / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("WARSAT_DEPLOY_TIMEOUT", "1800"))
+HEALTH_PROBE_ATTEMPTS = max(1, min(int(os.environ.get("WARSAT_HEALTH_PROBE_ATTEMPTS", "6")), 30))
+HEALTH_PROBE_INTERVAL_SECONDS = max(0.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_INTERVAL", "5")), 30.0))
+HEALTH_PROBE_TIMEOUT_SECONDS = max(1.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_TIMEOUT", "5")), 30.0))
 LOG_LIMIT_MAX = 500
+
+DEPLOY_PHASES = [
+    ("planned", "Plan reviewed", "Launch plan generated and validated."),
+    ("approvalPending", "Approval", "Deployment requires a one-time local approval."),
+    ("pulling", "Pull image", "Docker image pull is running."),
+    ("starting", "Start container", "Warsat is replacing any old container and starting the new runtime."),
+    ("probing", "Probe health", "Warsat is checking the local model endpoint."),
+    ("registered", "Register model", "The healthy endpoint is saved in the model registry."),
+]
 
 STRENGTH_PROFILES = {
     "cpu": {
@@ -485,6 +499,92 @@ def _dockerfile_preview(protocol):
     ]) + "\n"
 
 
+def _phase_item(phase_id, label, message, status="pending", detail=None):
+    return {
+        "id": phase_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "detail": detail or {},
+        "updatedAt": time.time() if status != "pending" else None,
+    }
+
+
+def _lifecycle(active=None, done=None, failed=None, details=None):
+    done = set(done or [])
+    details = details or {}
+    items = []
+    for phase_id, label, message in DEPLOY_PHASES:
+        status = "pending"
+        if phase_id in done:
+            status = "done"
+        if active == phase_id:
+            status = "active"
+        if failed == phase_id:
+            status = "error"
+        items.append(_phase_item(phase_id, label, message, status, details.get(phase_id)))
+    return items
+
+
+def _command_log(phase, command, result=None, status="done", error=None):
+    return {
+        "phase": phase,
+        "status": status,
+        "command": " ".join(str(item) for item in (command or [])[:12]),
+        "returnCode": result.get("returnCode") if isinstance(result, dict) else None,
+        "stdout": (result.get("stdout") if isinstance(result, dict) else "")[:1000],
+        "stderr": (result.get("stderr") if isinstance(result, dict) else "")[:1000],
+        "error": str(error)[:1000] if error else "",
+        "createdAt": time.time(),
+    }
+
+
+def _probe_model_endpoint(health_url, expected_model=None, attempts=None, interval=None):
+    security.require_local_url(health_url)
+    safe_attempts = max(1, min(int(attempts or HEALTH_PROBE_ATTEMPTS), 30))
+    safe_interval = max(0.0, min(float(interval if interval is not None else HEALTH_PROBE_INTERVAL_SECONDS), 30.0))
+    last_error = ""
+    started = time.time()
+    for attempt in range(1, safe_attempts + 1):
+        try:
+            req = urllib.request.Request(health_url, headers={"User-Agent": "rasputin-warsat/0.1"})
+            with urllib.request.urlopen(req, timeout=HEALTH_PROBE_TIMEOUT_SECONDS) as response:
+                raw = response.read(512_000).decode("utf-8", "replace")
+                status_code = getattr(response, "status", 200)
+            data = json.loads(raw or "{}") if raw else {}
+            model_ids = []
+            for item in data.get("data") or data.get("models") or []:
+                if isinstance(item, dict):
+                    model_ids.append(str(item.get("id") or item.get("model") or item.get("name") or ""))
+                else:
+                    model_ids.append(str(item))
+            expected = str(expected_model or "").strip()
+            model_present = not expected or not model_ids or expected in model_ids
+            if 200 <= int(status_code) < 300 and model_present:
+                return {
+                    "ok": True,
+                    "status": "reachable",
+                    "attempts": attempt,
+                    "latencyMs": int((time.time() - started) * 1000),
+                    "statusCode": status_code,
+                    "availableModels": [item for item in model_ids if item][:20],
+                    "message": "Model endpoint responded to the health probe.",
+                }
+            last_error = f"health endpoint responded, but expected model {expected} was not listed"
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            last_error = str(exc)
+        if attempt < safe_attempts and safe_interval:
+            time.sleep(safe_interval)
+    return {
+        "ok": False,
+        "status": "unhealthy",
+        "attempts": safe_attempts,
+        "latencyMs": int((time.time() - started) * 1000),
+        "lastError": last_error or "endpoint did not become reachable",
+        "message": "Container started, but the model endpoint did not pass the health probe.",
+    }
+
+
 def make_plan(payload):
     protocol = get_protocol(payload.get("protocolId") or payload.get("protocol_id"))
     model_ref = str(payload.get("modelRef") or payload.get("model_ref") or "").strip()
@@ -535,6 +635,8 @@ def make_plan(payload):
         "planId": f"warsat-{uuid.uuid4().hex[:12]}",
         "createdAt": time.time(),
         "status": "planned",
+        "phase": "planned",
+        "lifecycle": _lifecycle(active="planned"),
         "protocolId": protocol["id"],
         "protocolName": protocol["name"],
         "runtime": protocol["runtime"],
@@ -897,6 +999,7 @@ def deploy(plan, approval_id=None):
     protocol, pull_cmd, run_cmd, container_name = _validate_deploy_plan(plan)
     registry_entry = _registry_entry_from_plan(plan)
     approval_detail = _deployment_approval_detail(plan, protocol, container_name, registry_entry)
+    logs_out = []
 
     if not approval_id:
         approval = approvals.create(
@@ -915,11 +1018,19 @@ def deploy(plan, approval_id=None):
         return {
             "approvalRequired": True,
             "status": "waitingForApproval",
+            "phase": "approvalPending",
+            "lifecycle": _lifecycle(active="approvalPending", done={"planned"}),
             "approval": approval,
             "containerName": container_name,
             "modelKey": registry_entry["key"],
             "endpoint": registry_entry["base_url"],
+            "logs": logs_out,
             "message": "Approval created. Approve it from Activity or Approvals, then run the deploy again.",
+            "nextSteps": [
+                "Approve the deployment request.",
+                "Run the approved deploy from Warsat.",
+                "Warsat will pull the image, start the container, probe health, then register the model.",
+            ],
         }
 
     approvals.require_approved(approval_id, "warsat_deploy")
@@ -934,25 +1045,77 @@ def deploy(plan, approval_id=None):
     })
 
     pull = _run_command(pull_cmd, timeout=DEPLOY_TIMEOUT_SECONDS)
+    logs_out.append(_command_log("pulling", pull_cmd, pull))
     _run_command(["docker", "rm", "-f", container_name], timeout=60, check=False)
     started = _run_command(run_cmd, timeout=120)
-    saved = model_registry.upsert(registry_entry)
+    logs_out.append(_command_log("starting", run_cmd, started))
     status = _container_status(container_name)
+    health = _probe_model_endpoint(plan.get("healthUrl"), registry_entry.get("model"))
+    logs_out.append({
+        "phase": "probing",
+        "status": "done" if health.get("ok") else "error",
+        "message": health.get("message") or health.get("lastError") or "",
+        "attempts": health.get("attempts"),
+        "latencyMs": health.get("latencyMs"),
+        "createdAt": time.time(),
+    })
+
+    if not health.get("ok"):
+        result = {
+            "planId": plan.get("planId"),
+            "approvalRequired": False,
+            "status": "failed",
+            "phase": "failed",
+            "failedPhase": "probing",
+            "lifecycle": _lifecycle(failed="probing", done={"planned", "approvalPending", "pulling", "starting"}),
+            "containerId": started["stdout"],
+            "containerName": container_name,
+            "modelKey": registry_entry["key"],
+            "endpoint": registry_entry["base_url"],
+            "healthUrl": plan.get("healthUrl"),
+            "health": health,
+            "pull": pull,
+            "run": started,
+            "logs": logs_out,
+            "lastError": health.get("lastError") or health.get("message"),
+            "message": "Container started, but Warsat did not register the model because the health probe failed.",
+            "nextSteps": [
+                "Open container logs from Managed Runtimes.",
+                "Wait for the model server to finish loading, then retry deployment approval if needed.",
+                "Check the selected model id, port, GPU settings, and mounted model path.",
+            ],
+        }
+        audit.log("warsat_deploy_failed", {
+            "planId": plan.get("planId"),
+            "container": container_name,
+            "modelKey": registry_entry["key"],
+            "failedPhase": "probing",
+            "error": result["lastError"],
+        })
+        return result
+
+    saved = model_registry.upsert(registry_entry)
 
     result = {
         "planId": plan.get("planId"),
-        "status": "starting" if status.lower().startswith("up") else status,
+        "approvalRequired": False,
+        "status": "registered",
+        "phase": "registered",
+        "lifecycle": _lifecycle(done={"planned", "approvalPending", "pulling", "starting", "probing", "registered"}),
         "containerId": started["stdout"],
         "containerName": container_name,
         "modelKey": saved["key"],
         "registryEntry": saved,
         "endpoint": registry_entry["base_url"],
         "healthUrl": plan.get("healthUrl"),
+        "health": health,
+        "containerStatus": "starting" if status.lower().startswith("up") else status,
         "pull": pull,
         "run": started,
+        "logs": logs_out,
+        "message": "Warsat container started, health probe passed, and the model registry entry was saved.",
         "nextSteps": [
-            "Wait for the model server to finish loading.",
-            "Open Models and run Discover/Test on the new Warsat model.",
+            "Open Models and run Discover/Test if you want an additional latency check.",
             "Select the model in chat after it reports healthy.",
         ],
     }
