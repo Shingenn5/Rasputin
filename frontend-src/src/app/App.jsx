@@ -90,6 +90,7 @@ export function App() {
   const [warsatRuntimes, setWarsatRuntimes] = useState({ containers: [], count: 0 });
   const [warsatLogs, setWarsatLogs] = useState(null);
   const [warsatOperation, setWarsatOperation] = useState(null);
+  const [tools, setTools] = useState({ tools: [], groups: [] });
   const [globalStatus, setGlobalStatus] = useState("");
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -270,6 +271,7 @@ export function App() {
     setSchedulesList(data.schedules || { schedules: [] });
     setWarsat(data.warsat || { protocols: [], count: 0, dockerControlEnabled: false, executionEnabled: false });
     setWarsatRuntimes(data.warsat?.runtimes || { containers: [], count: 0 });
+    setTools(data.tools || { tools: [], groups: [] });
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
@@ -316,6 +318,17 @@ export function App() {
   async function loadTasks() {
     const nextTasks = await queryClient.fetchQuery({ queryKey: ["tasks"], queryFn: () => api("/api/tasks") });
     setTasks(nextTasks);
+    return nextTasks;
+  }
+
+  async function loadTools() {
+    const nextTools = await api("/api/tools");
+    setTools(nextTools || { tools: [], groups: [] });
+    return nextTools;
+  }
+
+  async function refreshActivity() {
+    const [nextTasks] = await Promise.all([loadTasks(), loadTools()]);
     return nextTasks;
   }
 
@@ -1281,10 +1294,11 @@ export function App() {
         view={view}
         tasks={tasks}
         models={models}
-        refresh={loadTasks}
+        refresh={refreshActivity}
         approvals={approvals}
         sessions={sessions}
         auditEvents={auditEvents}
+        tools={tools}
         go={go}
         cancelTask={cancelTask}
         pauseTask={pauseTask}

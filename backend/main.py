@@ -30,6 +30,7 @@ from . import schedules
 from . import skill_store
 from . import telegram
 from . import warsat
+from . import tool_relay
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -416,6 +417,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "schedules": schedules.list_schedules(),
         "warsat": {**warsat.list_protocols(), "runtimes": warsat_runtime_state},
         "chat_folders": hub.chat_folders(),
+        "tools": tool_relay.catalog(),
         "ui_preview_enabled": _ui_preview_enabled(),
     })
 
@@ -552,6 +554,11 @@ async def preferences_post(req: dict, _user=Depends(current_user)):
 @app.get("/api/audit")
 async def audit_get(limit: int = 100, _user=Depends(current_user)):
     return ok({"events": audit.recent(limit)})
+
+
+@app.get("/api/tools")
+async def tools_get(_user=Depends(current_user)):
+    return ok(tool_relay.catalog())
 
 
 @app.get("/api/skills")

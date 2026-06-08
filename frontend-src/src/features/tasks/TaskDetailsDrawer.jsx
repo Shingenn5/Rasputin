@@ -11,7 +11,8 @@ const sections = [
   ["logs", "Logs"],
   ["outputs", "Outputs"],
   ["subagents", "Sub-Agents"],
-  ["approvals", "Approvals And Tools"],
+  ["tools", "Tools"],
+  ["approvals", "Approvals"],
 ];
 
 export function TaskDetailsDrawer({
@@ -245,6 +246,15 @@ export function TaskDetailsDrawer({
                 </section>
               )}
 
+              {section === "tools" && (
+                <section id="task-detail-panel-tools" role="tabpanel" aria-labelledby="task-detail-tab-tools" data-testid="task-details-tools">
+                  <div className="approval-tool-stack">
+                    {(detail.toolCalls || []).map((tool) => <ToolCallSummary key={tool.id} tool={tool} />)}
+                    {!(detail.toolCalls || []).length && <EmptyInline text="No tool calls were recorded for this task." />}
+                  </div>
+                </section>
+              )}
+
               {section === "approvals" && (
                 <section id="task-detail-panel-approvals" role="tabpanel" aria-labelledby="task-detail-tab-approvals" data-testid="task-details-approvals">
                   <div className="approval-tool-stack">
@@ -256,21 +266,7 @@ export function TaskDetailsDrawer({
                         denyApproval={denyApproval}
                       />
                     ))}
-                    {(detail.toolCalls || []).map((tool) => (
-                      <article className="tool-call-card" key={tool.id}>
-                        <span className={`status-pill status-${tool.status}`}>{tool.status}</span>
-                        <h2>{labelize(tool.name)}</h2>
-                        <dl className="detail-grid">
-                          <dt>Risk</dt><dd>{tool.risk}</dd>
-                          <dt>Approval</dt><dd>{tool.approvalId || "Not required"}</dd>
-                          <dt>Args</dt><dd>{summarizeDetail(tool.argsRedacted || {})}</dd>
-                          <dt>Result</dt><dd>{summarizeDetail(tool.resultRedacted || {})}</dd>
-                        </dl>
-                      </article>
-                    ))}
-                    {!(detail.approvals || []).length && !(detail.toolCalls || []).length && (
-                      <EmptyInline text="No approval-gated tools were recorded for this task." />
-                    )}
+                    {!(detail.approvals || []).length && <EmptyInline text="No approvals were recorded for this task." />}
                   </div>
                 </section>
               )}
@@ -279,6 +275,26 @@ export function TaskDetailsDrawer({
         )}
       </aside>
     </div>
+  );
+}
+
+function ToolCallSummary({ tool }) {
+  return (
+    <article className="tool-call-card">
+      <div className="section-row">
+        <div>
+          <span className={`status-pill status-${tool.status}`}>{tool.status}</span>
+          <h2>{labelize(tool.name)}</h2>
+        </div>
+        <span className={`status-pill risk-${tool.risk}`}>{labelize(tool.risk)}</span>
+      </div>
+      <dl className="detail-grid">
+        <dt>Approval</dt><dd>{tool.approvalId || "Not required"}</dd>
+        <dt>Args</dt><dd>{summarizeDetail(tool.argsRedacted || {})}</dd>
+        <dt>Result</dt><dd>{summarizeDetail(tool.resultRedacted || {})}</dd>
+        <dt>Updated</dt><dd>{formatTime(tool.updatedAt || tool.updated_at)}</dd>
+      </dl>
+    </article>
   );
 }
 

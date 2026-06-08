@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { Pause, Play, RefreshCw, Route, Square, Users } from "lucide-react";
+import { Pause, Play, RefreshCw, Route, Square, Users, Wrench } from "lucide-react";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 
-const activityTabs = ["Runs", "Approvals", "Sessions", "Pipeline", "Audit"];
+const activityTabs = ["Runs", "Approvals", "Sessions", "Pipeline", "Tools", "Audit"];
 
 export function ActivityView({
   view,
@@ -12,6 +12,7 @@ export function ActivityView({
   approvals,
   sessions,
   auditEvents,
+  tools,
   go,
   cancelTask,
   pauseTask,
@@ -21,6 +22,7 @@ export function ActivityView({
   const [tab, setTab] = useState("Runs");
   const pendingApprovals = approvals?.approvals || [];
   const recentSessions = sessions?.sessions || [];
+  const toolCount = tools?.tools?.length || 0;
   const activeTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const rootTasks = tasks.filter((task) => !task.parentId);
   const helpersByParent = useMemo(() => {
@@ -84,7 +86,7 @@ export function ActivityView({
               </button>
             ))}
           </div>
-          <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length)}</p>
+          <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length, toolCount)}</p>
         </nav>
 
         {tab === "Runs" && (
@@ -191,6 +193,12 @@ export function ActivityView({
           </section>
         )}
 
+        {tab === "Tools" && (
+          <section id="activity-panel-tools" role="tabpanel" aria-labelledby="activity-tab-tools" className="activity-panel">
+            <ToolRelayPanel tools={tools} />
+          </section>
+        )}
+
         {tab === "Audit" && (
           <section id="activity-panel-audit" role="tabpanel" aria-labelledby="activity-tab-audit" className="activity-panel">
             <pre id="activityAuditLog" className="log-box">{JSON.stringify(auditEvents || [], null, 2)}</pre>
@@ -198,6 +206,57 @@ export function ActivityView({
         )}
       </div>
     </section>
+  );
+}
+
+function ToolRelayPanel({ tools }) {
+  const groups = tools?.groups?.length ? tools.groups : groupTools(tools?.tools || []);
+  if (!groups.length) return <EmptyPanel title="No tools registered" text="Tool Relay definitions will appear here once the backend is ready." />;
+  return (
+    <div className="tool-relay-panel" data-testid="tool-relay-panel">
+      <div className="section-row">
+        <div>
+          <span className="eyebrow">Tool Relay</span>
+          <h2>Available Local Tools</h2>
+          <p>Read-only registry view for tool policy, risk, permissions, and trace behavior.</p>
+        </div>
+        <Wrench size={22} aria-hidden="true" />
+      </div>
+      {groups.map((group) => (
+        <section className="tool-relay-group" key={group.category} aria-labelledby={`tool-relay-${slug(group.category)}`}>
+          <h3 id={`tool-relay-${slug(group.category)}`}>{group.category}</h3>
+          <div className="tool-relay-grid">
+            {(group.tools || []).map((tool) => <ToolRelayCard key={tool.id} tool={tool} />)}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ToolRelayCard({ tool }) {
+  const available = tool.available !== false;
+  const permission = tool.permissionFlag || tool.permission_flag || "No extra permission";
+  const disabledReason = tool.disabledReason || tool.disabled_reason || "";
+  const approvalBehavior = tool.approvalBehavior || tool.approval_behavior || "not_required";
+  return (
+    <article className={`tool-relay-card ${available ? "is-available" : "is-blocked"}`} data-testid="tool-relay-card">
+      <div className="tool-relay-card-head">
+        <div>
+          <span className={`status-pill risk-${tool.risk}`}>{labelize(tool.risk)}</span>
+          <h4>{tool.displayName || tool.display_name || labelize(tool.id)}</h4>
+        </div>
+        <span className={`status-pill ${available ? "status-done" : "status-error"}`}>{available ? "Available" : "Blocked"}</span>
+      </div>
+      <p>{tool.description}</p>
+      <dl className="detail-grid">
+        <dt>Permission</dt><dd>{labelize(permission)}</dd>
+        <dt>Approval</dt><dd>{labelize(approvalBehavior)}</dd>
+        <dt>Timeout</dt><dd>{Number(tool.timeoutSeconds || tool.timeout_seconds || 0)}s</dd>
+        <dt>Summary</dt><dd>{labelize(tool.outputSummaryPolicy || tool.output_summary_policy)}</dd>
+      </dl>
+      {disabledReason && <p className="tool-relay-reason">Blocked reason: {disabledReason}</p>}
+    </article>
   );
 }
 
@@ -291,12 +350,33 @@ function TaskRunCard({ task, helpers = [], models, cancelTask, pauseTask, resume
   );
 }
 
-function activityContext(tab, runningCount, approvalCount) {
+function activityContext(tab, runningCount, approvalCount, toolCount = 0) {
   if (tab === "Runs") return runningCount ? `${runningCount} run${runningCount === 1 ? "" : "s"} active now.` : "No active runs right now.";
   if (tab === "Approvals") return approvalCount ? `${approvalCount} approval${approvalCount === 1 ? "" : "s"} waiting.` : "No approvals waiting.";
   if (tab === "Sessions") return "Recent local sessions and resumable work.";
   if (tab === "Pipeline") return "How Rasputin routes planning, tools, approvals, execution, and memory.";
+  if (tab === "Tools") return `${toolCount} registered Tool Relay definition${toolCount === 1 ? "" : "s"}.`;
   return "Local audit events for sensitive actions.";
+}
+
+function groupTools(tools) {
+  const grouped = new Map();
+  tools.forEach((tool) => {
+    const category = tool.category || "Other";
+    grouped.set(category, [...(grouped.get(category) || []), tool]);
+  });
+  return [...grouped.entries()].map(([category, group]) => ({ category, tools: group }));
+}
+
+function labelize(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    || "Unknown";
+}
+
+function slug(value) {
+  return String(value || "tools").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 }
 
 function EmptyPanel({ title, text }) {

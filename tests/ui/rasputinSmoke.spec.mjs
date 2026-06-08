@@ -151,6 +151,9 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='task-details-logs']")).toBeVisible();
   await page.getByRole("tab", { name: "Outputs" }).click();
   await expect(page.locator("[data-testid='task-details-outputs']")).toBeVisible();
+  await page.getByRole("tab", { name: "Tools" }).click();
+  await expect(page.locator("[data-testid='task-details-tools']")).toBeVisible();
+  await expect(page.locator("[data-testid='task-details-tools']")).toContainText(/Rag Search|Graph Search|File Tree/);
   await page.locator("[data-testid='task-details-close']").click();
   await expect(page.locator("[data-testid='task-details-drawer']")).toBeHidden();
 });
@@ -248,6 +251,10 @@ test("activity hub groups runtime pages", async ({ page }) => {
   await expect(page.locator("#activityView")).toContainText(/Sessions|No sessions/);
   await page.getByRole("tab", { name: "Pipeline" }).click();
   await expect(page.locator("#activityView")).toContainText("Agent Runtime Pipeline");
+  await page.getByRole("tab", { name: "Tools" }).click();
+  await expect(page.locator("[data-testid='tool-relay-panel']")).toBeVisible();
+  await expect(page.locator("[data-testid='tool-relay-panel']")).toContainText("Tool Relay");
+  await expect(page.locator("[data-testid='tool-relay-card']").first()).toBeVisible();
   await page.getByRole("tab", { name: "Audit" }).click();
   await expect(page.locator("#activityAuditLog")).toBeVisible();
 });

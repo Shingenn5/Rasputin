@@ -3165,6 +3165,84 @@ button.runtime-chip {
   font-size: .86rem;
 }
 
+.tool-relay-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.tool-relay-panel > .section-row {
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel) 82%, transparent);
+  padding: .85rem;
+}
+
+.tool-relay-group {
+  display: grid;
+  gap: .65rem;
+}
+
+.tool-relay-group h3 {
+  margin: 0;
+  color: var(--ras-text);
+  font-size: .92rem;
+}
+
+.tool-relay-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: .75rem;
+}
+
+.tool-relay-card {
+  display: grid;
+  gap: .65rem;
+  min-width: 0;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  padding: .85rem;
+}
+
+.tool-relay-card.is-blocked {
+  border-color: color-mix(in srgb, var(--ras-danger, #b42318) 34%, var(--ras-border));
+}
+
+.tool-relay-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.tool-relay-card h4 {
+  margin: .35rem 0 0;
+  font-size: .98rem;
+}
+
+.tool-relay-card p,
+.tool-relay-reason {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .84rem;
+}
+
+.tool-relay-reason {
+  color: var(--ras-danger, #b42318);
+}
+
+.risk-safe {
+  color: var(--ras-success, #287d3c);
+}
+
+.risk-guarded {
+  color: var(--ras-warn, #b26a00);
+}
+
+.risk-approval_required {
+  color: var(--ras-accent);
+}
+
 .settings-card,
 .stat-card,
 .task-card {

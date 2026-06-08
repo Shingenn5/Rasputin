@@ -12,23 +12,17 @@ from . import audit
 from . import security
 from . import leak_guard
 from . import approvals
+from . import memory
+from . import model_registry
+from . import tool_relay
 from . import runtime_store as store
+from .response import AppError
 
 ROOT = Path(__file__).resolve().parents[1]
 SAFE_ROOT = ROOT
 EXCLUDED_TREE_DIRS = {".git", ".pytest_cache", "__pycache__", "node_modules", ".venv", "venv", "dist", "build"}
 
-TOOL_SPECS = {
-    "fs_read": {"risk": "safe", "permission": "allow_file_read"},
-    "fs_write": {"risk": "approval_required", "permission": "allow_file_write"},
-    "fs_list": {"risk": "safe", "permission": "allow_file_read"},
-    "fs_tree": {"risk": "safe", "permission": "allow_file_read"},
-    "fs_mkdir": {"risk": "approval_required", "permission": "allow_file_reorganize"},
-    "fs_move": {"risk": "approval_required", "permission": "allow_file_reorganize"},
-    "web_search": {"risk": "approval_required", "permission": "allow_web_search"},
-    "rag_search": {"risk": "safe", "permission": "allow_file_read"},
-    "graph_search": {"risk": "safe", "permission": "allow_file_read"},
-}
+TOOL_SPECS = tool_relay.TOOL_SPECS
 
 
 class McpLayer:
@@ -44,6 +38,10 @@ class McpLayer:
             "web_search": self.web_search,
             "rag_search": self.rag_search,
             "graph_search": self.graph_search,
+            "workspace_browse": self.workspace_browse,
+            "file_preview": self.file_preview,
+            "memory_search": self.memory_search,
+            "model_health": self.model_health,
         }
 
     def _safe(self, path, workspace_path=None):
@@ -54,14 +52,17 @@ class McpLayer:
         return target
 
     async def call_tool(self, name, args):
+        definition = tool_relay.require_definition(name)
         if name not in self.tools:
-            raise ValueError(f"missing tool {name}")
+            raise AppError("tool_unavailable", f"Tool '{name}' is not executable in this MCP layer.", 501)
         args = dict(args or {})
         task_id = args.pop("_task_id", None)
         tool_call_id = args.pop("_tool_call_id", None) or store.new_id("tool")
-        spec = TOOL_SPECS.get(name, {"risk": "safe"})
-        self._record_tool(tool_call_id, task_id, name, spec.get("risk", "safe"), "running", args)
+        self._record_tool(tool_call_id, task_id, name, definition.get("risk", "safe"), "running", args)
         try:
+            if not tool_relay.permission_allowed(definition):
+                flag = definition.get("permission_flag") or "tool"
+                raise PermissionError(f"{flag} is disabled")
             result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id)
             status = "pending_approval" if isinstance(result, dict) and result.get("approval_id") else "done"
             self._finish_tool(tool_call_id, status, result, result.get("approval_id") if isinstance(result, dict) else None)
@@ -78,7 +79,7 @@ class McpLayer:
                 INSERT OR REPLACE INTO tool_calls(id,task_id,name,risk,status,args_redacted,result_redacted,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?)
                 """,
-                (tool_call_id, task_id, name, risk, status, json.dumps(approvals._redact(args)), "{}", store.now(), store.now()),
+                (tool_call_id, task_id, name, risk, status, json.dumps(tool_relay.redact_args(name, args)), "{}", store.now(), store.now()),
             )
             conn.commit()
 
@@ -87,9 +88,14 @@ class McpLayer:
         with store._lock, store.connect() as conn:
             conn.execute(
                 "UPDATE tool_calls SET status=?, result_redacted=?, approval_id=?, updated_at=? WHERE id=?",
-                (status, json.dumps(approvals._redact(result)), approval_id, store.now(), tool_call_id),
+                (status, json.dumps(tool_relay.summarize_result(self._tool_name(tool_call_id), result)), approval_id, store.now(), tool_call_id),
             )
             conn.commit()
+
+    def _tool_name(self, tool_call_id):
+        with store._lock, store.connect() as conn:
+            row = conn.execute("SELECT name FROM tool_calls WHERE id=?", (tool_call_id,)).fetchone()
+        return row["name"] if row else ""
 
     async def _wait_for_approval(self, preview, action_type, task_id=None):
         approval_id = preview.get("approval_id")
@@ -297,6 +303,20 @@ class McpLayer:
         if not security.load().get("allow_file_read", False):
             return {"query": query, "nodes": [], "edges": [], "blocked": True}
         return await asyncio.to_thread(graphify.search, query, limit)
+
+    async def workspace_browse(self, root_id=None, path=None, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        return await asyncio.to_thread(workspace.browse, root_id, path)
+
+    async def file_preview(self, root_id=None, path=None, max_bytes=131072, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        return await asyncio.to_thread(workspace.preview_file, root_id, path, max_bytes)
+
+    async def memory_search(self, query, limit=10, _task_id=None, _tool_call_id=None):
+        return await asyncio.to_thread(memory.search, query, limit)
+
+    async def model_health(self, key="dry-run", _task_id=None, _tool_call_id=None):
+        return await asyncio.to_thread(model_registry.test_model, key)
 
 
 async def demo_tool_call():

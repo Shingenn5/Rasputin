@@ -12,8 +12,10 @@ from backend import model_registry
 from backend import model_providers
 from backend import models
 from backend import runtime_store
+from backend import security
 from backend import telegram
 from backend.mcp_layer import McpLayer
+from backend.response import AppError
 
 
 class BackendSmokeTests(unittest.TestCase):
@@ -158,8 +160,54 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testUiBootstrapShape(self):
         data = self.assertOk(self.client.get("/api/ui/bootstrap"))
-        for key in ["models", "tasks", "security", "workspace", "output", "preferences", "warsat"]:
+        for key in ["models", "tasks", "security", "workspace", "output", "preferences", "warsat", "tools"]:
             self.assertIn(key, data)
+
+    def testToolRelayCatalogAndMcpTraces(self):
+        catalog = self.assertOk(self.client.get("/api/tools"))
+        self.assertIn("groups", catalog)
+        self.assertIn("tools", catalog)
+        ids = {item["id"] for item in catalog["tools"]}
+        for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "memory_search", "model_health", "fs_write", "web_search"]:
+            self.assertIn(tool_id, ids)
+        shell = next(item for item in catalog["tools"] if item["id"] == "shell_exec")
+        self.assertFalse(shell["available"])
+        self.assertIn("Tool Relay V1", shell["disabledReason"])
+
+        task_id = runtime_store.new_id("toolsmoke")
+        result = asyncio.run(McpLayer().call_tool("fs_read", {
+            "path": "requirements.txt",
+            "workspace_path": "project-root",
+            "_task_id": task_id,
+        }))
+        self.assertIn("content", result)
+        with runtime_store._lock, runtime_store.connect() as conn:
+            row = conn.execute("SELECT * FROM tool_calls WHERE task_id=? AND name='fs_read' ORDER BY created_at DESC LIMIT 1", (task_id,)).fetchone()
+        self.assertIsNotNone(row)
+        args_redacted = runtime_store._loads(row["args_redacted"], {})
+        result_redacted = runtime_store._loads(row["result_redacted"], {})
+        self.assertEqual(row["risk"], "safe")
+        self.assertEqual(row["status"], "done")
+        self.assertEqual(args_redacted["path"], "requirements.txt")
+        self.assertTrue(result_redacted["content"]["redacted"])
+        self.assertNotIn("fastapi", str(result_redacted).lower())
+
+        blocked_task_id = runtime_store.new_id("toolblocked")
+        blocked_cfg = security.defaults()
+        blocked_cfg["allow_file_read"] = False
+        with patch("backend.security.load", return_value=blocked_cfg):
+            with self.assertRaises(PermissionError):
+                asyncio.run(McpLayer().call_tool("rag_search", {
+                    "query": "local docs",
+                    "_task_id": blocked_task_id,
+                }))
+        with runtime_store._lock, runtime_store.connect() as conn:
+            blocked = conn.execute("SELECT * FROM tool_calls WHERE task_id=? AND name='rag_search' ORDER BY created_at DESC LIMIT 1", (blocked_task_id,)).fetchone()
+        self.assertIsNotNone(blocked)
+        self.assertEqual(blocked["status"], "error")
+
+        with self.assertRaises(AppError):
+            asyncio.run(McpLayer().call_tool("missing_tool", {}))
 
     def testPreferencesRoundTrip(self):
         saved = self.assertOk(self.client.post("/api/preferences", json={
