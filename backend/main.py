@@ -754,6 +754,11 @@ async def warsat_runtimes(_user=Depends(current_user)):
     return ok(await asyncio.to_thread(warsat.containers))
 
 
+@app.get("/api/warsat/hardware")
+async def warsat_hardware(_user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.hardware_probe))
+
+
 @app.post("/api/warsat/plan")
 async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
     return ok(warsat.make_plan(req.model_dump()))

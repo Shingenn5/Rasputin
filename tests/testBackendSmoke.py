@@ -496,6 +496,89 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "warsatProtocolMissing")
 
+    def testWarsatHardwareProbeReportsReadinessWithoutMutatingDocker(self):
+        docker_outputs = {
+            ("docker", "version", "--format", "{{json .}}"): {
+                "available": True,
+                "ok": True,
+                "returnCode": 0,
+                "stdout": '{"Client":{"Version":"27.0"},"Server":{"Version":"27.0"}}',
+                "stderr": "",
+                "latencyMs": 2,
+            },
+            ("docker", "info", "--format", "{{json .}}"): {
+                "available": True,
+                "ok": True,
+                "returnCode": 0,
+                "stdout": '{"Runtimes":{"runc":{},"nvidia":{}},"OSType":"linux","Architecture":"x86_64"}',
+                "stderr": "",
+                "latencyMs": 3,
+            },
+            ("docker", "ps", "-a", "--filter", "label=rasputin.managed=true", "--format", "{{json .}}"): {
+                "available": True,
+                "ok": True,
+                "returnCode": 0,
+                "stdout": '{"Names":"rasputin-model","Image":"test","Status":"Up 1 minute"}',
+                "stderr": "",
+                "latencyMs": 4,
+            },
+        }
+
+        def fake_probe(args, timeout=10):
+            if args[0] == "nvidia-smi":
+                return {
+                    "available": True,
+                    "ok": True,
+                    "returnCode": 0,
+                    "stdout": "RTX 4090, 24564",
+                    "stderr": "",
+                    "latencyMs": 5,
+                }
+            return docker_outputs[tuple(args)]
+
+        with patch("backend.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat.shutil.which", side_effect=lambda name: "nvidia-smi" if name == "nvidia-smi" else None), \
+             patch("backend.warsat._model_mount_state", return_value={
+                 "id": "modelMount",
+                 "label": "Model Mount",
+                 "status": "warn",
+                 "ok": False,
+                 "message": "Model folder is mounted but currently empty.",
+                 "detail": {"visiblePath": "models", "sample": [], "countShown": 0},
+                 "nextStep": "Mount local model files into ./models.",
+             }), \
+             patch("backend.warsat._probe_command", side_effect=fake_probe):
+            hardware = self.assertOk(self.client.get("/api/warsat/hardware"))
+
+        self.assertEqual(hardware["status"], "warning")
+        self.assertTrue(any(item["id"] == "dockerDaemon" and item["status"] == "pass" for item in hardware["checks"]))
+        self.assertTrue(any(item["id"] == "dockerGpuRuntime" and item["status"] == "pass" for item in hardware["checks"]))
+        self.assertEqual(hardware["detectedHardware"]["dockerServerVersion"], "27.0")
+        self.assertEqual(hardware["detectedHardware"]["gpus"][0]["memoryTotalMb"], 24564)
+        self.assertIn("blockedReasons", hardware)
+
+    def testWarsatHardwareProbeBlocksWhenDockerIsMissingAndControlDisabled(self):
+        with patch("backend.security.load", return_value={"allow_docker_control": False}), \
+             patch("backend.warsat._docker_cli_path", return_value=None), \
+             patch("backend.warsat.shutil.which", return_value=None), \
+             patch("backend.warsat._model_mount_state", return_value={
+                 "id": "modelMount",
+                 "label": "Model Mount",
+                 "status": "warn",
+                 "ok": False,
+                 "message": "Model folder is not visible to Rasputin.",
+                 "detail": {},
+                 "nextStep": "Mount local model files into ./models.",
+             }):
+            hardware = self.assertOk(self.client.get("/api/warsat/hardware"))
+
+        self.assertEqual(hardware["status"], "blocked")
+        self.assertFalse(hardware["ok"])
+        self.assertTrue(any(item["id"] == "dockerCli" and item["status"] == "block" for item in hardware["checks"]))
+        self.assertTrue(any(item["id"] == "dockerControl" and item["status"] == "block" for item in hardware["checks"]))
+        self.assertTrue(hardware["recommendations"])
+
     def testWarsatDeployCanRegisterGeneratedContainerWhenDockerControlIsEnabled(self):
         cfg = {
             "allow_docker_control": True,

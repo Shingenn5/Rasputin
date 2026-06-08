@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PROTOCOL_DIR = ROOT / "warsat" / "protocols"
 DATA_DIR = ROOT / "data" / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
+MODELS_DIR = ROOT / "models"
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("WARSAT_DEPLOY_TIMEOUT", "1800"))
 HEALTH_PROBE_ATTEMPTS = max(1, min(int(os.environ.get("WARSAT_HEALTH_PROBE_ATTEMPTS", "6")), 30))
 HEALTH_PROBE_INTERVAL_SECONDS = max(0.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_INTERVAL", "5")), 30.0))
@@ -214,6 +216,248 @@ def summary():
             }
             for item in data["protocols"]
         ],
+    }
+
+
+def _probe_command(args, timeout=10):
+    started = time.perf_counter()
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return {
+            "available": True,
+            "ok": proc.returncode == 0,
+            "returnCode": proc.returncode,
+            "stdout": (proc.stdout or "").strip(),
+            "stderr": (proc.stderr or "").strip(),
+            "latencyMs": round((time.perf_counter() - started) * 1000),
+        }
+    except FileNotFoundError:
+        return {
+            "available": False,
+            "ok": False,
+            "returnCode": None,
+            "stdout": "",
+            "stderr": "Command is not available in this Rasputin runtime.",
+            "latencyMs": round((time.perf_counter() - started) * 1000),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "available": True,
+            "ok": False,
+            "returnCode": None,
+            "stdout": "",
+            "stderr": "Command timed out.",
+            "latencyMs": round((time.perf_counter() - started) * 1000),
+        }
+
+
+def _check(check_id, label, status, message, detail=None, next_step=None):
+    return {
+        "id": check_id,
+        "label": label,
+        "status": status,
+        "ok": status == "pass",
+        "message": message,
+        "detail": detail or {},
+        "nextStep": next_step or "",
+    }
+
+
+def _json_object(text):
+    try:
+        data = json.loads(text or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _model_mount_state():
+    exists = MODELS_DIR.exists()
+    files = []
+    if exists:
+        try:
+            files = [
+                item.name
+                for item in sorted(MODELS_DIR.iterdir(), key=lambda path: path.name.lower())
+                if not item.name.startswith(".")
+            ][:12]
+        except Exception:
+            files = []
+    status = "pass" if exists else "warn"
+    message = "Model folder is visible to Rasputin." if exists else "Model folder is not visible to Rasputin."
+    if exists and not files:
+        status = "warn"
+        message = "Model folder is mounted but currently empty."
+    return _check(
+        "modelMount",
+        "Model Mount",
+        status,
+        message,
+        {"visiblePath": "models", "sample": files, "countShown": len(files)},
+        "Mount local model files into ./models or use Hugging Face model ids for vLLM recipes." if status == "warn" else "",
+    )
+
+
+def _docker_info_checks(docker_path, docker_version):
+    checks = []
+    detected = {}
+    if not docker_path:
+        checks.append(_check(
+            "dockerCli",
+            "Docker CLI",
+            "block",
+            "Docker CLI is not available inside this Rasputin runtime.",
+            {},
+            "Restart with the docker-control compose overlay if you want Warsat deployment controls.",
+        ))
+        checks.append(_check(
+            "dockerDaemon",
+            "Docker Daemon",
+            "block",
+            "Docker daemon cannot be checked because the CLI is missing.",
+            {},
+            "Install Docker Desktop or expose Docker CLI/socket to the wrapper only when you want Warsat control.",
+        ))
+        return checks, detected
+
+    checks.append(_check(
+        "dockerCli",
+        "Docker CLI",
+        "pass",
+        "Docker CLI is available to this runtime.",
+        {"path": "docker"},
+    ))
+    version = docker_version.get("Client", {}).get("Version") or docker_version.get("Client", {}).get("Platform", {}).get("Name")
+    server_version = docker_version.get("Server", {}).get("Version")
+    detected["dockerClientVersion"] = version or ""
+    detected["dockerServerVersion"] = server_version or ""
+    daemon_ok = bool(server_version)
+    checks.append(_check(
+        "dockerDaemon",
+        "Docker Daemon",
+        "pass" if daemon_ok else "block",
+        "Docker daemon is reachable." if daemon_ok else "Docker CLI is present, but the daemon is not reachable.",
+        {"clientVersion": version or "", "serverVersion": server_version or ""},
+        "Start Docker Desktop and ensure the wrapper has Docker socket access." if not daemon_ok else "",
+    ))
+    return checks, detected
+
+
+def hardware_probe():
+    cfg = security.load()
+    docker_path = _docker_cli_path()
+    docker_version_raw = _probe_command(["docker", "version", "--format", "{{json .}}"], timeout=10) if docker_path else {"ok": False, "stdout": "", "stderr": ""}
+    docker_version = _json_object(docker_version_raw.get("stdout"))
+    checks, detected = _docker_info_checks(docker_path, docker_version)
+
+    detected.update({
+        "os": platform.system(),
+        "platform": platform.platform(),
+        "runtime": os.environ.get("WRAPPER_RUNTIME") or "native",
+        "insideDocker": os.environ.get("WRAPPER_RUNTIME") == "docker",
+    })
+
+    docker_control_enabled = bool(cfg.get("allow_docker_control", False))
+    checks.append(_check(
+        "dockerControl",
+        "Docker Control Permission",
+        "pass" if docker_control_enabled else "block",
+        "Docker control is enabled in Safety settings." if docker_control_enabled else "Docker control is disabled in Safety settings.",
+        {"enabled": docker_control_enabled},
+        "Enable Docker control only when you are ready for Rasputin to request approved container actions." if not docker_control_enabled else "",
+    ))
+
+    if docker_path and docker_version_raw.get("ok"):
+        docker_info_raw = _probe_command(["docker", "info", "--format", "{{json .}}"], timeout=10)
+        info = _json_object(docker_info_raw.get("stdout"))
+        runtimes = info.get("Runtimes") or {}
+        runtime_names = sorted(runtimes.keys()) if isinstance(runtimes, dict) else []
+        detected["dockerRuntimes"] = runtime_names
+        detected["dockerOSType"] = info.get("OSType") or ""
+        detected["dockerArchitecture"] = info.get("Architecture") or ""
+        has_nvidia_runtime = "nvidia" in runtime_names
+        checks.append(_check(
+            "dockerGpuRuntime",
+            "Docker GPU Runtime",
+            "pass" if has_nvidia_runtime else "warn",
+            "Docker reports an NVIDIA runtime." if has_nvidia_runtime else "Docker does not report an NVIDIA runtime.",
+            {"runtimes": runtime_names},
+            "Install/configure NVIDIA Container Toolkit if you expect GPU acceleration." if not has_nvidia_runtime else "",
+        ))
+        ps = _probe_command(["docker", "ps", "-a", "--filter", "label=rasputin.managed=true", "--format", "{{json .}}"], timeout=10)
+        managed = _parse_json_lines(ps.get("stdout")) if ps.get("ok") else []
+        checks.append(_check(
+            "managedContainers",
+            "Warsat Containers",
+            "pass" if ps.get("ok") else "warn",
+            f"{len(managed)} Warsat-managed container(s) visible." if ps.get("ok") else "Warsat-managed containers could not be listed.",
+            {"count": len(managed)},
+            "Check Docker daemon access if managed containers should be visible." if not ps.get("ok") else "",
+        ))
+    else:
+        detected["dockerRuntimes"] = []
+        checks.append(_check(
+            "dockerGpuRuntime",
+            "Docker GPU Runtime",
+            "warn",
+            "Docker GPU runtime cannot be checked until Docker daemon is reachable.",
+            {},
+            "Start Docker and expose Docker control to Rasputin before deploying GPU containers.",
+        ))
+        checks.append(_check(
+            "managedContainers",
+            "Warsat Containers",
+            "warn",
+            "Warsat-managed containers cannot be listed until Docker daemon is reachable.",
+        ))
+
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi:
+        gpu_raw = _probe_command([
+            "nvidia-smi",
+            "--query-gpu=name,memory.total",
+            "--format=csv,noheader,nounits",
+        ], timeout=10)
+        gpus = []
+        if gpu_raw.get("ok"):
+            for line in gpu_raw.get("stdout", "").splitlines():
+                parts = [part.strip() for part in line.split(",")]
+                if parts and parts[0]:
+                    gpus.append({"name": parts[0], "memoryTotalMb": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None})
+        detected["gpus"] = gpus
+        checks.append(_check(
+            "hostGpu",
+            "GPU Visibility",
+            "pass" if gpus else "warn",
+            f"{len(gpus)} GPU(s) visible to Rasputin." if gpus else "nvidia-smi is present, but no GPU details were returned.",
+            {"gpus": gpus},
+            "Confirm NVIDIA drivers are installed and available to Docker." if not gpus else "",
+        ))
+    else:
+        detected["gpus"] = []
+        checks.append(_check(
+            "hostGpu",
+            "GPU Visibility",
+            "warn",
+            "nvidia-smi is not available inside this Rasputin runtime.",
+            {},
+            "CPU deployment can still work. For GPU deployment, expose NVIDIA tools/runtime to the container.",
+        ))
+
+    checks.append(_model_mount_state())
+
+    blocked = [item for item in checks if item["status"] == "block"]
+    warnings = [item for item in checks if item["status"] == "warn"]
+    recommendations = [item["nextStep"] for item in checks if item.get("nextStep")]
+    return {
+        "ok": not blocked,
+        "status": "blocked" if blocked else "warning" if warnings else "ready",
+        "checks": checks,
+        "warnings": [item["message"] for item in warnings],
+        "blockedReasons": [item["message"] for item in blocked],
+        "recommendations": recommendations,
+        "detectedHardware": detected,
+        "generatedAt": time.time(),
     }
 
 

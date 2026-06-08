@@ -381,6 +381,8 @@ test("warsat protocols produce dry-run launch plans", async ({ page }) => {
 
   await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-hardware-panel']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-hardware-check']").first()).toBeVisible();
   await expect(page.locator("[data-testid='warsat-model-finder']")).toBeVisible();
   await page.locator("[data-testid='warsat-catalog-card']").filter({ hasText: "Qwen2.5 Coder" }).click();
   await page.locator("[data-testid='warsat-catalog-create-plan']").click();

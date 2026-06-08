@@ -376,6 +376,7 @@ export function SchedulesView({ view, schedules, createSchedule }) {
 export function WarsatView({
   view,
   warsat,
+  hardware,
   runtimes,
   plan,
   error,
@@ -479,6 +480,8 @@ export function WarsatView({
           <SummaryTile title="Docker control" value={warsat?.dockerControlEnabled ? "Enabled" : "Off"} />
           <SummaryTile title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
         </div>
+
+        <WarsatHardwarePanel hardware={hardware} refresh={refresh} />
 
         <Card className="settings-card warsat-panel warsat-model-finder shadow-sm" data-testid="warsat-model-finder">
           <Card.Body>
@@ -1181,6 +1184,61 @@ function deploymentTitle(deployment) {
   if (deployment.status === "failed") return "Deployment failed";
   if (deployment.status === "registered") return "Model registered";
   return "Deployment updated";
+}
+
+function WarsatHardwarePanel({ hardware, refresh }) {
+  const status = hardware?.status || "unknown";
+  const checks = hardware?.checks || [];
+  const detected = hardware?.detectedHardware || {};
+  return (
+    <Card className="settings-card warsat-panel warsat-hardware-panel shadow-sm" data-testid="warsat-hardware-panel">
+      <Card.Body>
+        <div className="section-row align-items-start">
+          <div>
+            <h2>System Readiness</h2>
+            <p className="text-body-secondary mb-0">
+              Read-only checks for Docker, GPU visibility, model mounts, and Warsat-managed containers.
+            </p>
+          </div>
+          <div className="warsat-readiness-actions">
+            <span className={`warsat-readiness-pill is-${status}`}>{labelize(status)}</span>
+            <Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh checks</Button>
+          </div>
+        </div>
+        {!hardware && <p className="warsat-runtime-message mt-3 mb-0">Open or refresh Warsat to run readiness checks.</p>}
+        {!!hardware && (
+          <>
+            <div className="warsat-hardware-grid mt-3">
+              {checks.map((check) => (
+                <article className={`warsat-hardware-check is-${check.status}`} key={check.id} data-testid="warsat-hardware-check">
+                  <span>{labelize(check.status)}</span>
+                  <strong>{check.label}</strong>
+                  <p>{check.message}</p>
+                  {check.nextStep && <small>{check.nextStep}</small>}
+                </article>
+              ))}
+            </div>
+            <div className="warsat-hardware-details mt-3">
+              <dl className="detail-grid mb-0">
+                <dt>Runtime</dt><dd>{detected.runtime || "unknown"}</dd>
+                <dt>Docker</dt><dd>{detected.dockerServerVersion || detected.dockerClientVersion || "not detected"}</dd>
+                <dt>GPU Count</dt><dd>{(detected.gpus || []).length}</dd>
+                <dt>Docker Runtimes</dt><dd>{(detected.dockerRuntimes || []).join(", ") || "none reported"}</dd>
+              </dl>
+              {!!(hardware.recommendations || []).length && (
+                <details className="advanced-block mt-3">
+                  <summary>Manual next steps</summary>
+                  <ul className="warsat-note-list mt-3 mb-0">
+                    {hardware.recommendations.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          </>
+        )}
+      </Card.Body>
+    </Card>
+  );
 }
 
 function SummaryTile({ title, value }) {

@@ -3289,6 +3289,100 @@ button.runtime-chip {
   grid-column: 1 / -1;
 }
 
+.warsat-hardware-panel {
+  grid-column: 1 / -1;
+}
+
+.warsat-readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
+.warsat-readiness-pill {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-panel-2) 58%, transparent);
+  color: var(--ras-muted);
+  padding: .25rem .7rem;
+  font-size: .78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.warsat-readiness-pill.is-ready,
+.warsat-hardware-check.is-pass span {
+  border-color: color-mix(in srgb, #3fbf7f 48%, var(--ras-border));
+  color: #63d99a;
+}
+
+.warsat-readiness-pill.is-warning,
+.warsat-hardware-check.is-warn span {
+  border-color: color-mix(in srgb, var(--ras-warn, #d99a32) 52%, var(--ras-border));
+  color: var(--ras-warn, #d99a32);
+}
+
+.warsat-readiness-pill.is-blocked,
+.warsat-hardware-check.is-block span {
+  border-color: color-mix(in srgb, var(--ras-danger) 52%, var(--ras-border));
+  color: var(--ras-danger);
+}
+
+.warsat-hardware-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .65rem;
+}
+
+.warsat-hardware-check {
+  display: grid;
+  align-content: start;
+  gap: .35rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 40%, transparent);
+  padding: .75rem;
+}
+
+.warsat-hardware-check span {
+  width: fit-content;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  padding: .12rem .5rem;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.warsat-hardware-check strong,
+.warsat-hardware-check p,
+.warsat-hardware-check small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warsat-hardware-check p {
+  margin: 0;
+  color: var(--ras-text);
+  font-size: .86rem;
+}
+
+.warsat-hardware-check small {
+  color: var(--ras-muted);
+}
+
+.warsat-hardware-details {
+  border: 1px solid color-mix(in srgb, var(--ras-border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 30%, transparent);
+  padding: .75rem;
+}
+
 .warsat-model-finder-actions {
   flex-wrap: wrap;
   justify-content: flex-end;

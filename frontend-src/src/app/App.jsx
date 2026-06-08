@@ -88,6 +88,7 @@ export function App() {
   const [warsatDeployment, setWarsatDeployment] = useState(null);
   const [warsatDeploying, setWarsatDeploying] = useState(false);
   const [warsatRuntimes, setWarsatRuntimes] = useState({ containers: [], count: 0 });
+  const [warsatHardware, setWarsatHardware] = useState(null);
   const [warsatLogs, setWarsatLogs] = useState(null);
   const [warsatOperation, setWarsatOperation] = useState(null);
   const [tools, setTools] = useState({ tools: [], groups: [] });
@@ -949,12 +950,22 @@ export function App() {
   }
 
   async function loadWarsat() {
-    const [nextWarsat, runtimes] = await Promise.all([
+    const [nextWarsat, runtimes, hardware] = await Promise.all([
       api("/api/warsat/protocols"),
       api("/api/warsat/runtimes"),
+      api("/api/warsat/hardware").catch((error) => ({
+        ok: false,
+        status: "blocked",
+        checks: [],
+        warnings: [],
+        blockedReasons: [error.message],
+        recommendations: ["Check the Rasputin backend logs for Warsat hardware probe errors."],
+        detectedHardware: {},
+      })),
     ]);
     setWarsat(nextWarsat);
     setWarsatRuntimes(runtimes);
+    setWarsatHardware(hardware);
     return nextWarsat;
   }
 
@@ -1245,6 +1256,7 @@ export function App() {
       <WarsatView
         view={view}
         warsat={warsat}
+        hardware={warsatHardware}
         runtimes={warsatRuntimes}
         plan={warsatPlan}
         error={warsatError}
