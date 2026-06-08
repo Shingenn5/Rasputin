@@ -44,6 +44,9 @@ export function App() {
   const [theme, setTheme] = useState(() => normalizeTheme(localStorage.getItem("rasputin-theme") || "rasputin-light"));
   const [models, setModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
+  const [modelCatalog, setModelCatalog] = useState({ items: [], categories: [], runtimes: [], source: {} });
+  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
+  const [modelCatalogError, setModelCatalogError] = useState("");
   const [selectedModel, setSelectedModel] = useState("main-vllm");
   const [testingMode, setTestingMode] = useState(false);
   const [taskMode, setTaskMode] = useState("chat");
@@ -247,6 +250,7 @@ export function App() {
     const prefs = data.preferences || {};
     setModels(data.models || []);
     setModelProviders(data.modelProviders || []);
+    setModelCatalog(data.modelCatalog || { items: [], categories: [], runtimes: [], source: {} });
     setTasks(data.tasks || []);
     queryClient.setQueryData(["model-registry"], data.models || []);
     queryClient.setQueryData(["tasks"], data.tasks || []);
@@ -286,6 +290,27 @@ export function App() {
     const nextModels = await queryClient.fetchQuery({ queryKey: ["model-registry"], queryFn: fetchModels });
     setModels(nextModels);
     return nextModels;
+  }
+
+  async function loadModelCatalog(refresh = false) {
+    setModelCatalogLoading(true);
+    setModelCatalogError("");
+    try {
+      const nextCatalog = refresh
+        ? await postJson("/api/model-catalog/refresh", { force: false })
+        : await api("/api/model-catalog");
+      setModelCatalog(nextCatalog);
+      setGlobalStatus(refresh
+        ? `Model catalog refreshed. ${nextCatalog.count || 0} entries available.`
+        : "Model catalog loaded.");
+      return nextCatalog;
+    } catch (error) {
+      setModelCatalogError(error.message);
+      setGlobalStatus(error.message);
+      return null;
+    } finally {
+      setModelCatalogLoading(false);
+    }
   }
 
   async function loadTasks() {
@@ -895,6 +920,40 @@ export function App() {
     return nextWarsat;
   }
 
+  async function prepareCatalogModelForWarsat(item, options = {}) {
+    if (!item) return null;
+    const protocolId = options.protocolId || item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai";
+    if (!protocolId || protocolId === "apiOnly") {
+      setGlobalStatus("This catalog entry is API-only. Register it as an API model instead of sending it to Warsat.");
+      return null;
+    }
+    const profile = options.strengthProfile || item.recommendedProfile || "balanced";
+    const modelRef = item.warsatModelRef || item.modelId || item.id;
+    const port = Number(options.hostPort || 0) || undefined;
+    setWarsatError("");
+    try {
+      await loadWarsat();
+      const plan = await postJson("/api/warsat/plan", {
+        protocolId,
+        modelRef,
+        strengthProfile: profile,
+        hostPort: port,
+        role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),
+        maxModelLen: item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
+        containerName: options.containerName || undefined,
+      });
+      setWarsatPlan(plan);
+      setWarsatDeployment(null);
+      go("warsat");
+      setGlobalStatus(`Warsat launch plan created for ${item.name || modelRef}.`);
+      return plan;
+    } catch (error) {
+      setWarsatError(error.message);
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
   async function loadWarsatRuntimes() {
     const runtimes = await api("/api/warsat/runtimes");
     setWarsatRuntimes(runtimes);
@@ -1186,6 +1245,11 @@ export function App() {
         registerLocalModel={registerLocalModel}
         registerApiModel={registerApiModel}
         modelProviders={modelProviders}
+        modelCatalog={modelCatalog}
+        modelCatalogLoading={modelCatalogLoading}
+        modelCatalogError={modelCatalogError}
+        loadModelCatalog={loadModelCatalog}
+        prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
         security={security}
         openWarsat={() => go("warsat")}
       />

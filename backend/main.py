@@ -16,6 +16,7 @@ from .response import AppError, error_handler, fail, http_error_handler, ok
 from . import auth
 from . import approvals
 from . import model_registry
+from . import model_catalog
 from . import model_providers
 from . import rag
 from . import graphify
@@ -310,6 +311,10 @@ class SessionFolderIn(CamelModel):
     folder_id: str | None = None
 
 
+class ModelCatalogRefreshIn(CamelModel):
+    force: bool = False
+
+
 class WarsatPlanIn(CamelModel):
     protocol_id: str
     model_ref: str | None = None
@@ -383,6 +388,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
     return ok({
         "models": model_registry.all_models(),
         "model_providers": model_providers.public_provider_options(),
+        "model_catalog": model_catalog.catalog(refresh=False),
         "skills": skill_store.enabled_names(),
         "tasks": hub.all_tasks(),
         "memory": load_memory(),
@@ -457,6 +463,16 @@ async def model_registry_list(_user=Depends(current_user)):
 @app.get("/api/model-providers")
 async def model_provider_list(_user=Depends(current_user)):
     return ok({"providers": model_providers.public_provider_options()})
+
+
+@app.get("/api/model-catalog")
+async def model_catalog_get(_user=Depends(current_user)):
+    return ok(model_catalog.catalog(refresh=False))
+
+
+@app.post("/api/model-catalog/refresh")
+async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=Depends(current_user)):
+    return ok(model_catalog.catalog(refresh=True, force=bool(req.force if req else False)))
 
 
 @app.post("/api/model-registry/upsert")

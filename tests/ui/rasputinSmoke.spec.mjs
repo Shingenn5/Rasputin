@@ -113,6 +113,9 @@ test("home shell settings and dry-run task work", async ({ page }) => {
   await expect(page.locator("#modelsView")).toBeVisible();
   await expect(page.locator("[data-testid='active-model-card']")).not.toContainText("Main Local Model");
   await expect(page.locator("#models-active-card")).toBeVisible();
+  await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
+  await expect(page.locator("[data-testid='catalog-model-card']").first()).toBeVisible();
+  await expect(page.locator("[data-testid='catalog-send-to-warsat']")).toBeVisible();
   await expect(page.locator("#modelsView")).toContainText("Warsat Deployment Plan");
   await expect(page.locator("[data-testid='advanced-model-registry']")).toBeVisible();
   await expect(page.locator("[data-testid='gguf-scan']")).toBeVisible();
@@ -359,6 +362,14 @@ test("chat sessions can be categorized into folders", async ({ page, request }) 
 test("warsat protocols produce dry-run launch plans", async ({ page }) => {
   await page.goto("/");
   await waitForAppReady(page);
+
+  await page.locator("[data-testid='nav-models']").click();
+  await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
+  await page.locator("[data-testid='catalog-model-card']").filter({ hasText: "Qwen2.5 Coder" }).click();
+  await page.locator("[data-testid='catalog-send-to-warsat']").click();
+  await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("Qwen/Qwen2.5-Coder-7B-Instruct");
+  await page.locator("[data-testid='warsat-view']").getByRole("button", { name: "Clear plan" }).click();
 
   await page.locator("[data-testid='nav-warsat']").click();
   await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();

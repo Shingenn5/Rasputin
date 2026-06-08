@@ -56,6 +56,11 @@ export function ModelsView({
   registerLocalModel,
   registerApiModel,
   modelProviders,
+  modelCatalog,
+  modelCatalogLoading,
+  modelCatalogError,
+  loadModelCatalog,
+  prepareCatalogModelForWarsat,
   security,
   openWarsat,
 }) {
@@ -73,6 +78,35 @@ export function ModelsView({
     { id: "openai-compatible-remote", name: "Other OpenAI-compatible API", defaultBaseUrl: "", defaultKeyEnv: "" },
   ];
   const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
+  const catalogItems = modelCatalog?.items || [];
+  const catalogCategories = modelCatalog?.categories || [];
+  const catalogRuntimes = modelCatalog?.runtimes || [];
+  const [catalogSearch, setCatalogSearch] = React.useState("");
+  const [catalogPurpose, setCatalogPurpose] = React.useState("all");
+  const [catalogRuntime, setCatalogRuntime] = React.useState("deployable");
+  const [selectedCatalogId, setSelectedCatalogId] = React.useState(catalogItems[0]?.id || "");
+  const filteredCatalogItems = React.useMemo(() => {
+    const search = catalogSearch.trim().toLowerCase();
+    return catalogItems.filter((item) => {
+      const matchesSearch = !search || [
+        item.name,
+        item.id,
+        item.modelId,
+        item.provider,
+        item.purpose,
+        ...(item.capabilities || []),
+      ].join(" ").toLowerCase().includes(search);
+      const matchesPurpose = catalogPurpose === "all" || item.purpose === catalogPurpose;
+      const options = item.runtimeOptions || [];
+      const matchesRuntime = catalogRuntime === "all"
+        || (catalogRuntime === "deployable" && item.deployable)
+        || options.some((option) => option.protocolId === catalogRuntime);
+      return matchesSearch && matchesPurpose && matchesRuntime;
+    });
+  }, [catalogItems, catalogPurpose, catalogRuntime, catalogSearch]);
+  const selectedCatalogModel = filteredCatalogItems.find((item) => item.id === selectedCatalogId)
+    || filteredCatalogItems[0]
+    || catalogItems[0];
 
   return (
     <section className={`app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
@@ -177,6 +211,142 @@ export function ModelsView({
               <span><ShieldCheck size={16} aria-hidden="true" /> Compose plans are previewed first</span>
             </div>
           </aside>
+        </section>
+
+        <section className="model-catalog-panel" aria-labelledby="modelCatalogTitle" data-testid="models-dev-catalog">
+          <div className="model-catalog-head">
+            <div>
+              <span className="eyebrow">Model Catalog</span>
+              <h2 id="modelCatalogTitle">Choose a model, then prepare it in Warsat</h2>
+              <p>
+                Rasputin keeps a local deployable shortlist and can refresh public metadata from models.dev.
+                API-only entries stay out of Warsat unless they have a real local runtime target.
+              </p>
+            </div>
+            <div className="model-catalog-actions">
+              <button className="ras-button" type="button" onClick={() => loadModelCatalog?.(false)}>
+                <RefreshCw size={17} aria-hidden="true" />
+                Load local catalog
+              </button>
+              <button className="ras-button primary" type="button" onClick={() => loadModelCatalog?.(true)} disabled={modelCatalogLoading}>
+                <Cloud size={17} aria-hidden="true" />
+                {modelCatalogLoading ? "Refreshing..." : "Refresh models.dev"}
+              </button>
+            </div>
+          </div>
+
+          <div className="model-catalog-meta" role="status">
+            <span>{modelCatalog?.count || catalogItems.length || 0} models</span>
+            <span>{modelCatalog?.deployableCount || 0} Warsat-ready</span>
+            <span>Source: {modelCatalog?.source?.status || "local fallback"}</span>
+            {modelCatalogError && <strong>{modelCatalogError}</strong>}
+          </div>
+
+          <div className="model-catalog-layout">
+            <aside className="model-catalog-filters" aria-label="Model catalog filters">
+              <label>
+                <span>Search</span>
+                <input
+                  value={catalogSearch}
+                  onChange={(event) => setCatalogSearch(event.target.value)}
+                  placeholder="coder, 7b, vision, qwen"
+                />
+              </label>
+              <label>
+                <span>Use</span>
+                <select value={catalogPurpose} onChange={(event) => setCatalogPurpose(event.target.value)}>
+                  <option value="all">All uses</option>
+                  {catalogCategories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Runtime</span>
+                <select value={catalogRuntime} onChange={(event) => setCatalogRuntime(event.target.value)}>
+                  <option value="deployable">Warsat-ready</option>
+                  <option value="all">All catalog entries</option>
+                  {catalogRuntimes.map((runtime) => (
+                    <option key={runtime.id} value={runtime.id}>{runtime.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="ras-button ghost"
+                type="button"
+                onClick={() => {
+                  setCatalogSearch("");
+                  setCatalogPurpose("all");
+                  setCatalogRuntime("deployable");
+                }}
+              >
+                Clear filters
+              </button>
+            </aside>
+
+            <div className="model-catalog-list" aria-label="Model catalog results">
+              {filteredCatalogItems.slice(0, 36).map((item) => (
+                <button
+                  className={`model-catalog-row ${selectedCatalogModel?.id === item.id ? "is-selected" : ""}`}
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedCatalogId(item.id)}
+                  data-testid="catalog-model-card"
+                >
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>{item.modelId || item.id}</small>
+                  </span>
+                  <span className="model-catalog-row-meta">
+                    <em>{labelize(item.purpose || "chat")}</em>
+                    <em>{item.vramEstimateGb ? `${item.vramEstimateGb} GB est.` : "VRAM unknown"}</em>
+                    <em>{item.deployable ? "Warsat-ready" : "API only"}</em>
+                  </span>
+                </button>
+              ))}
+              {!filteredCatalogItems.length && (
+                <div className="model-catalog-empty">No models match those filters.</div>
+              )}
+            </div>
+
+            <aside className="model-catalog-detail" aria-label="Selected catalog model">
+              {selectedCatalogModel ? (
+                <>
+                  <span className="eyebrow">{selectedCatalogModel.source || "catalog"}</span>
+                  <h3>{selectedCatalogModel.name}</h3>
+                  <p>{selectedCatalogModel.summary || "No summary available."}</p>
+                  <dl className="model-catalog-detail-grid">
+                    <dt>Model id</dt><dd>{selectedCatalogModel.modelId || selectedCatalogModel.id}</dd>
+                    <dt>Provider</dt><dd>{selectedCatalogModel.provider}</dd>
+                    <dt>Use</dt><dd>{labelize(selectedCatalogModel.purpose || "chat")}</dd>
+                    <dt>Context</dt><dd>{selectedCatalogModel.contextWindow ? Number(selectedCatalogModel.contextWindow).toLocaleString() : "Unknown"}</dd>
+                    <dt>VRAM</dt><dd>{selectedCatalogModel.vramEstimateGb ? `${selectedCatalogModel.vramEstimateGb} GB estimated` : "Unknown"}</dd>
+                    <dt>Runtime</dt><dd>{selectedCatalogModel.recommendedProtocol || "API only"}</dd>
+                  </dl>
+                  <div className="model-catalog-capabilities">
+                    {(selectedCatalogModel.capabilities || []).slice(0, 8).map((capability) => (
+                      <span key={capability}>{labelize(capability)}</span>
+                    ))}
+                  </div>
+                  <button
+                    className="ras-button primary"
+                    type="button"
+                    disabled={!selectedCatalogModel.deployable}
+                    onClick={() => prepareCatalogModelForWarsat?.(selectedCatalogModel)}
+                    data-testid="catalog-send-to-warsat"
+                  >
+                    <Play size={17} aria-hidden="true" />
+                    {selectedCatalogModel.deployable ? "Prepare in Warsat" : "API-only model"}
+                  </button>
+                  {!selectedCatalogModel.deployable && (
+                    <small className="model-catalog-note">Register API-only models in the API Providers section below.</small>
+                  )}
+                </>
+              ) : (
+                <p>No model selected.</p>
+              )}
+            </aside>
+          </div>
         </section>
 
         <section className="model-builder-panel" aria-labelledby="modelBuilderTitle">

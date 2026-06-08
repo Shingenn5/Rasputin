@@ -45,6 +45,40 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("models", data)
         self.assertIsInstance(data["models"], list)
 
+    def testModelCatalogSupportsWarsatPlanning(self):
+        catalog = self.assertOk(self.client.get("/api/model-catalog"))
+        self.assertIn("items", catalog)
+        self.assertGreaterEqual(catalog["deployableCount"], 1)
+        deployable = next(item for item in catalog["items"] if item["deployable"])
+        self.assertIn("recommendedProtocol", deployable)
+
+        with patch("backend.model_catalog._fetch_models_dev", return_value={
+            "test-provider": {
+                "name": "Test Provider",
+                "models": {
+                    "code-7b": {
+                        "name": "Code 7B",
+                        "description": "coding model",
+                        "limit": {"context": 8192},
+                        "tool_call": True,
+                    }
+                },
+            }
+        }):
+            refreshed = self.assertOk(self.client.post("/api/model-catalog/refresh", json={"force": True}))
+        self.assertTrue(any(item["modelId"] == "code-7b" for item in refreshed["items"]))
+        self.assertIn("models.dev", refreshed["source"]["name"])
+
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": deployable["recommendedProtocol"],
+                "modelRef": deployable["modelId"],
+                "strengthProfile": deployable["recommendedProfile"],
+                "hostPort": 8044,
+            }))
+        self.assertEqual(plan["modelRef"], deployable["modelId"])
+        self.assertTrue(plan["requiresApproval"])
+
     def testLocalOpenAiCompatibleModelCanBeRegistered(self):
         with patch("backend.security.require", lambda flag: True):
             registered = self.assertOk(self.client.post("/api/model-registry/upsert", json={
