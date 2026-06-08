@@ -16,7 +16,7 @@ test("RasputinTest preview routes, variants, themes, and viewport presets render
   await page.goto("/preview/home");
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   await expect(page.locator("[data-testid='gui-preview-view']")).toBeVisible();
-  await expect(page.locator("text=GUI Preview Hub")).toBeVisible();
+  await expect(page.locator("text=GUI Layout Preview Hub")).toBeVisible();
 
   for (const [route, label] of [
     ["/preview/home", "Home"],
@@ -28,12 +28,12 @@ test("RasputinTest preview routes, variants, themes, and viewport presets render
     ["/preview/panels", "Panels"],
   ]) {
     await page.goto(route);
-    await expect(page.locator(".preview-header h2")).toHaveText(label);
+    await expect(page.locator("[data-testid='preview-screen-title']")).toHaveText(label);
   }
 
   await page.locator("[data-testid='gui-preview-screen-select']").selectOption("workspaces");
   await expect(page).toHaveURL(/\/preview\/workspaces$/);
-  await expect(page.locator("text=Approved folders")).toBeVisible();
+  await expect(page.locator("[data-testid='preview-screen-title']")).toHaveText("Workspaces");
 
   for (const [variant, label] of [
     ["warmind-console", "Warmind Console"],
@@ -41,7 +41,7 @@ test("RasputinTest preview routes, variants, themes, and viewport presets render
     ["archive-studio", "Archive Studio"],
   ]) {
     await page.locator("[data-testid='gui-preview-variant-select']").selectOption(variant);
-    await expect(page.locator(".preview-brand small")).toHaveText(label);
+    await expect(page.locator(".preview-stage")).toContainText(label);
     await page.screenshot({ path: `${screenshotRoot}/${variant}/workspaces.png`, fullPage: true });
   }
 
