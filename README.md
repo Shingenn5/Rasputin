@@ -185,6 +185,30 @@ npx playwright install chromium
 
 The `-Ui` path rebuilds the Vite frontend before Docker starts. The UI suite opens the test wrapper, checks the chat-first home screen, settings views, model registry, workspace browser, theme switching, dry-run send flow, and mobile screenshots.
 
+## RasputinTest GUI Preview
+
+GUI experiments run in an isolated preview container instead of production Rasputin.
+
+Start the preview container:
+
+```powershell
+npm run preview:gui
+```
+
+Open:
+
+```text
+http://127.0.0.1:8899/preview/home
+```
+
+Run the preview smoke tests:
+
+```powershell
+npm run test:gui-preview
+```
+
+The preview container uses `docker-compose.gui-test.yml`, binds to `127.0.0.1:8899`, sets `RASPUTIN_UI_PREVIEW=1`, and stores all preview state under `testdata/gui-preview/`. Production Rasputin stays on `http://127.0.0.1:8787`.
+
 ## Local Models
 
 Main vLLM endpoint defaults to:

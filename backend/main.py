@@ -48,6 +48,10 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
 
+def _ui_preview_enabled():
+    return str(os.environ.get("RASPUTIN_UI_PREVIEW", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _known_exception(exc):
     if isinstance(exc, (AppError, PermissionError, ValueError, HTTPException)):
         return exc
@@ -348,12 +352,28 @@ async def index():
     return FileResponse(FRONTEND / "index.html")
 
 
+@app.get("/preview")
+@app.get("/preview/{path:path}")
+async def preview_index(path: str = ""):
+    if not _ui_preview_enabled():
+        raise HTTPException(status_code=404, detail="Preview UI is disabled.")
+    return FileResponse(FRONTEND / "index.html")
+
+
 @app.get("/api/health")
 async def health():
     return ok({
         "name": "Rasputin",
         "status": "ready",
         "privacy": security.offline_status(),
+    })
+
+
+@app.get("/api/ui/config")
+async def ui_config():
+    return ok({
+        "ui_preview_enabled": _ui_preview_enabled(),
+        "environment": os.environ.get("RASPUTIN_ENV", "local"),
     })
 
 
@@ -381,6 +401,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "schedules": schedules.list_schedules(),
         "warsat": {**warsat.list_protocols(), "runtimes": warsat_runtime_state},
         "chat_folders": hub.chat_folders(),
+        "ui_preview_enabled": _ui_preview_enabled(),
     })
 
 

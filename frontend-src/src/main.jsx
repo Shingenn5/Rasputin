@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource/rajdhani/500.css";
 import "@fontsource/rajdhani/600.css";
@@ -7,9 +7,52 @@ import "./styles/bootstrap.scss";
 import "./styles/rasputin.css";
 import { AppProviders } from "./app/AppProviders.jsx";
 import { App } from "./app/App.jsx";
+import { PreviewApp } from "./preview/PreviewApp.jsx";
 
 createRoot(document.getElementById("root")).render(
-  <AppProviders>
-    <App />
-  </AppProviders>,
+  <Root />,
 );
+
+function Root() {
+  const previewPath = window.location.pathname.startsWith("/preview");
+  const [previewAllowed, setPreviewAllowed] = useState(!previewPath ? false : null);
+
+  useEffect(() => {
+    if (!previewPath) return undefined;
+    let alive = true;
+    fetch("/api/ui/config")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!alive) return;
+        setPreviewAllowed(Boolean(payload?.data?.uiPreviewEnabled));
+      })
+      .catch(() => {
+        if (alive) setPreviewAllowed(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [previewPath]);
+
+  if (previewPath) {
+    if (previewAllowed === null) {
+      return <div className="preview-loading">Loading RasputinTest preview...</div>;
+    }
+    if (!previewAllowed) {
+      document.body.dataset.ready = "true";
+      return (
+        <main className="preview-disabled">
+          <h1>Preview UI Disabled</h1>
+          <p>Start the isolated RasputinTest container with <code>RASPUTIN_UI_PREVIEW=1</code> to use preview routes.</p>
+        </main>
+      );
+    }
+    return <PreviewApp />;
+  }
+
+  return (
+    <AppProviders>
+      <App />
+    </AppProviders>
+  );
+}

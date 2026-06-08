@@ -10,7 +10,9 @@
     "testUi": "playwright test",
     "testUiHeaded": "playwright test --headed",
     "testHarness": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1",
-    "checkRepoSafety": "powershell -ExecutionPolicy Bypass -File ./scripts/check-repo-safety.ps1"
+    "checkRepoSafety": "powershell -ExecutionPolicy Bypass -File ./scripts/check-repo-safety.ps1",
+    "preview:gui": "powershell -ExecutionPolicy Bypass -File ./scripts/start-gui-preview.ps1",
+    "test:gui-preview": "powershell -ExecutionPolicy Bypass -File ./scripts/test-gui-preview.ps1"
   },
   "dependencies": {
     "@fontsource/rajdhani": "^5.2.7",

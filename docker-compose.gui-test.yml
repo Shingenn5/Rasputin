@@ -1,0 +1,29 @@
+name: rasputin-gui-test
+
+services:
+  rasputin-gui-test:
+    image: rasputin-wrapper:gui-test
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    ports:
+      - "127.0.0.1:${RASPUTIN_GUI_TEST_PORT:-8899}:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      WRAPPER_RUNTIME: docker
+      RASPUTIN_ENV: gui-test
+      RASPUTIN_TEST_AUTH_BYPASS: "1"
+      RASPUTIN_COOKIE_SECURE: "0"
+      RASPUTIN_LOCALHOST_BYPASS: "0"
+      RASPUTIN_UI_PREVIEW: "1"
+      MAIN_VLLM_BASE_URL: ${MAIN_VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      CONTAINER_MODELS_DIR: /app/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./testdata/gui-preview/data:/app/data
+      - ./testdata/gui-preview/workspace:/app/workspace
+      - ./models:/app/models:ro
+    restart: "no"
