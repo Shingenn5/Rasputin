@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 
 const baseUrl = process.env.RASPUTIN_TEST_BASE_URL || "http://127.0.0.1:8899";
 const outputRoot = "test-results/gui-preview";
-const variants = ["warmind-console", "operator-desk", "archive-studio"];
+const variants = ["warmind-console", "operator-desk", "archive-studio", "rasputin-candidate"];
 const screens = ["home", "workspaces", "activity", "models", "warsat", "settings", "panels"];
 const viewports = [
   ["desktop", { width: 1440, height: 1100 }],

@@ -7,7 +7,7 @@ const screenshotRoot = "test-results/gui-preview";
 
 test.beforeAll(() => {
   mkdirSync(screenshotRoot, { recursive: true });
-  for (const variant of ["warmind-console", "operator-desk", "archive-studio"]) {
+  for (const variant of ["warmind-console", "operator-desk", "archive-studio", "rasputin-candidate"]) {
     mkdirSync(`${screenshotRoot}/${variant}`, { recursive: true });
   }
 });
@@ -39,6 +39,7 @@ test("RasputinTest preview routes, variants, themes, and viewport presets render
     ["warmind-console", "Warmind Console"],
     ["operator-desk", "Operator Desk"],
     ["archive-studio", "Archive Studio"],
+    ["rasputin-candidate", "Rasputin Candidate"],
   ]) {
     await page.locator("[data-testid='gui-preview-variant-select']").selectOption(variant);
     await expect(page.locator(".preview-stage")).toContainText(label);

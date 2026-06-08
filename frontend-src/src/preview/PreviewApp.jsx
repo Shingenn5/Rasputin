@@ -38,6 +38,11 @@ const variants = [
     label: "Archive Studio",
     summary: "Library layout for long chats, documents, memory, citations, and file review.",
   },
+  {
+    id: "rasputin-candidate",
+    label: "Rasputin Candidate",
+    summary: "Composite build: original chat home, Warmind workspaces and Warsat, Archive activity, and a refined Operator-style model manager.",
+  },
 ];
 
 const screens = [
@@ -210,6 +215,9 @@ function PreviewController({
 }
 
 function PreviewStage({ variant, screen, viewport, navigate, variantInfo }) {
+  if (variant === "rasputin-candidate") {
+    return <RasputinCandidateLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+  }
   if (variant === "operator-desk") {
     return <OperatorDeskLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
   }
@@ -219,9 +227,32 @@ function PreviewStage({ variant, screen, viewport, navigate, variantInfo }) {
   return <WarmindConsoleLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
 }
 
-function WarmindConsoleLayout({ screen, viewport, navigate, variantInfo }) {
+function RasputinCandidateLayout({ screen, viewport, navigate, variantInfo }) {
+  if (screen === "home") {
+    return <OriginalHomeLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+  }
+  if (screen === "workspaces") {
+    return <WarmindConsoleLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} hideTelemetry />;
+  }
+  if (screen === "activity") {
+    return <ArchiveStudioLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+  }
+  if (screen === "models") {
+    return <CandidateModelsLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+  }
+  if (screen === "warsat") {
+    return <WarmindConsoleLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+  }
+  if (screen === "settings") {
+    return <OperatorDeskLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+  }
+  return <OperatorDeskLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
+}
+
+function WarmindConsoleLayout({ screen, viewport, navigate, variantInfo, hideTelemetry = false }) {
+  const showTelemetry = !hideTelemetry && screen !== "workspaces";
   return (
-    <div className="preview-stage preview-layout preview-layout-warmind" data-viewport={viewport}>
+    <div className={`preview-stage preview-layout preview-layout-warmind ${showTelemetry ? "" : "preview-layout-no-telemetry"}`} data-viewport={viewport}>
       <aside className="preview-command-rail" aria-label="Warmind Console navigation">
         <div className="preview-rail-brand">R</div>
         <nav>
@@ -245,17 +276,99 @@ function WarmindConsoleLayout({ screen, viewport, navigate, variantInfo }) {
           <div className="preview-status-row">
             <span><Lock size={14} />Local only</span>
             <span><Cpu size={14} />llava-hf/llava-1.5-7b-hf</span>
-            <span><Gauge size={14} />3 active runs</span>
+            {showTelemetry && <span><Gauge size={14} />3 active runs</span>}
           </div>
         </header>
         <div className="preview-command-content">{renderWarmindScreen(screen)}</div>
       </section>
-      <aside className="preview-telemetry" aria-label="Warmind Console telemetry">
-        <TelemetryBlock title="Active Runs" items={fixtures.tasks.map(([status, title, progress]) => `${status}: ${title} / ${progress}`)} />
-        <TelemetryBlock title="Approvals" items={fixtures.approvals.map(([summary, action, status]) => `${status}: ${action} / ${summary}`)} />
-        <TelemetryBlock title="Runtime" items={["Privacy lock enabled", "Docker control disabled", "Workspace: Project Root"]} />
-      </aside>
+      {showTelemetry && (
+        <aside className="preview-telemetry" aria-label="Warmind Console telemetry">
+          <TelemetryBlock title="Active Runs" items={fixtures.tasks.map(([status, title, progress]) => `${status}: ${title} / ${progress}`)} />
+          <TelemetryBlock title="Approvals" items={fixtures.approvals.map(([summary, action, status]) => `${status}: ${action} / ${summary}`)} />
+          <TelemetryBlock title="Runtime" items={["Privacy lock enabled", "Docker control disabled", "Workspace: Project Root"]} />
+        </aside>
+      )}
     </div>
+  );
+}
+
+function OriginalHomeLayout({ screen, viewport, navigate, variantInfo }) {
+  return (
+    <div className="preview-stage preview-stage-original" data-viewport={viewport}>
+      <LegacyPreviewSidebar screen={screen} navigate={navigate} variantInfo={variantInfo} />
+      <section className="preview-canvas" aria-label={`${variantInfo.label} ${screen} preview`}>
+        <header className="preview-header">
+          <div>
+            <span className="preview-kicker">{variantInfo.label}</span>
+            <h2 data-testid="preview-screen-title">{screenLabel(screen)}</h2>
+          </div>
+          <div className="preview-status-row">
+            <span><Lock size={14} />Local only</span>
+            <span><Cpu size={14} />llava-hf/llava-1.5-7b-hf</span>
+          </div>
+        </header>
+        <div className="preview-home">
+          <section className="preview-thread">
+            <article className="preview-message user">Can you inspect my workspace and tell me what matters first?</article>
+            <article className="preview-message assistant">
+              <strong>Workspace read plan</strong>
+              <p>I will scan approved folders, use local RAG and Graphify context, then return citations before suggesting file changes.</p>
+            </article>
+          </section>
+          <section className="preview-composer">
+            <textarea defaultValue="Message Rasputin" aria-label="Preview message composer" />
+            <div className="preview-runbar">
+              <button type="button"><Bot size={16} />Mode <strong>Chat</strong><ChevronDown size={14} /></button>
+              <button type="button"><Cpu size={16} />Model <strong>llava-1.5</strong><ChevronDown size={14} /></button>
+              <button type="button" className="preview-send"><Play size={16} />Send</button>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LegacyPreviewSidebar({ screen, navigate, variantInfo }) {
+  return (
+    <aside className="preview-sidebar">
+      <div className="preview-brand">
+        <span>R</span>
+        <div>
+          <strong>Rasputin</strong>
+          <small>{variantInfo.label}</small>
+        </div>
+      </div>
+      <button className="preview-new-chat" type="button"><Sparkles size={16} />New Chat</button>
+      <nav aria-label="Preview screens">
+        {screens.map(([id, label]) => {
+          const Icon = icons[id] || Home;
+          return (
+            <button key={id} type="button" className={screen === id ? "is-active" : ""} aria-current={screen === id ? "page" : undefined} onClick={() => navigate(id)}>
+              <Icon size={17} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+      <section className="preview-chat-list" aria-label="Mock recent chats">
+        <header>
+          <span>Recent Chats</span>
+          <small>{fixtures.sessions.length}</small>
+        </header>
+        {fixtures.sessions.map(([title, meta, folder]) => (
+          <article key={title}>
+            <strong>{title}</strong>
+            <span>{meta}</span>
+            <small>{folder}</small>
+          </article>
+        ))}
+      </section>
+      <footer>
+        <ShieldCheck size={15} />
+        <span>Privacy locked</span>
+      </footer>
+    </aside>
   );
 }
 
@@ -344,6 +457,128 @@ function ArchiveStudioLayout({ screen, viewport, navigate, variantInfo }) {
       </main>
       <aside className="preview-archive-inspector">
         <InspectorPanel screen={screen} archive />
+      </aside>
+    </div>
+  );
+}
+
+function CandidateModelsLayout({ screen, viewport, navigate, variantInfo }) {
+  const sourceGroups = [
+    ["Active Local", "vLLM and llama.cpp endpoints Rasputin can reach now", "1 ready"],
+    ["Container Plans", "Warsat launch plans waiting for approval", "2 drafts"],
+    ["External APIs", "Optional API-key providers, disabled by default", "0 active"],
+    ["Knowledge Models", "Embeddings and retrieval-only services", "1 ready"],
+  ];
+  const roleRows = [
+    ["Chat", "llava-hf/llava-1.5-7b-hf", "healthy"],
+    ["Code", "fallback: chat model", "needs route"],
+    ["Research", "fallback: chat model", "web broker gated"],
+    ["Embeddings", "text-embedding-local", "ready"],
+  ];
+
+  return (
+    <div className="preview-stage preview-layout preview-layout-candidate-models" data-viewport={viewport}>
+      <header className="preview-candidate-models-topbar">
+        <div className="preview-brand-inline">
+          <span>R</span>
+          <div>
+            <strong>Rasputin</strong>
+            <small>{variantInfo.label}</small>
+          </div>
+        </div>
+        <nav aria-label="Rasputin Candidate navigation">
+          {screens.slice(0, 6).map(([id, label]) => (
+            <button key={id} type="button" className={screen === id ? "is-active" : ""} aria-current={screen === id ? "page" : undefined} onClick={() => navigate(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+        <button type="button" className="preview-new-chat"><Sparkles size={16} />New Chat</button>
+      </header>
+
+      <aside className="preview-model-source-rail" aria-label="Model sources">
+        <div>
+          <span className="preview-kicker">Sources</span>
+          <h3>Model Library</h3>
+        </div>
+        {sourceGroups.map(([title, detail, count], index) => (
+          <button key={title} type="button" className={index === 0 ? "is-active" : ""}>
+            <strong>{title}</strong>
+            <span>{detail}</span>
+            <small>{count}</small>
+          </button>
+        ))}
+      </aside>
+
+      <main className="preview-candidate-models-main">
+        <header className="preview-section-header">
+          <div>
+            <span className="preview-kicker">{variantInfo.label}</span>
+            <h2 data-testid="preview-screen-title">{screenLabel(screen)}</h2>
+          </div>
+          <div className="preview-status-row">
+            <span><Lock size={14} />Local first</span>
+            <span><Cpu size={14} />llava-hf/llava-1.5-7b-hf</span>
+          </div>
+        </header>
+
+        <section className="preview-model-control-board">
+          <article className="preview-active-model-board">
+            <div className="preview-model-board-head">
+              <div>
+                <span className="preview-kicker">Active Chat Model</span>
+                <h3>llava-hf/llava-1.5-7b-hf</h3>
+                <p>Shown exactly as the runtime reports it. Friendly labels stay secondary.</p>
+              </div>
+              <span className="preview-model-health is-healthy"><CheckCircle2 size={15} />Healthy</span>
+            </div>
+            <div className="preview-model-health-strip">
+              <span>Endpoint: 127.0.0.1:8000</span>
+              <span>Latency: 214 ms</span>
+              <span>Context: 1024 tokens</span>
+              <span>Privacy: brokered tools only</span>
+            </div>
+            <div className="preview-model-action-row">
+              <button type="button"><Search size={16} />Discover models</button>
+              <button type="button"><Gauge size={16} />Test health</button>
+              <button type="button" className="preview-send"><Play size={16} />Use for chat</button>
+            </div>
+          </article>
+
+          <section className="preview-model-role-panel">
+            <div>
+              <span className="preview-kicker">Routing</span>
+              <h3>Mode model map</h3>
+            </div>
+            {roleRows.map(([mode, model, state]) => (
+              <article key={mode}>
+                <strong>{mode}</strong>
+                <span>{model}</span>
+                <small>{state}</small>
+              </article>
+            ))}
+          </section>
+        </section>
+      </main>
+
+      <aside className="preview-model-ops-panel" aria-label="Model operations">
+        <section>
+          <span className="preview-kicker">Deploy</span>
+          <h3>Warsat hook</h3>
+          <p>Generate a container plan from a selected model, then approve deployment from Warsat.</p>
+          <button type="button"><TerminalSquare size={16} />Create launch plan</button>
+        </section>
+        <section>
+          <span className="preview-kicker">APIs</span>
+          <h3>Provider keys</h3>
+          <p>External providers stay optional and store secrets through env or secret files only.</p>
+          <button type="button"><ShieldCheck size={16} />Configure secrets</button>
+        </section>
+        <section className="preview-advanced-summary">
+          <span className="preview-kicker">Advanced</span>
+          <h3>Registry details</h3>
+          <ChipList items={["Raw keys hidden", "Dry-run hidden", "Embeddings separated", "Repair available"]} />
+        </section>
       </aside>
     </div>
   );
@@ -601,7 +836,16 @@ function TelemetryBlock({ title, items }) {
 }
 
 function RootButtons({ items = ["Project Root", "Research PDFs", "Writing Output"] }) {
-  return <>{items.map((root) => <button key={root} type="button">{root}<span>mounted</span></button>)}</>;
+  return (
+    <div className="preview-root-button-list">
+      {items.map((root) => (
+        <button key={root} type="button">
+          <span>{root}</span>
+          <small>mounted</small>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function FileRows() {
