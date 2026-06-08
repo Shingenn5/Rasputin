@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from backend import main
 from backend import approvals
+from backend import agent
+from backend import context_governor
 from backend import model_registry
 from backend import model_providers
 from backend import models
@@ -157,6 +159,50 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(len(fitted), 1)
         self.assertLessEqual(len(fitted[0]["content"]), (1024 - 160 - 64) * 2)
         self.assertIn("prompt context shortened", fitted[0]["content"])
+
+    def testContextGovernorNormalizesUnsafeModelLimits(self):
+        limits = context_governor.normalize_limits({"context_window": 512, "max_tokens": 0})
+        self.assertEqual(limits["contextWindow"], 1024)
+        self.assertGreater(limits["maxTokens"], 0)
+
+    def testContextGovernorTrimsLowPriorityContextForSmallModel(self):
+        with patch("backend.context_governor.model_registry.get_model", return_value={"context_window": 1024, "max_tokens": 160}):
+            bundle = context_governor.compose_prompt("tiny-local", "chat", [
+                context_governor.section("current_user_message", "Current user message", "hello", required=True, priority=0),
+                context_governor.section("rules", "Rules", "Answer directly and do not invent tool use.", required=True, priority=0),
+                context_governor.section("file_snippets", "File snippets", "important snippet\n" * 260, priority=35, min_chars=220),
+                context_governor.section("workspace_tree", "Workspace tree", "some/file.py\n" * 900, priority=70, min_chars=220),
+            ])
+        trace = bundle["trace"]
+        self.assertLessEqual(trace["estimatedInputTokens"], trace["inputBudgetTokens"])
+        section_status = {item["key"]: item["status"] for item in trace["sections"]}
+        self.assertIn(section_status["current_user_message"], {"included", "trimmed"})
+        self.assertIn(section_status["workspace_tree"], {"trimmed", "omitted"})
+
+    def testAgentChatRecordsContextBudgetTrace(self):
+        hub = agent.AgentHub()
+        task = agent.AgentTask("hello", "dry-run", "general", workspace_path=".")
+
+        async def fake_call(tool_id, payload):
+            if tool_id == "graph_search":
+                return {"edges": []}
+            return {"hits": []}
+
+        async def fake_workspace_context(_task):
+            return {
+                "tree": {"items": [{"kind": "file", "path": f"file-{index}.md", "bytes": 12, "depth": 0} for index in range(100)]},
+                "snippets": [{"path": "file.md", "content": "short local note", "truncated": False}],
+            }
+
+        hub.mcp.call_tool = fake_call
+        hub.workspace_context = fake_workspace_context
+        asyncio.run(hub.chat_reply(task))
+        budgets = [item for item in task.trace if item["kind"] == "context_budget"]
+        self.assertTrue(budgets)
+        detail = budgets[-1]["detail"]
+        self.assertEqual(detail["phase"], "chat")
+        self.assertGreater(detail["maxTokens"], 0)
+        self.assertIn("sections", detail)
 
     def testUiBootstrapShape(self):
         data = self.assertOk(self.client.get("/api/ui/bootstrap"))

@@ -5067,6 +5067,26 @@ button.runtime-chip {
   padding-top: 0;
 }
 
+.context-budget-card .section-row {
+  align-items: flex-start;
+  gap: .75rem;
+}
+
+.context-budget-card .section-row p {
+  margin: .15rem 0 0;
+  color: var(--ras-muted);
+  font-size: .82rem;
+}
+
+.context-budget-sections {
+  margin-top: .75rem !important;
+}
+
+.context-budget-sections span {
+  color: var(--ras-muted);
+  font-size: .8rem;
+}
+
 .trace-timeline {
   display: grid;
   gap: .7rem;

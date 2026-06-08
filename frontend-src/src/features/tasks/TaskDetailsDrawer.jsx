@@ -65,6 +65,10 @@ export function TaskDetailsDrawer({
       .filter(Boolean);
     return taskLogs.length ? taskLogs : eventLogs;
   }, [detail, task]);
+  const contextBudgets = useMemo(
+    () => (detail?.trace || []).filter((item) => item.kind === "context_budget"),
+    [detail],
+  );
 
   if (!taskId) return null;
 
@@ -167,6 +171,7 @@ export function TaskDetailsDrawer({
               {section === "seen" && (
                 <section id="task-detail-panel-seen" role="tabpanel" aria-labelledby="task-detail-tab-seen" data-testid="task-details-seen">
                   <div className="context-stack">
+                    <ContextBudgetPanel budgets={contextBudgets} />
                     <ContextBlock title="Local RAG Sources" empty="No local RAG sources were attached to this snapshot.">
                       {(task.sources || []).map((source, index) => (
                         <li key={`${source.source}-${source.chunk}-${index}`}>
@@ -313,6 +318,50 @@ function ContextBlock({ title, empty, children }) {
     <article className="context-block">
       <h2>{title}</h2>
       {list.length ? <ul>{list}</ul> : <EmptyInline text={empty} />}
+    </article>
+  );
+}
+
+function ContextBudgetPanel({ budgets }) {
+  if (!budgets.length) {
+    return (
+      <article className="context-block" data-testid="task-context-budget">
+        <h2>Context Budget</h2>
+        <EmptyInline text="No context budget trace has been recorded yet." />
+      </article>
+    );
+  }
+  const latest = budgets[budgets.length - 1]?.detail || {};
+  const sections = latest.sections || [];
+  const trimmed = latest.trimmed || [];
+  const omitted = latest.omitted || [];
+  return (
+    <article className="context-block context-budget-card" data-testid="task-context-budget">
+      <div className="section-row">
+        <div>
+          <h2>Context Budget</h2>
+          <p>{labelize(latest.phase)} / {latest.modelKey || "model unknown"}</p>
+        </div>
+        <span className="status-pill">
+          {Number(latest.estimatedInputTokens || 0).toLocaleString()} / {Number(latest.inputBudgetTokens || 0).toLocaleString()} input tokens
+        </span>
+      </div>
+      <dl className="detail-grid">
+        <dt>Context Window</dt><dd>{Number(latest.contextWindow || 0).toLocaleString()}</dd>
+        <dt>Max Output</dt><dd>{Number(latest.maxTokens || 0).toLocaleString()}</dd>
+        <dt>Trimmed</dt><dd>{trimmed.length ? trimmed.map(labelize).join(", ") : "None"}</dd>
+        <dt>Omitted</dt><dd>{omitted.length ? omitted.map(labelize).join(", ") : "None"}</dd>
+      </dl>
+      {!!sections.length && (
+        <ul className="context-budget-sections" aria-label="Context section status">
+          {sections.map((item) => (
+            <li key={`${item.key}-${item.status}`}>
+              <strong>{item.title || labelize(item.key)}</strong>
+              <span>{labelize(item.status)} / {Number(item.estimatedTokens || 0).toLocaleString()} tokens</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </article>
   );
 }

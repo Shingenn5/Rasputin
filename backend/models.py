@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 
 from . import audit
+from . import context_governor
 from . import model_registry
 from . import model_providers
 
@@ -110,10 +111,10 @@ def _trim_text(text, max_chars):
 
 
 def _fit_messages(messages, cfg, max_tokens):
-    context_window = _as_int(
-        cfg.get("context_window") or cfg.get("contextWindow") or os.environ.get("RASPUTIN_CONTEXT_WINDOW"),
-        1024,
-    )
+    cfg = dict(cfg or {})
+    if os.environ.get("RASPUTIN_CONTEXT_WINDOW") and not (cfg.get("context_window") or cfg.get("contextWindow")):
+        cfg["context_window"] = os.environ.get("RASPUTIN_CONTEXT_WINDOW")
+    context_window = context_governor.normalize_limits(cfg)["contextWindow"]
     max_input_tokens = max(128, context_window - max_tokens - 64)
     char_budget = max_input_tokens * 2
     fitted = []
@@ -135,10 +136,10 @@ async def chat(model_key, messages, temperature=0.2):
         user_msg = messages[-1]["content"] if messages else ""
         return _dry_run_response(user_msg)
 
-    max_tokens = min(
-        _as_int(cfg.get("max_tokens") or cfg.get("maxTokens") or os.environ.get("RASPUTIN_MAX_OUTPUT_TOKENS"), 160),
-        512,
-    )
+    cfg_for_limits = dict(cfg or {})
+    if os.environ.get("RASPUTIN_MAX_OUTPUT_TOKENS") and not (cfg_for_limits.get("max_tokens") or cfg_for_limits.get("maxTokens")):
+        cfg_for_limits["max_tokens"] = os.environ.get("RASPUTIN_MAX_OUTPUT_TOKENS")
+    max_tokens = context_governor.normalize_limits(cfg_for_limits)["maxTokens"]
     fitted_messages = _fit_messages(messages, cfg, max_tokens)
 
     if model_providers.is_api_provider(cfg):

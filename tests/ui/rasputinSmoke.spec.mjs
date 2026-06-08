@@ -147,6 +147,9 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='task-details-drawer']")).toBeVisible();
   await expect(page.locator("[data-testid='task-details-drawer']")).toContainText("Testing the Rasputin UI harness.");
   await expect(page.locator("[data-testid='task-details-overview']")).toBeVisible();
+  await page.getByRole("tab", { name: "What Rasputin Saw" }).click();
+  await expect(page.locator("[data-testid='task-context-budget']")).toBeVisible();
+  await expect(page.locator("[data-testid='task-context-budget']")).toContainText("Context Budget");
   await page.getByRole("tab", { name: "Logs" }).click();
   await expect(page.locator("[data-testid='task-details-logs']")).toBeVisible();
   await page.getByRole("tab", { name: "Outputs" }).click();

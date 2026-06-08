@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .mcp_layer import McpLayer
 from .models import chat
+from . import context_governor
 from . import memory
 from . import model_registry
 from . import runtime_store as store
@@ -614,6 +615,17 @@ class AgentHub:
             task.log(f"error: {exc}")
         await self.emit(task)
 
+    async def governed_chat(self, task, phase, role, sections):
+        model_key = self.phase_model(task, role)
+        bundle = context_governor.compose_prompt(model_key, phase, sections)
+        trace = bundle["trace"]
+        task.seen("context_budget", trace)
+        if trace.get("trimmed"):
+            task.log(f"context trimmed: {', '.join(trace['trimmed'])}")
+        if trace.get("omitted"):
+            task.log(f"context omitted: {', '.join(trace['omitted'])}")
+        return await chat(model_key, [{"role": "user", "content": bundle["prompt"]}])
+
     async def chat_reply(self, task):
         previous_messages = self.recent_messages(task.session_id, 10)
         recall = memory.search(task.objective, 5)
@@ -629,36 +641,35 @@ class AgentHub:
             task.log(f"rag hits: {len(task.sources)}")
         if task.graph:
             task.log(f"graph hits: {len(task.graph)}")
-        prompt = f"""You are Rasputin, the user's local AI workbench assistant. Reply naturally and directly.
-Do not use a repeated greeting unless the user's message is only a greeting.
-
-Current user message:
-{task.objective}
-
-Previous conversation:
-{self.format_conversation(previous_messages, task.id)}
-
-Workspace: {task.workspace}
-Relevant memory recall:
-{self.format_memory(recall)}
-
-Actual local RAG context:
-{self.format_context(context)}
-
-Actual local graph context:
-{self.format_graph(graph)}
-
-Approved workspace file context:
-{self.format_workspace_context(workspace_context)}
-
-Rules:
-- Do not claim you browsed the web, searched social media, emailed, called, scheduled meetings, contacted people, edited files, or used external tools unless the context above proves that happened.
-- If workspace file context includes file paths or snippets, use those local paths as evidence. If a file is listed but not included as a snippet, say you can see the path but have not read its contents.
-- If there are no local matches, do not invent file sources. You can still answer from general model knowledge.
-- If the user asks for an action that requires a tool or permission not shown here, say what is missing instead of pretending it happened.
-- Keep the reply useful and conversational. Do not write an internal plan unless the user asked for one.
-"""
-        return await chat(self.phase_model(task, "main"), [{"role": "user", "content": prompt}])
+        sections = [
+            context_governor.section(
+                "assistant_identity",
+                "Assistant",
+                "You are Rasputin, the user's local AI workbench assistant. Reply naturally and directly. Do not use a repeated greeting unless the user's message is only a greeting.",
+                required=True,
+                priority=0,
+            ),
+            context_governor.section("current_user_message", "Current user message", task.objective, required=True, priority=0, min_chars=500),
+            context_governor.section("previous_conversation", "Previous conversation", self.format_conversation(previous_messages, task.id), priority=10, min_chars=220),
+            context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
+            context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall), priority=20, min_chars=180),
+            context_governor.section("rag_sources", "Actual local RAG context", self.format_context(context), priority=25, min_chars=240),
+            context_governor.section("graph_evidence", "Actual local graph context", self.format_graph(graph), priority=30, min_chars=180),
+            context_governor.section("file_snippets", "Approved workspace file snippets", self.format_workspace_snippets(workspace_context), priority=35, min_chars=260),
+            context_governor.section("workspace_tree", "Approved workspace file listing", self.format_workspace_tree(workspace_context), priority=70, min_chars=180),
+            context_governor.section(
+                "rules",
+                "Rules",
+                "- Do not claim you browsed the web, searched social media, emailed, called, scheduled meetings, contacted people, edited files, or used external tools unless the context above proves that happened.\n"
+                "- If workspace file context includes file paths or snippets, use those local paths as evidence. If a file is listed but not included as a snippet, say you can see the path but have not read its contents.\n"
+                "- If there are no local matches, do not invent file sources. You can still answer from general model knowledge.\n"
+                "- If the user asks for an action that requires a tool or permission not shown here, say what is missing instead of pretending it happened.\n"
+                "- Keep the reply useful and conversational. Do not write an internal plan unless the user asked for one.",
+                required=True,
+                priority=0,
+            ),
+        ]
+        return await self.governed_chat(task, "chat", "main", sections)
 
     def ground_chat_response(self, task, text):
         if task.sources or task.graph:
@@ -687,23 +698,25 @@ Rules:
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
-        prompt = f"""Plan this task in 3-6 steps.
-Mode: {task.mode}
-Task: {task.objective}
-Workspace: {task.workspace}
-Relevant memory recall:
-{self.format_memory(recall)}
-Local RAG context:
-{self.format_context(context)}
-Local graph context:
-{self.format_graph(graph)}
-
-Rules:
-- Available evidence is only the memory, local RAG, and graph context above.
-- Do not claim web research, outreach, email, phone calls, social media, or file changes were completed.
-- If the task needs unavailable tools or approvals, include that as a step.
-"""
-        return await chat(self.phase_model(task, "planner"), [{"role": "user", "content": prompt}])
+        sections = [
+            context_governor.section("planner_instruction", "Instruction", "Plan this task in 3-6 steps.", required=True, priority=0),
+            context_governor.section("mode", "Mode", task.mode, required=True, priority=0),
+            context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
+            context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
+            context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall), priority=20, min_chars=180),
+            context_governor.section("rag_sources", "Local RAG context", self.format_context(context), priority=25, min_chars=240),
+            context_governor.section("graph_evidence", "Local graph context", self.format_graph(graph), priority=30, min_chars=180),
+            context_governor.section(
+                "rules",
+                "Rules",
+                "- Available evidence is only the memory, local RAG, and graph context above.\n"
+                "- Do not claim web research, outreach, email, phone calls, social media, or file changes were completed.\n"
+                "- If the task needs unavailable tools or approvals, include that as a step.",
+                required=True,
+                priority=0,
+            ),
+        ]
+        return await self.governed_chat(task, "planning", "planner", sections)
 
     async def execute(self, task, plan):
         if task.skill and task.skill != "general":
@@ -716,38 +729,46 @@ Rules:
 
         context = await self.mcp.call_tool("rag_search", {"query": task.objective + ' ' + plan[:600], "limit": 4, "workspace_path": task.workspace, "_task_id": task.id})
         graph = await self.mcp.call_tool("graph_search", {"query": task.objective + ' ' + plan[:600], "limit": 6, "_task_id": task.id})
-        prompt = f"""Execute this plan. Use concise output.
-Mode: {task.mode}
-Task: {task.objective}
-Workspace: {task.workspace}
-Plan: {plan}
-Extra local context:
-{self.format_context(context)}
-Extra graph context:
-{self.format_graph(graph)}
-
-Rules:
-- Do not pretend to browse, contact people, schedule meetings, or mutate files.
-- Use only the local context shown here and the plan above.
-- If a real-world action cannot be completed from the available tools, say so plainly.
-"""
-        return await chat(self.phase_model(task, self.execution_role(task)), [{"role": "user", "content": prompt}])
+        sections = [
+            context_governor.section("executor_instruction", "Instruction", "Execute this plan. Use concise output.", required=True, priority=0),
+            context_governor.section("mode", "Mode", task.mode, required=True, priority=0),
+            context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
+            context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
+            context_governor.section("plan", "Plan", plan, priority=15, min_chars=260),
+            context_governor.section("rag_sources", "Extra local context", self.format_context(context), priority=25, min_chars=240),
+            context_governor.section("graph_evidence", "Extra graph context", self.format_graph(graph), priority=30, min_chars=180),
+            context_governor.section(
+                "rules",
+                "Rules",
+                "- Do not pretend to browse, contact people, schedule meetings, or mutate files.\n"
+                "- Use only the local context shown here and the plan above.\n"
+                "- If a real-world action cannot be completed from the available tools, say so plainly.",
+                required=True,
+                priority=0,
+            ),
+        ]
+        return await self.governed_chat(task, "execution", self.execution_role(task), sections)
 
     async def reflect(self, task, plan, work):
-        prompt = f"""Write the final user-facing answer for this task.
-Task:{task.objective}
-Actual local sources:{self.format_task_sources(task.sources)}
-Actual graph evidence:{self.format_task_graph(task.graph)}
-Plan:{plan}
-Work:{work}
-
-Rules:
-- Do not list generic source categories like forums, social media, databases, emails, or contacts unless they appear in actual local sources or graph evidence.
-- Do not claim outreach, meetings, web research, file edits, or other external actions were completed unless the work explicitly proves it.
-- If there were no actual local sources, say that no local sources were used only when source usage matters to the answer.
-- Be direct and useful; avoid fake completion summaries.
-"""
-        return await chat(self.phase_model(task, "summarizer"), [{"role": "user", "content": prompt}])
+        sections = [
+            context_governor.section("reflection_instruction", "Instruction", "Write the final user-facing answer for this task.", required=True, priority=0),
+            context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
+            context_governor.section("rag_sources", "Actual local sources", self.format_task_sources(task.sources), priority=20, min_chars=180),
+            context_governor.section("graph_evidence", "Actual graph evidence", self.format_task_graph(task.graph), priority=25, min_chars=180),
+            context_governor.section("work", "Work", work, priority=30, min_chars=300),
+            context_governor.section("plan", "Plan", plan, priority=50, min_chars=220),
+            context_governor.section(
+                "rules",
+                "Rules",
+                "- Do not list generic source categories like forums, social media, databases, emails, or contacts unless they appear in actual local sources or graph evidence.\n"
+                "- Do not claim outreach, meetings, web research, file edits, or other external actions were completed unless the work explicitly proves it.\n"
+                "- If there were no actual local sources, say that no local sources were used only when source usage matters to the answer.\n"
+                "- Be direct and useful; avoid fake completion summaries.",
+                required=True,
+                priority=0,
+            ),
+        ]
+        return await self.governed_chat(task, "reflection", "summarizer", sections)
 
     def phase_model(self, task, role):
         if task.model == "dry-run":
@@ -849,33 +870,47 @@ Rules:
         return "\n".join(lines[-8:]) if lines else "No previous messages in this chat."
 
     def format_workspace_context(self, context):
+        tree = self.format_workspace_tree(context)
+        snippets = self.format_workspace_snippets(context)
+        if tree.startswith("Workspace context unavailable"):
+            return tree
+        if tree.startswith("No workspace") and snippets.startswith("No workspace"):
+            return "No workspace file inspection was requested or available."
+        return "\n\n".join(part for part in [tree, snippets] if not part.startswith("No workspace"))
+
+    def format_workspace_tree(self, context):
         if context.get("error"):
             return f"Workspace context unavailable: {context['error']}"
         tree = context.get("tree") or {}
-        snippets = context.get("snippets") or []
         items = tree.get("items") or []
-        if not items and not snippets:
-            return "No workspace file inspection was requested or available."
+        if not items:
+            return "No workspace file listing was requested or available."
         lines = []
-        if items:
-            lines.append("Visible files and folders:")
-            for item in items[:55]:
-                prefix = "  " * min(int(item.get("depth") or 0), 4)
-                kind = "folder" if item.get("kind") == "dir" else "file"
-                size = f" ({item.get('bytes')} bytes)" if kind == "file" else ""
-                lines.append(f"- {prefix}{kind}: {item.get('path')}{size}")
-            if tree.get("truncated"):
-                lines.append("- [listing truncated]")
-        if snippets:
-            lines.append("\nRead snippets:")
-            for snippet in snippets[:5]:
-                path = snippet.get("path") or "unknown"
-                if snippet.get("error"):
-                    lines.append(f"[{path}] read failed: {snippet['error']}")
-                    continue
-                content = str(snippet.get("content") or "")[:900]
-                marker = " [truncated]" if snippet.get("truncated") else ""
-                lines.append(f"[{path}{marker}]\n{content}")
+        lines.append("Visible files and folders:")
+        for item in items[:55]:
+            prefix = "  " * min(int(item.get("depth") or 0), 4)
+            kind = "folder" if item.get("kind") == "dir" else "file"
+            size = f" ({item.get('bytes')} bytes)" if kind == "file" else ""
+            lines.append(f"- {prefix}{kind}: {item.get('path')}{size}")
+        if tree.get("truncated"):
+            lines.append("- [listing truncated]")
+        return "\n".join(lines)
+
+    def format_workspace_snippets(self, context):
+        if context.get("error"):
+            return f"Workspace context unavailable: {context['error']}"
+        snippets = context.get("snippets") or []
+        if not snippets:
+            return "No workspace file snippets were requested or available."
+        lines = ["Read snippets:"]
+        for snippet in snippets[:5]:
+            path = snippet.get("path") or "unknown"
+            if snippet.get("error"):
+                lines.append(f"[{path}] read failed: {snippet['error']}")
+                continue
+            content = str(snippet.get("content") or "")[:900]
+            marker = " [truncated]" if snippet.get("truncated") else ""
+            lines.append(f"[{path}{marker}]\n{content}")
         return "\n".join(lines)
 
     def format_context(self, context, max_items=3, max_chars=450):
