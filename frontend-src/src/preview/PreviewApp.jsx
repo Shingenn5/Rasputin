@@ -232,7 +232,7 @@ function RasputinCandidateLayout({ screen, viewport, navigate, variantInfo }) {
     return <OriginalHomeLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
   }
   if (screen === "workspaces") {
-    return <WarmindConsoleLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} hideTelemetry />;
+    return <CandidateWorkspacesLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
   }
   if (screen === "activity") {
     return <ArchiveStudioLayout screen={screen} viewport={viewport} navigate={navigate} variantInfo={variantInfo} />;
@@ -462,18 +462,86 @@ function ArchiveStudioLayout({ screen, viewport, navigate, variantInfo }) {
   );
 }
 
+function CandidateWorkspacesLayout({ screen, viewport, navigate, variantInfo }) {
+  return (
+    <div className="preview-stage preview-layout preview-layout-candidate-workspaces" data-viewport={viewport}>
+      <aside className="preview-command-rail" aria-label="Rasputin Candidate workspace navigation">
+        <div className="preview-rail-brand">R</div>
+        <nav>
+          {screens.map(([id, label]) => {
+            const Icon = icons[id] || Home;
+            return (
+              <button key={id} type="button" className={screen === id ? "is-active" : ""} aria-label={label} aria-current={screen === id ? "page" : undefined} onClick={() => navigate(id)}>
+                <Icon size={18} />
+              </button>
+            );
+          })}
+        </nav>
+        <button type="button" aria-label="New chat"><Sparkles size={18} /></button>
+      </aside>
+      <section className="preview-candidate-workspaces-main">
+        <header className="preview-command-header">
+          <div>
+            <span className="preview-kicker">{variantInfo.label}</span>
+            <h2 data-testid="preview-screen-title">{screenLabel(screen)}</h2>
+          </div>
+          <div className="preview-status-row">
+            <span><Folder size={14} />3 mounted roots</span>
+            <span><Lock size={14} />Read/write gated</span>
+          </div>
+        </header>
+        <div className="preview-workspace-candidate-grid">
+          <aside className="preview-workspace-root-panel">
+            <div>
+              <span className="preview-kicker">Mounted Roots</span>
+              <h3>Available folders</h3>
+            </div>
+            <RootButtons />
+            <button type="button" className="preview-workspace-mount-action"><Folder size={16} />Mount new folder</button>
+          </aside>
+          <main className="preview-workspace-explorer-panel">
+            <div className="preview-workspace-pathbar">
+              <span>/workspace/docs</span>
+              <button type="button"><Search size={15} />Filter</button>
+            </div>
+            <FileRows />
+          </main>
+          <aside className="preview-workspace-detail-panel">
+            <div>
+              <span className="preview-kicker">Selected</span>
+              <h3>architecture.md</h3>
+            </div>
+            <dl>
+              <div><dt>Type</dt><dd>Markdown</dd></div>
+              <div><dt>Access</dt><dd>Read-only preview</dd></div>
+              <div><dt>Action</dt><dd>Open, preview, or send to knowledge tools</dd></div>
+            </dl>
+            <div className="preview-workspace-actions">
+              <button type="button">Preview file</button>
+              <button type="button">Use in chat</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function CandidateModelsLayout({ screen, viewport, navigate, variantInfo }) {
-  const sourceGroups = [
-    ["Active Local", "vLLM and llama.cpp endpoints Rasputin can reach now", "1 ready"],
-    ["Container Plans", "Warsat launch plans waiting for approval", "2 drafts"],
-    ["External APIs", "Optional API-key providers, disabled by default", "0 active"],
-    ["Knowledge Models", "Embeddings and retrieval-only services", "1 ready"],
+  const categories = [
+    ["General Chat", "Balanced local assistants", "124"],
+    ["Coding", "Repo work, patching, tests", "58"],
+    ["Reasoning", "Planning and hard problem solving", "42"],
+    ["Vision", "Image and document understanding", "31"],
+    ["Embeddings", "RAG and memory indexes", "19"],
+    ["Low VRAM", "Runs on smaller GPUs", "46"],
   ];
-  const roleRows = [
-    ["Chat", "llava-hf/llava-1.5-7b-hf", "healthy"],
-    ["Code", "fallback: chat model", "needs route"],
-    ["Research", "fallback: chat model", "web broker gated"],
-    ["Embeddings", "text-embedding-local", "ready"],
+  const modelOptions = [
+    ["Qwen2.5-Coder 7B", "Code", "8-10 GB VRAM", "llama.cpp / vLLM", "Open weights"],
+    ["Llama 3.1 8B Instruct", "Chat", "8-12 GB VRAM", "llama.cpp / vLLM", "Open weights"],
+    ["Mistral 7B Instruct", "General", "6-10 GB VRAM", "llama.cpp", "Open weights"],
+    ["Gemma 3 12B", "Vision + chat", "12-16 GB VRAM", "vLLM", "Open weights"],
+    ["Nomic Embed Text", "Embeddings", "2-4 GB VRAM", "TEI / llama.cpp", "Knowledge only"],
   ];
 
   return (
@@ -496,16 +564,16 @@ function CandidateModelsLayout({ screen, viewport, navigate, variantInfo }) {
         <button type="button" className="preview-new-chat"><Sparkles size={16} />New Chat</button>
       </header>
 
-      <aside className="preview-model-source-rail" aria-label="Model sources">
+      <aside className="preview-model-source-rail" aria-label="Model catalog categories">
         <div>
-          <span className="preview-kicker">Sources</span>
-          <h3>Model Library</h3>
+          <span className="preview-kicker">models.dev</span>
+          <h3>Catalog filters</h3>
         </div>
-        {sourceGroups.map(([title, detail, count], index) => (
+        {categories.map(([title, detail, count], index) => (
           <button key={title} type="button" className={index === 0 ? "is-active" : ""}>
             <strong>{title}</strong>
             <span>{detail}</span>
-            <small>{count}</small>
+            <small>{count} models</small>
           </button>
         ))}
       </aside>
@@ -517,67 +585,71 @@ function CandidateModelsLayout({ screen, viewport, navigate, variantInfo }) {
             <h2 data-testid="preview-screen-title">{screenLabel(screen)}</h2>
           </div>
           <div className="preview-status-row">
-            <span><Lock size={14} />Local first</span>
-            <span><Cpu size={14} />llava-hf/llava-1.5-7b-hf</span>
+            <span><Search size={14} />models.dev/catalog.json</span>
+            <span><TerminalSquare size={14} />Send to Warsat</span>
           </div>
         </header>
 
-        <section className="preview-model-control-board">
-          <article className="preview-active-model-board">
-            <div className="preview-model-board-head">
-              <div>
-                <span className="preview-kicker">Active Chat Model</span>
-                <h3>llava-hf/llava-1.5-7b-hf</h3>
-                <p>Shown exactly as the runtime reports it. Friendly labels stay secondary.</p>
-              </div>
-              <span className="preview-model-health is-healthy"><CheckCircle2 size={15} />Healthy</span>
-            </div>
-            <div className="preview-model-health-strip">
-              <span>Endpoint: 127.0.0.1:8000</span>
-              <span>Latency: 214 ms</span>
-              <span>Context: 1024 tokens</span>
-              <span>Privacy: brokered tools only</span>
-            </div>
-            <div className="preview-model-action-row">
-              <button type="button"><Search size={16} />Discover models</button>
-              <button type="button"><Gauge size={16} />Test health</button>
-              <button type="button" className="preview-send"><Play size={16} />Use for chat</button>
-            </div>
-          </article>
+        <section className="preview-model-catalog-board">
+          <div className="preview-model-catalog-toolbar">
+            <label>
+              <span>Search catalog</span>
+              <input defaultValue="local coding model" aria-label="Search model catalog" />
+            </label>
+            <label>
+              <span>VRAM target</span>
+              <select defaultValue="12">
+                <option value="8">8 GB or less</option>
+                <option value="12">12 GB or less</option>
+                <option value="24">24 GB or less</option>
+                <option value="any">Any</option>
+              </select>
+            </label>
+            <label>
+              <span>Runtime</span>
+              <select defaultValue="auto">
+                <option value="auto">Auto</option>
+                <option value="llamacpp">llama.cpp</option>
+                <option value="vllm">vLLM</option>
+              </select>
+            </label>
+          </div>
 
-          <section className="preview-model-role-panel">
-            <div>
-              <span className="preview-kicker">Routing</span>
-              <h3>Mode model map</h3>
-            </div>
-            {roleRows.map(([mode, model, state]) => (
-              <article key={mode}>
-                <strong>{mode}</strong>
-                <span>{model}</span>
-                <small>{state}</small>
+          <div className="preview-model-option-list">
+            {modelOptions.map(([name, purpose, vram, runtime, availability], index) => (
+              <article key={name} className={index === 0 ? "is-selected" : ""}>
+                <div>
+                  <span className="preview-kicker">{purpose}</span>
+                  <h3>{name}</h3>
+                  <p>{availability} model suitable for {runtime} deployment.</p>
+                </div>
+                <div className="preview-model-catalog-meta">
+                  <span>{vram}</span>
+                  <span>{runtime}</span>
+                </div>
+                <button type="button"><TerminalSquare size={16} />Send to Warsat</button>
               </article>
             ))}
-          </section>
+          </div>
         </section>
       </main>
 
       <aside className="preview-model-ops-panel" aria-label="Model operations">
         <section>
-          <span className="preview-kicker">Deploy</span>
-          <h3>Warsat hook</h3>
-          <p>Generate a container plan from a selected model, then approve deployment from Warsat.</p>
-          <button type="button"><TerminalSquare size={16} />Create launch plan</button>
+          <span className="preview-kicker">Selected</span>
+          <h3>Qwen2.5-Coder 7B</h3>
+          <p>Rasputin prepares a Warsat launch plan with runtime, port, VRAM target, and mounted model path.</p>
+          <button type="button"><TerminalSquare size={16} />Prepare in Warsat</button>
         </section>
         <section>
-          <span className="preview-kicker">APIs</span>
-          <h3>Provider keys</h3>
-          <p>External providers stay optional and store secrets through env or secret files only.</p>
-          <button type="button"><ShieldCheck size={16} />Configure secrets</button>
+          <span className="preview-kicker">Metadata</span>
+          <h3>Catalog fields</h3>
+          <ChipList items={["Use case", "VRAM estimate", "Runtime", "Weights", "Context"]} />
         </section>
         <section className="preview-advanced-summary">
-          <span className="preview-kicker">Advanced</span>
-          <h3>Registry details</h3>
-          <ChipList items={["Raw keys hidden", "Dry-run hidden", "Embeddings separated", "Repair available"]} />
+          <span className="preview-kicker">External APIs</span>
+          <h3>Optional providers</h3>
+          <p>OpenAI, Anthropic, Gemini, and OpenAI-compatible endpoints stay separate from local deployment.</p>
         </section>
       </aside>
     </div>
