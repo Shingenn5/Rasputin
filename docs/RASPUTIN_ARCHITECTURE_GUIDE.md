@@ -150,7 +150,7 @@ Current stack:
 React
 Vite
 React-Bootstrap
-Bootstrap SCSS subset
+Bootstrap CSS from npm
 React Query
 React Markdown
 rehype-sanitize
@@ -182,26 +182,17 @@ list-group
 
 Those classes need CSS definitions to mean anything.
 
-Rasputin does not import the whole prebuilt Bootstrap bundle anymore. Instead it compiles selected Bootstrap SCSS parts from:
+Rasputin imports Bootstrap CSS from the local npm package:
 
 ```text
-frontend-src/src/styles/bootstrap.scss
+bootstrap/dist/css/bootstrap.min.css
 ```
 
-That file imports only the Bootstrap pieces Rasputin uses:
+This keeps dependency warnings out of the normal Vite build while preserving React-Bootstrap component styling. Rasputin-specific layout, spacing, themes, and Warmind-style surfaces live in:
 
-- reboot
-- type
-- containers
-- grid
-- buttons
-- forms
-- cards
-- nav
-- badges
-- alerts
-- accordions
-- list groups
+```text
+frontend-src/src/styles/rasputin.css
+```
 - transitions
 - utilities
 - utilities
@@ -246,7 +237,6 @@ frontend-src/src/
     constants.js
     display.js
   styles/
-    bootstrap.scss
     rasputin.css
 ```
 
@@ -401,7 +391,7 @@ Only the configured chat id can approve or deny actions. Telegram messages are i
 
 It imports:
 
-- selective Bootstrap SCSS
+- local Bootstrap CSS from `bootstrap/dist/css/bootstrap.min.css`
 - Rasputin CSS
 - React Query provider
 - the main `App`
@@ -1151,8 +1141,8 @@ That path follows the real runtime: Docker -> Python server -> API -> frontend s
 
 ## 15. Current Known Notes
 
-The selective Bootstrap SCSS build currently emits Sass deprecation warnings from Bootstrap's own SCSS internals. The build succeeds and the app runs. This is upstream Sass/Bootstrap warning noise, not a Rasputin runtime failure.
+The frontend build uses compiled Bootstrap CSS from the local npm package instead of compiling Bootstrap SCSS. This avoids Sass deprecation noise in normal production builds.
 
 The current CSS bundle is larger than a fully custom minimal stylesheet because Bootstrap supplies a real component system. Rasputin-specific CSS is kept small in `rasputin.css`; Bootstrap CSS is the external styling library layer.
 
-The current frontend is componentized and Bootstrap-based, but future refinement can continue reducing imported Bootstrap modules if a component is removed or replaced.
+The current frontend is componentized and Bootstrap-based. Vite splits preview, runtime, model, workspace, task, and vendor code into separate chunks so normal app boot is not forced into one oversized bundle.

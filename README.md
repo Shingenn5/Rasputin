@@ -98,7 +98,7 @@ npm run build
 
 Frontend source lives in `frontend-src/`. The built files in `frontend/` are the static app served by FastAPI, with cache-busted assets under `/static/assets/`.
 
-Rasputin uses React + Vite with React-Bootstrap components. Bootstrap is compiled from a selective SCSS entry at `frontend-src/src/styles/bootstrap.scss` instead of importing the full prebuilt Bootstrap CSS bundle.
+Rasputin uses React + Vite with React-Bootstrap components. Bootstrap CSS is imported from the local npm package, and Rasputin-specific layout/branding lives in `frontend-src/src/styles/rasputin.css`.
 
 Frontend redesign planning lives in:
 

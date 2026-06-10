@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource/rajdhani/500.css";
 import "@fontsource/rajdhani/600.css";
 import "@fontsource/rajdhani/700.css";
-import "./styles/bootstrap.scss";
+import "bootstrap/dist/css/bootstrap.min.css";
 import "./styles/rasputin.css";
 import { AppProviders } from "./app/AppProviders.jsx";
 import { App } from "./app/App.jsx";
-import { PreviewApp } from "./preview/PreviewApp.jsx";
+
+const PreviewApp = lazy(() => import("./preview/PreviewApp.jsx").then((module) => ({ default: module.PreviewApp })));
 
 createRoot(document.getElementById("root")).render(
   <Root />,
@@ -47,7 +48,11 @@ function Root() {
         </main>
       );
     }
-    return <PreviewApp />;
+    return (
+      <Suspense fallback={<div className="preview-loading">Loading RasputinTest preview...</div>}>
+        <PreviewApp />
+      </Suspense>
+    );
   }
 
   return (

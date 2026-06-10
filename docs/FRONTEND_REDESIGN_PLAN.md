@@ -125,7 +125,6 @@ frontend-src/
       preferences.js
       uiState.js
     styles/
-      bootstrap.scss
       rasputin.css
 ```
 
