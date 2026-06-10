@@ -600,7 +600,7 @@ Commit message: `Add release integration baseline`
 
 Completed: 2026-06-10
 
-Commit: `pending`
+Commit: `0976ad6`
 
 Validation:
 
