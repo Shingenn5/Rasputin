@@ -4985,6 +4985,7 @@ button.runtime-chip {
 
 .model-command-card,
 .model-health-card,
+.model-readiness-panel,
 .model-builder-panel,
 .model-catalog-panel,
 .advanced-model-registry {
@@ -4996,9 +4997,110 @@ button.runtime-chip {
 
 .model-command-card,
 .model-health-card,
+.model-readiness-panel,
 .model-builder-panel,
 .model-catalog-panel {
   padding: 1rem;
+}
+
+.model-readiness-panel {
+  display: grid;
+  gap: .85rem;
+  max-width: 1260px;
+  margin-bottom: 1rem;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ras-accent) 8%, transparent), transparent 48%),
+    color-mix(in srgb, var(--ras-panel) 94%, transparent);
+}
+
+.model-readiness-head,
+.model-readiness-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .85rem;
+}
+
+.model-readiness-head h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.model-readiness-head p,
+.model-readiness-step p {
+  margin: .25rem 0 0;
+  color: var(--ras-muted);
+}
+
+.model-readiness-summary {
+  align-items: flex-end;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+.model-readiness-summary strong {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.model-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .65rem;
+}
+
+.model-readiness-step {
+  display: grid;
+  align-content: space-between;
+  gap: .65rem;
+  min-width: 0;
+  min-height: 156px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  padding: .75rem;
+}
+
+.model-readiness-step.is-ready {
+  border-left-color: var(--ras-safe);
+}
+
+.model-readiness-step.is-warning {
+  border-left-color: var(--ras-warn);
+}
+
+.model-readiness-step.is-blocked {
+  border-left-color: var(--ras-danger, #b42318);
+}
+
+.model-readiness-step span {
+  display: block;
+  color: var(--ras-muted);
+  font-size: .7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.model-readiness-step strong {
+  display: block;
+  margin-top: .18rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-readiness-step p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: .8rem;
+  line-height: 1.4;
+}
+
+.model-readiness-step .ras-button {
+  justify-self: start;
 }
 
 .model-command-top {
@@ -8333,6 +8435,10 @@ button.helper-row:hover {
     grid-column: 1 / -1;
   }
 
+  .model-readiness-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .archive-layout {
     grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
   }
@@ -8448,6 +8554,7 @@ button.helper-row:hover {
   }
 
   .models-grid,
+  .model-readiness-grid,
   .deployment-layout,
   .archive-layout,
   .trials-layout,
@@ -8463,6 +8570,12 @@ button.helper-row:hover {
 
   .deployment-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-readiness-head,
+  .model-readiness-summary {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

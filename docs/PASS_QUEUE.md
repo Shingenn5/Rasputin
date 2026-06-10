@@ -835,11 +835,28 @@ Stop conditions:
 - implementation requires network or remote MCP transport
 - fixture tool can bypass Tool Relay policy
 
-### [ ] 15. Model Runtime Readiness Flow
+### [x] 15. Model Runtime Readiness Flow
 
 Branch: `codex/model-runtime-readiness-v1`
 
 Commit message: `Add model runtime readiness flow`
+
+Status: complete
+
+Implemented:
+
+- added a guided Runtime Readiness panel to the Models page
+- surfaced the real active model id, endpoint type, health state, vLLM discovery/repair state, context-window budget, Warsat hardware state, and launch-plan readiness in one workflow
+- normalized frontend context-window display across `contextWindow`, `context_window`, `maxModelLen`, and `max_model_len`
+- kept Warsat deployment as a plan/approval workflow and did not enable Docker control or downloads
+- tightened the Home composer disabled-send reason so it explains the selected model's actual health or mismatch problem
+- added UI smoke coverage for the readiness panel and its core labels
+
+Validation:
+
+- `npm.cmd run build`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Ui`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed through harness
 
 Goal: make model connection, vLLM repair, chat readiness, and Warsat launch planning understandable before private testing.
 

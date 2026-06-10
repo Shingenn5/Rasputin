@@ -1539,6 +1539,10 @@ export function App() {
         modelCatalogError={modelCatalogError}
         loadModelCatalog={loadModelCatalog}
         prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+        warsat={warsat}
+        warsatHardware={warsatHardware}
+        warsatRuntimes={warsatRuntimes}
+        warsatPlan={warsatPlan}
         security={security}
         openWarsat={() => go("warsat")}
       />

@@ -44,6 +44,35 @@ const hardwareProfiles = [
   ["Custom", "manual limits", "advanced tuning"],
 ];
 
+function firstNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function contextWindowFor(model) {
+  return firstNumber(
+    model?.contextWindow,
+    model?.context_window,
+    model?.maxModelLen,
+    model?.max_model_len,
+    model?.settings?.contextWindow,
+    model?.limits?.contextWindow,
+  );
+}
+
+function readinessTone(status) {
+  if (["ready", "pass", "reachable", "healthy", "ok", "registered"].includes(status)) return "ready";
+  if (["blocked", "fail", "failed", "error", "unreachable"].includes(status)) return "blocked";
+  return "warning";
+}
+
+function formatContextWindow(value) {
+  return value ? `${Number(value).toLocaleString()} tokens` : "Not declared";
+}
+
 export function ModelsView({
   view,
   models,
@@ -63,6 +92,10 @@ export function ModelsView({
   modelCatalogError,
   loadModelCatalog,
   prepareCatalogModelForWarsat,
+  warsat,
+  warsatHardware,
+  warsatRuntimes,
+  warsatPlan,
   security,
   openWarsat,
 }) {
@@ -122,6 +155,80 @@ export function ModelsView({
   const selectedCatalogModel = filteredCatalogItems.find((item) => item.id === selectedCatalogId)
     || filteredCatalogItems[0]
     || catalogItems[0];
+  const contextWindow = contextWindowFor(activeModel);
+  const contextStatus = activeModel?.key === "dry-run"
+    ? "ready"
+    : contextWindow >= 4096
+      ? "ready"
+      : contextWindow >= 1024
+        ? "warning"
+        : "warning";
+  const contextText = activeModel?.key === "dry-run"
+    ? "Testing Mode uses Rasputin's internal dry-run path."
+    : contextWindow >= 4096
+      ? "Enough room for normal chat and retrieved local context."
+      : contextWindow >= 1024
+        ? "Small context window. Rasputin will trim workspace and retrieval context aggressively."
+        : "No context window is declared. Rasputin will assume a conservative local budget.";
+  const endpointKind = activeModel?.provider?.includes("remote")
+    ? "Remote API"
+    : activeModel?.url || activeModel?.baseUrl
+      ? "Local endpoint"
+      : activeModel?.key === "dry-run"
+        ? "Testing Mode"
+        : "Endpoint missing";
+  const warsatStatus = warsatHardware?.status || (warsat?.count ? "warning" : "warning");
+  const warsatRuntimeCount = warsatRuntimes?.count ?? warsatRuntimes?.containers?.length ?? 0;
+  const hasLaunchPlan = Boolean(warsatPlan);
+  const readinessItems = [
+    {
+      id: "active-model",
+      title: "Active chat model",
+      value: activeName,
+      detail: healthy ? `${activeName} is reachable.` : modelMismatchLine(activeModel) || activeModel?.lastError || "Health check has not passed yet.",
+      status: healthy ? "ready" : "blocked",
+      action: "Test health",
+      onAction: () => runModelAction("test"),
+    },
+    {
+      id: "vllm-discovery",
+      title: "vLLM discovery and repair",
+      value: discovered.length ? `${discovered.length} model${discovered.length === 1 ? "" : "s"} discovered` : "No discovery result yet",
+      detail: mismatch || "Use discovery to verify the endpoint model id matches Rasputin's registry.",
+      status: mismatch ? "blocked" : discovered.length ? "ready" : "warning",
+      action: mismatch ? "Repair mismatch" : "Discover vLLM",
+      onAction: () => runModelAction(mismatch ? "repair" : "discover"),
+    },
+    {
+      id: "context-window",
+      title: "Context window",
+      value: formatContextWindow(contextWindow),
+      detail: contextText,
+      status: contextStatus,
+    },
+    {
+      id: "warsat-readiness",
+      title: "Warsat hardware",
+      value: warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked",
+      detail: `${warsatRuntimeCount} managed runtime${warsatRuntimeCount === 1 ? "" : "s"} detected. Docker control is ${warsat?.dockerControlEnabled ? "enabled" : "off by default"}.`,
+      status: readinessTone(warsatStatus),
+      action: "Open Warsat",
+      onAction: openWarsat,
+    },
+    {
+      id: "launch-plan",
+      title: "Launch-plan readiness",
+      value: hasLaunchPlan ? "Plan prepared" : selectedCatalogModel?.deployable ? "Catalog model selected" : "No deployable model selected",
+      detail: hasLaunchPlan
+        ? "Review and approve the plan in Warsat before any container starts."
+        : selectedCatalogModel?.deployable
+          ? "Send the selected catalog model to Warsat to generate a reviewed plan."
+          : "Pick a Warsat-ready catalog model before deployment planning.",
+      status: hasLaunchPlan || selectedCatalogModel?.deployable ? "ready" : "warning",
+      action: selectedCatalogModel?.deployable ? "Prepare in Warsat" : "Open Warsat",
+      onAction: selectedCatalogModel?.deployable ? () => prepareCatalogModelForWarsat?.(selectedCatalogModel) : openWarsat,
+    },
+  ];
 
   return (
     <section className={`app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
@@ -143,6 +250,46 @@ export function ModelsView({
       </header>
 
       <div className="models-content">
+        <section className="model-readiness-panel" aria-labelledby="modelReadinessTitle" data-testid="model-readiness-panel">
+          <div className="model-readiness-head">
+            <div>
+              <span className="eyebrow">Runtime Readiness</span>
+              <h2 id="modelReadinessTitle">Connect, verify, then plan deployment.</h2>
+              <p>
+                Follow these checks before private testing. Rasputin keeps the actual model id visible and only moves
+                into Warsat deployment after a reviewed launch plan exists.
+              </p>
+            </div>
+            <div className="model-readiness-summary" role="status" aria-live="polite">
+              <span className={`model-health-pill ${healthy ? "is-healthy" : "is-unhealthy"}`}>
+                {healthy ? "Chat ready" : "Chat blocked"}
+              </span>
+              <strong>{endpointKind}</strong>
+            </div>
+          </div>
+          <div className="model-readiness-grid">
+            {readinessItems.map((item) => (
+              <article className={`model-readiness-step is-${item.status}`} key={item.id}>
+                <div>
+                  <span>{item.title}</span>
+                  <strong>{item.value}</strong>
+                  <p>{item.detail}</p>
+                </div>
+                {item.action && (
+                  <button
+                    className="ras-button small-button"
+                    type="button"
+                    onClick={item.onAction}
+                    aria-label={`${item.action}: ${item.title}`}
+                  >
+                    {item.action}
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+
         <section className="models-grid">
           <article className="model-command-card" data-testid="active-model-card" id="models-active-card">
             <div className="model-command-top">

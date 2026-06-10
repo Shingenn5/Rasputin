@@ -134,7 +134,8 @@ export function HomeView(props) {
   const latestActiveTask = activeHomeTasks[activeHomeTasks.length - 1] || runningTasks?.[0];
   const privacyTitle = security.privacyLock ? "Local-only" : "Review mode";
   const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
-  const disabledReason = healthy ? "" : "A healthy local model or Testing Mode is required before sending.";
+  const selectedModelHealthLine = modelHealthLine(selectedModelObject, models);
+  const disabledReason = healthy ? "" : `${selectedModelHealthLine} Use Models to test or repair the local runtime, or enable Testing Mode.`;
   const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
   const laneSummaries = useMemo(() => {
     const taskMap = new Map();
@@ -405,7 +406,7 @@ function jumpToLatest() {
 
           <div className="composer-meta">
             <p id="selectedModelHealth" className={`model-health ${healthy ? "is-healthy" : "is-unhealthy"}`}>
-              {disabledReason || modelHealthLine(selectedModelObject, models)}
+              {disabledReason || selectedModelHealthLine}
             </p>
             <div className="composer-actions">
               {latestActiveTask && (

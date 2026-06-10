@@ -141,6 +141,11 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
 
   await page.locator("[data-testid='nav-models']").click();
   await expect(page.locator("#modelsView")).toBeVisible();
+  await expect(page.locator("[data-testid='model-readiness-panel']")).toBeVisible();
+  await expect(page.locator("[data-testid='model-readiness-panel']")).toContainText("Runtime Readiness");
+  await expect(page.locator("[data-testid='model-readiness-panel']")).toContainText("Active chat model");
+  await expect(page.locator("[data-testid='model-readiness-panel']")).toContainText("Context window");
+  await expect(page.locator("[data-testid='model-readiness-panel']")).toContainText("Warsat hardware");
   await expect(page.locator("[data-testid='active-model-card']")).not.toContainText("Main Local Model");
   await page.locator("[data-testid='models-dev-catalog']").scrollIntoViewIfNeeded();
   await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
