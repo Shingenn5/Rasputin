@@ -428,11 +428,24 @@ Stop conditions:
 - implementation requires actual mutation execution
 - rollback cannot be described for a planned operation
 
-### [ ] 08. Graphify Evidence UI V2
+### [x] 08. Graphify Evidence UI V2
 
 Branch: `codex/graphify-evidence-ui-v2`
 
 Commit message: `Improve Graphify evidence UI`
+
+Completed: 2026-06-09
+
+Commit: `2af23ad`
+
+Validation:
+
+- `powershell.exe -ExecutionPolicy Bypass -File scripts\test.ps1 -Ui`: passed
+- backend smoke: passed, 43 tests
+- Playwright UI smoke: passed, 10 tests, 1 preview test skipped
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: make Graphify explain why files, concepts, and documents are connected.
 
