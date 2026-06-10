@@ -659,7 +659,7 @@ class AgentHub:
         graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
         workspace_context = await self.workspace_context(task)
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
-        task.graph = [{"source": e["source"], "relation": e["relation"], "target": e["target"]} for e in graph.get("edges", [])[:8]]
+        task.graph = self.compact_graph_edges(graph)
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
@@ -720,7 +720,7 @@ class AgentHub:
         context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
         graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
-        task.graph = [{"source": e["source"], "relation": e["relation"], "target": e["target"]} for e in graph.get("edges", [])[:8]]
+        task.graph = self.compact_graph_edges(graph)
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
@@ -952,7 +952,11 @@ class AgentHub:
         edges = graph.get("edges", [])
         if not edges:
             return "No graph matches."
-        return "\n".join(f"{e['source']} --{e['relation']}--> {e['target']}" for e in edges[:10])
+        lines = []
+        for edge in edges[:10]:
+            suffix = f" ({edge.get('why')})" if edge.get("why") else ""
+            lines.append(f"{edge['source']} --{edge['relation']}--> {edge['target']}{suffix}")
+        return "\n".join(lines)
 
     def format_memory(self, recall):
         items = recall.get("items", [])
@@ -972,7 +976,25 @@ class AgentHub:
     def format_task_graph(self, graph):
         if not graph:
             return "No graph evidence was retrieved."
-        return "\n".join(f"{edge.get('source')} --{edge.get('relation')}--> {edge.get('target')}" for edge in graph[:10])
+        lines = []
+        for edge in graph[:10]:
+            suffix = f" ({edge.get('why')})" if edge.get("why") else ""
+            lines.append(f"{edge.get('source')} --{edge.get('relation')}--> {edge.get('target')}{suffix}")
+        return "\n".join(lines)
+
+    def compact_graph_edges(self, graph):
+        out = []
+        for edge in graph.get("edges", [])[:8]:
+            out.append({
+                "source": edge.get("source"),
+                "sourceKind": edge.get("source_kind") or edge.get("sourceKind"),
+                "relation": edge.get("relation"),
+                "target": edge.get("target"),
+                "targetKind": edge.get("target_kind") or edge.get("targetKind"),
+                "confidence": edge.get("confidence"),
+                "why": edge.get("why"),
+            })
+        return out
 
     async def spawn_subagents(self, parent, plan, count):
         parent.log(f"spawning {count} sub-agent(s)")

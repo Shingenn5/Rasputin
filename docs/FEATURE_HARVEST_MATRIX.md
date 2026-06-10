@@ -73,7 +73,7 @@ Risk:
 | Odysseus README | ChromaDB/fastembed vector + keyword retrieval | Knowledge Index V2 | partial | 5 | L | medium | RAG, backend, UI, Docker | workspace browser | Workspace indexing uses local embeddings/vector store, incremental reindexing, citations, and clear storage location | Do not vendor external code without license review |
 | Odysseus README | Memory import/export | Warmind Memory Export | partial | 4 | M | medium | memory, UI, docs | SQLite memory | Memory has review queue, search, local markdown export, import/export, and clear privacy boundaries | Behavior reference only |
 | Odysseus README | File uploads including PDF | Document Intel | partial | 5 | L | medium | RAG, Graphify, workspace, UI | Knowledge Index V2 | PDF/DOCX/XLSX/CSV/text files can be parsed locally, indexed, and cited; richer preview UX remains future work | Uses local parser packages only; no external parser service |
-| Rasputin goal | Typed graph relationships with evidence | Graphify Evidence V2 | partial | 4 | M | medium | Graphify, RAG, UI | document intel | Graph search explains why items are related with source snippets, file paths, and relationship type | Rasputin-native |
+| Rasputin goal | Typed graph relationships with evidence | Graphify Evidence V2 | existing | 4 | M | medium | Graphify, RAG, UI | document intel | Graph search explains why items are related with typed nodes, typed edges, source snippets, file paths, citations, and confidence | Rasputin-native |
 
 ## Documents
 

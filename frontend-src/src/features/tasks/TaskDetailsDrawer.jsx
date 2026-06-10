@@ -184,7 +184,12 @@ export function TaskDetailsDrawer({
                       {(task.graph || []).map((edge, index) => (
                         <li key={`${edge.source}-${edge.target}-${index}`}>
                           <strong>{edge.source}</strong>
-                          <span>{edge.relation} {edge.target}</span>
+                          <span>
+                            {edge.sourceKind ? `${labelize(edge.sourceKind)} ` : ""}
+                            {edge.relation} {edge.targetKind ? `${labelize(edge.targetKind)} ` : ""}{edge.target}
+                            {edge.confidence ? ` / confidence ${edge.confidence}` : ""}
+                          </span>
+                          {edge.why && <small>{edge.why}</small>}
                         </li>
                       ))}
                     </ContextBlock>

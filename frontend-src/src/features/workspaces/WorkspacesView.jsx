@@ -423,6 +423,13 @@ export function WorkspacesView({
                     <small>{node.kind} / weight {node.weight}</small>
                   </article>
                 ))}
+                {(knowledgeResults.graphResult?.edges || []).slice(0, 3).map((edge) => (
+                  <article className="knowledge-result-card" key={`${edge.sourceId || edge.source}-${edge.relation}-${edge.targetId || edge.target}`}>
+                    <strong>{edge.source} {"->"} {edge.target}</strong>
+                    <small>{edge.relation}{edge.confidence ? ` / confidence ${edge.confidence}` : ""}</small>
+                    {edge.why && <p>{edge.why}</p>}
+                  </article>
+                ))}
               </div>
             )}
           </section>

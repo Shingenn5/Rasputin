@@ -422,6 +422,52 @@ class BackendSmokeTests(unittest.TestCase):
         xlsx_hits = self.assertOk(self.client.post("/api/rag/search", json={"path": rel_path, "query": "telemetry smoke", "limit": 3}))
         self.assertTrue(any(hit.get("sheetName") == "Signals" for hit in xlsx_hits["hits"]))
 
+    def testGraphifyBuildsTypedEvidenceRelationships(self):
+        target_dir = main.ROOT / "workspace" / f"graph-smoke-{runtime_store.new_id('graph')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "engine.py").write_text(
+            "\n".join([
+                "import json",
+                "class WarmindNode:",
+                "    def transmit_signal(self):",
+                "        return parse_signal('warsat')",
+                "def parse_signal(value):",
+                "    return value",
+            ]),
+            encoding="utf-8",
+        )
+        (target_dir / "field-report.pdf").write_bytes(minimal_pdf_bytes(
+            "Warsat Protocol references engine.py and WarmindNode evidence."
+        ))
+        rel_path = str(target_dir.relative_to(main.ROOT)).replace("\\", "/")
+
+        self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": rel_path,
+            "name": "Graph Smoke",
+            "readOnly": True,
+        }))
+        self.assertOk(self.client.post("/api/workspace/select", json={"path": rel_path}))
+        self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Graph Smoke"}))
+
+        built = self.assertOk(self.client.post("/api/graph/build", json={"path": rel_path}))
+        self.assertGreaterEqual(built["nodes"], 4)
+        self.assertGreaterEqual(built["edges"], 4)
+        self.assertGreaterEqual(built["nodeKinds"].get("file", 0), 1)
+        self.assertGreaterEqual(built["nodeKinds"].get("document", 0), 1)
+        self.assertGreaterEqual(built["edgeTypes"].get("defines", 0), 1)
+
+        found = self.assertOk(self.client.post("/api/graph/search", json={
+            "query": "WarmindNode engine.py",
+            "limit": 12,
+        }))
+        self.assertTrue(any(node["kind"] == "class" and node["name"] == "WarmindNode" for node in found["nodes"]))
+        self.assertTrue(any(edge["relation"] == "defines" and edge["targetKind"] == "class" for edge in found["edges"]))
+        self.assertTrue(any(edge["relation"] == "references" and edge["sourceKind"] == "document" for edge in found["edges"]))
+        evidence = found["edges"][0]["evidence"][0]
+        self.assertIn("citation", evidence)
+        self.assertTrue(evidence["citation"].get("path"))
+        self.assertTrue(found["edges"][0].get("why"))
+
     def testArchiveSessionsSaveAndExportWithPermission(self):
         title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"
         saved = self.assertOk(self.client.post("/api/archive/sessions", json={

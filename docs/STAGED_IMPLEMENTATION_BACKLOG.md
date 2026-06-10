@@ -293,7 +293,9 @@ Goal: make Graphify useful as an evidence-backed local relationship layer.
 
 Scope:
 
-- Tie graph nodes and edges to source snippets or file metadata.
+- Tie graph nodes and edges to source snippets and citation metadata.
+- Add typed nodes for files, folders, documents, classes, functions, and concepts.
+- Add typed edges for imports, calls, defines, mentions, references, located_in, and related_to.
 - Add relationship explanation response.
 - Ingest document sections and code structure where available.
 
@@ -301,7 +303,7 @@ Affected subsystems: Graphify, RAG, workspace, UI.
 
 API/interface changes:
 
-- Extend `/api/graph/search` with evidence snippets and confidence fields.
+- Extend `/api/graph/search` with typed node/edge metadata, evidence snippets, citations, confidence, and `why` explanations.
 
 UI changes:
 
