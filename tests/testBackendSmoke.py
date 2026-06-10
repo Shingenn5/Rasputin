@@ -422,6 +422,36 @@ class BackendSmokeTests(unittest.TestCase):
         xlsx_hits = self.assertOk(self.client.post("/api/rag/search", json={"path": rel_path, "query": "telemetry smoke", "limit": 3}))
         self.assertTrue(any(hit.get("sheetName") == "Signals" for hit in xlsx_hits["hits"]))
 
+    def testRagSearchBoostsExactFilePathMatches(self):
+        target_dir = main.ROOT / "workspace" / f"rag-path-{runtime_store.new_id('ragpath')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "server.py").write_text(
+            "def boot_server():\n    return 'target file'\n",
+            encoding="utf-8",
+        )
+        (target_dir / "tool_relay.py").write_text(
+            ("server configuration schema metadata timeout server object path " * 80).strip(),
+            encoding="utf-8",
+        )
+        rel_path = str(target_dir.relative_to(main.ROOT)).replace("\\", "/")
+
+        self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": rel_path,
+            "name": "RAG Path",
+            "readOnly": True,
+        }))
+        self.assertOk(self.client.post("/api/workspace/select", json={"path": rel_path}))
+        self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "RAG Path"}))
+        found = self.assertOk(self.client.post("/api/rag/search", json={
+            "path": rel_path,
+            "query": "server.py",
+            "limit": 5,
+        }))
+
+        self.assertTrue(found["hits"])
+        self.assertEqual(found["hits"][0]["path"], "server.py")
+        self.assertGreater(found["hits"][0]["pathScore"], 0)
+
     def testGraphifyBuildsTypedEvidenceRelationships(self):
         target_dir = main.ROOT / "workspace" / f"graph-smoke-{runtime_store.new_id('graph')[-6:]}"
         target_dir.mkdir(parents=True, exist_ok=True)

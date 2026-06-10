@@ -439,6 +439,29 @@ def _filter_chunks(chunks, path=None):
     return out
 
 
+def _path_score(query, q_terms, chunk):
+    raw_query = str(query or "").strip().lower().replace("\\", "/")
+    path = str(chunk.get("path") or "").lower().replace("\\", "/")
+    source = str(chunk.get("source") or "").lower().replace("\\", "/")
+    filename = Path(path).name.lower()
+    if not raw_query:
+        return 0.0
+    score = 0.0
+    if raw_query == filename:
+        score += 12.0
+    if raw_query == path or raw_query == source:
+        score += 14.0
+    if raw_query and raw_query in path:
+        score += 6.0
+    elif raw_query and raw_query in source:
+        score += 4.0
+    path_terms = Counter(_tokenize(f"{path} {source} {filename}"))
+    for term, q_count in q_terms.items():
+        if path_terms.get(term):
+            score += min(3.0, q_count * path_terms[term] * 0.8)
+    return score
+
+
 def search(query, limit=6, path=None):
     index = _load()
     q_terms = Counter(_tokenize(query))
@@ -463,16 +486,18 @@ def search(query, limit=6, path=None):
             idf = math.log((1 + total) / (1 + doc_freq[term])) + 1
             lexical += (q_count * c_count * idf) / max(1, chunk.get("term_count", 1))
         semantic = _cosine(q_vec, chunk.get("vector", {}))
-        score = lexical + (semantic * 0.35)
+        path_match = _path_score(query, q_terms, chunk)
+        score = lexical + (semantic * 0.35) + path_match
         if score > 0:
-            scored.append((score, chunk, lexical, semantic))
+            scored.append((score, chunk, lexical, semantic, path_match))
     scored.sort(key=lambda x: x[0], reverse=True)
     hits = []
-    for score, chunk, lexical, semantic in scored[:max(1, min(int(limit), 20))]:
+    for score, chunk, lexical, semantic, path_match in scored[:max(1, min(int(limit), 20))]:
         hits.append({
             "score": round(score, 5),
             "lexical_score": round(lexical, 5),
             "semantic_score": round(semantic, 5),
+            "path_score": round(path_match, 5),
             "source": chunk["source"],
             "workspace_id": chunk.get("workspace_id"),
             "path": chunk.get("path"),
