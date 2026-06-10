@@ -711,6 +711,251 @@ Stop conditions:
 - implementation requires Docker socket access
 - discovered tools can bypass Tool Relay permissions or approvals
 
+### [x] 13. Main Sync And Queue Refresh
+
+Branch: `codex/main-sync-pass-13`
+
+Commit message: `Queue private testing passes`
+
+Completed: 2026-06-10
+
+Commit: `pending`
+
+Validation:
+
+- `powershell.exe -ExecutionPolicy Bypass -File scripts\test.ps1 -Ui`: passed
+- backend smoke: passed, 46 tests
+- Playwright UI smoke: passed, 10 tests, 1 preview test skipped
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
+
+Goal: sync the completed MCP compatibility hardening pass into `main`, push GitHub, and queue the next private-testability passes.
+
+Scope:
+
+- fast-forward `main` to `codex/mcp-relay-v2-compat-hardening`
+- push `main` to GitHub
+- append Passes 13-17 to this queue
+- preserve backup branches
+- no runtime behavior changes
+
+Affected subsystems:
+
+- Git branch hygiene
+- pass queue
+- GitHub `main`
+
+Required tests:
+
+- full harness with UI smoke
+- frontend build
+- repo safety
+- diff whitespace check
+
+Acceptance criteria:
+
+- local `main` and `origin/main` include the MCP compatibility pass
+- Passes 14-17 are queued with UI readability and accessibility requirements
+- no runtime data, secrets, model files, logs, screenshots, or indexes are staged
+- working tree is clean after commit
+
+Stop conditions:
+
+- remote `main` contains unmerged work that would require conflict resolution
+- validation fails after fast-forward
+
+### [ ] 14. Operator MCP End-To-End Test Flow
+
+Branch: `codex/operator-mcp-e2e-v1`
+
+Commit message: `Add operator MCP end-to-end flow`
+
+Goal: prove a user can register, approve, start, test, discover, classify, and call a safe local MCP fixture from the UI.
+
+Scope:
+
+- add a built-in local MCP fixture profile for testing without package installs or network access
+- add a UI action to create the fixture registration preview
+- preserve approval-gated registration and disabled-by-default external tools
+- add a safe fixture tool call flow routed through Tool Relay
+- show fixture resources and prompts as read-only review items
+- show the resulting external MCP call in task details/tool traces
+
+Affected subsystems:
+
+- MCP relay
+- Tool Relay
+- Settings Tool Relays UI
+- task details UI
+- backend and UI smoke tests
+
+Required tests:
+
+- fixture registration creates an approval
+- approval enables start/test/discover
+- discovered tool is unavailable until classified
+- classified guarded fixture tool can be called through Tool Relay
+- task details show the external MCP tool call
+- resources/prompts remain read-only and non-executable
+- Tool Relays UI remains keyboard accessible and readable
+- full harness with UI smoke
+- repo safety
+
+Acceptance criteria:
+
+- operator can complete the MCP fixture flow from the UI
+- no package manager, network transport, remote MCP, or Docker socket is required
+- no raw env values, secrets, prompts, or file contents are shown in UI logs
+
+Stop conditions:
+
+- implementation requires installing an external MCP package
+- implementation requires network or remote MCP transport
+- fixture tool can bypass Tool Relay policy
+
+### [ ] 15. Model Runtime Readiness Flow
+
+Branch: `codex/model-runtime-readiness-v1`
+
+Commit message: `Add model runtime readiness flow`
+
+Goal: make model connection, vLLM repair, chat readiness, and Warsat launch planning understandable before private testing.
+
+Scope:
+
+- add a guided readiness panel in Models or Warsat
+- show active chat model id, health, endpoint type, and disabled-send reason
+- surface vLLM discovery and one-click repair when a mismatch is safely detectable
+- show context window warnings from the selected model
+- show Warsat hardware readiness and launch-plan readiness in one workflow
+- keep Home model and mode controls compact and accessible
+
+Affected subsystems:
+
+- model registry
+- model catalog
+- Warsat
+- Home composer
+- Models/Warsat UI
+- tests
+
+Required tests:
+
+- healthy model appears with real model id as primary label
+- unhealthy model blocks send with plain reason
+- dry-run remains available for testing mode
+- vLLM discovery/repair path is visible when applicable
+- Warsat launch plan can be created from a catalog model
+- UI remains readable at split-screen and mobile widths
+- full harness with UI smoke
+- repo safety
+
+Acceptance criteria:
+
+- user can discover/test a model, understand health, send a test chat, and create a Warsat launch plan without guessing the next step
+- no remote model is enabled by default
+- no model download or Docker deploy execution is added in this pass
+
+Stop conditions:
+
+- implementation requires downloading a model
+- implementation requires enabling Docker control by default
+- implementation requires real remote API keys
+
+### [ ] 16. Workspace Knowledge End-To-End Flow
+
+Branch: `codex/workspace-knowledge-e2e-v1`
+
+Commit message: `Add workspace knowledge end-to-end flow`
+
+Goal: prove the local-file companion workflow from mounted folder selection through RAG, Graphify, and task file-read trace.
+
+Scope:
+
+- add a guided Workspaces test flow for mounted folder selection, browse, preview, index, search, graph build/search, and task read
+- refresh indexed state immediately after RAG ingest and Graphify build
+- clarify RAG vs Graphify result types and citations
+- make task details show which approved files were read
+- keep Workspaces split-screen friendly with readable columns and no overflow
+
+Affected subsystems:
+
+- Workspaces UI
+- RAG
+- Graphify
+- Tool Relay file-read tools
+- task details UI
+- tests
+
+Required tests:
+
+- select mounted folder
+- browse folder and preview safe file
+- index workspace and see immediate indexed state
+- search RAG and see cited local hits
+- build/search Graphify and see evidence-backed relationships
+- task trace shows approved file reads
+- responsive Workspaces checks pass
+- full harness with UI smoke
+- repo safety
+
+Acceptance criteria:
+
+- user can validate Rasputin can read and reason over an approved folder without leaving the UI
+- indexed data remains local under ignored runtime data
+- no file mutation is introduced
+
+Stop conditions:
+
+- implementation requires replacing RAG storage
+- implementation requires binary document mutation
+- implementation requires reading outside approved roots
+
+### [ ] 17. Testable Build Polish And Accessibility Sweep
+
+Branch: `codex/testable-build-polish-v1`
+
+Commit message: `Polish private test build`
+
+Goal: fix issues found during Passes 14-16 and make the private test build readable, accessible, and predictable.
+
+Scope:
+
+- add a Test Rasputin checklist for MCP, model, workspace, RAG, Graphify, and Warsat
+- run focused accessibility cleanup for keyboard navigation, focus state, aria-live status, icon labels, contrast, and reduced motion
+- fix split-screen, tablet, and mobile overflow regressions
+- remove debug clutter from Home and primary workflows
+- improve empty/error states where private testing would otherwise stall
+
+Affected subsystems:
+
+- Settings/setup UI
+- Home
+- Workspaces
+- Models/Warsat
+- Activity/task details
+- UI tests and screenshots
+
+Required tests:
+
+- keyboard-only navigation smoke
+- visible focus rings on primary controls
+- responsive screenshots for Home, Workspaces, Models, Warsat, Settings, and mobile
+- no horizontal overflow in primary views
+- full harness with UI smoke
+- repo safety
+
+Acceptance criteria:
+
+- another local tester can start Docker, log in, connect a model, select a workspace, test MCP, run retrieval, and understand failures from the UI
+- no new feature ships with unreadable cards, hidden state changes, or unlabeled controls
+
+Stop conditions:
+
+- polish exposes a deeper backend workflow failure that belongs in a separate pass
+- accessibility fix requires a broad visual redesign
+
 ## Deferred
 
 ### [-] Remote MCP Transports
