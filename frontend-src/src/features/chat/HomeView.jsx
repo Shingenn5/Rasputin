@@ -69,6 +69,13 @@ const modeOptions = [
     description: "Plan folder cleanup and file organization from mounted roots.",
     permission: "Folder changes require preview and approval.",
   },
+  {
+    value: "review",
+    label: "Review",
+    role: "summarizer",
+    description: "Check prior output, summarize risk, and prepare follow-up edits.",
+    permission: "Review uses local task history and approved workspace evidence.",
+  },
 ];
 
 export function HomeView(props) {
@@ -129,6 +136,30 @@ export function HomeView(props) {
   const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
   const disabledReason = healthy ? "" : "A healthy local model or Testing Mode is required before sending.";
   const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
+  const laneSummaries = useMemo(() => {
+    const taskMap = new Map();
+    [...orderedHomeTasks, ...(runningTasks || [])].forEach((task) => {
+      if (task?.id && !taskMap.has(task.id)) taskMap.set(task.id, task);
+    });
+    const allTasks = [...taskMap.values()];
+    return modeOptions.map((mode) => {
+      const routedKey = modelKeyForMode?.(mode.value, modeModelOverrides) || selectedModel;
+      const routed = models.find((model) => model.key === routedKey) || models.find((model) => model.role === mode.role) || selectedModelObject;
+      const modeTasks = allTasks
+        .filter((task) => (task.mode || "chat") === mode.value)
+        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+      const activeRun = modeTasks.find((task) => ["queued", "running", "paused"].includes(task.status));
+      const recent = modeTasks[0];
+      return {
+        ...mode,
+        modelName: routed ? displayModelName(routed, models) : "No routed model",
+        workspaceName: activeWorkspaceName || "No workspace selected",
+        statusLabel: activeRun ? labelize(activeRun.status || "running") : "Ready",
+        recentTitle: recent?.objective || "",
+        isRunning: Boolean(activeRun),
+      };
+    });
+  }, [activeWorkspaceName, modelKeyForMode, modeModelOverrides, models, orderedHomeTasks, runningTasks, selectedModel, selectedModelObject]);
 
   useEffect(() => {
     if (view !== "home" || !threadScrollRef.current) return;
@@ -179,7 +210,7 @@ export function HomeView(props) {
     if (atBottom) setHasNewActivity(false);
   }
 
-  function jumpToLatest() {
+function jumpToLatest() {
     const target = threadScrollRef.current;
     if (!target) return;
     target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
@@ -314,6 +345,8 @@ export function HomeView(props) {
 
           {composerStatus && <p id="composerStatus" className="composer-status" role="alert">{composerStatus}</p>}
 
+          <AgentLaneStrip lanes={laneSummaries} activeMode={activeMode.value} setTaskMode={setTaskMode} />
+
           <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
           <textarea
             id="objective"
@@ -436,6 +469,88 @@ export function HomeView(props) {
           )}
         </form>
       </section>
+    </section>
+  );
+}
+
+function AgentLaneStrip({ lanes, activeMode, setTaskMode }) {
+  const activeLane = lanes.find((lane) => lane.value === activeMode) || lanes[0];
+
+  function handleKeyDown(event) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = lanes.findIndex((lane) => lane.value === activeMode);
+    let nextIndex = currentIndex;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = lanes.length - 1;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1 + lanes.length) % lanes.length;
+    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + lanes.length) % lanes.length;
+    const nextLane = lanes[nextIndex];
+    if (!nextLane) return;
+    setTaskMode(nextLane.value);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`agent-lane-tab-${nextLane.value}`)?.focus();
+    });
+  }
+
+  if (!lanes.length) return null;
+
+  return (
+    <section className="agent-lane-shell" data-testid="agent-lanes" aria-label="Agent lanes">
+      <div className="agent-lane-head">
+        <span className="eyebrow">Agent lanes</span>
+        <span>{activeLane.label} lane selected</span>
+      </div>
+      <div className="agent-lane-tabs" role="tablist" aria-label="Choose active AI lane" onKeyDown={handleKeyDown}>
+        {lanes.map((lane) => {
+          const selected = lane.value === activeMode;
+          return (
+            <button
+              key={lane.value}
+              id={`agent-lane-tab-${lane.value}`}
+              className={selected ? "agent-lane-tab is-active" : "agent-lane-tab"}
+              data-testid="agent-lane"
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls="agent-lane-current"
+              tabIndex={selected ? 0 : -1}
+              aria-label={`${lane.label}. ${lane.statusLabel}. Model ${lane.modelName}. Workspace ${lane.workspaceName}. ${lane.recentTitle ? `Recent task ${lane.recentTitle}.` : "No recent task."}`}
+              onClick={() => setTaskMode(lane.value)}
+            >
+              <strong>{lane.label}</strong>
+              <span>{lane.modelName}</span>
+              <em className={lane.isRunning ? "is-running" : ""}>{lane.statusLabel}</em>
+            </button>
+          );
+        })}
+      </div>
+      <div
+        id="agent-lane-current"
+        className="agent-lane-current"
+        role="tabpanel"
+        aria-labelledby={`agent-lane-tab-${activeLane.value}`}
+        data-testid="active-agent-lane"
+      >
+        <dl>
+          <div>
+            <dt>Mode</dt>
+            <dd>{activeLane.label}</dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd>{activeLane.modelName}</dd>
+          </div>
+          <div>
+            <dt>Workspace</dt>
+            <dd>{activeLane.workspaceName}</dd>
+          </div>
+          <div>
+            <dt>Recent</dt>
+            <dd>{activeLane.recentTitle || "No recent task"}</dd>
+          </div>
+        </dl>
+      </div>
     </section>
   );
 }

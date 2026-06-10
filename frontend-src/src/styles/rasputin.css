@@ -1655,6 +1655,121 @@ button.runtime-chip {
   font-size: .86rem;
 }
 
+.agent-lane-shell {
+  display: grid;
+  gap: .45rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 28%, transparent);
+  padding: .55rem;
+  margin-bottom: .55rem;
+}
+
+.agent-lane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.agent-lane-tabs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(152px, 1fr);
+  gap: .45rem;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding-bottom: .1rem;
+}
+
+.agent-lane-tab {
+  display: grid;
+  gap: .12rem;
+  min-width: 0;
+  min-height: 72px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel) 86%, transparent);
+  color: var(--ras-text);
+  cursor: pointer;
+  padding: .55rem .6rem;
+  text-align: left;
+}
+
+.agent-lane-tab:hover,
+.agent-lane-tab:focus-visible,
+.agent-lane-tab.is-active {
+  border-color: color-mix(in srgb, var(--ras-accent) 58%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel));
+}
+
+.agent-lane-tab strong,
+.agent-lane-tab span,
+.agent-lane-tab em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-lane-tab strong {
+  font-size: .88rem;
+}
+
+.agent-lane-tab span {
+  color: var(--ras-muted);
+  font-size: .75rem;
+}
+
+.agent-lane-tab em {
+  color: var(--ras-muted);
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.agent-lane-tab em.is-running {
+  color: var(--ras-blue);
+}
+
+.agent-lane-current {
+  border-top: 1px solid color-mix(in srgb, var(--ras-border) 68%, transparent);
+  padding-top: .45rem;
+}
+
+.agent-lane-current dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .4rem;
+  margin: 0;
+}
+
+.agent-lane-current div {
+  min-width: 0;
+}
+
+.agent-lane-current dt {
+  color: var(--ras-muted);
+  font-size: .68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.agent-lane-current dd {
+  margin: 0;
+  color: var(--ras-text);
+  font-size: .8rem;
+  font-weight: 780;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer-meta {
   justify-content: space-between;
   border-top: 1px solid var(--ras-border);
@@ -8175,6 +8290,10 @@ button.helper-row:hover {
   .composer-context-actions,
   .model-health {
     width: 100%;
+  }
+
+  .agent-lane-current dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .secondary-action {

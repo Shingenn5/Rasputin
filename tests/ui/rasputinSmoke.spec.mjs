@@ -110,10 +110,17 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='nav-warsat']")).toContainText("Warsat");
   await expect(page.locator("#workspacePill")).toContainText("Project Root");
   await expect(page.locator("#model")).not.toContainText("Dry Run");
+  await expect(page.locator("[data-testid='agent-lanes']")).toBeVisible();
+  await expect(page.locator("[data-testid='agent-lane']")).toHaveCount(7);
+  await expect(page.locator("[data-testid='agent-lane']").filter({ hasText: "Chat" })).toHaveAttribute("aria-selected", "true");
+  await page.locator("[data-testid='agent-lane']").filter({ hasText: "Research" }).click();
+  await expect(page.locator("[data-testid='chat-mode-chip']")).toContainText("Research");
+  await expect(page.locator("[data-testid='active-agent-lane']")).toContainText("Research");
+  await page.locator("[data-testid='agent-lane']").filter({ hasText: "Chat" }).click();
   await expect(page.locator("[data-testid='chat-mode-chip']")).toContainText("Chat");
   await page.locator("[data-testid='chat-mode-chip']").click();
   await expect(page.locator("[data-testid='mode-side-panel']")).toBeVisible();
-  await expect(page.locator("[data-testid='mode-option']")).toHaveCount(6);
+  await expect(page.locator("[data-testid='mode-option']")).toHaveCount(7);
   await page.locator("[data-testid='mode-option']").filter({ hasText: "Code" }).getByRole("button", { name: /Code/ }).click();
   await expect(page.locator("[data-testid='chat-mode-chip']")).toContainText("Code");
   await expect(page.locator("#objective")).toBeVisible();

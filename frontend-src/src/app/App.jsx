@@ -443,6 +443,7 @@ export function App() {
       code: "coder",
       write: "summarizer",
       organize: "executor",
+      review: "summarizer",
     };
     const overrideKey = overrides?.[mode];
     if (overrideKey && models.some((model) => model.key === overrideKey)) return overrideKey;
