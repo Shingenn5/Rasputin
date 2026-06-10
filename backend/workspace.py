@@ -14,6 +14,7 @@ PREVIEW_EXTENSIONS = {
     ".ps1", ".bat", ".dockerfile", ".gitignore",
 }
 MAX_PREVIEW_BYTES = 128 * 1024
+MAX_SEARCH_FILE_BYTES = 256 * 1024
 
 _lock = Lock()
 
@@ -226,6 +227,19 @@ def _root_by_id(root_id):
     raise ValueError("approved root missing")
 
 
+def _path_under_base(base, path=None):
+    raw = str(path or "").strip()
+    if not raw:
+        return base
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    root_relative = (ROOT / candidate).resolve()
+    if root_relative == base or _is_relative_to(root_relative, base):
+        return root_relative
+    return (base / candidate).resolve()
+
+
 def _browse_target(root_id=None, path=None):
     if root_id:
         root = _root_by_id(root_id)
@@ -241,7 +255,7 @@ def _browse_target(root_id=None, path=None):
             "path": item.get("root") or ".",
             "absolute_path": str(base),
         }
-    target = base if not path else _root_from_value(path)
+    target = _path_under_base(base, path)
     if target != base and not _is_relative_to(target, base):
         raise ValueError("path outside approved root")
     return root, base, target
@@ -313,6 +327,100 @@ def preview_file(root_id=None, path=None, max_bytes=MAX_PREVIEW_BYTES):
         "truncated": False,
         "content": text,
         "read_only": bool(root.get("read_only", True)),
+    }
+
+
+def _search_snippet(text, needle, radius=80):
+    lowered = text.lower()
+    index = lowered.find(needle.lower())
+    if index < 0:
+        return ""
+    start = max(0, index - radius)
+    end = min(len(text), index + len(needle) + radius)
+    prefix = "..." if start else ""
+    suffix = "..." if end < len(text) else ""
+    return prefix + " ".join(text[start:end].split()) + suffix
+
+
+def search_files(root_id=None, path=None, query="", max_results=40, include_content=False):
+    text = " ".join(str(query or "").split())
+    if not text:
+        raise ValueError("search query is required")
+    root, base, target = _browse_target(root_id, path)
+    if not target.exists() or not target.is_dir():
+        raise ValueError("folder missing")
+    limit = max(1, min(int(max_results or 40), 100))
+    read_only = bool(root.get("read_only", True))
+    needle = text.lower()
+    matches = []
+    searched = 0
+    truncated = False
+
+    def add_match(p, kind, score, match_type, snippet=""):
+        entry = _entry(p, kind, read_only)
+        entry.update({
+            "score": score,
+            "match_type": match_type,
+            "snippet": snippet,
+        })
+        matches.append(entry)
+
+    for current, dirs, files in target.walk():
+        dirs[:] = [name for name in dirs if name not in IGNORED_DIRS]
+        current_path = Path(current)
+        for folder in sorted(dirs, key=str.lower):
+            if len(matches) >= limit:
+                truncated = True
+                break
+            p = current_path / folder
+            searched += 1
+            haystack = f"{folder} {rel_path(p)}".lower()
+            if needle in haystack:
+                score = 80 if folder.lower() == needle else 60
+                add_match(p, "folder", score, "path")
+        if truncated:
+            break
+        for filename in sorted(files, key=str.lower):
+            if len(matches) >= limit:
+                truncated = True
+                break
+            p = current_path / filename
+            searched += 1
+            haystack = f"{filename} {rel_path(p)}".lower()
+            if needle in haystack:
+                score = 100 if filename.lower() == needle else 72
+                add_match(p, "file", score, "path")
+                continue
+            if not include_content or not _is_previewable(p):
+                continue
+            try:
+                stat = p.stat()
+            except OSError:
+                continue
+            if stat.st_size > MAX_SEARCH_FILE_BYTES:
+                continue
+            try:
+                raw = p.read_bytes()
+                if b"\0" in raw:
+                    continue
+                content = raw.decode("utf-8", errors="replace")
+            except OSError:
+                continue
+            if needle in content.lower():
+                add_match(p, "file", 42, "content", _search_snippet(content, text))
+        if truncated:
+            break
+
+    matches.sort(key=lambda item: (-int(item.get("score") or 0), item.get("path") or ""))
+    return {
+        "root": root,
+        "path": rel_path(target),
+        "display_name": _display_name(target),
+        "query": text,
+        "matches": matches[:limit],
+        "searched": searched,
+        "truncated": truncated,
+        "include_content": bool(include_content),
     }
 
 

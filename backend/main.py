@@ -206,6 +206,14 @@ class WorkspacePreviewIn(CamelModel):
     max_bytes: int = 131072
 
 
+class WorkspaceSearchIn(CamelModel):
+    root_id: str | None = None
+    path: str | None = None
+    query: str
+    max_results: int = 40
+    include_content: bool = False
+
+
 class WorkspaceApproveIn(CamelModel):
     path: str
     name: str | None = None
@@ -927,6 +935,12 @@ async def workspace_browse(req: WorkspaceBrowseIn, _user=Depends(current_user)):
 async def workspace_preview_file(req: WorkspacePreviewIn, _user=Depends(current_user)):
     security.require("allow_file_read")
     return ok(workspace.preview_file(req.root_id, req.path, req.max_bytes))
+
+
+@app.post("/api/workspace/search")
+async def workspace_search(req: WorkspaceSearchIn, _user=Depends(current_user)):
+    security.require("allow_file_read")
+    return ok(workspace.search_files(req.root_id, req.path, req.query, req.max_results, req.include_content))
 
 
 @app.post("/api/workspace/approve")

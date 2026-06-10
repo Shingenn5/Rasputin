@@ -10,6 +10,7 @@ SENSITIVE_KEYS = {
     "raw_output",
     "file_text",
     "text",
+    "snippet",
     "body",
     "secret",
     "token",
@@ -166,6 +167,30 @@ TOOL_DEFINITIONS = [
                 "max_chars": {"type": "integer", "minimum": 1000, "maximum": 24000},
             },
             "required": ["path"],
+        },
+    },
+    {
+        "id": "fs_search",
+        "display_name": "File Search",
+        "description": "Searches file and folder names, with optional bounded text matching, inside an approved workspace.",
+        "category": "Workspace",
+        "risk": "safe",
+        "permission_flag": "allow_file_read",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "not_required",
+        "timeout_seconds": 20,
+        "output_summary_policy": "metadata_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "path": {"type": "string"},
+                "workspace_path": {"type": "string"},
+                "max_results": {"type": "integer", "minimum": 1, "maximum": 100},
+                "include_content": {"type": "boolean"},
+            },
+            "required": ["query"],
         },
     },
     {
@@ -527,6 +552,26 @@ def summarize_result(tool_id, result):
             "entry_count": len(entries),
             "truncated": result.get("truncated", False),
             "entries": _safe_value("entries", entries[:30], tool_id),
+        }
+    if tool_id == "fs_search":
+        matches = result.get("matches") or []
+        return {
+            "path": result.get("path"),
+            "query": _safe_value("query", result.get("query"), tool_id),
+            "match_count": len(matches),
+            "searched": result.get("searched"),
+            "truncated": result.get("truncated", False),
+            "matches": [
+                {
+                    "path": item.get("path"),
+                    "kind": item.get("kind"),
+                    "extension": item.get("extension"),
+                    "score": item.get("score"),
+                    "match_type": item.get("match_type"),
+                    "previewable": item.get("previewable"),
+                }
+                for item in matches[:30]
+            ],
         }
     if tool_id == "model_health":
         return {

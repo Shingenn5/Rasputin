@@ -34,6 +34,7 @@ class McpLayer:
             "fs_write": self.fs_write,
             "fs_list": self.fs_list,
             "fs_tree": self.fs_tree,
+            "fs_search": self.fs_search,
             "fs_mkdir": self.fs_mkdir,
             "fs_move": self.fs_move,
             "web_search": self.web_search,
@@ -221,6 +222,21 @@ class McpLayer:
             "items": items,
             "truncated": truncated,
         }
+
+    async def fs_search(self, query, path=".", workspace_path=None, max_results=40, include_content=False, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        workspace_ref = workspace_path or workspace.get_active()["active_path"]
+        base = workspace.resolve_path(workspace_ref)
+        target = self._safe(path or ".", workspace_ref)
+        workspace.require_path_permission(target, "read")
+        return await asyncio.to_thread(
+            workspace.search_files,
+            None,
+            workspace.rel_path(target if target != base else base),
+            query,
+            max_results,
+            include_content,
+        )
 
     async def fs_mkdir(self, path, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_reorganize")

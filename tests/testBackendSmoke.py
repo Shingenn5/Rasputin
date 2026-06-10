@@ -245,7 +245,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("groups", catalog)
         self.assertIn("tools", catalog)
         ids = {item["id"] for item in catalog["tools"]}
-        for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "memory_search", "model_health", "fs_write", "web_search"]:
+        for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "fs_search", "memory_search", "model_health", "fs_write", "web_search"]:
             self.assertIn(tool_id, ids)
         shell = next(item for item in catalog["tools"] if item["id"] == "shell_exec")
         self.assertFalse(shell["available"])
@@ -285,6 +285,56 @@ class BackendSmokeTests(unittest.TestCase):
 
         with self.assertRaises(AppError):
             asyncio.run(McpLayer().call_tool("missing_tool", {}))
+
+    def testWorkspaceSearchToolFindsRequestedFilesSafely(self):
+        target_dir = main.ROOT / "workspace" / f"search-smoke-{runtime_store.new_id('search')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "server.py").write_text("def boot_server():\n    return 'search target'\n", encoding="utf-8")
+        (target_dir / "notes.md").write_text("search smoke notes", encoding="utf-8")
+        approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": f"workspace/{target_dir.name}",
+            "name": "Search Smoke",
+            "readOnly": True,
+        }))
+
+        searched = self.assertOk(self.client.post("/api/workspace/search", json={
+            "path": approved["root"],
+            "query": "server.py",
+            "maxResults": 5,
+        }))
+        self.assertTrue(searched["matches"])
+        self.assertEqual(searched["matches"][0]["path"], f"workspace/{target_dir.name}/server.py")
+
+        task_id = runtime_store.new_id("searchtool")
+        tool_result = asyncio.run(McpLayer().call_tool("fs_search", {
+            "query": "server.py",
+            "workspace_path": approved["root"],
+            "_task_id": task_id,
+        }))
+        self.assertEqual(tool_result["matches"][0]["path"], f"workspace/{target_dir.name}/server.py")
+        with runtime_store._lock, runtime_store.connect() as conn:
+            row = conn.execute("SELECT * FROM tool_calls WHERE task_id=? AND name='fs_search' ORDER BY created_at DESC LIMIT 1", (task_id,)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["status"], "done")
+        result_redacted = runtime_store._loads(row["result_redacted"], {})
+        self.assertEqual(result_redacted["match_count"], 1)
+        self.assertNotIn("boot_server", str(result_redacted))
+
+        escaped = self.client.post("/api/workspace/search", json={
+            "rootId": approved["id"],
+            "path": "backend",
+            "query": "main.py",
+        })
+        body = escaped.json()
+        self.assertEqual(escaped.status_code, 400)
+        self.assertFalse(body["ok"])
+
+        hub = agent.AgentHub()
+        task = agent.AgentTask("read server.py", "dry-run", "general", workspace_path=approved["root"])
+        context = asyncio.run(hub.workspace_context(task))
+        self.assertTrue(context["searches"])
+        self.assertEqual(context["searches"][0]["matches"][0]["path"], f"workspace/{target_dir.name}/server.py")
+        self.assertTrue(any(item["path"].endswith("server.py") for item in context["snippets"]))
 
     def testMcpRelayRegistryAndLocalStdioFlow(self):
         servers = self.assertOk(self.client.get("/api/mcp/servers"))
@@ -1172,6 +1222,7 @@ class BackendSmokeTests(unittest.TestCase):
                 ("get", "/api/workspace/roots", None),
                 ("post", "/api/workspace/list", {"path": "."}),
                 ("post", "/api/workspace/preview-file", {"path": "workspace/smoke-preview.txt"}),
+                ("post", "/api/workspace/search", {"path": ".", "query": "server.py"}),
             ]:
                 response = getattr(self.client, method)(path, json=payload) if payload is not None else getattr(self.client, method)(path)
                 body = response.json()

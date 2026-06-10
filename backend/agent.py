@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -21,7 +22,7 @@ TEXT_FILE_EXTENSIONS = {
 WORKSPACE_CONTEXT_TERMS = (
     "file", "files", "folder", "folders", "directory", "directories", "workspace",
     "codebase", "repo", "repository", "project", "read my", "inspect", "scan",
-    "look through", "file base", "filebase",
+    "look through", "file base", "filebase", "read", "analyze", "summarize", "review",
 )
 FILE_SNIPPET_TERMS = (
     "read", "inspect", "scan", "analyze", "summarize", "review", "look through",
@@ -832,9 +833,26 @@ class AgentHub:
         text = str(task.objective or "").lower()
         return task.mode in {"analyze", "code"} or any(term in text for term in FILE_SNIPPET_TERMS)
 
+    def workspace_search_terms(self, task):
+        text = str(task.objective or "")
+        candidates = []
+        candidates.extend(re.findall(r"[\w.-]+\.[A-Za-z0-9]{1,8}", text))
+        candidates.extend(re.findall(r"['\"]([^'\"]{3,80})['\"]", text))
+        if task.mode in {"analyze", "code", "organize"}:
+            candidates.extend(re.findall(r"\b[A-Za-z][A-Za-z0-9_-]{5,}\b", text)[:3])
+        seen = set()
+        terms = []
+        for candidate in candidates:
+            clean = " ".join(str(candidate or "").split())[:80]
+            key = clean.casefold()
+            if clean and key not in seen:
+                terms.append(clean)
+                seen.add(key)
+        return terms[:5]
+
     async def workspace_context(self, task):
         if not self.needs_workspace_context(task):
-            return {"tree": None, "snippets": []}
+            return {"tree": None, "searches": [], "snippets": []}
         try:
             tree = await self.mcp.call_tool("fs_tree", {
                 "path": ".",
@@ -850,15 +868,49 @@ class AgentHub:
                 "truncated": bool(tree.get("truncated")),
             })
             task.log(f"workspace files visible: {len(items)}")
+            searches = []
+            for term in self.workspace_search_terms(task):
+                try:
+                    found = await self.mcp.call_tool("fs_search", {
+                        "query": term,
+                        "workspace_path": task.workspace,
+                        "max_results": 12,
+                        "_task_id": task.id,
+                    })
+                    searches.append(found)
+                    task.seen("workspace_search", {
+                        "query": term,
+                        "matches": len(found.get("matches") or []),
+                        "truncated": bool(found.get("truncated")),
+                    })
+                except Exception as exc:
+                    searches.append({"query": term, "matches": [], "error": str(exc)})
+            if searches:
+                task.log(f"workspace searches: {len(searches)}")
             snippets = []
             if self.needs_file_snippets(task):
+                matched_files = []
+                for search in searches:
+                    matched_files.extend([
+                        item for item in search.get("matches", [])
+                        if item.get("kind") == "file"
+                        and Path(str(item.get("path") or "")).suffix.lower() in TEXT_FILE_EXTENSIONS
+                        and int(item.get("size_bytes") or item.get("sizeBytes") or 0) <= 50000
+                    ])
                 files = [
                     item for item in items
                     if item.get("kind") == "file"
                     and Path(str(item.get("path") or "")).suffix.lower() in TEXT_FILE_EXTENSIONS
                     and int(item.get("bytes") or 0) <= 50000
                 ]
-                for item in files[:5]:
+                seen_paths = set()
+                ordered_files = []
+                for item in matched_files + files:
+                    path = item.get("path")
+                    if path and path not in seen_paths:
+                        ordered_files.append(item)
+                        seen_paths.add(path)
+                for item in ordered_files[:5]:
                     try:
                         read = await self.mcp.call_tool("fs_read", {
                             "path": item.get("path"),
@@ -875,11 +927,11 @@ class AgentHub:
                         snippets.append({"path": item.get("path"), "error": str(exc)})
                 if snippets:
                     task.log(f"workspace files read: {len(snippets)}")
-            return {"tree": tree, "snippets": snippets}
+            return {"tree": tree, "searches": searches, "snippets": snippets}
         except Exception as exc:
             task.seen("workspace_context_error", {"workspace": task.workspace, "error": str(exc)})
             task.log(f"workspace context unavailable: {exc}")
-            return {"tree": None, "snippets": [], "error": str(exc)}
+            return {"tree": None, "searches": [], "snippets": [], "error": str(exc)}
 
     def format_conversation(self, messages, current_task_id=None):
         lines = []
@@ -897,12 +949,13 @@ class AgentHub:
 
     def format_workspace_context(self, context):
         tree = self.format_workspace_tree(context)
+        search = self.format_workspace_search(context)
         snippets = self.format_workspace_snippets(context)
         if tree.startswith("Workspace context unavailable"):
             return tree
-        if tree.startswith("No workspace") and snippets.startswith("No workspace"):
+        if tree.startswith("No workspace") and search.startswith("No workspace") and snippets.startswith("No workspace"):
             return "No workspace file inspection was requested or available."
-        return "\n\n".join(part for part in [tree, snippets] if not part.startswith("No workspace"))
+        return "\n\n".join(part for part in [search, tree, snippets] if not part.startswith("No workspace"))
 
     def format_workspace_tree(self, context):
         if context.get("error"):
@@ -920,6 +973,25 @@ class AgentHub:
             lines.append(f"- {prefix}{kind}: {item.get('path')}{size}")
         if tree.get("truncated"):
             lines.append("- [listing truncated]")
+        return "\n".join(lines)
+
+    def format_workspace_search(self, context):
+        searches = context.get("searches") or []
+        if not searches:
+            return "No workspace file search was requested or available."
+        lines = ["Workspace file search:"]
+        for search in searches[:5]:
+            query = search.get("query") or ""
+            if search.get("error"):
+                lines.append(f"- {query}: search failed: {search['error']}")
+                continue
+            matches = search.get("matches") or []
+            if not matches:
+                lines.append(f"- {query}: no matches")
+                continue
+            lines.append(f"- {query}: {len(matches)} match(es)")
+            for match in matches[:6]:
+                lines.append(f"  - {match.get('kind')}: {match.get('path')} ({match.get('match_type')}, score {match.get('score')})")
         return "\n".join(lines)
 
     def format_workspace_snippets(self, context):
