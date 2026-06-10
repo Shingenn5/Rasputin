@@ -145,6 +145,12 @@ Fresh clone setup guide:
 docs/RELEASE_SETUP.md
 ```
 
+Current implementation baseline:
+
+```text
+docs/CURRENT_BASELINE.md
+```
+
 ## Docker Profiles
 
 Default wrapper only:

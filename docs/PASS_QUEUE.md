@@ -592,6 +592,112 @@ Stop conditions:
 - requires publishing installer
 - requires public repo secrets or tokens
 
+### [x] 11. Release Integration Baseline V1
+
+Branch: `codex/release-integration-baseline-v1`
+
+Commit message: `Add release integration baseline`
+
+Completed: 2026-06-10
+
+Commit: `pending`
+
+Validation:
+
+- `powershell.exe -ExecutionPolicy Bypass -File scripts\test.ps1 -Ui`: passed
+- backend smoke: passed, 44 tests
+- Playwright UI smoke: passed, 10 tests, 1 preview test skipped
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
+
+Goal: verify the completed queue, document the current known-good state, and prepare the repo for the next feature branch.
+
+Scope:
+
+- document the current baseline after the first ten passes
+- reset the pass queue for the next implementation cycle
+- queue MCP Relay V2 compatibility hardening
+- no runtime behavior changes unless validation exposes a blocking bug
+
+Affected subsystems:
+
+- docs
+- pass queue
+
+Required tests:
+
+- full harness with UI smoke
+- frontend build
+- repo safety
+- diff whitespace check
+
+Acceptance criteria:
+
+- queue clearly shows Pass 11 complete and Pass 12 queued
+- current baseline is documented without local private paths
+- no runtime data, secrets, model files, logs, screenshots, or indexes are staged
+- working tree is clean after commit
+
+Stop conditions:
+
+- validation exposes a runtime blocker
+- queue state conflicts with actual completed branches
+
+### [ ] 12. MCP Relay V2 Compatibility Hardening
+
+Branch: `codex/mcp-relay-v2-compat-hardening`
+
+Commit message: `Harden MCP relay compatibility`
+
+Goal: make local stdio MCP support reliable against a wider range of real MCP servers without adding remote transports or new dangerous powers.
+
+Scope:
+
+- keep `tools/list` discovery as the primary executable-tool path
+- discover MCP resources and prompts as read-only non-executable capabilities when servers expose them
+- improve noisy stdout/stderr handling
+- return structured errors for crashes, timeouts, malformed JSON-RPC, unsupported capabilities, and bad schemas
+- expose richer server health, lifecycle, and compatibility status
+- improve Tool Relays UI status, logs, discovered tools, resources, prompts, and classification state
+
+Affected subsystems:
+
+- `backend/mcp_relay.py`
+- `backend/main.py`
+- Tool Relay UI
+- Settings Tool Relays panel
+- backend and UI smoke tests
+
+Required tests:
+
+- tool-only fixture MCP server discovers correctly
+- resources/prompts fixture discovers read-only capabilities
+- noisy server logs non-JSON output without crashing discovery
+- crashing server returns structured error
+- hanging server returns structured timeout
+- disabled server exposes no executable tools
+- unclassified tools cannot execute
+- approval-required tool cannot execute without valid approval
+- Tool Relays UI renders lifecycle, logs, tools, resources, and prompts accessibly
+- repo safety
+
+Acceptance criteria:
+
+- existing MCP endpoints stay backward-compatible
+- server responses include additive health and capability fields
+- external MCP tools remain disabled until classified
+- external MCP tools remain guarded or approval-required only
+- models still never receive direct MCP transport access
+- no remote or network MCP transports are enabled
+
+Stop conditions:
+
+- implementation requires remote MCP transports
+- implementation requires package-manager auto-install
+- implementation requires Docker socket access
+- discovered tools can bypass Tool Relay permissions or approvals
+
 ## Deferred
 
 ### [-] Remote MCP Transports
