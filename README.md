@@ -56,6 +56,33 @@ First-run credentials are printed in the server/container logs.
 
 Rasputin does not use an automatic restart policy. It starts when you start the Docker container or run the launcher.
 
+## First Run Checklist
+
+After the wrapper is running, open Settings -> General. The Release setup checklist shows the current state of the local install:
+
+1. Secure local admin login.
+2. Connect and test a chat model.
+3. Choose an approved workspace.
+4. Confirm privacy lock and remote model defaults.
+5. Check the Markdown output folder.
+
+The generated first-run password is printed once in the container logs:
+
+```powershell
+docker compose logs rasputin-wrapper
+```
+
+Change that password from Settings -> Admin after signing in. The generated password is not shown in the browser and should not be committed to Git or copied into docs.
+
+For a clean clone, the expected setup path is:
+
+```powershell
+.\start-wrapper.ps1
+docker compose logs rasputin-wrapper
+```
+
+Then open `http://127.0.0.1:8787`, sign in, change the password, test a local model from Models, and select a mounted workspace from Workspaces.
+
 Detached:
 
 ```powershell
@@ -110,6 +137,12 @@ Full system guide:
 
 ```text
 docs/RASPUTIN_ARCHITECTURE_GUIDE.md
+```
+
+Fresh clone setup guide:
+
+```text
+docs/RELEASE_SETUP.md
 ```
 
 ## Docker Profiles

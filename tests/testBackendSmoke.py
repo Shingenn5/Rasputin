@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 import tempfile
 import urllib.parse
@@ -237,8 +238,20 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testUiBootstrapShape(self):
         data = self.assertOk(self.client.get("/api/ui/bootstrap"))
-        for key in ["models", "tasks", "security", "workspace", "output", "preferences", "warsat", "tools"]:
+        for key in ["models", "tasks", "security", "workspace", "output", "preferences", "warsat", "tools", "setup"]:
             self.assertIn(key, data)
+        self.assertIn("steps", data["setup"])
+        self.assertGreaterEqual(data["setup"]["totalSteps"], 5)
+
+    def testSetupStatusDoesNotExposeSecrets(self):
+        data = self.assertOk(self.client.get("/api/setup/status"))
+        self.assertIn("steps", data)
+        self.assertIn("auth", data)
+        self.assertIn("model", data)
+        blob = json.dumps(data).lower()
+        self.assertNotIn("password:", blob)
+        self.assertNotIn("password_hash", blob)
+        self.assertNotIn("salt", blob)
 
     def testToolRelayCatalogAndMcpTraces(self):
         catalog = self.assertOk(self.client.get("/api/tools"))

@@ -99,6 +99,7 @@ export function App() {
   const [archiveStatus, setArchiveStatus] = useState("");
   const [trialsRuns, setTrialsRuns] = useState({ runs: [] });
   const [trialsStatus, setTrialsStatus] = useState("");
+  const [setup, setSetup] = useState(null);
   const [globalStatus, setGlobalStatus] = useState("");
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -309,6 +310,7 @@ export function App() {
     setMcpRelays(data.mcpRelays || { servers: [] });
     setArchiveSessions(data.archive || { sessions: [] });
     setTrialsRuns(data.trials || { runs: [] });
+    setSetup(data.setup || null);
     const localTheme = localStorage.getItem("rasputin-theme");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
@@ -960,6 +962,12 @@ export function App() {
     return nextTrials;
   }
 
+  async function refreshSetupStatus() {
+    const nextSetup = await api("/api/setup/status");
+    setSetup(nextSetup);
+    return nextSetup;
+  }
+
   async function runTrialCompare(payload) {
     setTrialsStatus("Running blind comparison.");
     const run = await postJson("/api/trials/compare", payload);
@@ -1568,6 +1576,9 @@ export function App() {
         classifyMcpTool={classifyMcpTool}
         approveApproval={approveApproval}
         refreshApprovals={refreshApprovals}
+        setup={setup}
+        refreshSetupStatus={refreshSetupStatus}
+        go={go}
       />
       <AuditView view={view} events={auditEvents} refresh={loadAuditEvents} />
       <TaskDetailsDrawer

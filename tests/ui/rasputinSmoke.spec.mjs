@@ -268,6 +268,12 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await expect(page.locator("[data-testid='workspace-mount-plan']")).toContainText("Read-only");
 
   await page.locator("[data-testid='nav-settings']").click();
+  await expect(page.locator("[data-testid='setup-checklist']")).toBeVisible();
+  await expect(page.locator("[data-testid='setup-step-admin']")).toContainText("Secure local admin login");
+  await expect(page.locator("[data-testid='setup-step-model']")).toContainText("Connect a chat model");
+  await page.locator("[data-testid='setup-step-model']").getByRole("button", { name: "Open Models" }).click();
+  await expect(page.locator("#modelsView")).toBeVisible();
+  await page.locator("[data-testid='nav-settings']").click();
   await page.locator("[data-testid='settings-safety']").click();
   await expect(page.locator("#securityForm")).toBeVisible();
   await expect(page.locator("[data-testid='save-safety']")).toBeDisabled();

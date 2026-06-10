@@ -32,7 +32,7 @@ export function SettingsView(props) {
           ))}
         </Nav>
         <div className="settings-panels">
-          {section === "general" && <GeneralSettings />}
+          {section === "general" && <GeneralSettings {...props} />}
           {section === "workspaces" && <WorkspaceSettings {...props} />}
           {section === "safety" && <SafetySettings {...props} />}
           {section === "tool-relays" && <ToolRelaySettings {...props} />}
@@ -46,26 +46,98 @@ export function SettingsView(props) {
   );
 }
 
-function GeneralSettings() {
+function GeneralSettings({ setup, refreshSetupStatus, setSection, go }) {
+  const steps = setup?.steps || [];
+  const completed = setup?.completedSteps ?? setup?.completed_steps ?? 0;
+  const total = setup?.totalSteps ?? setup?.total_steps ?? steps.length;
+  const percent = total ? Math.round((completed / total) * 100) : 0;
+
+  function openSetupTarget(step) {
+    if (step.id === "admin") setSection?.("admin");
+    else if (step.id === "privacy") setSection?.("safety");
+    else if (step.id === "output") setSection?.("output");
+    else if (step.id === "model") go?.("models");
+    else if (step.id === "workspace") go?.("workspaces");
+  }
+
   return (
     <section className="settings-pane active" id="settings-general">
-      <PaneTitle title="General" text="Defaults for the next task you start." />
-      <Card className="settings-card shadow-sm">
+      <PaneTitle title="General" text="First-run checklist and local setup status for this Rasputin instance." />
+      <Card className="settings-card setup-card shadow-sm" data-testid="setup-checklist">
         <Card.Body>
-          <Row className="g-3">
-            <Col md={6}>
-              <Form.Group>
-                <Form.Label>Skill</Form.Label>
-                <Form.Select id="skill"><option>general</option><option>folder_organizer</option><option>paper_writer</option></Form.Select>
-              </Form.Group>
-            </Col>
-            <Col md={6}>
-              <Form.Group>
-                <Form.Label>Mode</Form.Label>
-                <Form.Select id="taskMode"><option>chat</option><option>research</option><option>code</option><option>write</option><option>organize</option></Form.Select>
-              </Form.Group>
-            </Col>
-          </Row>
+          <div className="section-row align-items-start">
+            <div>
+              <span className="eyebrow">Release setup</span>
+              <h3>Fresh Install Readiness</h3>
+              <p className="text-body-secondary mb-0">
+                Complete these local-only checks before handing Rasputin to another user or relying on it for real work.
+              </p>
+            </div>
+            <Button variant="outline-secondary" size="sm" onClick={refreshSetupStatus}>
+              Refresh
+            </Button>
+          </div>
+          <div className="setup-progress" role="status" aria-live="polite">
+            <strong>{completed} of {total} complete</strong>
+            <div className="setup-progress-track" aria-hidden="true">
+              <span style={{ width: `${percent}%` }} />
+            </div>
+          </div>
+          <div className="setup-step-list">
+            {steps.map((step) => (
+              <article className={`setup-step is-${step.status}`} key={step.id} data-testid={`setup-step-${step.id}`}>
+                <div className="setup-step-icon" aria-hidden="true">
+                  {step.status === "done" ? <CheckCircle2 size={18} /> : step.status === "blocked" ? <ShieldAlert size={18} /> : <Wrench size={18} />}
+                </div>
+                <div className="setup-step-body">
+                  <div>
+                    <strong>{step.title}</strong>
+                    <Badge bg={step.status === "done" ? "success" : step.status === "blocked" ? "danger" : "warning"}>{step.status}</Badge>
+                  </div>
+                  <p>{step.detail}</p>
+                </div>
+                <Button variant="outline-secondary" size="sm" type="button" onClick={() => openSetupTarget(step)}>
+                  {step.action}
+                </Button>
+              </article>
+            ))}
+          </div>
+        </Card.Body>
+      </Card>
+      <Row className="g-3 mt-1">
+        <Col lg={6}>
+          <Card className="settings-card setup-card h-100 shadow-sm">
+            <Card.Body>
+              <h3>Admin Password</h3>
+              <p className="text-body-secondary">
+                The generated first-run password appears only in container logs. After login, use Admin settings to replace it with your own password.
+              </p>
+              <Button variant="outline-secondary" size="sm" onClick={() => setSection?.("admin")}>Open Admin</Button>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col lg={6}>
+          <Card className="settings-card setup-card h-100 shadow-sm">
+            <Card.Body>
+              <h3>Privacy Lock</h3>
+              <p className="text-body-secondary">
+                Default setup blocks remote model endpoints. Local files stay inside approved folders, and web/tool actions remain brokered by Rasputin.
+              </p>
+              <Button variant="outline-secondary" size="sm" onClick={() => setSection?.("safety")}>Review Safety</Button>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
+      <Card className="settings-card setup-card mt-3 shadow-sm">
+        <Card.Body>
+          <h3>Quick Start Path</h3>
+          <ol className="setup-ordered-list">
+            <li>Start Docker and open <code>http://127.0.0.1:8787</code>.</li>
+            <li>Read the first-run admin password from container logs and sign in.</li>
+            <li>Change the admin password.</li>
+            <li>Test or register a local model from Models.</li>
+            <li>Choose a mounted workspace from Workspaces and run a dry task.</li>
+          </ol>
         </Card.Body>
       </Card>
     </section>

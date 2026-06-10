@@ -1565,6 +1565,110 @@ button.runtime-chip {
   min-width: 0;
 }
 
+.setup-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.setup-progress {
+  display: grid;
+  gap: .4rem;
+  margin-top: .9rem;
+}
+
+.setup-progress strong {
+  color: var(--ras-text);
+}
+
+.setup-progress-track {
+  overflow: hidden;
+  height: 8px;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-panel-2) 44%, transparent);
+}
+
+.setup-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ras-accent), color-mix(in srgb, var(--ras-accent) 58%, var(--ras-blue)));
+}
+
+.setup-step-list {
+  display: grid;
+  gap: .6rem;
+  margin-top: .9rem;
+}
+
+.setup-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: .7rem;
+  align-items: center;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 34%, transparent);
+  padding: .75rem;
+}
+
+.setup-step.is-done {
+  border-color: color-mix(in srgb, var(--ras-good, #198754) 42%, var(--ras-border));
+}
+
+.setup-step.is-attention {
+  border-color: color-mix(in srgb, var(--ras-warn, #b26a00) 42%, var(--ras-border));
+}
+
+.setup-step.is-blocked {
+  border-color: color-mix(in srgb, var(--ras-danger, #dc3545) 42%, var(--ras-border));
+}
+
+.setup-step-icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 34%, var(--ras-border));
+  border-radius: 999px;
+  color: var(--ras-accent);
+}
+
+.setup-step-body {
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+}
+
+.setup-step-body > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  align-items: center;
+}
+
+.setup-step-body p {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .86rem;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.setup-ordered-list {
+  display: grid;
+  gap: .35rem;
+  margin: .75rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--ras-muted);
+}
+
+.setup-ordered-list code {
+  color: var(--ras-accent);
+  overflow-wrap: anywhere;
+}
+
 .chat-composer {
   position: relative;
   z-index: 2;

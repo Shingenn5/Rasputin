@@ -91,6 +91,101 @@ def _security_headers(response, request_id):
     return response
 
 
+def _setup_status():
+    auth_state = auth.load_public()
+    security_state = security.load()
+    workspace_state = workspace.get_active()
+    output_state = output.get_config()
+    prefs = preferences.load()
+    all_models = model_registry.all_models()
+    active_key = prefs.get("selectedModel") or "main-vllm"
+    active_model = next((item for item in all_models if item.get("key") == active_key), None)
+    chat_models = [
+        item for item in all_models
+        if item.get("enabled", True) and item.get("role") != "embeddings" and item.get("provider") != "hash-vector"
+    ]
+    real_reachable = [
+        item for item in chat_models
+        if item.get("provider") != "mock" and item.get("runtime_status") == "reachable"
+    ]
+    dry_run_ready = any(item.get("key") == "dry-run" and item.get("runtime_status") == "reachable" for item in all_models)
+    password_changed = False
+    try:
+        auth_data = auth.load()
+        user = (auth_data.get("users") or [{}])[0]
+        password_changed = bool(user.get("password_changed_at")) or bool(os.environ.get("RASPUTIN_ADMIN_PASSWORD"))
+    except Exception:
+        password_changed = False
+
+    steps = [
+        {
+            "id": "admin",
+            "title": "Secure local admin login",
+            "status": "done" if password_changed else "attention",
+            "detail": "Admin password has been changed." if password_changed else "Use the first-run password from container logs, then change it in Admin settings.",
+            "action": "Open Admin settings",
+        },
+        {
+            "id": "model",
+            "title": "Connect a chat model",
+            "status": "done" if real_reachable else "attention" if dry_run_ready else "blocked",
+            "detail": f"{len(real_reachable)} real model endpoint(s) are reachable." if real_reachable else "Testing Mode is available; connect or test a local model in Models when ready.",
+            "action": "Open Models",
+        },
+        {
+            "id": "workspace",
+            "title": "Choose an approved workspace",
+            "status": "done" if workspace_state.get("active_path") else "attention",
+            "detail": f"Active workspace: {workspace_state.get('active_name') or workspace_state.get('active_path') or 'Project Root'}.",
+            "action": "Open Workspaces",
+        },
+        {
+            "id": "privacy",
+            "title": "Confirm local privacy defaults",
+            "status": "done" if security_state.get("privacy_lock", True) and not security_state.get("allow_remote_models", False) else "attention",
+            "detail": "Privacy lock is on and remote model endpoints are blocked." if security_state.get("privacy_lock", True) and not security_state.get("allow_remote_models", False) else "Review Safety before using remote model endpoints.",
+            "action": "Open Safety",
+        },
+        {
+            "id": "output",
+            "title": "Check output folder",
+            "status": "done" if output_state.get("markdown_folder") else "attention",
+            "detail": f"Markdown exports target {output_state.get('markdown_folder') or 'workspace/markdown-output'}.",
+            "action": "Open Output",
+        },
+    ]
+    completed = sum(1 for item in steps if item["status"] == "done")
+    return {
+        "complete": completed == len(steps),
+        "completed_steps": completed,
+        "total_steps": len(steps),
+        "auth": {
+            "configured": bool(auth_state.get("configured")),
+            "username": auth_state.get("username", "admin"),
+            "password_changed": password_changed,
+            "test_bypass": bool(auth_state.get("test_bypass")),
+            "localhost_bypass": bool(auth_state.get("localhost_bypass")),
+        },
+        "model": {
+            "active_key": active_key,
+            "active_name": active_model.get("model") if active_model else active_key,
+            "active_status": active_model.get("runtime_status") if active_model else "missing",
+            "reachable_real_models": len(real_reachable),
+            "testing_mode_available": dry_run_ready,
+        },
+        "workspace": {
+            "active_path": workspace_state.get("active_path"),
+            "active_name": workspace_state.get("active_name"),
+            "approved_count": len(workspace_state.get("workspaces") or []),
+        },
+        "privacy": security.offline_status(),
+        "output": {
+            "markdown_folder": output_state.get("markdown_folder"),
+        },
+        "steps": steps,
+    }
+
+
 @app.on_event("startup")
 async def startup():
     auth.bootstrap()
@@ -490,8 +585,14 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "mcp_relays": mcp_relay.servers(),
         "archive": archive.sessions(),
         "trials": trials.runs(),
+        "setup": _setup_status(),
         "ui_preview_enabled": _ui_preview_enabled(),
     })
+
+
+@app.get("/api/setup/status")
+async def setup_status(_user=Depends(current_user)):
+    return ok(_setup_status())
 
 
 @app.get("/api/auth/session")
