@@ -537,11 +537,24 @@ Stop conditions:
 - requires judging with remote model by default
 - requires automatic preference mutation without user action
 
-### [ ] 10. Release Setup V1
+### [x] 10. Release Setup V1
 
 Branch: `codex/release-setup-v1`
 
 Commit message: `Add first-run setup checklist`
+
+Completed: 2026-06-10
+
+Commit: `ac70015`
+
+Validation:
+
+- `powershell.exe -ExecutionPolicy Bypass -File scripts\test.ps1 -Ui`: passed
+- backend smoke: passed, 44 tests
+- Playwright UI smoke: passed, 10 tests, 1 preview test skipped
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: make a fresh clone predictable for another user without exposing local data.
 
