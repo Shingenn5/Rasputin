@@ -482,11 +482,24 @@ Stop conditions:
 - requires graph database migration
 - requires sending local content externally
 
-### [ ] 09. Trials Routing V1
+### [x] 09. Trials Routing V1
 
 Branch: `codex/trials-routing-v1`
 
 Commit message: `Connect Trials results to model routing`
+
+Completed: 2026-06-10
+
+Commit: `064ada3`
+
+Validation:
+
+- `powershell.exe -ExecutionPolicy Bypass -File scripts\test.ps1 -Ui`: passed
+- backend smoke: passed, 43 tests
+- Playwright UI smoke: passed, 10 tests, 1 preview test skipped
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: use blind model comparisons to save preferred models by task mode.
 
