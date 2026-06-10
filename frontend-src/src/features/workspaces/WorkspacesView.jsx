@@ -17,6 +17,7 @@ import {
   Shield,
 } from "lucide-react";
 import { displayWorkspaceName } from "../../lib/display.js";
+import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 
 export function WorkspacesView({
   view,
@@ -418,17 +419,10 @@ export function WorkspacesView({
                   </article>
                 ))}
                 {(knowledgeResults.graphResult?.nodes || []).slice(0, 3).map((node) => (
-                  <article className="knowledge-result-card" key={node.id}>
-                    <strong>{node.name}</strong>
-                    <small>{node.kind} / weight {node.weight}</small>
-                  </article>
+                  <GraphNodeCard node={node} compact key={node.id} />
                 ))}
                 {(knowledgeResults.graphResult?.edges || []).slice(0, 3).map((edge) => (
-                  <article className="knowledge-result-card" key={`${edge.sourceId || edge.source}-${edge.relation}-${edge.targetId || edge.target}`}>
-                    <strong>{edge.source} {"->"} {edge.target}</strong>
-                    <small>{edge.relation}{edge.confidence ? ` / confidence ${edge.confidence}` : ""}</small>
-                    {edge.why && <p>{edge.why}</p>}
-                  </article>
+                  <GraphEdgeCard edge={edge} compact key={`${edge.sourceId || edge.source}-${edge.relation}-${edge.targetId || edge.target}`} />
                 ))}
               </div>
             )}

@@ -1065,6 +1065,20 @@ class AgentHub:
                 "targetKind": edge.get("target_kind") or edge.get("targetKind"),
                 "confidence": edge.get("confidence"),
                 "why": edge.get("why"),
+                "evidence": self.compact_graph_evidence(edge.get("evidence")),
+            })
+        return out
+
+    def compact_graph_evidence(self, evidence):
+        out = []
+        for item in (evidence or [])[:2]:
+            citation = item.get("citation") or {}
+            out.append({
+                "source": item.get("source"),
+                "path": item.get("path") or citation.get("path"),
+                "chunk": item.get("chunk") if item.get("chunk") is not None else citation.get("chunk"),
+                "citation": citation,
+                "snippet": str(item.get("snippet") or "")[:260],
             })
         return out
 

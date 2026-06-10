@@ -3,6 +3,7 @@ import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-boo
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import { displayWorkspaceName, labelize } from "../../lib/display.js";
+import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 
 export function AgentsView({ view, tasks, models }) {
   const running = tasks.filter((task) => task.status === "running");
@@ -616,22 +617,10 @@ export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArc
                     </article>
                   ))}
                   {(citationResult?.graphEdges || []).map((edge) => (
-                    <article className="archive-source-card" key={edge.id}>
-                      <div>
-                        <strong>{edge.source} to {edge.target}</strong>
-                        <span>{labelize(edge.relation)}</span>
-                      </div>
-                      <p>{edge.why || edge.snippet || "Graph relationship found."}</p>
-                    </article>
+                    <GraphEdgeCard edge={edge} compact key={edge.id} />
                   ))}
                   {(citationResult?.graphNodes || []).map((node) => (
-                    <article className="archive-source-card" key={node.id}>
-                      <div>
-                        <strong>{node.name}</strong>
-                        <span>{labelize(node.kind)}</span>
-                      </div>
-                      <p>{node.snippet || (node.sources || []).slice(0, 2).join(", ") || "Graph node found."}</p>
-                    </article>
+                    <GraphNodeCard node={node} compact key={node.id} />
                   ))}
                   {citationResult && !citationResult.total && <p className="empty-inline">No local citations matched that query.</p>}
                 </div>

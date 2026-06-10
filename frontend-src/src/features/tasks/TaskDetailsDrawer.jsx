@@ -3,6 +3,7 @@ import { Pause, Play, RefreshCw, Square, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
+import { GraphEdgeCard } from "../knowledge/GraphEvidence.jsx";
 
 const sections = [
   ["overview", "Overview"],
@@ -180,19 +181,18 @@ export function TaskDetailsDrawer({
                         </li>
                       ))}
                     </ContextBlock>
-                    <ContextBlock title="Graphify Relationships" empty="No graph relationships were attached to this snapshot.">
-                      {(task.graph || []).map((edge, index) => (
-                        <li key={`${edge.source}-${edge.target}-${index}`}>
-                          <strong>{edge.source}</strong>
-                          <span>
-                            {edge.sourceKind ? `${labelize(edge.sourceKind)} ` : ""}
-                            {edge.relation} {edge.targetKind ? `${labelize(edge.targetKind)} ` : ""}{edge.target}
-                            {edge.confidence ? ` / confidence ${edge.confidence}` : ""}
-                          </span>
-                          {edge.why && <small>{edge.why}</small>}
-                        </li>
-                      ))}
-                    </ContextBlock>
+                    <article className="context-block task-graph-context" data-testid="task-graph-evidence">
+                      <h2>Graphify Relationships</h2>
+                      {(task.graph || []).length ? (
+                        <div className="graph-evidence-stack">
+                          {(task.graph || []).map((edge, index) => (
+                            <GraphEdgeCard edge={edge} compact key={`${edge.source}-${edge.target}-${index}`} />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="empty-inline">No graph relationships were attached to this snapshot.</p>
+                      )}
+                    </article>
                     <ContextBlock title="Memory And Context Trace" empty="No context trace was recorded yet.">
                       {(detail.trace || [])
                         .filter((item) => ["memory_recall", "rag_context", "graph_context", "tool_plan"].includes(item.kind))

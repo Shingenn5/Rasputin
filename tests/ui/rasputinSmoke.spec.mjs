@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 const screenshotDir = "test-results/rasputin-screenshots";
 
@@ -128,11 +128,15 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("#welcomePanel")).toBeAttached();
   await expect(page.locator("#welcomePanel")).toBeVisible();
   await expect(page.locator("#tasks")).not.toContainText("Testing the Rasputin live smoke harness.");
+  const sessionsBefore = await request.get("/api/sessions");
+  const sessionsBeforeBody = await sessionsBefore.json();
+  const sessionIdsBefore = new Set((sessionsBeforeBody.data?.sessions || []).map((session) => session.id));
   await page.locator("[data-testid='new-task']").click();
+  await expect(page.locator("#globalStatus")).toContainText("New chat created");
   const sessionsResponse = await request.get("/api/sessions");
   const sessionsBody = await sessionsResponse.json();
   expect(sessionsBody.ok).toBe(true);
-  expect(sessionsBody.data.sessions.some((session) => session.title === "New chat")).toBe(true);
+  expect(sessionsBody.data.sessions.some((session) => !sessionIdsBefore.has(session.id))).toBe(true);
 
   await page.locator("[data-testid='nav-models']").click();
   await expect(page.locator("#modelsView")).toBeVisible();
@@ -212,7 +216,7 @@ test("sidebar collapse persists and themes switch", async ({ page }) => {
   await page.locator("[data-testid='theme-select']").selectOption("rasputin-light");
 });
 
-test("key settings destinations are reachable", async ({ page }) => {
+test("key settings destinations are reachable", async ({ page, request }) => {
   await page.goto("/");
   await waitForAppReady(page);
 
@@ -231,6 +235,33 @@ test("key settings destinations are reachable", async ({ page }) => {
   await expect(page.locator("[data-testid='workspace-preview-panel']")).toContainText("fastapi");
   await page.locator("[data-testid='workspace-knowledge-panel']").getByRole("button", { name: "Refresh stats" }).click();
   await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toContainText("Docs");
+
+  const graphDir = `workspace/ui-graph-smoke-${Date.now()}`;
+  const graphHostDir = `testdata/${graphDir}`;
+  mkdirSync(graphHostDir, { recursive: true });
+  writeFileSync(
+    `${graphHostDir}/engine.py`,
+    [
+      "class WarmindNode:",
+      "    def transmit_signal(self):",
+      "        return parse_signal('warsat')",
+      "def parse_signal(value):",
+      "    return value",
+    ].join("\n"),
+  );
+  writeFileSync(`${graphHostDir}/notes.md`, "WarmindNode evidence references engine.py and warsat signals.\n");
+  await request.post("/api/workspace/approve", { data: { path: graphDir, name: "UI Graph Smoke", readOnly: true } });
+  await request.post("/api/workspace/select", { data: { path: graphDir } });
+  await request.post("/api/rag/ingest", { data: { path: graphDir, label: "UI Graph Smoke" } });
+  await request.post("/api/graph/build", { data: { path: graphDir } });
+  await page.reload();
+  await waitForAppReady(page);
+  await page.locator("[data-testid='nav-workspaces']").click();
+  await page.locator("[data-testid='workspace-knowledge-panel'] input").fill("WarmindNode engine.py");
+  await page.locator("[data-testid='workspace-knowledge-panel']").getByRole("button", { name: "Search" }).click();
+  await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toContainText("Evidence");
+  await expect(page.locator("[data-testid='graph-edge-card']").first()).toBeVisible();
+
   await page.locator(".workspace-mount-panel summary").click();
   await page.locator("#workspaceMountForm #mountHostPath").fill("C:\\Users\\example\\Documents");
   await page.locator("#workspaceMountForm").evaluate(form => form.requestSubmit());

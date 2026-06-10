@@ -547,6 +547,10 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("citation", evidence)
         self.assertTrue(evidence["citation"].get("path"))
         self.assertTrue(found["edges"][0].get("why"))
+        compact = agent.AgentHub().compact_graph_edges({"edges": found["edges"]})
+        self.assertTrue(compact[0]["evidence"])
+        self.assertTrue(compact[0]["evidence"][0]["path"])
+        self.assertLessEqual(len(compact[0]["evidence"][0].get("snippet", "")), 260)
 
     def testArchiveSessionsSaveAndExportWithPermission(self):
         title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"

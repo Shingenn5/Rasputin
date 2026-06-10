@@ -3,6 +3,7 @@ import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "reac
 import { CheckCircle2, Moon, Play, RotateCcw, Save, ShieldAlert, ShieldCheck, Square, Sun, Wrench } from "lucide-react";
 import { settingsItems } from "../../lib/constants.js";
 import { displayWorkspaceName } from "../../lib/display.js";
+import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 
 export function SettingsView(props) {
   const { view, section, setSection } = props;
@@ -561,7 +562,7 @@ function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnow
               </form>
               {status && <p className="text-body-secondary mt-3 mb-0" role="status">{status}</p>}
               {results && (
-                <Stack gap={2} className="mt-3">
+                <Stack gap={2} className="mt-3 graph-settings-results">
                   {(results.ragResult?.hits || []).slice(0, 3).map((hit) => (
                     <Card className="message-card" key={`${hit.source}-${hit.chunk}`}>
                       <Card.Body>
@@ -569,6 +570,12 @@ function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnow
                         <small className="d-block text-body-secondary">{citationLabel(hit)}</small>
                       </Card.Body>
                     </Card>
+                  ))}
+                  {(results.graphResult?.nodes || []).slice(0, 3).map((node) => (
+                    <GraphNodeCard node={node} compact key={node.id} />
+                  ))}
+                  {(results.graphResult?.edges || []).slice(0, 3).map((edge) => (
+                    <GraphEdgeCard edge={edge} compact key={`${edge.sourceId || edge.source}-${edge.relation}-${edge.targetId || edge.target}`} />
                   ))}
                 </Stack>
               )}
