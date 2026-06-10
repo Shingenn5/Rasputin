@@ -42,6 +42,7 @@ class McpLayer:
             "graph_search": self.graph_search,
             "workspace_browse": self.workspace_browse,
             "file_preview": self.file_preview,
+            "workspace_mutation_preview": self.workspace_mutation_preview,
             "memory_search": self.memory_search,
             "model_health": self.model_health,
         }
@@ -332,6 +333,18 @@ class McpLayer:
     async def file_preview(self, root_id=None, path=None, max_bytes=131072, _task_id=None, _tool_call_id=None):
         security.require("allow_file_read")
         return await asyncio.to_thread(workspace.preview_file, root_id, path, max_bytes)
+
+    async def workspace_mutation_preview(self, kind, workspace_path=None, path=None, source=None, target=None, content=None, max_items=40, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        plan = await asyncio.to_thread(workspace.mutation_preview, kind, workspace_path or workspace.get_active()["active_path"], path, source, target, content, max_items)
+        audit.log("workspace_mutation_preview", {
+            "kind": plan.get("kind"),
+            "workspace": plan.get("workspace"),
+            "affected_paths": len(plan.get("affected_paths") or []),
+            "task_id": _task_id,
+            "will_mutate": False,
+        })
+        return plan
 
     async def memory_search(self, query, limit=10, _task_id=None, _tool_call_id=None):
         return await asyncio.to_thread(memory.search, query, limit)

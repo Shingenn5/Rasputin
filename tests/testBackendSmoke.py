@@ -245,7 +245,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("groups", catalog)
         self.assertIn("tools", catalog)
         ids = {item["id"] for item in catalog["tools"]}
-        for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "fs_search", "memory_search", "model_health", "fs_write", "web_search"]:
+        for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "fs_search", "workspace_mutation_preview", "memory_search", "model_health", "fs_write", "web_search"]:
             self.assertIn(tool_id, ids)
         shell = next(item for item in catalog["tools"] if item["id"] == "shell_exec")
         self.assertFalse(shell["available"])
@@ -1223,6 +1223,7 @@ class BackendSmokeTests(unittest.TestCase):
                 ("post", "/api/workspace/list", {"path": "."}),
                 ("post", "/api/workspace/preview-file", {"path": "workspace/smoke-preview.txt"}),
                 ("post", "/api/workspace/search", {"path": ".", "query": "server.py"}),
+                ("post", "/api/workspace/mutation-preview", {"kind": "write", "path": "workspace/smoke.txt"}),
             ]:
                 response = getattr(self.client, method)(path, json=payload) if payload is not None else getattr(self.client, method)(path)
                 body = response.json()
@@ -1269,6 +1270,55 @@ class BackendSmokeTests(unittest.TestCase):
                 "workspace_path": approved["root"],
                 "approved": True,
             }))
+
+    def testWorkspaceMutationPreviewDoesNotMutateFiles(self):
+        target = main.ROOT / "workspace" / f"mutation-preview-{runtime_store.new_id('preview')[-6:]}"
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "old.txt").write_text("keep me", encoding="utf-8")
+        approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": f"workspace/{target.name}",
+            "name": "Mutation Preview Smoke",
+            "readOnly": True,
+        }))
+
+        planned = self.assertOk(self.client.post("/api/workspace/mutation-preview", json={
+            "kind": "write",
+            "workspacePath": approved["root"],
+            "path": "new.txt",
+            "content": "private content should not be written",
+        }))
+        self.assertTrue(planned["dryRun"])
+        self.assertFalse(planned["willMutate"])
+        self.assertFalse((target / "new.txt").exists())
+        self.assertTrue(any("disabled" in warning.lower() for warning in planned["warnings"]))
+
+        tool_task_id = runtime_store.new_id("previewtool")
+        tool_plan = asyncio.run(McpLayer().call_tool("workspace_mutation_preview", {
+            "kind": "move",
+            "workspace_path": approved["root"],
+            "source": "old.txt",
+            "target": "archive/old.txt",
+            "_task_id": tool_task_id,
+        }))
+        self.assertTrue(tool_plan["dry_run"])
+        self.assertTrue((target / "old.txt").exists())
+        self.assertFalse((target / "archive" / "old.txt").exists())
+        with runtime_store._lock, runtime_store.connect() as conn:
+            row = conn.execute("SELECT * FROM tool_calls WHERE task_id=? AND name='workspace_mutation_preview' ORDER BY created_at DESC LIMIT 1", (tool_task_id,)).fetchone()
+        self.assertIsNotNone(row)
+        result_redacted = runtime_store._loads(row["result_redacted"], {})
+        self.assertFalse(result_redacted["will_mutate"])
+        self.assertNotIn("private content", str(result_redacted).lower())
+
+        escaped = self.client.post("/api/workspace/mutation-preview", json={
+            "kind": "move",
+            "workspacePath": approved["root"],
+            "source": "old.txt",
+            "target": "../outside.txt",
+        })
+        body = escaped.json()
+        self.assertEqual(escaped.status_code, 400)
+        self.assertFalse(body["ok"])
 
     def testGgufImportOutsideVisibleRootsIsStructured(self):
         with tempfile.NamedTemporaryFile(suffix=".gguf") as tmp:

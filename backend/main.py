@@ -226,6 +226,16 @@ class WorkspaceMountIn(CamelModel):
     read_only: bool = True
 
 
+class WorkspaceMutationPreviewIn(CamelModel):
+    kind: str
+    workspace_path: str | None = "."
+    path: str | None = None
+    source: str | None = None
+    target: str | None = None
+    content: str | None = None
+    max_items: int = 40
+
+
 class GraphSearchIn(CamelModel):
     query: str
     limit: int = 12
@@ -961,6 +971,19 @@ async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(current_use
     security.require("allow_docker_control")
     plan = workspace.save_mount_request(req.host_path, req.name, req.read_only)
     audit.log("workspace_mount_requested", plan)
+    return ok(plan)
+
+
+@app.post("/api/workspace/mutation-preview")
+async def workspace_mutation_preview(req: WorkspaceMutationPreviewIn, _user=Depends(current_user)):
+    security.require("allow_file_read")
+    plan = workspace.mutation_preview(req.kind, req.workspace_path, req.path, req.source, req.target, req.content, req.max_items)
+    audit.log("workspace_mutation_preview", {
+        "kind": plan["kind"],
+        "workspace": plan["workspace"],
+        "affected_paths": len(plan["affected_paths"]),
+        "will_mutate": False,
+    })
     return ok(plan)
 
 

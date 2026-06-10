@@ -468,6 +468,137 @@ def save_mount_request(host_path, name=None, read_only=True):
     return plan
 
 
+def _plan_path(workspace_path=".", path="."):
+    base = resolve_path(workspace_path or ".")
+    target = _path_under_base(base, path)
+    if target != base and not _is_relative_to(target, base):
+        raise ValueError("path outside approved workspace")
+    item = workspace_for_path(target if target.exists() else target.parent)
+    if not item:
+        raise ValueError("path outside approved workspaces")
+    return base, target, item
+
+
+def _path_detail(path, base=None):
+    exists = path.exists()
+    stat = None
+    try:
+        stat = path.stat() if exists else None
+    except OSError:
+        stat = None
+    return {
+        "path": rel_path(path),
+        "display_name": path.name or "workspace root",
+        "exists": exists,
+        "kind": "folder" if exists and path.is_dir() else "file",
+        "size_bytes": stat.st_size if stat and path.is_file() else None,
+        "relative_to_workspace": str(path.relative_to(base)).replace("\\", "/") if base and (path == base or _is_relative_to(path, base)) else rel_path(path),
+    }
+
+
+def _organize_bucket(path):
+    ext = _extension(path)
+    if ext in {".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".yml", ".yaml", ".toml", ".sql", ".sh", ".ps1"}:
+        return "Code"
+    if ext in {".md", ".txt", ".pdf", ".docx"}:
+        return "Documents"
+    if ext in {".csv", ".xlsx"}:
+        return "Data"
+    if ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}:
+        return "Media"
+    return "Other"
+
+
+def mutation_preview(kind, workspace_path=".", path=None, source=None, target=None, content=None, max_items=40):
+    operation = str(kind or "").strip().lower().replace("-", "_")
+    if operation == "rename":
+        operation = "move"
+    if operation not in {"write", "mkdir", "move", "organize"}:
+        raise ValueError("unsupported mutation preview kind")
+    base = resolve_path(workspace_path or ".")
+    item = workspace_for_path(base)
+    if not item:
+        raise ValueError("workspace is not approved")
+    profile = item.get("permission_profile", {})
+    warnings = []
+    affected = []
+    steps = []
+    rollback = []
+
+    if operation == "write":
+        _, target_path, item = _plan_path(workspace_path, path)
+        parent = target_path.parent
+        if not _is_relative_to(parent, base) and parent != base:
+            raise ValueError("path outside approved workspace")
+        if not profile.get("write", False):
+            warnings.append("Workspace write permission is currently disabled. This is a preview only.")
+        affected.append({"role": "target", **_path_detail(target_path, base)})
+        bytes_count = len(str(content or "").encode("utf-8"))
+        action = "replace file" if target_path.exists() else "create file"
+        steps.append({"action": action, "path": rel_path(target_path), "bytes": bytes_count})
+        rollback.append("Keep a copy of the previous file content before applying a future write.")
+
+    elif operation == "mkdir":
+        _, target_path, item = _plan_path(workspace_path, path)
+        if not profile.get("reorganize", False):
+            warnings.append("Workspace reorganize permission is currently disabled. This is a preview only.")
+        affected.append({"role": "target", **_path_detail(target_path, base)})
+        steps.append({"action": "create folder", "path": rel_path(target_path)})
+        rollback.append("Remove the empty folder if the future create action is reversed.")
+
+    elif operation == "move":
+        _, source_path, item = _plan_path(workspace_path, source)
+        _, target_path, _ = _plan_path(workspace_path, target)
+        if not source_path.exists():
+            raise ValueError("source path does not exist")
+        if not profile.get("reorganize", False):
+            warnings.append("Workspace reorganize permission is currently disabled. This is a preview only.")
+        if target_path.exists():
+            warnings.append("Target path already exists. A future move would need conflict handling.")
+        affected.append({"role": "source", **_path_detail(source_path, base)})
+        affected.append({"role": "target", **_path_detail(target_path, base)})
+        steps.append({"action": "move", "source": rel_path(source_path), "target": rel_path(target_path)})
+        rollback.append(f"Move {rel_path(target_path)} back to {rel_path(source_path)} if the future move is reversed.")
+
+    else:
+        _, folder, item = _plan_path(workspace_path, path or ".")
+        if not folder.exists() or not folder.is_dir():
+            raise ValueError("folder missing")
+        if not profile.get("reorganize", False):
+            warnings.append("Workspace reorganize permission is currently disabled. This is a preview only.")
+        limit = max(1, min(int(max_items or 40), 100))
+        planned = 0
+        for child in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
+            if planned >= limit:
+                warnings.append("Preview truncated before all files were inspected.")
+                break
+            if not child.is_file():
+                continue
+            bucket = _organize_bucket(child)
+            destination = folder / bucket / child.name
+            if destination == child:
+                continue
+            affected.append({"role": "source", **_path_detail(child, base)})
+            steps.append({"action": "move", "source": rel_path(child), "target": rel_path(destination), "bucket": bucket})
+            planned += 1
+        rollback.append("Move files back to their original paths using the before/after list.")
+
+    return {
+        "kind": operation,
+        "dry_run": True,
+        "will_mutate": False,
+        "workspace": item.get("root") or workspace_path or ".",
+        "workspace_name": item.get("name") or item.get("id"),
+        "permission_profile": profile,
+        "affected_paths": affected,
+        "steps": steps,
+        "warnings": warnings,
+        "rollback_notes": rollback,
+        "created_at": time.time(),
+        "message": "Preview only. No files were changed.",
+    }
+
+
 def all_workspaces():
     data = _load()
     return {

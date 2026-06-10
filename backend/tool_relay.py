@@ -194,6 +194,32 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "id": "workspace_mutation_preview",
+        "display_name": "Workspace Mutation Preview",
+        "description": "Builds a dry-run plan for future writes, folder creation, moves, renames, or organization without changing files.",
+        "category": "Workspace",
+        "risk": "guarded",
+        "permission_flag": "allow_file_read",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "preview_only",
+        "timeout_seconds": 20,
+        "output_summary_policy": "paths_and_actions_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["write", "mkdir", "move", "rename", "organize"]},
+                "workspace_path": {"type": "string"},
+                "path": {"type": "string"},
+                "source": {"type": "string"},
+                "target": {"type": "string"},
+                "content": {"type": "string"},
+                "max_items": {"type": "integer", "minimum": 1, "maximum": 100},
+            },
+            "required": ["kind"],
+        },
+    },
+    {
         "id": "memory_search",
         "display_name": "Memory Search",
         "description": "Searches local saved memory and session recall metadata.",
@@ -572,6 +598,19 @@ def summarize_result(tool_id, result):
                 }
                 for item in matches[:30]
             ],
+        }
+    if tool_id == "workspace_mutation_preview":
+        return {
+            "kind": result.get("kind"),
+            "dry_run": result.get("dry_run", True),
+            "will_mutate": result.get("will_mutate", False),
+            "workspace": result.get("workspace"),
+            "affected_path_count": len(result.get("affected_paths") or []),
+            "step_count": len(result.get("steps") or []),
+            "warnings": _safe_value("warnings", result.get("warnings", [])[:10], tool_id),
+            "affected_paths": _safe_value("affected_paths", result.get("affected_paths", [])[:20], tool_id),
+            "steps": _safe_value("steps", result.get("steps", [])[:20], tool_id),
+            "rollback_notes": _safe_value("rollback_notes", result.get("rollback_notes", [])[:5], tool_id),
         }
     if tool_id == "model_health":
         return {
