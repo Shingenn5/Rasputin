@@ -21,11 +21,24 @@ Status values:
 
 ## Current Queue
 
-### [ ] 01. Agent Lanes V1
+### [x] 01. Agent Lanes V1
 
 Branch: `codex/agent-lanes-v1`
 
 Commit message: `Add agent lanes workflow`
+
+Completed: 2026-06-09
+
+Commit: `3d86334`
+
+Validation:
+
+- `npm.cmd run build`: passed
+- `docker compose -f docker-compose.test.yml up --build -d`: passed
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 41 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: add separate AI workflow lanes/tabs without cluttering Home. This implements the separate-AI workflow direction the operator likes while keeping Home chat-first.
 
