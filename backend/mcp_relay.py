@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import shlex
+import sys
 import time
 import urllib.parse
 from collections import deque
@@ -312,6 +313,19 @@ def register(payload):
     if approval:
         public["approval"] = approval
     return public
+
+
+def register_operator_fixture():
+    script = ROOT / "backend" / "mcp_fixture_server.py"
+    return register({
+        "id": "operator-mcp-fixture",
+        "name": "Operator MCP Fixture",
+        "transport": "stdio",
+        "command": sys.executable,
+        "args": [str(script)],
+        "cwd": str(ROOT),
+        "enabled": False,
+    })
 
 
 def set_enabled(server_id, enabled):

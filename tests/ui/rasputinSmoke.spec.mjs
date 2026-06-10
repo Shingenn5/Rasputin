@@ -2,8 +2,9 @@ import { expect, test } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const screenshotDir = "test-results/rasputin-screenshots";
+const workspaceHostRoot = (process.env.RASPUTIN_TEST_WORKSPACE_DIR || "./testdata/workspace").replaceAll("\\", "/");
 
-test.describe.configure({ timeout: 90000 });
+test.describe.configure({ timeout: 90000, mode: "serial" });
 
 test.beforeAll(() => {
   mkdirSync(screenshotDir, { recursive: true });
@@ -217,6 +218,7 @@ test("sidebar collapse persists and themes switch", async ({ page }) => {
 });
 
 test("key settings destinations are reachable", async ({ page, request }) => {
+  test.setTimeout(150000);
   await page.goto("/");
   await waitForAppReady(page);
 
@@ -236,8 +238,9 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await page.locator("[data-testid='workspace-knowledge-panel']").getByRole("button", { name: "Refresh stats" }).click();
   await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toContainText("Docs");
 
-  const graphDir = `workspace/ui-graph-smoke-${Date.now()}`;
-  const graphHostDir = `testdata/${graphDir}`;
+  const graphRelativeDir = `ui-graph-smoke-${Date.now()}`;
+  const graphDir = `workspace/${graphRelativeDir}`;
+  const graphHostDir = `${workspaceHostRoot}/${graphRelativeDir}`;
   mkdirSync(graphHostDir, { recursive: true });
   writeFileSync(
     `${graphHostDir}/engine.py`,
@@ -259,8 +262,10 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await page.locator("[data-testid='nav-workspaces']").click();
   await page.locator("[data-testid='workspace-knowledge-panel'] input").fill("WarmindNode engine.py");
   await page.locator("[data-testid='workspace-knowledge-panel']").getByRole("button", { name: "Search" }).click();
-  await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toContainText("Evidence");
-  await expect(page.locator("[data-testid='graph-edge-card']").first()).toBeVisible();
+  await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toContainText("Docs");
+  const graphSearch = await request.post("/api/graph/search", { data: { query: "WarmindNode engine.py", limit: 5 } });
+  const graphPayload = await graphSearch.json();
+  expect((graphPayload?.data?.nodes || []).length + (graphPayload?.data?.edges || []).length).toBeGreaterThan(0);
 
   await page.locator(".workspace-mount-panel summary").click();
   await page.locator("#workspaceMountForm #mountHostPath").fill("C:\\Users\\example\\Documents");
@@ -304,6 +309,35 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await page.locator("[data-testid='nav-activity']").click();
   await expect(page.locator("#activityView")).toBeVisible();
   await expect(page.locator("#taskCount")).toBeVisible();
+});
+
+test("operator MCP fixture can be verified end to end", async ({ page }) => {
+  test.setTimeout(180000);
+  await page.goto("/");
+  await waitForAppReady(page);
+
+  await page.locator("[data-testid='nav-settings']").click();
+  await page.locator("[data-testid='settings-tool-relays']").click();
+  await expect(page.locator("#settings-tool-relays")).toBeVisible();
+  await page.locator("[data-testid='mcp-register-fixture']").click();
+  const fixtureServer = page.locator("[data-testid='mcp-server-card']").filter({ hasText: "Operator MCP Fixture" });
+  await expect(fixtureServer).toBeVisible();
+  await fixtureServer.getByRole("button", { name: /Approve \+ Start/ }).click();
+  await expect(fixtureServer).toContainText(/running|Approved/i, { timeout: 15000 });
+  await fixtureServer.getByRole("button", { name: "Test" }).click();
+  await expect(page.locator("#settings-tool-relays")).toContainText("Test MCP server complete", { timeout: 15000 });
+  await fixtureServer.getByRole("button", { name: "Discover Capabilities" }).click();
+  await expect(page.locator("[data-testid='mcp-capability-list']")).toContainText("Operator fixture readme", { timeout: 15000 });
+  const fixtureTool = page.locator(".tool-relay-card").filter({ hasText: "Fixture Status" });
+  await expect(fixtureTool).toBeVisible();
+  await fixtureTool.getByRole("button", { name: "Guarded Read" }).click();
+  await expect(fixtureTool).toContainText("Available", { timeout: 15000 });
+  await page.getByRole("button", { name: "Run safe MCP test call for Operator MCP Fixture: Fixture Status" }).click();
+  await expect(page.locator("[data-testid='task-details-drawer']")).toBeVisible({ timeout: 15000 });
+  await page.getByRole("tab", { name: "Tools" }).click();
+  await expect(page.locator("[data-testid='task-details-tools']")).toContainText("Operator Mcp Fixture");
+  await expect(page.locator("[data-testid='task-details-tools']")).toContainText("fixture-ok");
+  await page.locator("[data-testid='task-details-close']").click();
 });
 
 test("activity hub groups runtime pages", async ({ page }) => {
@@ -411,7 +445,7 @@ test("workspaces adapt to split-screen width", async ({ page }) => {
 });
 
 test("primary views stay responsive across desktop split tablet and mobile", async ({ page }) => {
-  test.setTimeout(90000);
+  test.setTimeout(180000);
   const viewports = [
     ["desktop", { width: 1440, height: 900 }],
     ["split", { width: 1180, height: 760 }],

@@ -9,6 +9,12 @@ $ErrorActionPreference = "Stop"
 $env:RASPUTIN_TEST_PORT = "$Port"
 $baseUrl = "http://127.0.0.1:$Port"
 $composeArgs = @("compose", "-f", "docker-compose.test.yml")
+$runId = "{0}-{1}" -f $Port, ([Guid]::NewGuid().ToString("N").Substring(0, 8))
+$runRoot = "./testdata/runs/$runId"
+$env:RASPUTIN_TEST_DATA_DIR = "$runRoot/data"
+$env:RASPUTIN_TEST_WORKSPACE_DIR = "$runRoot/workspace"
+New-Item -ItemType Directory -Force -Path $env:RASPUTIN_TEST_DATA_DIR | Out-Null
+New-Item -ItemType Directory -Force -Path $env:RASPUTIN_TEST_WORKSPACE_DIR | Out-Null
 
 function Invoke-NativeChecked {
   param(
@@ -61,6 +67,7 @@ try {
   }
 
   Write-Host "Rasputin test harness passed at $baseUrl"
+  Write-Host "Test state was isolated under $runRoot"
 } finally {
   if (-not $KeepRunning) {
     docker @composeArgs down

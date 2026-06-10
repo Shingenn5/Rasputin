@@ -22,8 +22,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./testdata/data:/app/data
-      - ./testdata/workspace:/app/workspace
+      - ${RASPUTIN_TEST_DATA_DIR:-./testdata/data}:/app/data
+      - ${RASPUTIN_TEST_WORKSPACE_DIR:-./testdata/workspace}:/app/workspace
       - ./models:/app/models:ro
       - ./tests:/app/tests:ro
     restart: "no"

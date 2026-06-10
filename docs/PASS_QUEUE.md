@@ -765,11 +765,32 @@ Stop conditions:
 - remote `main` contains unmerged work that would require conflict resolution
 - validation fails after fast-forward
 
-### [ ] 14. Operator MCP End-To-End Test Flow
+### [x] 14. Operator MCP End-To-End Test Flow
 
 Branch: `codex/operator-mcp-e2e-v1`
 
 Commit message: `Add operator MCP end-to-end flow`
+
+Status: complete
+
+Implemented:
+
+- added `backend/mcp_fixture_server.py`, a built-in local stdio MCP fixture with one harmless status tool plus read-only resource and prompt metadata
+- added `POST /api/mcp/fixtures/operator/register` for creating an approval-gated fixture registration preview
+- added `POST /api/mcp/tools/{toolId}/test-call` for running a classified safe external MCP tool through Tool Relay and recording a task trace
+- added a durable `AgentHub.run_tool_test` path so external MCP test calls appear in task details with redacted args/results
+- added Tool Relays UI controls for registering the fixture and running a safe test call
+- updated backend smoke tests for fixture registration, approval, discovery, classification, execution, and task-detail tool-call visibility
+- updated Playwright smoke tests for the operator MCP fixture flow and task drawer visibility
+- isolated `scripts/test.ps1` Docker test state under `testdata/runs/<port>-<id>` so stale ignored test registries do not clutter the Tool Relays UI
+- made the stateful Playwright smoke suite serial to avoid preference races against a shared local server
+
+Validation:
+
+- `git diff --check`: passed
+- `npm.cmd run build`: passed through `scripts/test.ps1 -Ui`
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Ui`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed through harness
 
 Goal: prove a user can register, approve, start, test, discover, classify, and call a safe local MCP fixture from the UI.
 

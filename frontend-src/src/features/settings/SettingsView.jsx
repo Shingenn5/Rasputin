@@ -239,11 +239,13 @@ function ToolRelaySettings({
   mcpRelays,
   tools,
   registerMcpRelay,
+  registerMcpFixture,
   startMcpRelay,
   stopMcpRelay,
   discoverMcpRelay,
   testMcpRelay,
   classifyMcpTool,
+  callMcpTestTool,
   approveApproval,
 }) {
   const [status, setStatus] = useState("");
@@ -292,6 +294,22 @@ function ToolRelaySettings({
                   <p className="text-body-secondary mb-0">Use commands visible inside the Rasputin container or local runtime.</p>
                 </div>
                 <Wrench size={20} aria-hidden="true" />
+              </div>
+              <div className="mcp-fixture-panel mt-3">
+                <div>
+                  <strong>Operator Test Fixture</strong>
+                  <p className="text-body-secondary mb-0">Registers a built-in local MCP server for a safe end-to-end test. It performs no file, network, or package-manager actions.</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline-primary"
+                  type="button"
+                  data-testid="mcp-register-fixture"
+                  aria-label="Register operator MCP test fixture"
+                  onClick={() => run("Register operator MCP fixture", registerMcpFixture)}
+                >
+                  Register Fixture
+                </Button>
               </div>
               <form className="mt-3" data-testid="mcp-register-form" onSubmit={submit}>
                 <Stack gap={3}>
@@ -469,6 +487,18 @@ function ToolRelaySettings({
                       <Button size="sm" variant="outline-warning" type="button" onClick={() => run("Classify approval tool", () => classifyMcpTool(tool.id, { risk: "approval_required", permissionFlag: "", enabled: true }))}>
                         Approval Required
                       </Button>
+                      {tool.available && (
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          type="button"
+                          data-testid="mcp-tool-test-call"
+                          aria-label={`Run safe MCP test call for ${tool.displayName || tool.id}`}
+                          onClick={() => run("Run MCP test call", () => callMcpTestTool(tool.id))}
+                        >
+                          Run Test Call
+                        </Button>
+                      )}
                     </Stack>
                   </article>
                 ))}

@@ -499,6 +499,10 @@ class McpToolClassifyIn(CamelModel):
     enabled: bool = True
 
 
+class McpToolTestCallIn(CamelModel):
+    message: str = "operator fixture ok"
+
+
 class ArchiveSessionIn(CamelModel):
     id: str | None = None
     title: str = "Untitled archive draft"
@@ -745,6 +749,11 @@ async def mcp_servers_create(req: McpRelayIn, _user=Depends(current_user)):
     return ok(mcp_relay.register(req.model_dump()))
 
 
+@app.post("/api/mcp/fixtures/operator/register")
+async def mcp_operator_fixture_register(_user=Depends(current_user)):
+    return ok(mcp_relay.register_operator_fixture())
+
+
 @app.post("/api/mcp/servers/{server_id}/enable")
 async def mcp_servers_enable(server_id: str, _user=Depends(current_user)):
     return ok(mcp_relay.set_enabled(server_id, True))
@@ -788,6 +797,12 @@ async def mcp_server_tools(server_id: str, _user=Depends(current_user)):
 @app.post("/api/mcp/tools/{tool_id:path}/classify")
 async def mcp_tool_classify(tool_id: str, req: McpToolClassifyIn, _user=Depends(current_user)):
     return ok(mcp_relay.classify_tool(tool_id, req.model_dump()))
+
+
+@app.post("/api/mcp/tools/{tool_id:path}/test-call")
+async def mcp_tool_test_call(tool_id: str, req: McpToolTestCallIn, _user=Depends(current_user)):
+    detail = await hub.run_tool_test(tool_id, {"message": req.message})
+    return ok(detail)
 
 
 @app.get("/api/skills")

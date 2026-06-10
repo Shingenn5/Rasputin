@@ -3571,6 +3571,25 @@ button.runtime-chip {
   gap: .85rem;
 }
 
+.mcp-fixture-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .85rem;
+  padding: .85rem;
+  border: 1px solid var(--ras-border);
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--ras-panel) 86%, transparent);
+}
+
+.mcp-fixture-panel > div {
+  min-width: 0;
+}
+
+.mcp-fixture-panel p {
+  font-size: .84rem;
+}
+
 .mcp-server-card {
   display: grid;
   gap: .75rem;

@@ -490,6 +490,40 @@ class BackendSmokeTests(unittest.TestCase):
 
         asyncio.run(flow())
 
+    def testOperatorMcpFixtureFlowCreatesTaskTrace(self):
+        registered = self.assertOk(self.client.post("/api/mcp/fixtures/operator/register"))
+        self.assertEqual(registered["id"], "operator-mcp-fixture")
+        self.assertTrue(registered["pendingApprovalId"])
+        approvals.approve(registered["pendingApprovalId"])
+
+        async def flow():
+            started = await mcp_relay.start("operator-mcp-fixture", registered["pendingApprovalId"])
+            self.assertEqual(started["status"], "running")
+            discovered = await mcp_relay.discover("operator-mcp-fixture")
+            self.assertEqual(len(discovered["tools"]), 1)
+            self.assertEqual(len(discovered["resources"]), 1)
+            self.assertEqual(len(discovered["prompts"]), 1)
+            tool_id = discovered["tools"][0]["id"]
+            with patch("backend.security.load", return_value={"allow_file_read": True}):
+                classified = mcp_relay.classify_tool(tool_id, {
+                    "risk": "guarded",
+                    "permission_flag": "allow_file_read",
+                    "enabled": True,
+                })
+                self.assertTrue(classified["available"])
+                called = await main.hub.run_tool_test(tool_id, {
+                    "message": "fixture e2e",
+                })
+            self.assertEqual(called["task"]["status"], "done")
+            self.assertEqual(called["task"]["skill"], "tool-relay-test")
+            self.assertTrue(any(item["kind"] == "tool_relay_test" for item in called["trace"]))
+            self.assertTrue(any(item["name"] == tool_id and item["status"] == "done" for item in called["toolCalls"]))
+            detail = self.assertOk(self.client.get(f"/api/tasks/{called['task']['id']}"))
+            self.assertTrue(any(item["name"] == tool_id for item in detail["toolCalls"]))
+            await mcp_relay.stop("operator-mcp-fixture")
+
+        asyncio.run(flow())
+
     def testMcpRelayCompatibilityFailuresAreStructured(self):
         crash_script = main.ROOT / "workspace" / "fake_mcp_crash.py"
         bad_schema_script = main.ROOT / "workspace" / "fake_mcp_bad_schema.py"

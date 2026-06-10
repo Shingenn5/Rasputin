@@ -13,6 +13,7 @@ from . import memory
 from . import model_registry
 from . import runtime_store as store
 from . import security
+from . import tool_relay
 from . import workspace
 
 TEXT_FILE_EXTENSIONS = {
@@ -507,6 +508,50 @@ class AgentHub:
         self._add_message(task.session_id, task.id, "user", objective)
         asyncio.create_task(self.run_task(task, subagents=subagents))
         return task
+
+    async def run_tool_test(self, tool_id, args=None):
+        definition = tool_relay.require_definition(tool_id)
+        display = definition.get("display_name") or definition.get("displayName") or tool_id
+        task = AgentTask(
+            f"Test external tool: {display}",
+            "dry-run",
+            "tool-relay-test",
+            workspace_path=workspace.get_active()["active_path"],
+            mode="analyze",
+        )
+        self._wire(task)
+        self.tasks[task.id] = task
+        self._persist_task(task)
+        self._add_message(task.session_id, task.id, "user", task.objective)
+        task.status = "running"
+        task.progress = 20
+        task.log("tool test started")
+        task.seen("tool_relay_test", {
+            "toolId": tool_id,
+            "toolName": display,
+            "risk": definition.get("risk"),
+            "permission": definition.get("permission_flag") or definition.get("permissionFlag") or "",
+        })
+        await self.emit(task)
+        try:
+            call_args = dict(args or {})
+            call_args["_task_id"] = task.id
+            result = await self.mcp.call_tool(tool_id, call_args)
+            summary = tool_relay.summarize_result(tool_id, result)
+            task.result = json.dumps(summary, indent=2)
+            task.output("json", "Tool test result", task.result)
+            self._add_message(task.session_id, task.id, "assistant", task.result)
+            task.progress = 100
+            task.status = "done"
+            task.log("tool test done")
+        except Exception as exc:
+            task.status = "error"
+            task.progress = 100
+            task.result = str(exc)
+            task.log(f"tool test failed: {exc}")
+        finally:
+            await self.emit(task)
+        return self.task_detail(task.id)
 
     async def cancel(self, task_id):
         task = self.tasks.get(task_id)
