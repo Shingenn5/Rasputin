@@ -6,12 +6,15 @@ from threading import Lock
 
 from . import models
 from . import model_registry
+from . import preferences
 from . import runtime_store as store
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 TRIALS_FILE = DATA_DIR / "trials.json"
 _lock = Lock()
+
+ROUTABLE_MODES = {"chat", "analyze", "research", "code", "write", "organize", "review"}
 
 
 def _blank():
@@ -103,4 +106,59 @@ def reveal(run_id):
             item["revealed"] = True
             _save(data)
             return _public(item, reveal=True)
+    raise ValueError("trial run missing")
+
+
+def save_routing(run_id, output_id, mode):
+    mode = str(mode or "").strip().lower()
+    output_id = str(output_id or "").strip()
+    if mode not in ROUTABLE_MODES:
+        raise ValueError("unsupported trial routing mode")
+    if not output_id:
+        raise ValueError("trial output required")
+
+    data = _load()
+    for item in data.get("runs", []):
+        if item.get("id") != run_id:
+            continue
+        if not item.get("revealed"):
+            raise ValueError("reveal trial before saving model routing")
+        output = next(
+            (
+                candidate for candidate in item.get("outputs", [])
+                if candidate.get("id") == output_id or candidate.get("label") == output_id
+            ),
+            None,
+        )
+        if not output:
+            raise ValueError("trial output missing")
+        if output.get("status") != "done":
+            raise ValueError("only completed trial outputs can be saved")
+        model_key = output.get("model_key")
+        model = model_registry.get_model(model_key)
+        if not model:
+            raise ValueError("trial model is no longer registered")
+
+        prefs = preferences.load()
+        before = dict(prefs.get("modeModelOverrides") or {})
+        next_overrides = {**before, mode: model_key}
+        saved = preferences.save({"modeModelOverrides": next_overrides})
+        route = {
+            "mode": mode,
+            "previous_model_key": before.get(mode),
+            "model_key": model_key,
+            "model_name": model.get("model") or model.get("name") or model_key,
+            "output_id": output.get("id"),
+            "output_label": output.get("label"),
+        }
+        item.setdefault("routing", {})[mode] = {
+            **route,
+            "saved_at": time.time(),
+        }
+        _save(data)
+        return {
+            "route": route,
+            "preferences": saved,
+            "run": _public(item, reveal=True),
+        }
     raise ValueError("trial run missing")

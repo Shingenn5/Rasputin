@@ -614,6 +614,11 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(compared["revealed"])
         self.assertEqual(len(compared["outputs"]), 1)
         self.assertNotIn("modelKey", compared["outputs"][0])
+        blocked = self.client.post(f"/api/trials/{compared['id']}/routing", json={
+            "outputId": compared["outputs"][0]["id"],
+            "mode": "code",
+        })
+        self.assertEqual(blocked.status_code, 400)
 
         runs = self.assertOk(self.client.get("/api/trials"))
         self.assertTrue(any(item["id"] == compared["id"] for item in runs["runs"]))
@@ -621,6 +626,13 @@ class BackendSmokeTests(unittest.TestCase):
         revealed = self.assertOk(self.client.post(f"/api/trials/{compared['id']}/reveal"))
         self.assertTrue(revealed["revealed"])
         self.assertEqual(revealed["outputs"][0]["modelKey"], "dry-run")
+        routed = self.assertOk(self.client.post(f"/api/trials/{compared['id']}/routing", json={
+            "outputId": revealed["outputs"][0]["id"],
+            "mode": "code",
+        }))
+        self.assertEqual(routed["route"]["mode"], "code")
+        self.assertEqual(routed["route"]["modelKey"], "dry-run")
+        self.assertEqual(routed["preferences"]["modeModelOverrides"]["code"], "dry-run")
 
     def testPreferencesRoundTrip(self):
         saved = self.assertOk(self.client.post("/api/preferences", json={

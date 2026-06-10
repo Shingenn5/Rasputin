@@ -975,6 +975,18 @@ export function App() {
     return run;
   }
 
+  async function saveTrialRoute(runId, outputId, mode) {
+    const result = await postJson(`/api/trials/${runId}/routing`, { outputId, mode });
+    const overrides = result.preferences?.modeModelOverrides || {};
+    setModeModelOverrides(overrides);
+    if (mode === taskMode && result.route?.modelKey) {
+      setSelectedModel(result.route.modelKey);
+    }
+    await loadTrials();
+    setTrialsStatus(`Saved ${result.route?.modelName || result.route?.modelKey} for ${mode}.`);
+    return result;
+  }
+
   async function loadChatFolders() {
     const [nextSessions, nextFolders] = await Promise.all([
       api("/api/sessions"),
@@ -1474,6 +1486,8 @@ export function App() {
         status={trialsStatus}
         runTrialCompare={runTrialCompare}
         revealTrial={revealTrial}
+        saveTrialRoute={saveTrialRoute}
+        modeModelOverrides={modeModelOverrides}
       />
       <ModelsView
         view={view}

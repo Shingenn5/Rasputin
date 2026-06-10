@@ -355,6 +355,15 @@ test("archive and trials views support first workflow", async ({ page }) => {
   await expect(page.locator("[data-testid='trial-run-card']").first()).not.toContainText("dry-run");
   await page.locator("[data-testid='trial-run-card']").first().getByRole("button", { name: "Reveal Models" }).click();
   await expect(page.locator("[data-testid='trial-run-card']").first()).toContainText("dry-run");
+  const routeForm = page.locator("[data-testid='trial-run-card']").first().locator(".trial-route-form").first();
+  await expect(routeForm).toBeVisible();
+  await routeForm.locator("select[name='mode']").selectOption("code");
+  await routeForm.getByRole("button", { name: "Save Route" }).click();
+  await expect(page.locator("[data-testid='trials-view']")).toContainText("Saved", { timeout: 30000 });
+  await expect(page.locator("[data-testid='trial-run-card']").first()).toContainText("Code routes to");
+  const prefsResponse = await page.request.get("/api/preferences");
+  const prefsPayload = await prefsResponse.json();
+  expect(prefsPayload.data.modeModelOverrides.code).toBe("dry-run");
 });
 
 test("workspaces adapt to split-screen width", async ({ page }) => {

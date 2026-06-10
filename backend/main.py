@@ -426,6 +426,11 @@ class TrialCompareIn(CamelModel):
     model_keys: list[str] | None = None
 
 
+class TrialRoutingIn(CamelModel):
+    output_id: str
+    mode: str
+
+
 @app.get("/")
 async def index():
     return FileResponse(FRONTEND / "index.html")
@@ -1081,6 +1086,13 @@ async def trials_compare(req: TrialCompareIn, _user=Depends(current_user)):
 @app.post("/api/trials/{run_id}/reveal")
 async def trials_reveal(run_id: str, _user=Depends(current_user)):
     return ok(trials.reveal(run_id))
+
+
+@app.post("/api/trials/{run_id}/routing")
+async def trials_routing(run_id: str, req: TrialRoutingIn, _user=Depends(current_user)):
+    result = trials.save_routing(run_id, req.output_id, req.mode)
+    audit.log("trial_route_saved", result["route"])
+    return ok(result)
 
 
 @app.get("/api/events")

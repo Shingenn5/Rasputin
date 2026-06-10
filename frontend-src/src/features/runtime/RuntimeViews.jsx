@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-bootstrap";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
-import { displayWorkspaceName, labelize } from "../../lib/display.js";
+import { displayModelName, displayWorkspaceName, labelize } from "../../lib/display.js";
 import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 
 export function AgentsView({ view, tasks, models }) {
@@ -665,15 +665,47 @@ export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArc
   );
 }
 
-export function TrialsView({ view, trials, models, status, runTrialCompare, revealTrial }) {
+const trialModeChoices = [
+  ["chat", "Chat"],
+  ["analyze", "Analyze"],
+  ["research", "Research"],
+  ["code", "Code"],
+  ["write", "Write"],
+  ["organize", "Organize"],
+  ["review", "Review"],
+];
+
+export function TrialsView({ view, trials, models, status, runTrialCompare, revealTrial, saveTrialRoute, modeModelOverrides }) {
   const runs = trials?.runs || [];
   const selectable = (models || []).filter((model) => model.key !== "local-embeddings").slice(0, 8);
+  const modelByKey = useMemo(() => Object.fromEntries((models || []).map((model) => [model.key, model])), [models]);
 
   function submit(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const modelKeys = form.getAll("modelKeys");
     runTrialCompare?.({ prompt: form.get("prompt"), modelKeys });
+  }
+
+  function saveRoute(event, runId, outputId) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    saveTrialRoute?.(runId, outputId, form.get("mode"));
+  }
+
+  function routeSummary(run) {
+    const routing = run.routing || {};
+    const items = Object.values(routing);
+    if (!items.length) return null;
+    return (
+      <div className="trial-routing-summary" aria-label="Saved trial routes">
+        {items.map((route) => (
+          <span key={`${run.id}-${route.mode}`}>
+            {labelize(route.mode)} routes to {displayModelName(route.modelKey, models)}
+          </span>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -715,9 +747,28 @@ export function TrialsView({ view, trials, models, status, runTrialCompare, reve
                     <strong>Option {output.label}{output.modelKey ? ` / ${output.modelKey}` : ""}</strong>
                     <span>{output.status} / {output.latencyMs} ms</span>
                     <p>{output.error || output.text || "No output."}</p>
+                    {run.revealed && output.modelKey && (
+                      <form className="trial-route-form" onSubmit={(event) => saveRoute(event, run.id, output.id)}>
+                        <label>
+                          <span>Save winner for</span>
+                          <select name="mode" defaultValue={Object.entries(modeModelOverrides || {}).find(([, key]) => key === output.modelKey)?.[0] || "chat"}>
+                            {trialModeChoices.map(([value, label]) => (
+                              <option key={value} value={value}>{label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button className="ras-button tiny" type="submit" disabled={output.status !== "done"}>
+                          Save Route
+                        </button>
+                        {modelByKey[output.modelKey] && (
+                          <small>{displayModelName(modelByKey[output.modelKey], models)}</small>
+                        )}
+                      </form>
+                    )}
                   </section>
                 ))}
               </div>
+              {routeSummary(run)}
             </article>
           ))}
           {!runs.length && <EmptyCard title="No trials yet" text="Run a blind comparison to evaluate model behavior without labels." />}

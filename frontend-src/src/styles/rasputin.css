@@ -3864,6 +3864,61 @@ button.runtime-chip {
   font-weight: 800;
 }
 
+.trial-route-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .45rem;
+  align-items: end;
+  border-top: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  padding-top: .55rem;
+}
+
+.trial-route-form label {
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.trial-route-form label span,
+.trial-route-form small {
+  color: var(--ras-muted);
+  font-size: .74rem;
+  font-weight: 850;
+}
+
+.trial-route-form select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-input-bg, var(--ras-panel));
+  color: var(--ras-text);
+  padding: .45rem .5rem;
+}
+
+.trial-route-form small {
+  grid-column: 1 / -1;
+}
+
+.trial-routing-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  border-top: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  padding-top: .75rem;
+}
+
+.trial-routing-summary span {
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 36%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-accent) 10%, transparent);
+  color: var(--ras-text);
+  font-size: .76rem;
+  font-weight: 850;
+  padding: .28rem .55rem;
+}
+
 .settings-card,
 .stat-card,
 .task-card {
