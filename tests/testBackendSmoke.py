@@ -524,6 +524,34 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(exported["path"].endswith(".md"))
         self.assertIn("archive-smoke", exported["path"])
 
+    def testArchiveCitationSearchUsesLocalIndexes(self):
+        target_dir = main.ROOT / "workspace" / f"archive-cite-{runtime_store.new_id('archcite')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "briefing.md").write_text(
+            "# Archive Citations\n\nRasputin archive citation smoke source for local document workflows.",
+            encoding="utf-8",
+        )
+        rel_path = str(target_dir.relative_to(main.ROOT)).replace("\\", "/")
+
+        self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": rel_path,
+            "name": "Archive Citations",
+            "readOnly": True,
+        }))
+        self.assertOk(self.client.post("/api/workspace/select", json={"path": rel_path}))
+        self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Archive Citations"}))
+        self.assertOk(self.client.post("/api/graph/build", json={"path": rel_path}))
+
+        citations = self.assertOk(self.client.post("/api/archive/citations", json={
+            "query": "archive citation smoke",
+            "path": rel_path,
+            "limit": 4,
+        }))
+        self.assertGreaterEqual(citations["total"], 1)
+        self.assertTrue(citations["ragHits"])
+        self.assertEqual(citations["ragHits"][0]["path"], "briefing.md")
+        self.assertLessEqual(len(citations["ragHits"][0]["snippet"]), 423)
+
     def testTrialsCompareIsBlindUntilReveal(self):
         compared = self.assertOk(self.client.post("/api/trials/compare", json={
             "prompt": "Compare this answer style.",

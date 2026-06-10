@@ -3292,6 +3292,7 @@ button.runtime-chip {
 .archive-sidebar,
 .archive-editor,
 .archive-preview,
+.archive-support,
 .trials-compose,
 .trial-run-card {
   min-width: 0;
@@ -3305,6 +3306,7 @@ button.runtime-chip {
 .archive-sidebar,
 .archive-editor,
 .archive-preview,
+.archive-support,
 .trials-compose,
 .trial-run-list {
   display: grid;
@@ -3396,6 +3398,170 @@ button.runtime-chip {
   color: var(--ras-muted);
   font-size: .84rem;
   font-weight: 750;
+}
+
+.archive-editor-header,
+.archive-stats,
+.archive-search-row,
+.archive-source-card > div {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  min-width: 0;
+}
+
+.archive-editor-header {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+}
+
+.archive-editor-header h2 {
+  margin: .1rem 0 0;
+  font-size: clamp(1.05rem, 1.7vw, 1.35rem);
+  overflow-wrap: anywhere;
+}
+
+.archive-stats {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.archive-stats div {
+  min-width: 84px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 46%, transparent);
+  padding: .45rem .55rem;
+}
+
+.archive-stats dt {
+  color: var(--ras-muted);
+  font-size: .68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.archive-stats dd {
+  margin: 0;
+  color: var(--ras-text);
+  font-weight: 850;
+}
+
+.archive-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  padding: .3rem;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ras-panel-2) 40%, transparent);
+}
+
+.archive-tabs button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ras-muted);
+  font-size: .82rem;
+  font-weight: 850;
+  padding: .5rem .75rem;
+}
+
+.archive-tabs button:hover,
+.archive-tabs button:focus-visible,
+.archive-tabs button.is-active,
+.archive-tabs button[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--ras-accent) 50%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 11%, var(--ras-panel));
+  color: var(--ras-text);
+}
+
+.archive-tab-panel,
+.archive-draft-panel,
+.archive-citations,
+.archive-export-panel {
+  min-width: 0;
+}
+
+.archive-draft-panel,
+.archive-citations,
+.archive-export-panel {
+  display: grid;
+  gap: .85rem;
+}
+
+.archive-search-row {
+  align-items: stretch;
+}
+
+.archive-search-row input {
+  flex: 1 1 260px;
+}
+
+.archive-help {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .88rem;
+}
+
+.archive-source-list {
+  display: grid;
+  gap: .65rem;
+  max-height: min(52dvh, 560px);
+  overflow: auto;
+  padding-right: .15rem;
+}
+
+.archive-source-card {
+  display: grid;
+  gap: .45rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 44%, transparent);
+  padding: .75rem;
+}
+
+.archive-source-card > div {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.archive-source-card strong {
+  overflow-wrap: anywhere;
+}
+
+.archive-source-card span {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.archive-source-card p,
+.archive-export-panel p,
+.archive-support p {
+  margin: 0;
+  color: var(--ras-muted);
+  overflow-wrap: anywhere;
+}
+
+.archive-support section {
+  display: grid;
+  gap: .35rem;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 36%, transparent);
+  padding: .75rem;
+}
+
+.archive-workbench .archive-preview {
+  min-height: min(52dvh, 600px);
+  max-height: min(58dvh, 680px);
+  overflow: auto;
 }
 
 .archive-preview pre,
@@ -7720,6 +7886,10 @@ button.helper-row:hover {
 
   .archive-layout {
     grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  }
+
+  .archive-support {
+    grid-column: 1 / -1;
   }
 
   .archive-preview {

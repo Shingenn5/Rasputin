@@ -293,6 +293,15 @@ test("archive and trials views support first workflow", async ({ page }) => {
   await page.locator("[data-testid='archive-editor'] textarea[name='content']").fill("# Local Draft\n\nThis stays in Rasputin.");
   await page.locator("[data-testid='archive-editor']").getByRole("button", { name: "Save Draft" }).click();
   await expect(page.locator("[data-testid='archive-editor']")).toContainText("Saved", { timeout: 60000 });
+  await page.getByRole("tab", { name: "Preview" }).click();
+  await expect(page.locator("[data-testid='archive-preview']")).toContainText("Local Draft");
+  await page.getByRole("tab", { name: "Sources" }).click();
+  await expect(page.locator("[data-testid='archive-citations']")).toBeVisible();
+  await page.locator("[data-testid='archive-citations'] input").fill("server.py");
+  await page.locator("[data-testid='archive-citations']").getByRole("button", { name: "Search" }).click();
+  await expect(page.locator("[data-testid='archive-citations']")).toContainText(/local references|No local citations/i, { timeout: 30000 });
+  await page.getByRole("tab", { name: "Export" }).click();
+  await expect(page.locator("[data-testid='archive-export']")).toContainText("Export Markdown");
   await expect.poll(async () => {
     const response = await page.request.get("/api/archive/sessions");
     const payload = await response.json();

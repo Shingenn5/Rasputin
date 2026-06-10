@@ -397,6 +397,12 @@ class ArchiveExportIn(CamelModel):
     folder: str | None = None
 
 
+class ArchiveCitationIn(CamelModel):
+    query: str
+    path: str | None = None
+    limit: int = 6
+
+
 class TrialCompareIn(CamelModel):
     prompt: str
     model_keys: list[str] | None = None
@@ -1017,6 +1023,12 @@ async def archive_sessions_save(req: ArchiveSessionIn, _user=Depends(current_use
 async def archive_export(req: ArchiveExportIn, _user=Depends(current_user)):
     security.require("allow_file_write")
     return ok(archive.export_session(req.id, req.folder))
+
+
+@app.post("/api/archive/citations")
+async def archive_citations(req: ArchiveCitationIn, _user=Depends(current_user)):
+    security.require("allow_file_read")
+    return ok(archive.citation_search(req.query, req.path, req.limit))
 
 
 @app.get("/api/trials")

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-bootstrap";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 import { displayWorkspaceName, labelize } from "../../lib/display.js";
 
 export function AgentsView({ view, tasks, models }) {
@@ -373,40 +375,129 @@ export function SchedulesView({ view, schedules, createSchedule }) {
   );
 }
 
-export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArchiveDraft }) {
+const archiveTabs = [
+  { id: "draft", label: "Draft" },
+  { id: "preview", label: "Preview" },
+  { id: "sources", label: "Sources" },
+  { id: "export", label: "Export" },
+];
+
+function archiveWordCount(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function sourceLine(hit) {
+  if (!hit) return "Indexed source";
+  return [hit.path || hit.title, hit.location].filter(Boolean).join(" / ");
+}
+
+export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArchiveDraft, searchArchiveCitations }) {
   const [activeId, setActiveId] = useState("");
+  const [activeTab, setActiveTab] = useState("draft");
+  const [draft, setDraft] = useState({ title: "", content: "" });
+  const [citationQuery, setCitationQuery] = useState("");
+  const [citationResult, setCitationResult] = useState(null);
+  const [citationStatus, setCitationStatus] = useState("");
+  const [citationLoading, setCitationLoading] = useState(false);
   const sessions = archive?.sessions || [];
   const creatingNew = activeId === "__new__";
   const active = creatingNew ? null : sessions.find((item) => item.id === activeId) || sessions[0] || null;
+  const draftWords = useMemo(() => archiveWordCount(draft.content), [draft.content]);
+  const selectedStoredWords = active?.wordCount || active?.word_count || 0;
 
   useEffect(() => {
     if (!activeId && sessions[0]?.id) setActiveId(sessions[0].id);
   }, [activeId, sessions]);
 
+  useEffect(() => {
+    setDraft({
+      title: creatingNew ? "" : active?.title || "",
+      content: creatingNew ? "" : active?.content || "",
+    });
+    setCitationStatus("");
+  }, [active?.id, creatingNew]);
+
   async function submit(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
     const result = await saveArchiveDraft?.({
       id: active?.id || undefined,
-      title: form.get("title"),
-      content: form.get("content"),
+      title: draft.title,
+      content: draft.content,
     });
-    if (result?.saved?.id) setActiveId(result.saved.id);
+    if (result?.saved?.id) {
+      setActiveId(result.saved.id);
+      setActiveTab("preview");
+    }
+  }
+
+  async function runCitationSearch() {
+    const query = citationQuery.trim();
+    if (!query) {
+      setCitationStatus("Enter a search term to find local citations.");
+      setCitationResult(null);
+      return;
+    }
+    setCitationLoading(true);
+    setCitationStatus("Searching local index.");
+    try {
+      const result = await searchArchiveCitations?.(query);
+      setCitationResult(result);
+      setCitationStatus(`${result?.total || 0} local references found.`);
+    } catch (error) {
+      setCitationResult(null);
+      setCitationStatus(error.message || "Citation search failed.");
+    } finally {
+      setCitationLoading(false);
+    }
+  }
+
+  function insertCitation(hit) {
+    const label = sourceLine(hit);
+    const nextLine = `\n\n> Source: ${label}`;
+    setDraft((current) => ({ ...current, content: `${current.content || ""}${nextLine}` }));
+    setActiveTab("draft");
+  }
+
+  function newDraft() {
+    setActiveId("__new__");
+    setActiveTab("draft");
+    setDraft({ title: "", content: "" });
+  }
+
+  function handleTabKeyDown(event) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = archiveTabs.findIndex((tab) => tab.id === activeTab);
+    if (event.key === "Home") {
+      setActiveTab(archiveTabs[0].id);
+      return;
+    }
+    if (event.key === "End") {
+      setActiveTab(archiveTabs[archiveTabs.length - 1].id);
+      return;
+    }
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const next = (currentIndex + direction + archiveTabs.length) % archiveTabs.length;
+    setActiveTab(archiveTabs[next].id);
   }
 
   return (
     <section className={`app-view ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive" data-testid="archive-view">
-      <PageHeader title="Archive" text="Local markdown drafting with export. AI suggestions and DOCX/PDF editing come after the safe editor base is stable." />
+      <PageHeader title="Archive" text="Local markdown drafting, cited source recall, and controlled export for document workflows." />
       <div className="archive-layout">
-        <aside className="archive-sidebar">
-          <button className="ras-button primary w-100" type="button" onClick={() => setActiveId("__new__")}>New draft</button>
+        <aside className="archive-sidebar" aria-label="Archive drafts">
+          <button className="ras-button primary w-100" type="button" onClick={newDraft}>New draft</button>
           <div className="archive-session-list">
             {sessions.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 className={`archive-session ${!creatingNew && active?.id === item.id ? "is-active" : ""}`}
-                onClick={() => setActiveId(item.id)}
+                aria-current={!creatingNew && active?.id === item.id ? "true" : undefined}
+                onClick={() => {
+                  setActiveId(item.id);
+                  setActiveTab("preview");
+                }}
               >
                 <strong>{item.title}</strong>
                 <span>{item.wordCount || item.word_count || 0} words</span>
@@ -415,25 +506,171 @@ export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArc
             {!sessions.length && <p className="empty-inline">No archive drafts yet.</p>}
           </div>
         </aside>
-        <form className="archive-editor" onSubmit={submit} data-testid="archive-editor">
-          <label>
-            <span>Title</span>
-            <input name="title" defaultValue={active?.title || ""} placeholder="Draft title" key={`title-${active?.id || "new"}`} />
-          </label>
-          <label>
-            <span>Markdown</span>
-            <textarea name="content" defaultValue={active?.content || ""} placeholder="# Start writing" key={`content-${active?.id || "new"}`} />
-          </label>
+
+        <form className="archive-editor archive-workbench" onSubmit={submit} data-testid="archive-editor">
+          <div className="archive-editor-header">
+            <div>
+              <span className="eyebrow">Archive Editor</span>
+              <h2>{draft.title || "Untitled draft"}</h2>
+            </div>
+            <dl className="archive-stats" aria-label="Draft stats">
+              <div>
+                <dt>Current</dt>
+                <dd>{draftWords} words</dd>
+              </div>
+              <div>
+                <dt>Stored</dt>
+                <dd>{selectedStoredWords} words</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="archive-tabs" role="tablist" aria-label="Archive sections" onKeyDown={handleTabKeyDown}>
+            {archiveTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                id={`archive-tab-${tab.id}`}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`archive-panel-${tab.id}`}
+                className={activeTab === tab.id ? "is-active" : ""}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="archive-tab-panel"
+            id={`archive-panel-${activeTab}`}
+            role="tabpanel"
+            tabIndex={0}
+            aria-labelledby={`archive-tab-${activeTab}`}
+          >
+            {activeTab === "draft" && (
+              <div className="archive-draft-panel">
+                <label>
+                  <span>Title</span>
+                  <input
+                    name="title"
+                    value={draft.title}
+                    placeholder="Draft title"
+                    onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Markdown</span>
+                  <textarea
+                    name="content"
+                    value={draft.content}
+                    placeholder="# Start writing"
+                    onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))}
+                  />
+                </label>
+              </div>
+            )}
+
+            {activeTab === "preview" && (
+              <article className="archive-preview markdown-body" data-testid="archive-preview">
+                {draft.content ? (
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{draft.content}</ReactMarkdown>
+                ) : (
+                  <p className="empty-inline">Write or select a draft to preview markdown.</p>
+                )}
+              </article>
+            )}
+
+            {activeTab === "sources" && (
+              <div className="archive-citations" data-testid="archive-citations">
+                <label>
+                  <span>Search indexed workspace sources</span>
+                  <div className="archive-search-row">
+                    <input
+                      value={citationQuery}
+                      placeholder="Search local RAG and Graphify evidence"
+                      onChange={(event) => setCitationQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          runCitationSearch();
+                        }
+                      }}
+                    />
+                    <button className="ras-button secondary" type="button" onClick={runCitationSearch} disabled={citationLoading}>
+                      {citationLoading ? "Searching" : "Search"}
+                    </button>
+                  </div>
+                </label>
+                <p className="archive-help" role="status" aria-live="polite">{citationStatus || "Search uses local indexes only."}</p>
+                <div className="archive-source-list">
+                  {(citationResult?.ragHits || []).map((hit) => (
+                    <article className="archive-source-card" key={hit.id}>
+                      <div>
+                        <strong>{hit.title}</strong>
+                        <span>{hit.location}</span>
+                      </div>
+                      <p>{hit.snippet || "No snippet available."}</p>
+                      <button className="ras-button tiny" type="button" onClick={() => insertCitation(hit)}>Insert citation</button>
+                    </article>
+                  ))}
+                  {(citationResult?.graphEdges || []).map((edge) => (
+                    <article className="archive-source-card" key={edge.id}>
+                      <div>
+                        <strong>{edge.source} to {edge.target}</strong>
+                        <span>{labelize(edge.relation)}</span>
+                      </div>
+                      <p>{edge.why || edge.snippet || "Graph relationship found."}</p>
+                    </article>
+                  ))}
+                  {(citationResult?.graphNodes || []).map((node) => (
+                    <article className="archive-source-card" key={node.id}>
+                      <div>
+                        <strong>{node.name}</strong>
+                        <span>{labelize(node.kind)}</span>
+                      </div>
+                      <p>{node.snippet || (node.sources || []).slice(0, 2).join(", ") || "Graph node found."}</p>
+                    </article>
+                  ))}
+                  {citationResult && !citationResult.total && <p className="empty-inline">No local citations matched that query.</p>}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "export" && (
+              <div className="archive-export-panel" data-testid="archive-export">
+                <h3>Export Markdown</h3>
+                <p>Export writes a markdown copy to the configured output folder. File write permission is still enforced by the backend.</p>
+                <button className="ras-button primary" type="button" disabled={!active?.id} onClick={() => exportArchiveDraft?.(active.id)}>
+                  Export Markdown
+                </button>
+                {!active?.id && <p className="empty-inline">Save the draft before export is available.</p>}
+              </div>
+            )}
+          </div>
+
           <div className="archive-actions">
             <button className="ras-button primary" type="submit">Save Draft</button>
             <button className="ras-button ghost" type="button" disabled={!active?.id} onClick={() => exportArchiveDraft?.(active.id)}>Export Markdown</button>
-            {status && <span role="status">{status}</span>}
+            {status && <span role="status" aria-live="polite">{status}</span>}
           </div>
         </form>
-        <article className="archive-preview">
-          <span className="eyebrow">Preview</span>
-          <pre>{active?.content || "Save a draft to preview stored markdown here."}</pre>
-        </article>
+
+        <aside className="archive-support" aria-label="Archive workflow status">
+          <section>
+            <span className="eyebrow">Storage</span>
+            <p>Local Rasputin data</p>
+          </section>
+          <section>
+            <span className="eyebrow">Sources</span>
+            <p>Approved indexed workspaces</p>
+          </section>
+          <section>
+            <span className="eyebrow">Export</span>
+            <p>Permission gated markdown</p>
+          </section>
+        </aside>
       </div>
     </section>
   );

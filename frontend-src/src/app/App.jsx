@@ -944,6 +944,15 @@ export function App() {
     return exported;
   }
 
+  async function searchArchiveCitations(query) {
+    const targetPath = workspace.activePath || ".";
+    return postJson("/api/archive/citations", {
+      query,
+      path: targetPath,
+      limit: 6,
+    });
+  }
+
   async function loadTrials() {
     const nextTrials = await api("/api/trials");
     setTrialsRuns(nextTrials);
@@ -1455,6 +1464,7 @@ export function App() {
         status={archiveStatus}
         saveArchiveDraft={saveArchiveDraft}
         exportArchiveDraft={exportArchiveDraft}
+        searchArchiveCitations={searchArchiveCitations}
       />
       <TrialsView
         view={view}
