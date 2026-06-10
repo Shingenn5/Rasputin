@@ -374,11 +374,23 @@ Stop conditions:
 - write/move/delete becomes necessary
 - shell execution becomes necessary
 
-### [ ] 07. Safe Workspace Mutation Preview V1
+### [x] 07. Safe Workspace Mutation Preview V1
 
 Branch: `codex/workspace-mutation-preview-v1`
 
 Commit message: `Add workspace mutation previews`
+
+Completed: 2026-06-09
+
+Commit: `d2905f5`
+
+Validation:
+
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 43 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: add preview-only planning for file writes, renames, moves, mkdir, and folder organization.
 
