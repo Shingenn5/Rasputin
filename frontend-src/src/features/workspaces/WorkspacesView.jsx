@@ -379,7 +379,7 @@ export function WorkspacesView({
             <div className="knowledge-explainer" role="note">
               <Info size={16} aria-hidden="true" />
               <p>
-                Indexing reads supported text/code files from this folder, splits them into searchable chunks, writes local retrieval data to <code>data/rag_index.json</code>, then refreshes Graphify relationships in <code>data/graph.json</code>. It does not send file contents to the internet.
+                Indexing reads supported text, code, PDF, DOCX, and XLSX files from this folder, splits them into searchable cited chunks, writes local retrieval data to <code>data/rag_index.json</code>, then refreshes Graphify relationships in <code>data/graph.json</code>. It does not send file contents to the internet.
               </p>
             </div>
             <div className="knowledge-stat-grid">

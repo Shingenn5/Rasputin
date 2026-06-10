@@ -72,7 +72,7 @@ Risk:
 | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |
 | Odysseus README | ChromaDB/fastembed vector + keyword retrieval | Knowledge Index V2 | partial | 5 | L | medium | RAG, backend, UI, Docker | workspace browser | Workspace indexing uses local embeddings/vector store, incremental reindexing, citations, and clear storage location | Do not vendor external code without license review |
 | Odysseus README | Memory import/export | Warmind Memory Export | partial | 4 | M | medium | memory, UI, docs | SQLite memory | Memory has review queue, search, local markdown export, import/export, and clear privacy boundaries | Behavior reference only |
-| Odysseus README | File uploads including PDF | Document Intel | missing | 5 | L | medium | RAG, Graphify, workspace, UI | Knowledge Index V2 | PDF/DOCX/XLSX/CSV/text files can be parsed locally, indexed, previewed, and cited | Optional parser licenses must be reviewed |
+| Odysseus README | File uploads including PDF | Document Intel | partial | 5 | L | medium | RAG, Graphify, workspace, UI | Knowledge Index V2 | PDF/DOCX/XLSX/CSV/text files can be parsed locally, indexed, and cited; richer preview UX remains future work | Uses local parser packages only; no external parser service |
 | Rasputin goal | Typed graph relationships with evidence | Graphify Evidence V2 | partial | 4 | M | medium | Graphify, RAG, UI | document intel | Graph search explains why items are related with source snippets, file paths, and relationship type | Rasputin-native |
 
 ## Documents
@@ -81,7 +81,7 @@ Risk:
 | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |
 | Odysseus README | Multi-tab editor for markdown, HTML, CSV, syntax highlighting | Archive Editor | missing | 5 | XL | high | UI, backend, output, workspace | tool relay, file preview | User can edit markdown first, preview output, ask AI for suggestions, accept/reject edits, and export safely | Behavior reference only |
 | Odysseus README | AI suggestions, user remains writer | Archive Suggestions | missing | 5 | L | high | UI, agent, output | Archive Editor | AI proposes diffs or comments; user approves before file writes | Behavior reference only |
-| User goal | DOCX/PDF support for any workflow | Archive Document Formats | missing | 5 | XL | high | backend, RAG, output, UI | Document Intel, Archive Editor | DOCX text can be extracted and rewritten safely; PDFs are parsed and cited, not silently overwritten | Parser licenses must be reviewed |
+| User goal | DOCX/PDF support for any workflow | Archive Document Formats | partial | 5 | XL | high | backend, RAG, output, UI | Document Intel, Archive Editor | DOCX/PDF/XLSX text can be extracted and cited; safe rewrite/edit workflows remain approval-gated future work | Uses local parser packages only; no external parser service |
 
 ## Research
 
@@ -142,4 +142,3 @@ Risk:
 4. Archive Editor should start with markdown and suggestions before DOCX/PDF mutation.
 5. Recon and Trials are valuable but should wait until tools, model routing, and RAG are stable.
 6. Email, calendar, image editor, broad PWA polish, and 2FA should stay out of the next implementation wave.
-

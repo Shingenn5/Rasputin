@@ -19,8 +19,11 @@ TEXT_EXTS = {
     ".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".csv", ".tsv",
     ".yml", ".yaml", ".toml", ".ini", ".sql", ".xml", ".svg"
 }
-FUTURE_DOCUMENT_EXTS = {".pdf", ".docx", ".xlsx"}
+DOCUMENT_EXTS = {".pdf", ".docx", ".xlsx"}
 VECTOR_DIMS = 384
+MAX_TEXT_BYTES = 1_500_000
+MAX_DOCUMENT_BYTES = 12_000_000
+MAX_XLSX_ROWS_PER_SHEET = 5000
 
 _lock = Lock()
 
@@ -83,33 +86,158 @@ def _cosine(left, right):
     return sum(value * right.get(key, 0) for key, value in left.items())
 
 
+def _import_status(module_name):
+    try:
+        __import__(module_name)
+        return True
+    except Exception:
+        return False
+
+
+def parser_status():
+    return {
+        "text": "enabled",
+        "pdf": "enabled" if _import_status("pypdf") else "dependency_missing",
+        "docx": "enabled" if _import_status("docx") else "dependency_missing",
+        "xlsx": "enabled" if _import_status("openpyxl") else "dependency_missing",
+    }
+
+
 def _parser_status(path):
     ext = path.suffix.lower()
     if ext in TEXT_EXTS:
-        return {"supported": True, "parser": "text", "reason": ""}
-    if ext in FUTURE_DOCUMENT_EXTS:
-        return {"supported": False, "parser": ext.lstrip("-."), "reason": "parser_not_enabled"}
+        return {"supported": True, "parser": "text", "reason": "", "citation_kind": "line"}
+    if ext in DOCUMENT_EXTS:
+        parser = ext.lstrip(".")
+        status = parser_status().get(parser)
+        return {
+            "supported": status == "enabled",
+            "parser": parser,
+            "reason": "" if status == "enabled" else status,
+            "citation_kind": "page" if parser == "pdf" else ("sheet_rows" if parser == "xlsx" else "line"),
+        }
     return {"supported": False, "parser": "unsupported", "reason": "unsupported_extension"}
 
 
-def _read_text(path):
-    status = _parser_status(path)
-    if not status["supported"]:
-        return None, status
-    if path.stat().st_size > 1_500_000:
-        return None, {"supported": False, "parser": "text", "reason": "too_large"}
+def _read_plain_text(path, status):
+    if path.stat().st_size > MAX_TEXT_BYTES:
+        return [], {"supported": False, "parser": "text", "reason": "too_large"}
     try:
-        return path.read_text(encoding="utf-8"), status
+        text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         try:
-            return path.read_text(encoding="utf-8", errors="ignore"), {**status, "reason": "encoding_replaced"}
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            status = {**status, "reason": "encoding_replaced"}
         except Exception:
-            return None, {"supported": False, "parser": "text", "reason": "decode_failed"}
+            return [], {"supported": False, "parser": "text", "reason": "decode_failed"}
     except Exception:
-        return None, {"supported": False, "parser": "text", "reason": "read_failed"}
+        return [], {"supported": False, "parser": "text", "reason": "read_failed"}
+    return [{"text": text, "line_start": 1, "citation_kind": "line"}], status
 
 
-def _chunk_text(text, lines_per_chunk=80, overlap=12):
+def _read_pdf(path, status):
+    if path.stat().st_size > MAX_DOCUMENT_BYTES:
+        return [], {**status, "supported": False, "reason": "too_large"}
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(path))
+        segments = []
+        for index, page in enumerate(reader.pages):
+            try:
+                text = page.extract_text() or ""
+            except Exception:
+                text = ""
+            text = text.strip()
+            if text:
+                page_no = index + 1
+                segments.append({
+                    "text": text,
+                    "line_start": 1,
+                    "page_start": page_no,
+                    "page_end": page_no,
+                    "citation_kind": "page",
+                })
+        if not segments:
+            return [], {**status, "supported": False, "reason": "no_extractable_text"}
+        return segments, status
+    except Exception:
+        return [], {**status, "supported": False, "reason": "parse_failed"}
+
+
+def _read_docx(path, status):
+    if path.stat().st_size > MAX_DOCUMENT_BYTES:
+        return [], {**status, "supported": False, "reason": "too_large"}
+    try:
+        from docx import Document
+        doc = Document(str(path))
+        lines = []
+        for paragraph in doc.paragraphs:
+            text = paragraph.text.strip()
+            if text:
+                lines.append(text)
+        for table in doc.tables:
+            for row in table.rows:
+                values = [cell.text.strip().replace("\n", " ") for cell in row.cells if cell.text.strip()]
+                if values:
+                    lines.append(" | ".join(values))
+        text = "\n".join(lines).strip()
+        if not text:
+            return [], {**status, "supported": False, "reason": "no_extractable_text"}
+        return [{"text": text, "line_start": 1, "citation_kind": "line"}], status
+    except Exception:
+        return [], {**status, "supported": False, "reason": "parse_failed"}
+
+
+def _read_xlsx(path, status):
+    if path.stat().st_size > MAX_DOCUMENT_BYTES:
+        return [], {**status, "supported": False, "reason": "too_large"}
+    try:
+        from openpyxl import load_workbook
+        workbook = load_workbook(str(path), read_only=True, data_only=True)
+        segments = []
+        for sheet in workbook.worksheets:
+            lines = []
+            row_numbers = []
+            for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                if row_index > MAX_XLSX_ROWS_PER_SHEET:
+                    break
+                values = [str(value).strip() for value in row if value is not None and str(value).strip()]
+                if values:
+                    lines.append(f"Row {row_index}: " + " | ".join(values))
+                    row_numbers.append(row_index)
+            if lines:
+                segments.append({
+                    "text": "\n".join(lines),
+                    "line_start": row_numbers[0] if row_numbers else 1,
+                    "line_numbers": row_numbers,
+                    "sheet_name": sheet.title,
+                    "citation_kind": "sheet_rows",
+                })
+        workbook.close()
+        if not segments:
+            return [], {**status, "supported": False, "reason": "no_extractable_text"}
+        return segments, status
+    except Exception:
+        return [], {**status, "supported": False, "reason": "parse_failed"}
+
+
+def _read_document(path):
+    status = _parser_status(path)
+    if not status["supported"]:
+        return [], status
+    parser = status.get("parser")
+    if parser == "text":
+        return _read_plain_text(path, status)
+    if parser == "pdf":
+        return _read_pdf(path, status)
+    if parser == "docx":
+        return _read_docx(path, status)
+    if parser == "xlsx":
+        return _read_xlsx(path, status)
+    return [], {"supported": False, "parser": parser or "unsupported", "reason": "unsupported_extension"}
+
+
+def _chunk_lines(text, lines_per_chunk=80, overlap=12, base_line=1, extra=None, line_numbers=None):
     lines = str(text or "").splitlines()
     if not lines:
         return []
@@ -121,9 +249,41 @@ def _chunk_text(text, lines_per_chunk=80, overlap=12):
             break
         joined = "\n".join(part).strip()
         if joined:
-            chunks.append((joined, start + 1, start + len(part)))
+            if line_numbers and start < len(line_numbers):
+                line_start = line_numbers[start]
+                line_end = line_numbers[min(start + len(part) - 1, len(line_numbers) - 1)]
+            else:
+                line_start = base_line + start
+                line_end = base_line + start + len(part) - 1
+            chunk = {
+                "text": joined,
+                "line_start": line_start,
+                "line_end": line_end,
+                **(extra or {}),
+            }
+            if chunk.get("citation_kind") == "sheet_rows":
+                chunk["row_start"] = line_start
+                chunk["row_end"] = line_end
+            chunks.append(chunk)
         if start + lines_per_chunk >= len(lines):
             break
+    return chunks
+
+
+def _chunk_segments(segments):
+    chunks = []
+    for segment in segments:
+        extra = {
+            key: segment.get(key)
+            for key in ["page_start", "page_end", "sheet_name", "citation_kind"]
+            if segment.get(key) not in {None, ""}
+        }
+        chunks.extend(_chunk_lines(
+            segment.get("text", ""),
+            base_line=segment.get("line_start") or 1,
+            extra=extra,
+            line_numbers=segment.get("line_numbers"),
+        ))
     return chunks
 
 
@@ -178,11 +338,12 @@ def ingest(path=".", label=None):
         if existing_doc and existing_doc.get("mtime") == stat.st_mtime and existing_doc.get("bytes") == stat.st_size:
             unchanged.append(source)
             continue
-        text, parser = _read_text(file_path)
-        if text is None:
+        segments, parser = _read_document(file_path)
+        if not segments:
             skipped.append({"path": rel, "reason": parser.get("reason"), "parser": parser.get("parser")})
             continue
         touched.append(source)
+        text = "\n\n".join(segment.get("text", "") for segment in segments)
         content_hash = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
         doc = {
             "source": source,
@@ -195,10 +356,12 @@ def ingest(path=".", label=None):
             "content_hash": content_hash,
             "parser": parser.get("parser"),
             "parser_status": parser.get("reason") or "ok",
+            "citation_kind": parser.get("citation_kind") or "line",
         }
         docs.append(doc)
-        for n, (chunk, line_start, line_end) in enumerate(_chunk_text(text)):
-            terms = Counter(_tokenize(chunk))
+        for n, chunk in enumerate(_chunk_segments(segments)):
+            chunk_text = chunk.get("text", "")[:5000]
+            terms = Counter(_tokenize(chunk_text))
             if not terms:
                 continue
             new_chunks.append({
@@ -207,12 +370,19 @@ def ingest(path=".", label=None):
                 "workspace_id": item.get("id"),
                 "path": rel,
                 "chunk": n,
-                "line_start": line_start,
-                "line_end": line_end,
-                "text": chunk[:5000],
+                "line_start": chunk.get("line_start"),
+                "line_end": chunk.get("line_end"),
+                "page_start": chunk.get("page_start"),
+                "page_end": chunk.get("page_end"),
+                "sheet_name": chunk.get("sheet_name"),
+                "row_start": chunk.get("row_start"),
+                "row_end": chunk.get("row_end"),
+                "citation_kind": chunk.get("citation_kind") or parser.get("citation_kind") or "line",
+                "parser": parser.get("parser"),
+                "text": chunk_text,
                 "terms": dict(terms),
                 "term_count": sum(terms.values()),
-                "vector": _embed(chunk),
+                "vector": _embed(chunk_text),
                 "mtime": stat.st_mtime,
                 "content_hash": content_hash,
             })
@@ -235,12 +405,7 @@ def ingest(path=".", label=None):
         "total_docs": len(index["docs"]),
         "total_chunks": len(index["chunks"]),
         "index_backend": "local-hash-vector-json",
-        "parser_status": {
-            "text": "enabled",
-            "pdf": "not_enabled",
-            "docx": "not_enabled",
-            "xlsx": "not_enabled",
-        },
+        "parser_status": parser_status(),
     }
 
 
@@ -253,12 +418,7 @@ def stats():
         "chunks": len(index["chunks"]),
         "updated_at": index.get("updated_at"),
         "sources": index["docs"][-25:],
-        "parser_status": {
-            "text": "enabled",
-            "pdf": "not_enabled",
-            "docx": "not_enabled",
-            "xlsx": "not_enabled",
-        },
+        "parser_status": parser_status(),
     }
 
 
@@ -319,6 +479,13 @@ def search(query, limit=6, path=None):
             "chunk": chunk["chunk"],
             "line_start": chunk.get("line_start"),
             "line_end": chunk.get("line_end"),
+            "page_start": chunk.get("page_start"),
+            "page_end": chunk.get("page_end"),
+            "sheet_name": chunk.get("sheet_name"),
+            "row_start": chunk.get("row_start"),
+            "row_end": chunk.get("row_end"),
+            "citation_kind": chunk.get("citation_kind") or "line",
+            "parser": chunk.get("parser"),
             "mtime": chunk.get("mtime"),
             "text": chunk["text"],
             "citation": {
@@ -327,6 +494,12 @@ def search(query, limit=6, path=None):
                 "chunk": chunk.get("chunk"),
                 "line_start": chunk.get("line_start"),
                 "line_end": chunk.get("line_end"),
+                "page_start": chunk.get("page_start"),
+                "page_end": chunk.get("page_end"),
+                "sheet_name": chunk.get("sheet_name"),
+                "row_start": chunk.get("row_start"),
+                "row_end": chunk.get("row_end"),
+                "citation_kind": chunk.get("citation_kind") or "line",
                 "mtime": chunk.get("mtime"),
             },
         })

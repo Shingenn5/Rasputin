@@ -546,6 +546,7 @@ function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnow
                 <dt>Chunks</dt><dd>{ragStats?.chunks ?? 0}</dd>
                 <dt>Graph nodes</dt><dd>{graphStats?.nodes ?? 0}</dd>
                 <dt>Graph edges</dt><dd>{graphStats?.edges ?? 0}</dd>
+                <dt>Parsers</dt><dd>{parserStatusLine(ragStats?.parserStatus)}</dd>
               </dl>
             </Card.Body>
           </Card>
@@ -565,7 +566,7 @@ function KnowledgeSettings({ workspace, ragStats, graphStats, indexWorkspaceKnow
                     <Card className="message-card" key={`${hit.source}-${hit.chunk}`}>
                       <Card.Body>
                         <strong>{hit.path}</strong>
-                        <small className="d-block text-body-secondary">Lines {hit.lineStart}-{hit.lineEnd}</small>
+                        <small className="d-block text-body-secondary">{citationLabel(hit)}</small>
                       </Card.Body>
                     </Card>
                   ))}
@@ -658,6 +659,20 @@ function OutputSettings({ output, saveOutputConfig, security }) {
       </Row>
     </section>
   );
+}
+
+function parserStatusLine(status = {}) {
+  const enabled = Object.entries(status)
+    .filter(([, value]) => value === "enabled")
+    .map(([key]) => key.toUpperCase());
+  return enabled.length ? enabled.join(", ") : "Text only";
+}
+
+function citationLabel(hit = {}) {
+  if (hit.pageStart) return `Page ${hit.pageStart}${hit.pageEnd && hit.pageEnd !== hit.pageStart ? `-${hit.pageEnd}` : ""}`;
+  if (hit.sheetName) return `${hit.sheetName} rows ${hit.rowStart || hit.lineStart || "?"}-${hit.rowEnd || hit.lineEnd || "?"}`;
+  if (hit.lineStart) return `Lines ${hit.lineStart}-${hit.lineEnd || hit.lineStart}`;
+  return "Citation metadata unavailable";
 }
 
 function AppearanceSettings({ theme, setTheme, themeOptions = [] }) {

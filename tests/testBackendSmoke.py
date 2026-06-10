@@ -25,6 +25,32 @@ from backend.mcp_layer import McpLayer
 from backend.response import AppError
 
 
+def minimal_pdf_bytes(text):
+    safe = str(text).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    content = f"BT /F1 12 Tf 72 720 Td ({safe}) Tj ET".encode("utf-8")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n" + content + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out.extend(f"{index} 0 obj\n".encode("ascii"))
+        out.extend(obj)
+        out.extend(b"\nendobj\n")
+    xref_start = len(out)
+    out.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    out.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        out.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    out.extend(f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_start}\n%%EOF\n".encode("ascii"))
+    return bytes(out)
+
+
 class BackendSmokeTests(unittest.TestCase):
     def setUp(self):
         main.app.dependency_overrides[main.current_user] = lambda: {"username": "test", "role": "admin"}
@@ -350,10 +376,22 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("fitScore", routed["items"][0])
 
     def testRagIngestAddsIncrementalDocumentIntel(self):
+        from docx import Document
+        from openpyxl import Workbook
+
         target_dir = main.ROOT / "workspace" / f"rag-smoke-{runtime_store.new_id('rag')[-6:]}"
         target_dir.mkdir(parents=True, exist_ok=True)
         (target_dir / "notes.md").write_text("Rasputin archive recall smoke document.\n" * 4, encoding="utf-8")
-        (target_dir / "future.pdf").write_text("not a real pdf", encoding="utf-8")
+        (target_dir / "field-report.pdf").write_bytes(minimal_pdf_bytes("Rasputin PDF memory smoke document."))
+        docx = Document()
+        docx.add_paragraph("Rasputin DOCX archive smoke document.")
+        docx.save(str(target_dir / "briefing.docx"))
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Signals"
+        sheet.append(["Signal", "Meaning"])
+        sheet.append(["warsat", "Rasputin XLSX telemetry smoke document"])
+        workbook.save(str(target_dir / "telemetry.xlsx"))
         rel_path = str(target_dir.relative_to(main.ROOT)).replace("\\", "/")
 
         self.assertOk(self.client.post("/api/workspace/approve", json={
@@ -365,16 +403,24 @@ class BackendSmokeTests(unittest.TestCase):
 
         first = self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Smoke RAG"}))
         self.assertEqual(first["indexBackend"], "local-hash-vector-json")
-        self.assertEqual(first["parserStatus"]["pdf"], "not_enabled")
-        self.assertGreaterEqual(first["docsIndexed"], 1)
-        self.assertTrue(any(item["parser"] == "pdf" for item in first["skipped"]))
+        self.assertEqual(first["parserStatus"]["pdf"], "enabled")
+        self.assertEqual(first["parserStatus"]["docx"], "enabled")
+        self.assertEqual(first["parserStatus"]["xlsx"], "enabled")
+        self.assertGreaterEqual(first["docsIndexed"], 4)
 
         second = self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Smoke RAG"}))
-        self.assertGreaterEqual(second["docsSkippedUnchanged"], 1)
+        self.assertGreaterEqual(second["docsSkippedUnchanged"], 4)
 
         stats = self.assertOk(self.client.get("/api/rag/stats"))
         self.assertEqual(stats["indexBackend"], "local-hash-vector-json")
-        self.assertEqual(stats["parserStatus"]["docx"], "not_enabled")
+        self.assertEqual(stats["parserStatus"]["docx"], "enabled")
+
+        pdf_hits = self.assertOk(self.client.post("/api/rag/search", json={"path": rel_path, "query": "PDF memory smoke", "limit": 3}))
+        self.assertTrue(any(hit.get("pageStart") == 1 for hit in pdf_hits["hits"]))
+        docx_hits = self.assertOk(self.client.post("/api/rag/search", json={"path": rel_path, "query": "DOCX archive smoke", "limit": 3}))
+        self.assertTrue(any(hit.get("parser") == "docx" for hit in docx_hits["hits"]))
+        xlsx_hits = self.assertOk(self.client.post("/api/rag/search", json={"path": rel_path, "query": "telemetry smoke", "limit": 3}))
+        self.assertTrue(any(hit.get("sheetName") == "Signals" for hit in xlsx_hits["hits"]))
 
     def testArchiveSessionsSaveAndExportWithPermission(self):
         title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"

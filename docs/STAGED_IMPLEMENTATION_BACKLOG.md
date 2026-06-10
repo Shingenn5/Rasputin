@@ -248,15 +248,15 @@ Definition of done:
 
 ### Branch: `codex/rag-v2-document-intel`
 
-Goal: replace the lightweight hash retrieval with a production local knowledge index.
+Goal: expand the local knowledge index with document parsing and citation metadata while keeping retrieval local-only.
 
 Scope:
 
-- Add local vector store behind existing RAG endpoints.
-- Add embedding model role and local-only enforcement.
 - Add incremental indexing by modified time and content hash.
-- Parse text/code/markdown/json/csv first.
-- Add document parser layer for PDF, DOCX, and XLSX as optional modules after license review.
+- Keep existing local hash-vector retrieval behind existing RAG endpoints.
+- Parse text/code/markdown/json/csv.
+- Add document parser layer for PDF, DOCX, and XLSX with local parser packages.
+- Preserve page, line, sheet, and row citation metadata where possible.
 
 Affected subsystems: RAG, workspace, models, UI, Docker.
 
@@ -280,6 +280,7 @@ Tests required:
 
 - Incremental reindex skips unchanged files.
 - Search returns file path and line/page metadata.
+- PDF/DOCX/XLSX files can be indexed locally and searched.
 - Unsupported/binary/large files are skipped with reason.
 
 Definition of done:
@@ -592,4 +593,3 @@ Do not start these until Stages 1 through 4 are stable:
 3. `codex/rag-v2-document-intel`
 
 These should be implemented in order. Warsat and RAG can start after Tool Relay establishes the common permission, tracing, and approval behavior.
-
