@@ -652,7 +652,7 @@ Commit message: `Harden MCP relay compatibility`
 
 Completed: 2026-06-10
 
-Commit: `pending`
+Commit: `881dc59`
 
 Validation:
 
