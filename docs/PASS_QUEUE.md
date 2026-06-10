@@ -81,11 +81,23 @@ Stop conditions:
 - UI direction requires operator choice
 - two repeated Playwright failures expose a broader shell regression
 
-### [ ] 02. MCP Relay V2 Stdio
+### [x] 02. MCP Relay V2 Stdio
 
 Branch: `codex/mcp-relay-v2-stdio`
 
 Commit message: `Add local stdio MCP relay runtime`
+
+Completed: 2026-06-09
+
+Commit: `3737068`
+
+Validation:
+
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 42 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: support approved local stdio MCP servers through Rasputin Tool Relay without giving models direct tool transport access.
 
@@ -132,11 +144,23 @@ Stop conditions:
 - requires Docker socket access
 - discovered tool could bypass permissions
 
-### [ ] 03. Warsat Hardware Probe
+### [x] 03. Warsat Hardware Probe
 
 Branch: `codex/warsat-hardware-probe`
 
 Commit message: `Add Warsat hardware probe`
+
+Completed: 2026-06-09
+
+Commit: `2175cfc`
+
+Validation:
+
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 42 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: add read-only diagnostics for Docker, GPU visibility, VRAM estimate, model mount visibility, and runtime support.
 
@@ -179,11 +203,23 @@ Stop conditions:
 - implementation needs system package install
 - implementation attempts to modify Docker config
 
-### [ ] 04. Warsat Fit Scoring
+### [x] 04. Warsat Fit Scoring
 
 Branch: `codex/warsat-fit-scoring`
 
 Commit message: `Add Warsat model fit scoring`
+
+Completed: 2026-06-09
+
+Commit: `4d70913`
+
+Validation:
+
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 42 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: rank catalog models by practical local fit using model metadata, runtime, quantization, context window, and hardware probe output.
 
@@ -222,11 +258,23 @@ Stop conditions:
 - needs live external model download
 - needs GPU-specific host commands that fail outside Docker
 
-### [ ] 05. RAG UX V2
+### [x] 05. RAG UX V2
 
 Branch: `codex/rag-ux-v2`
 
 Commit message: `Improve RAG indexing and search UX`
+
+Completed: 2026-06-09
+
+Commits: `395407c`, `63e2f04`, `4d70913`
+
+Validation:
+
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 42 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: make indexing understandable and useful across Workspaces, Knowledge, Archive, and task details.
 
@@ -267,11 +315,23 @@ Stop conditions:
 - requires replacing RAG storage backend
 - requires adding external embedding service
 
-### [ ] 06. Workspace Tool Read V1
+### [x] 06. Workspace Tool Read V1
 
 Branch: `codex/workspace-tool-read-v1`
 
 Commit message: `Add workspace read tools`
+
+Completed: 2026-06-09
+
+Commit: `4b21cec`
+
+Validation:
+
+- `docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke`: passed, 42 tests
+- `npx.cmd playwright test tests/ui/rasputinSmoke.spec.mjs --project=chromium --reporter=list`: passed, 10 tests
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: make Rasputin reliably read approved workspaces through Tool Relay/MCP-style tools.
 
