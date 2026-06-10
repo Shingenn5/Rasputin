@@ -775,6 +775,11 @@ async def mcp_servers_restart(server_id: str, req: McpServerActionIn | None = No
     return ok(await mcp_relay.restart(server_id, approval_id=req.approval_id if req else None))
 
 
+@app.post("/api/mcp/servers/{server_id}/test")
+async def mcp_servers_test(server_id: str, _user=Depends(current_user)):
+    return ok(await mcp_relay.test_server(server_id))
+
+
 @app.get("/api/mcp/servers/{server_id}/tools")
 async def mcp_server_tools(server_id: str, _user=Depends(current_user)):
     return ok(mcp_relay.server_tools(server_id))

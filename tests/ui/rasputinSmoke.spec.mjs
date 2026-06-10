@@ -286,6 +286,11 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await page.locator("[data-testid='settings-tool-relays']").click();
   await expect(page.locator("#settings-tool-relays")).toBeVisible();
   await expect(page.locator("[data-testid='mcp-register-form']")).toBeVisible();
+  await expect(page.locator("#settings-tool-relays")).toContainText("Compatibility");
+  await expect(page.locator("#settings-tool-relays")).toContainText("Resources");
+  await expect(page.locator("#settings-tool-relays")).toContainText("Prompts");
+  await expect(page.locator("#settings-tool-relays")).toContainText("Read-Only MCP Capabilities");
+  await expect(page.locator("[data-testid='mcp-capability-list']")).toBeVisible();
 
   await page.locator("[data-testid='settings-output']").click();
   await expect(page.locator("[data-testid='output-settings-form']")).toBeVisible();

@@ -242,6 +242,7 @@ function ToolRelaySettings({
   startMcpRelay,
   stopMcpRelay,
   discoverMcpRelay,
+  testMcpRelay,
   classifyMcpTool,
   approveApproval,
 }) {
@@ -338,6 +339,27 @@ function ToolRelaySettings({
                       <Badge bg={server.commandApproved ? "success" : "warning"}>{server.commandApproved ? "Approved" : "Approval required"}</Badge>
                     </div>
                     {server.command && <code className="mcp-command">{server.command}</code>}
+                    <dl className="mcp-health-grid" aria-label={`${server.name || server.id} MCP status details`}>
+                      <div>
+                        <dt>Compatibility</dt>
+                        <dd>{server.compatibilityStatus || "unknown"}</dd>
+                      </div>
+                      <div>
+                        <dt>Tools</dt>
+                        <dd>{server.toolCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Resources</dt>
+                        <dd>{server.resourcesCount ?? 0}</dd>
+                      </div>
+                      <div>
+                        <dt>Prompts</dt>
+                        <dd>{server.promptsCount ?? 0}</dd>
+                      </div>
+                    </dl>
+                    <p className="text-body-secondary mb-0">
+                      Last start: {server.lastStartedAt ? new Date(server.lastStartedAt * 1000).toLocaleString() : "Not started"} / Last discovery: {server.lastDiscoveredAt ? new Date(server.lastDiscoveredAt * 1000).toLocaleString() : "Not discovered"}
+                    </p>
                     {server.lastError && <p className="text-danger mb-0">{server.lastError}</p>}
                     {server.pendingApprovalId && (
                       <p className="text-body-secondary mb-0">Approval code: <strong>{server.pendingApprovalCode}</strong></p>
@@ -369,14 +391,51 @@ function ToolRelaySettings({
                           Stop
                         </Button>
                       )}
+                      {server.transport !== "internal" && (
+                        <Button size="sm" variant="outline-secondary" type="button" onClick={() => run("Test MCP server", () => testMcpRelay(server))}>
+                          <RotateCcw size={14} />
+                          Test
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline-secondary" type="button" onClick={() => run("Discover MCP tools", () => discoverMcpRelay(server))}>
-                        Discover Tools
+                        Discover Capabilities
                       </Button>
                     </Stack>
-                    {!!server.logs?.length && <pre className="log-box mt-2 mb-0">{server.logs.join("\n")}</pre>}
+                    {!!(server.recentLogs || server.logs)?.length && <pre className="log-box mt-2 mb-0">{(server.recentLogs || server.logs).join("\n")}</pre>}
                   </article>
                 ))}
                 {!servers.length && <p className="text-body-secondary mb-0">No MCP relays are registered yet.</p>}
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col xs={12}>
+          <Card className="settings-card shadow-sm">
+            <Card.Body>
+              <div className="section-row">
+                <div>
+                  <h3>Read-Only MCP Capabilities</h3>
+                  <p className="text-body-secondary mb-0">Resources and prompts are visible for review only. Rasputin does not execute them as tools in this pass.</p>
+                </div>
+                <Badge bg="secondary">
+                  {servers.reduce((count, server) => count + (server.resourcesCount || 0) + (server.promptsCount || 0), 0)} capability
+                </Badge>
+              </div>
+              <div className="mcp-capability-grid mt-3" data-testid="mcp-capability-list">
+                {servers.flatMap((server) => [
+                  ...((server.resources || []).map((resource) => ({ ...resource, kind: "Resource", serverName: server.name || server.id, label: resource.name || resource.uri, detail: resource.uri }))),
+                  ...((server.prompts || []).map((prompt) => ({ ...prompt, kind: "Prompt", serverName: server.name || server.id, label: prompt.name, detail: `${(prompt.arguments || []).length} argument${(prompt.arguments || []).length === 1 ? "" : "s"}` }))),
+                ]).map((item) => (
+                  <article className="mcp-capability-card" key={`${item.serverName}-${item.kind}-${item.label}`}>
+                    <span className="eyebrow">{item.serverName} / {item.kind}</span>
+                    <strong>{item.label}</strong>
+                    <p className="text-body-secondary mb-0">{item.description || item.detail || "No description provided."}</p>
+                    <small>{item.detail}</small>
+                  </article>
+                ))}
+                {!servers.some((server) => (server.resourcesCount || 0) || (server.promptsCount || 0)) && (
+                  <p className="text-body-secondary mb-0">No MCP resources or prompts discovered yet.</p>
+                )}
               </div>
             </Card.Body>
           </Card>

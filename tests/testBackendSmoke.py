@@ -377,6 +377,8 @@ class BackendSmokeTests(unittest.TestCase):
                 "        args = (msg.get('params') or {}).get('arguments') or {}",
                 "        text = args.get('message', '')",
                 "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'content':[{'type':'text','text':text}], 'structuredContent': {'echo': text}}}), flush=True)",
+                "    elif method in {'resources/list', 'prompts/list'}:",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'error':{'code':-32601,'message':'unsupported'}}), flush=True)",
             ]),
             encoding="utf-8",
         )
@@ -404,12 +406,22 @@ class BackendSmokeTests(unittest.TestCase):
         async def flow():
             started = await mcp_relay.start(relay_id, registered["pendingApprovalId"])
             self.assertEqual(started["status"], "running")
+            self.assertIn("compatibilityStatus", started)
+            tested = self.assertOk(self.client.post(f"/api/mcp/servers/{relay_id}/test"))
+            self.assertIn("capabilities", tested)
             stdio = await mcp_relay.discover(relay_id)
             self.assertEqual(len(stdio["tools"]), 1)
+            self.assertEqual(stdio["resources"], [])
+            self.assertEqual(stdio["prompts"], [])
+            self.assertIn("resourcesCount", stdio["server"])
+            self.assertIn("promptsCount", stdio["server"])
+            self.assertIn("lastDiscoveredAt", stdio["server"])
             tool_id = stdio["tools"][0]["id"]
             self.assertFalse(stdio["tools"][0]["available"])
             server_tools = self.assertOk(self.client.get(f"/api/mcp/servers/{relay_id}/tools"))
             self.assertEqual(server_tools["tools"][0]["id"], tool_id)
+            self.assertEqual(server_tools["resources"], [])
+            self.assertEqual(server_tools["prompts"], [])
             encoded_tool_id = urllib.parse.quote(tool_id, safe="")
             classified = self.assertOk(self.client.post(f"/api/mcp/tools/{encoded_tool_id}/classify", json={
                 "risk": "guarded",
@@ -421,6 +433,138 @@ class BackendSmokeTests(unittest.TestCase):
             self.assertEqual(result["structuredContent"]["echo"], "mcp ok")
             stopped = await mcp_relay.stop(relay_id)
             self.assertEqual(stopped["status"], "stopped")
+
+        asyncio.run(flow())
+
+    def testMcpRelayDiscoversReadOnlyResourcesPromptsAndNoisyStdout(self):
+        script = main.ROOT / "workspace" / "fake_mcp_caps.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            "\n".join([
+                "import json, sys",
+                "print('boot noise from fixture', flush=True)",
+                "for line in sys.stdin:",
+                "    if not line.strip():",
+                "        continue",
+                "    msg = json.loads(line)",
+                "    mid = msg.get('id')",
+                "    method = msg.get('method')",
+                "    if method == 'initialize':",
+                "        result = {'protocolVersion':'2025-06-18','capabilities':{'tools':{},'resources':{},'prompts':{}},'serverInfo':{'name':'fake-caps','version':'1'}}",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':result}), flush=True)",
+                "    elif method == 'tools/list':",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'tools':[]}}), flush=True)",
+                "    elif method == 'resources/list':",
+                "        resource = {'uri':'file://local/readme.md','name':'Local Readme','description':'Read-only fixture resource','mimeType':'text/markdown'}",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'resources':[resource]}}), flush=True)",
+                "    elif method == 'prompts/list':",
+                "        prompt = {'name':'summarize-local','description':'Fixture prompt','arguments':[{'name':'topic','description':'Topic','required':True}]}",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'prompts':[prompt]}}), flush=True)",
+            ]),
+            encoding="utf-8",
+        )
+        relay_id = f"caps-relay-{runtime_store.new_id('relay')[-6:]}"
+        registered = self.assertOk(self.client.post("/api/mcp/servers", json={
+            "id": relay_id,
+            "name": "Caps Relay",
+            "transport": "stdio",
+            "command": f"{sys.executable} {script}",
+            "enabled": False,
+        }))
+        approvals.approve(registered["pendingApprovalId"])
+
+        async def flow():
+            await mcp_relay.start(relay_id, registered["pendingApprovalId"])
+            discovered = await mcp_relay.discover(relay_id)
+            self.assertEqual(discovered["tools"], [])
+            self.assertEqual(len(discovered["resources"]), 1)
+            self.assertEqual(len(discovered["prompts"]), 1)
+            self.assertEqual(discovered["server"]["resourcesCount"], 1)
+            self.assertEqual(discovered["server"]["promptsCount"], 1)
+            self.assertEqual(discovered["server"]["compatibilityStatus"], "read_only_capabilities")
+            self.assertTrue(any("boot noise" in item for item in discovered["server"]["recentLogs"]))
+            listed = self.assertOk(self.client.get(f"/api/mcp/servers/{relay_id}/tools"))
+            self.assertEqual(listed["resources"][0]["name"], "Local Readme")
+            self.assertEqual(listed["prompts"][0]["name"], "summarize-local")
+            await mcp_relay.stop(relay_id)
+
+        asyncio.run(flow())
+
+    def testMcpRelayCompatibilityFailuresAreStructured(self):
+        crash_script = main.ROOT / "workspace" / "fake_mcp_crash.py"
+        bad_schema_script = main.ROOT / "workspace" / "fake_mcp_bad_schema.py"
+        hang_script = main.ROOT / "workspace" / "fake_mcp_hang.py"
+        crash_script.parent.mkdir(parents=True, exist_ok=True)
+        crash_script.write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
+        bad_schema_script.write_text(
+            "\n".join([
+                "import json, sys",
+                "for line in sys.stdin:",
+                "    msg = json.loads(line)",
+                "    mid = msg.get('id')",
+                "    method = msg.get('method')",
+                "    if method == 'initialize':",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'protocolVersion':'2025-06-18','capabilities':{'tools':{}},'serverInfo':{'name':'bad-schema','version':'1'}}}), flush=True)",
+                "    elif method == 'tools/list':",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'tools':[{'name':'bad','inputSchema':'not-an-object'}]}}), flush=True)",
+            ]),
+            encoding="utf-8",
+        )
+        hang_script.write_text(
+            "\n".join([
+                "import json, sys, time",
+                "for line in sys.stdin:",
+                "    msg = json.loads(line)",
+                "    mid = msg.get('id')",
+                "    method = msg.get('method')",
+                "    if method == 'initialize':",
+                "        print(json.dumps({'jsonrpc':'2.0','id':mid,'result':{'protocolVersion':'2025-06-18','capabilities':{'tools':{}},'serverInfo':{'name':'hang','version':'1'}}}), flush=True)",
+                "    elif method == 'tools/list':",
+                "        time.sleep(5)",
+            ]),
+            encoding="utf-8",
+        )
+
+        crash_id = f"crash-relay-{runtime_store.new_id('relay')[-6:]}"
+        crash_registered = self.assertOk(self.client.post("/api/mcp/servers", json={
+            "id": crash_id,
+            "transport": "stdio",
+            "command": f"{sys.executable} {crash_script}",
+        }))
+        approvals.approve(crash_registered["pendingApprovalId"])
+        crash_start = self.client.post(f"/api/mcp/servers/{crash_id}/start", json={"approvalId": crash_registered["pendingApprovalId"]})
+        self.assertEqual(crash_start.status_code, 502)
+        self.assertFalse(crash_start.json()["ok"])
+        self.assertIn(crash_start.json()["error"]["code"], {"mcpServerExited", "mcpRequestTimeout"})
+
+        bad_id = f"bad-schema-relay-{runtime_store.new_id('relay')[-6:]}"
+        bad_registered = self.assertOk(self.client.post("/api/mcp/servers", json={
+            "id": bad_id,
+            "transport": "stdio",
+            "command": f"{sys.executable} {bad_schema_script}",
+        }))
+        approvals.approve(bad_registered["pendingApprovalId"])
+
+        hang_id = f"hang-relay-{runtime_store.new_id('relay')[-6:]}"
+        hang_registered = self.assertOk(self.client.post("/api/mcp/servers", json={
+            "id": hang_id,
+            "transport": "stdio",
+            "command": f"{sys.executable} {hang_script}",
+        }))
+        approvals.approve(hang_registered["pendingApprovalId"])
+
+        async def flow():
+            await mcp_relay.start(bad_id, bad_registered["pendingApprovalId"])
+            with self.assertRaises(AppError) as bad_error:
+                await mcp_relay.discover(bad_id)
+            self.assertEqual(bad_error.exception.code, "mcp_bad_schema")
+            await mcp_relay.stop(bad_id)
+
+            await mcp_relay.start(hang_id, hang_registered["pendingApprovalId"])
+            with self.assertRaises(AppError) as timeout_error:
+                await mcp_relay._request(hang_id, "tools/list", {}, timeout=0.1)
+            self.assertEqual(timeout_error.exception.code, "mcp_request_timeout")
+            await mcp_relay.stop(hang_id)
 
         asyncio.run(flow())
 

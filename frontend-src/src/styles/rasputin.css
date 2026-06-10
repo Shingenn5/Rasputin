@@ -3590,6 +3590,52 @@ button.runtime-chip {
   color: var(--ras-text);
 }
 
+.mcp-health-grid,
+.mcp-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .55rem;
+}
+
+.mcp-health-grid {
+  margin: 0;
+}
+
+.mcp-health-grid > div,
+.mcp-capability-card {
+  min-width: 0;
+  padding: .6rem;
+  border: 1px solid var(--ras-border);
+  border-radius: .5rem;
+  background: color-mix(in srgb, var(--ras-panel) 82%, transparent);
+}
+
+.mcp-health-grid dt {
+  color: var(--ras-muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+}
+
+.mcp-health-grid dd {
+  margin: 0;
+  color: var(--ras-text);
+  overflow-wrap: anywhere;
+}
+
+.mcp-capability-card {
+  display: grid;
+  gap: .35rem;
+}
+
+.mcp-capability-card strong,
+.mcp-capability-card small {
+  overflow-wrap: anywhere;
+}
+
+.mcp-capability-card small {
+  color: var(--ras-muted);
+}
+
 .risk-safe {
   color: var(--ras-success, #287d3c);
 }

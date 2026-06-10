@@ -405,6 +405,13 @@ export function App() {
     return discovered;
   }
 
+  async function testMcpRelay(server) {
+    const tested = await postJson(`/api/mcp/servers/${server.id}/test`, {});
+    await Promise.allSettled([loadMcpRelays(), loadTools()]);
+    setGlobalStatus(tested.message || `${server.name || server.id} initialized.`);
+    return tested;
+  }
+
   async function classifyMcpTool(toolId, payload) {
     const classified = await postJson(`/api/mcp/tools/${encodeURIComponent(toolId)}/classify`, payload);
     await Promise.allSettled([loadMcpRelays(), loadTools()]);
@@ -1573,6 +1580,7 @@ export function App() {
         startMcpRelay={startMcpRelay}
         stopMcpRelay={stopMcpRelay}
         discoverMcpRelay={discoverMcpRelay}
+        testMcpRelay={testMcpRelay}
         classifyMcpTool={classifyMcpTool}
         approveApproval={approveApproval}
         refreshApprovals={refreshApprovals}

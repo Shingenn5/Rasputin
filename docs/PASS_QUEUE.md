@@ -644,11 +644,24 @@ Stop conditions:
 - validation exposes a runtime blocker
 - queue state conflicts with actual completed branches
 
-### [ ] 12. MCP Relay V2 Compatibility Hardening
+### [x] 12. MCP Relay V2 Compatibility Hardening
 
 Branch: `codex/mcp-relay-v2-compat-hardening`
 
 Commit message: `Harden MCP relay compatibility`
+
+Completed: 2026-06-10
+
+Commit: `pending`
+
+Validation:
+
+- `powershell.exe -ExecutionPolicy Bypass -File scripts\test.ps1 -Ui`: passed
+- backend smoke: passed, 46 tests
+- Playwright UI smoke: passed, 10 tests, 1 preview test skipped
+- `npm.cmd run build`: passed
+- `git diff --check`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed
 
 Goal: make local stdio MCP support reliable against a wider range of real MCP servers without adding remote transports or new dangerous powers.
 

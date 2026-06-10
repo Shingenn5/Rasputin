@@ -42,6 +42,7 @@ class _ProcessState:
         self.lock = asyncio.Lock()
         self.logs = deque(maxlen=120)
         self.started_at = time.time()
+        self.capabilities = {}
 
 
 def _blank():
@@ -60,6 +61,10 @@ def _blank():
                 "status": "available",
                 "health": "available",
                 "tools": [],
+                "resources": [],
+                "prompts": [],
+                "capabilities": {"tools": True},
+                "compatibility_status": "internal",
                 "created_at": time.time(),
                 "updated_at": time.time(),
             }
@@ -109,10 +114,43 @@ def _normalize_server(server):
     server.setdefault("pending_approval_id", "")
     server.setdefault("pending_approval_code", "")
     server.setdefault("tools", [])
+    server.setdefault("resources", [])
+    server.setdefault("prompts", [])
+    server.setdefault("capabilities", {})
+    server.setdefault("compatibility_status", "available" if transport == "internal" else "unknown")
+    server.setdefault("recent_logs", [])
+    server.setdefault("last_started_at", None)
+    server.setdefault("last_discovered_at", None)
     server.setdefault("tool_policy", {})
     server.setdefault("created_at", time.time())
     server.setdefault("updated_at", time.time())
     return server
+
+
+def _combined_logs(server_id, server):
+    stored = list(server.get("recent_logs") or [])
+    state = _processes.get(server_id)
+    live = list(state.logs) if state else []
+    return (stored + [item for item in live if item not in stored])[-120:]
+
+
+def _compatibility_status(server, running=False):
+    if server.get("transport") == "internal":
+        return "internal"
+    if server.get("health") == "error" or server.get("last_error"):
+        return "error"
+    if not server.get("command_approved"):
+        return "approval_required"
+    if not server.get("enabled"):
+        return "disabled"
+    if running and not server.get("tools") and not server.get("resources") and not server.get("prompts"):
+        return "running_not_discovered"
+    if server.get("tools"):
+        unclassified = [tool for tool in server.get("tools") or [] if tool.get("name") not in (server.get("tool_policy") or {})]
+        return "needs_classification" if unclassified else "ready"
+    if server.get("resources") or server.get("prompts"):
+        return "read_only_capabilities"
+    return server.get("compatibility_status") or "unknown"
 
 
 def _public(server):
@@ -121,6 +159,9 @@ def _public(server):
     enabled = bool(server.get("enabled"))
     running = _is_running(server_id)
     tool_count = len(tool_relay.catalog(include_external=False).get("tools", [])) if server_id == "rasputin-tool-relay" and enabled else len(server.get("tools") or [])
+    resources_count = len(server.get("resources") or [])
+    prompts_count = len(server.get("prompts") or [])
+    compatibility_status = _compatibility_status(server, running=running)
     return {
         "id": server_id,
         "name": server.get("name") or server_id,
@@ -134,9 +175,18 @@ def _public(server):
         "health": "running" if running else (server.get("health") or "unknown"),
         "lastError": server.get("last_error") or "",
         "toolCount": tool_count,
+        "resourcesCount": resources_count,
+        "promptsCount": prompts_count,
+        "resources": server.get("resources") or [],
+        "prompts": server.get("prompts") or [],
+        "capabilities": server.get("capabilities") or {},
+        "compatibilityStatus": compatibility_status,
         "pendingApprovalId": server.get("pending_approval_id") or "",
         "pendingApprovalCode": server.get("pending_approval_code") or "",
-        "logs": list(_processes.get(server_id).logs) if running else [],
+        "logs": _combined_logs(server_id, server),
+        "recentLogs": _combined_logs(server_id, server),
+        "lastStartedAt": server.get("last_started_at"),
+        "lastDiscoveredAt": server.get("last_discovered_at"),
         "updatedAt": server.get("updated_at"),
     }
 
@@ -243,6 +293,13 @@ def register(payload):
         "pending_approval_id": approval["id"] if approval else "",
         "pending_approval_code": approval["code"] if approval else "",
         "tools": [],
+        "resources": [],
+        "prompts": [],
+        "capabilities": {"tools": True} if transport == "internal" else {},
+        "compatibility_status": "internal" if transport == "internal" else "approval_required",
+        "recent_logs": [],
+        "last_started_at": None,
+        "last_discovered_at": None,
         "tool_policy": {},
         "created_at": stamp,
         "updated_at": stamp,
@@ -285,14 +342,19 @@ async def start(server_id, approval_id=None):
         server["pending_approval_code"] = ""
     server["enabled"] = True
     try:
-        await _ensure_started(server)
+        state = await _ensure_started(server)
         server["status"] = "running"
         server["health"] = "running"
         server["last_error"] = ""
+        server["last_started_at"] = state.started_at
+        server["capabilities"] = state.capabilities or server.get("capabilities") or {}
+        server["compatibility_status"] = _compatibility_status(server, running=True)
     except Exception as exc:
         server["status"] = "error"
         server["health"] = "error"
         server["last_error"] = str(exc)
+        server["recent_logs"] = _combined_logs(server_id, server)
+        server["compatibility_status"] = "error"
         _save(data)
         raise
     server["updated_at"] = time.time()
@@ -303,6 +365,7 @@ async def start(server_id, approval_id=None):
 
 async def stop(server_id):
     state = _processes.pop(server_id, None)
+    live_logs = list(state.logs) if state else []
     if state:
         state.process.terminate()
         try:
@@ -315,6 +378,8 @@ async def stop(server_id):
     if server.get("transport") != "internal":
         server["status"] = "stopped"
         server["health"] = "stopped"
+        server["recent_logs"] = (list(server.get("recent_logs") or []) + live_logs)[-120:]
+        server["compatibility_status"] = _compatibility_status(server, running=False)
         server["updated_at"] = time.time()
         _save(data)
     audit.log("mcp_relay_stopped", {"id": server_id})
@@ -336,30 +401,104 @@ async def discover(server_id):
         return {
             "server": _public(server),
             "tools": tools,
+            "resources": [],
+            "prompts": [],
             "message": "Internal Tool Relay tools are available through Rasputin policy.",
         }
     if not server.get("enabled"):
-        return {"server": _public(server), "tools": [], "message": "Relay server is disabled until registration is approved and started."}
-    await _ensure_started(server)
-    response = await _request(server_id, "tools/list", {})
-    raw_tools = response.get("tools") or []
-    server["tools"] = [_normalize_tool(server, item) for item in raw_tools]
-    server["status"] = "running"
-    server["health"] = "running"
-    server["updated_at"] = time.time()
-    _replace_server(server)
-    audit.log("mcp_tools_discovered", {"id": server_id, "count": len(server["tools"])})
+        return {"server": _public(server), "tools": [], "resources": [], "prompts": [], "message": "Relay server is disabled until registration is approved and started."}
+    try:
+        state = await _ensure_started(server)
+        server["capabilities"] = state.capabilities or server.get("capabilities") or {}
+        response = await _request(server_id, "tools/list", {})
+        raw_tools = response.get("tools") or []
+        if not isinstance(raw_tools, list):
+            raise AppError("mcp_bad_schema", "MCP tools/list returned an invalid tools list.", 502)
+        server["tools"] = [_normalize_tool(server, item) for item in raw_tools]
+        server["resources"] = await _discover_optional_list(server_id, "resources/list", "resources", _normalize_resource)
+        server["prompts"] = await _discover_optional_list(server_id, "prompts/list", "prompts", _normalize_prompt)
+        server["status"] = "running"
+        server["health"] = "running"
+        server["last_error"] = ""
+        server["recent_logs"] = _combined_logs(server_id, server)
+        server["last_discovered_at"] = time.time()
+        server["compatibility_status"] = _compatibility_status(server, running=True)
+        server["updated_at"] = time.time()
+        _replace_server(server)
+    except Exception as exc:
+        server["status"] = "error"
+        server["health"] = "error"
+        server["last_error"] = str(exc)
+        server["recent_logs"] = _combined_logs(server_id, server)
+        server["compatibility_status"] = "error"
+        server["updated_at"] = time.time()
+        _replace_server(server)
+        raise
+    audit.log("mcp_tools_discovered", {
+        "id": server_id,
+        "count": len(server["tools"]),
+        "resources": len(server["resources"]),
+        "prompts": len(server["prompts"]),
+    })
     return {
         "server": _public(server),
         "tools": [public_tool(tool, server) for tool in server["tools"]],
-        "message": f"Discovered {len(server['tools'])} MCP tool(s). Classify a tool before execution.",
+        "resources": server["resources"],
+        "prompts": server["prompts"],
+        "message": f"Discovered {len(server['tools'])} MCP tool(s), {len(server['resources'])} resource(s), and {len(server['prompts'])} prompt(s). Classify tools before execution.",
     }
 
 
 def server_tools(server_id):
     data = _load()
     server = _find(data, server_id)
-    return {"server": _public(server), "tools": [public_tool(tool, server) for tool in server.get("tools", [])]}
+    return {
+        "server": _public(server),
+        "tools": [public_tool(tool, server) for tool in server.get("tools", [])],
+        "resources": server.get("resources") or [],
+        "prompts": server.get("prompts") or [],
+    }
+
+
+async def test_server(server_id):
+    data = _load()
+    server = _find(data, server_id)
+    if server.get("transport") == "internal":
+        return {
+            "server": _public(server),
+            "message": "Internal Tool Relay is available.",
+            "capabilities": {"tools": True},
+        }
+    if not server.get("command_approved"):
+        raise AppError("mcp_approval_required", "Approve the MCP server registration before testing it.", 403)
+    if not server.get("enabled"):
+        raise AppError("mcp_server_disabled", "Enable the MCP server before testing it.", 400)
+    try:
+        state = await _ensure_started(server)
+        server["status"] = "running"
+        server["health"] = "running"
+        server["last_error"] = ""
+        server["last_started_at"] = state.started_at
+        server["capabilities"] = state.capabilities or {}
+        server["recent_logs"] = _combined_logs(server_id, server)
+        server["compatibility_status"] = _compatibility_status(server, running=True)
+        server["updated_at"] = time.time()
+        _replace_server(server)
+    except Exception as exc:
+        server["status"] = "error"
+        server["health"] = "error"
+        server["last_error"] = str(exc)
+        server["recent_logs"] = _combined_logs(server_id, server)
+        server["compatibility_status"] = "error"
+        server["updated_at"] = time.time()
+        _replace_server(server)
+        raise
+    audit.log("mcp_relay_tested", {"id": server_id, "capabilities": server.get("capabilities") or {}})
+    return {
+        "server": _public(server),
+        "message": "MCP server initialized successfully. No tools were executed.",
+        "capabilities": server.get("capabilities") or {},
+    }
 
 
 def classify_tool(tool_id, payload):
@@ -498,7 +637,13 @@ def decode_tool_id(tool_id):
 
 
 def _normalize_tool(server, item):
+    if not isinstance(item, dict):
+        raise AppError("mcp_bad_schema", "MCP tools/list returned an invalid tool entry.", 502)
+    if not item.get("name"):
+        raise AppError("mcp_bad_schema", "MCP tools/list returned a tool without a name.", 502)
     schema = item.get("inputSchema") or item.get("input_schema") or {"type": "object", "properties": {}}
+    if not isinstance(schema, dict):
+        raise AppError("mcp_bad_schema", f"MCP tool '{item.get('name')}' returned a non-object input schema.", 502)
     return {
         "name": str(item.get("name") or "")[:160],
         "title": str(item.get("title") or item.get("name") or "")[:160],
@@ -506,6 +651,64 @@ def _normalize_tool(server, item):
         "inputSchema": schema if isinstance(schema, dict) else {"type": "object", "properties": {}},
         "discoveredAt": time.time(),
     }
+
+
+def _normalize_resource(item):
+    if not isinstance(item, dict):
+        raise AppError("mcp_bad_schema", "MCP resources/list returned an invalid resource entry.", 502)
+    uri = str(item.get("uri") or "")[:500]
+    if not uri:
+        raise AppError("mcp_bad_schema", "MCP resources/list returned a resource without a uri.", 502)
+    return {
+        "uri": uri,
+        "name": str(item.get("name") or uri)[:180],
+        "description": str(item.get("description") or "")[:1000],
+        "mimeType": str(item.get("mimeType") or item.get("mime_type") or "")[:120],
+        "discoveredAt": time.time(),
+        "executable": False,
+    }
+
+
+def _normalize_prompt(item):
+    if not isinstance(item, dict):
+        raise AppError("mcp_bad_schema", "MCP prompts/list returned an invalid prompt entry.", 502)
+    name = str(item.get("name") or "")[:180]
+    if not name:
+        raise AppError("mcp_bad_schema", "MCP prompts/list returned a prompt without a name.", 502)
+    args = item.get("arguments") or []
+    if not isinstance(args, list):
+        raise AppError("mcp_bad_schema", f"MCP prompt '{name}' returned invalid arguments.", 502)
+    return {
+        "name": name,
+        "description": str(item.get("description") or "")[:1000],
+        "arguments": [
+            {
+                "name": str(arg.get("name") or "")[:160],
+                "description": str(arg.get("description") or "")[:500],
+                "required": bool(arg.get("required")),
+            }
+            for arg in args[:50]
+            if isinstance(arg, dict)
+        ],
+        "discoveredAt": time.time(),
+        "executable": False,
+    }
+
+
+async def _discover_optional_list(server_id, method, key, normalizer):
+    try:
+        response = await _request(server_id, method, {}, timeout=3)
+    except AppError as exc:
+        if exc.code in {"mcp_protocol_error", "mcp_request_timeout", "mcp_server_exited"}:
+            state = _processes.get(server_id)
+            if state:
+                state.logs.append(f"{method} unavailable: {exc.message}"[:500])
+            return []
+        raise
+    raw_items = response.get(key) or []
+    if not isinstance(raw_items, list):
+        raise AppError("mcp_bad_schema", f"MCP {method} returned an invalid {key} list.", 502)
+    return [normalizer(item) for item in raw_items]
 
 
 def _replace_server(server):
@@ -565,6 +768,7 @@ async def _initialize(server_id):
         "clientInfo": {"name": "Rasputin", "version": "0.2.0"},
     }, timeout=12)
     state = _processes[server_id]
+    state.capabilities = response.get("capabilities") or {}
     notification = {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
     state.process.stdin.write((json.dumps(notification) + "\n").encode("utf-8"))
     await state.process.stdin.drain()
@@ -579,23 +783,46 @@ async def _request(server_id, method, params=None, timeout=20):
         request_id = _request_ids.get(server_id, 0) + 1
         _request_ids[server_id] = request_id
         payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
-        state.process.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
-        await state.process.stdin.drain()
+        try:
+            state.process.stdin.write((json.dumps(payload) + "\n").encode("utf-8"))
+            await state.process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            raise AppError("mcp_server_exited", "MCP server exited before accepting a request.", 502) from exc
+        deadline = asyncio.get_running_loop().time() + timeout
+        noisy_lines = 0
         while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise AppError("mcp_request_timeout", f"MCP request timed out: {method}", 504)
             try:
-                raw = await asyncio.wait_for(state.process.stdout.readline(), timeout=timeout)
+                raw = await asyncio.wait_for(state.process.stdout.readline(), timeout=remaining)
             except asyncio.TimeoutError as exc:
                 raise AppError("mcp_request_timeout", f"MCP request timed out: {method}", 504) from exc
             if not raw:
                 raise AppError("mcp_server_exited", "MCP server exited before responding.", 502)
+            text = raw.decode("utf-8", errors="replace").strip()
             try:
-                message = json.loads(raw.decode("utf-8"))
+                message = json.loads(text)
             except Exception:
-                state.logs.append(raw.decode("utf-8", errors="replace").strip()[:500])
+                noisy_lines += 1
+                state.logs.append(text[:500])
+                if noisy_lines > 20:
+                    raise AppError("mcp_malformed_stdout", "MCP server wrote too many non-JSON stdout lines.", 502)
+                continue
+            if not isinstance(message, dict):
+                noisy_lines += 1
+                state.logs.append("Ignored non-object MCP stdout JSON."[:500])
+                if noisy_lines > 20:
+                    raise AppError("mcp_malformed_stdout", "MCP server wrote too many malformed JSON-RPC messages.", 502)
                 continue
             if message.get("id") != request_id:
+                if "method" in message:
+                    state.logs.append(f"Notification: {message.get('method')}"[:500])
                 continue
             if "error" in message:
                 error = message.get("error") or {}
                 raise AppError("mcp_protocol_error", error.get("message") or str(error), 502)
-            return message.get("result") or {}
+            result = message.get("result") or {}
+            if not isinstance(result, dict):
+                raise AppError("mcp_bad_schema", f"MCP method {method} returned a non-object result.", 502)
+            return result
