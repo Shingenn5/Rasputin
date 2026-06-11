@@ -53,46 +53,55 @@ export function ActivityView({
         </button>
       </header>
 
-      <div className="task-dashboard">
-        <nav className="activity-tab-shell" aria-label="Activity navigation">
-          <div
-            className="activity-tabs"
-            role="tablist"
-            aria-label="Activity sections"
-            onKeyDown={(event) => {
-              if (event.key === "ArrowRight") {
-                event.preventDefault();
-                moveTab(1);
-              }
-              if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                moveTab(-1);
-              }
-            }}
-          >
-            {activityTabs.map((item) => (
-              <button
-                key={item}
-                id={`activity-tab-${item.toLowerCase()}`}
-                data-testid={`activity-tab-${item.toLowerCase()}`}
-                type="button"
-                className={tab === item ? "activity-tab is-active" : "activity-tab"}
-                role="tab"
-                aria-label={`Open ${item} activity`}
-                aria-selected={tab === item}
-                aria-controls={`activity-panel-${item.toLowerCase()}`}
-                tabIndex={tab === item ? 0 : -1}
-                onClick={() => setTab(item)}
-              >
-                {item}
-              </button>
-            ))}
+      <div className="task-dashboard activity-workspace">
+        <aside className="activity-nav-panel" aria-label="Activity sections">
+          <div className="activity-status-card">
+            <span className="eyebrow">Live State</span>
+            <strong>{activeTasks.length ? `${activeTasks.length} active` : "Idle"}</strong>
+            <span>{pendingApprovals.length ? `${pendingApprovals.length} approval${pendingApprovals.length === 1 ? "" : "s"} waiting` : "No approvals waiting"}</span>
           </div>
-          <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length, toolCount)}</p>
-        </nav>
+          <nav className="activity-tab-shell" aria-label="Activity navigation">
+            <div
+              className="activity-tabs"
+              role="tablist"
+              aria-label="Activity sections"
+              onKeyDown={(event) => {
+                if (["ArrowRight", "ArrowDown"].includes(event.key)) {
+                  event.preventDefault();
+                  moveTab(1);
+                }
+                if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
+                  event.preventDefault();
+                  moveTab(-1);
+                }
+              }}
+            >
+              {activityTabs.map((item) => (
+                <button
+                  key={item}
+                  id={`activity-tab-${item.toLowerCase()}`}
+                  data-testid={`activity-tab-${item.toLowerCase()}`}
+                  type="button"
+                  className={tab === item ? "activity-tab is-active" : "activity-tab"}
+                  role="tab"
+                  aria-label={`Open ${item} activity`}
+                  aria-selected={tab === item}
+                  aria-controls={`activity-panel-${item.toLowerCase()}`}
+                  tabIndex={tab === item ? 0 : -1}
+                  onClick={() => setTab(item)}
+                >
+                  <span>{item}</span>
+                  <small>{activityTabBadge(item, tasks.length, activeTasks.length, pendingApprovals.length, recentSessions.length, toolCount)}</small>
+                </button>
+              ))}
+            </div>
+            <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length, toolCount)}</p>
+          </nav>
+        </aside>
 
-        {tab === "Runs" && (
-          <section id="activity-panel-runs" role="tabpanel" aria-labelledby="activity-tab-runs" className="activity-panel">
+        <div className="activity-main-panel">
+          {tab === "Runs" && (
+            <section id="activity-panel-runs" role="tabpanel" aria-labelledby="activity-tab-runs" className="activity-panel">
             <div className="run-summary-grid">
               <Stat id="taskCount" label="Total runs" value={tasks.length} />
               <Stat id="runningCount" label="Active now" value={activeTasks.length} />
@@ -141,11 +150,11 @@ export function ActivityView({
               ))}
               {!tasks.length && <EmptyPanel title="No runs yet" text="Start a chat or agent task and it will appear here." />}
             </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === "Approvals" && (
-          <section id="activity-panel-approvals" role="tabpanel" aria-labelledby="activity-tab-approvals" className="activity-panel">
+          {tab === "Approvals" && (
+            <section id="activity-panel-approvals" role="tabpanel" aria-labelledby="activity-tab-approvals" className="activity-panel">
             <div className="activity-list">
               {pendingApprovals.map((approval) => (
                 <article className="approval-card" key={approval.id} data-testid="approval-card">
@@ -161,11 +170,11 @@ export function ActivityView({
               ))}
               {!pendingApprovals.length && <EmptyPanel title="No approvals" text="Risky actions will wait here before execution." />}
             </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === "Sessions" && (
-          <section id="activity-panel-sessions" role="tabpanel" aria-labelledby="activity-tab-sessions" className="activity-panel">
+          {tab === "Sessions" && (
+            <section id="activity-panel-sessions" role="tabpanel" aria-labelledby="activity-tab-sessions" className="activity-panel">
             <div className="activity-list">
               {recentSessions.map((session) => (
                 <button className="activity-row" key={session.id} type="button" onClick={() => go("sessions")}>
@@ -175,11 +184,11 @@ export function ActivityView({
               ))}
               {!recentSessions.length && <EmptyPanel title="No sessions yet" text="Conversation sessions will be stored locally." />}
             </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === "Pipeline" && (
-          <section id="activity-panel-pipeline" role="tabpanel" aria-labelledby="activity-tab-pipeline" className="activity-panel">
+          {tab === "Pipeline" && (
+            <section id="activity-panel-pipeline" role="tabpanel" aria-labelledby="activity-tab-pipeline" className="activity-panel">
             <article className="pipeline-panel">
               <Route size={22} aria-hidden="true" />
               <div>
@@ -192,20 +201,55 @@ export function ActivityView({
                 <p>Risky actions are approval-gated. Local memory, RAG, and Graphify stay inside approved workspaces.</p>
               </div>
             </article>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === "Tools" && (
-          <section id="activity-panel-tools" role="tabpanel" aria-labelledby="activity-tab-tools" className="activity-panel">
+          {tab === "Tools" && (
+            <section id="activity-panel-tools" role="tabpanel" aria-labelledby="activity-tab-tools" className="activity-panel">
             <ToolRelayPanel tools={tools} />
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === "Audit" && (
-          <section id="activity-panel-audit" role="tabpanel" aria-labelledby="activity-tab-audit" className="activity-panel">
+          {tab === "Audit" && (
+            <section id="activity-panel-audit" role="tabpanel" aria-labelledby="activity-tab-audit" className="activity-panel">
             <pre id="activityAuditLog" className="log-box">{JSON.stringify(auditEvents || [], null, 2)}</pre>
+            </section>
+          )}
+        </div>
+
+        <aside className="activity-inspector-panel" aria-label="Activity inspector">
+          <div className="activity-inspector-head">
+            <span className="eyebrow">Inspector</span>
+            <h2>Operations snapshot</h2>
+          </div>
+          <dl className="activity-inspector-stats">
+            <div><dt>Runs</dt><dd>{tasks.length}</dd></div>
+            <div><dt>Active</dt><dd>{activeTasks.length}</dd></div>
+            <div><dt>Approvals</dt><dd>{pendingApprovals.length}</dd></div>
+            <div><dt>Tools</dt><dd>{toolCount}</dd></div>
+          </dl>
+          <div className="activity-inspector-actions">
+            <button type="button" className="tiny-action" onClick={() => setTab("Runs")}>View runs</button>
+            <button type="button" className="tiny-action" onClick={() => setTab("Approvals")}>Review approvals</button>
+            <button type="button" className="tiny-action" onClick={() => go("settings", "tool-relays")}>Tool relays</button>
+          </div>
+          <section className="activity-current-run" aria-label="Current run">
+            <h3>Current run</h3>
+            {activeTasks[0] ? (
+              <button type="button" className="activity-current-run-card" onClick={() => openTaskDetails(activeTasks[0].id)}>
+                <span className={`status-pill status-${activeTasks[0].status}`}>{activeTasks[0].status}</span>
+                <strong>{activeTasks[0].objective}</strong>
+                <small>{displayModelName(activeTasks[0].model, models)} / {displayWorkspaceName(activeTasks[0].workspace)}</small>
+              </button>
+            ) : (
+              <p>No active run. New agent work will appear here as soon as it starts.</p>
+            )}
           </section>
-        )}
+          <section className="activity-current-run" aria-label="Current section">
+            <h3>{tab}</h3>
+            <p>{activityContext(tab, activeTasks.length, pendingApprovals.length, toolCount)}</p>
+          </section>
+        </aside>
       </div>
     </section>
   );
@@ -359,6 +403,15 @@ function activityContext(tab, runningCount, approvalCount, toolCount = 0) {
   if (tab === "Pipeline") return "How Rasputin routes planning, tools, approvals, execution, and memory.";
   if (tab === "Tools") return `${toolCount} registered Tool Relay definition${toolCount === 1 ? "" : "s"}.`;
   return "Local audit events for sensitive actions.";
+}
+
+function activityTabBadge(tab, taskCount, runningCount, approvalCount, sessionCount, toolCount) {
+  if (tab === "Runs") return runningCount ? `${runningCount} active` : `${taskCount} total`;
+  if (tab === "Approvals") return `${approvalCount} pending`;
+  if (tab === "Sessions") return `${sessionCount} saved`;
+  if (tab === "Tools") return `${toolCount} tools`;
+  if (tab === "Pipeline") return "Runtime";
+  return "Local log";
 }
 
 function groupTools(tools) {
