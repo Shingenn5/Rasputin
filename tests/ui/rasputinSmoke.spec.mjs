@@ -230,6 +230,8 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await page.locator("[data-testid='nav-workspaces']").click();
   await expect(page.locator("#workspacesView")).toBeVisible();
   await expect(page.locator("[data-testid='workspace-browser']")).toBeVisible();
+  await expect(page.locator("[data-testid='workspace-knowledge-flow']")).toBeVisible();
+  await expect(page.locator("[data-testid='workspace-knowledge-flow']")).toContainText("Local File Test Flow");
   await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toBeVisible();
   await expect(page.locator("#workspaceRootList")).not.toBeEmpty();
   await expect(page.locator("#workspaceEntries")).toBeVisible();
@@ -268,9 +270,16 @@ test("key settings destinations are reachable", async ({ page, request }) => {
   await page.locator("[data-testid='workspace-knowledge-panel'] input").fill("WarmindNode engine.py");
   await page.locator("[data-testid='workspace-knowledge-panel']").getByRole("button", { name: "Search" }).click();
   await expect(page.locator("[data-testid='workspace-knowledge-panel']")).toContainText("Docs");
+  await expect(page.locator("[data-testid='workspace-rag-results']")).toContainText("RAG retrieval hits");
+  await expect(page.locator("[data-testid='workspace-graph-results']")).toContainText("Graphify evidence");
   const graphSearch = await request.post("/api/graph/search", { data: { query: "WarmindNode engine.py", limit: 5 } });
   const graphPayload = await graphSearch.json();
   expect((graphPayload?.data?.nodes || []).length + (graphPayload?.data?.edges || []).length).toBeGreaterThan(0);
+  await page.locator("[data-testid='workspace-load-analysis-prompt']").click();
+  await expect(page.locator("#homeView")).toBeVisible();
+  await expect(page.locator("#objective")).toHaveValue(/Analyze the approved workspace/);
+  await page.locator("[data-testid='nav-workspaces']").click();
+  await expect(page.locator("[data-testid='workspace-browser']")).toBeVisible();
 
   await page.locator(".workspace-mount-panel summary").click();
   await page.locator("#workspaceMountForm #mountHostPath").fill("C:\\Users\\example\\Documents");

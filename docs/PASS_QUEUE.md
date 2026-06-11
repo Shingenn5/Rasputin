@@ -901,11 +901,27 @@ Stop conditions:
 - implementation requires enabling Docker control by default
 - implementation requires real remote API keys
 
-### [ ] 16. Workspace Knowledge End-To-End Flow
+### [x] 16. Workspace Knowledge End-To-End Flow
 
 Branch: `codex/workspace-knowledge-e2e-v1`
 
 Commit message: `Add workspace knowledge end-to-end flow`
+
+Status: complete
+
+Implemented:
+
+- added a guided Workspaces local-file test flow for select, browse, preview, index, search, and loading an analyze task
+- refreshed workspace roots against the folder that was actually indexed so indexed state updates more reliably
+- separated RAG retrieval hits from Graphify evidence in Workspaces search results
+- added a Workspaces action that loads a local evidence-only analyze prompt into Home without executing mutations
+- updated UI smoke coverage for the guided flow, RAG/Graphify result grouping, and analyze prompt handoff
+
+Validation:
+
+- `npm.cmd run build`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Ui`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed through harness
 
 Goal: prove the local-file companion workflow from mounted folder selection through RAG, Graphify, and task file-read trace.
 

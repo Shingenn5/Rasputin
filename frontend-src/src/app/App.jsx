@@ -834,7 +834,7 @@ export function App() {
     const graphResult = await postJson("/api/graph/build", { path: targetPath });
     await refreshKnowledgeStats();
     setWorkspace(await api("/api/workspace"));
-    await loadWorkspaceRoots(workspace.activePath);
+    await loadWorkspaceRoots(targetPath, { rootId: workspaceBrowse?.root?.id || workspaceExplorer?.rootId, path: targetPath });
     setGlobalStatus(`Knowledge indexed for ${displayWorkspaceName(targetPath)}.`);
     return { ragResult, graphResult };
   }
@@ -1420,6 +1420,12 @@ export function App() {
         indexWorkspaceKnowledge={indexWorkspaceKnowledge}
         searchWorkspaceKnowledge={searchWorkspaceKnowledge}
         refreshKnowledgeStats={refreshKnowledgeStats}
+        setPrompt={(prompt, mode) => {
+          setObjective(prompt);
+          chooseTaskMode(mode === "analyze files" ? "analyze" : mode || "analyze");
+          go("home");
+          setGlobalStatus("Workspace analysis prompt loaded.");
+        }}
       />
       <AgentsView view={view} tasks={tasks} models={models} />
       <SessionsView

@@ -2863,6 +2863,59 @@ button.runtime-chip {
   gap: .75rem;
 }
 
+.workspace-knowledge-flow {
+  display: grid;
+  gap: .75rem;
+  border-color: color-mix(in srgb, var(--ras-accent) 26%, var(--ras-border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ras-accent) 7%, transparent), transparent 44%),
+    color-mix(in srgb, var(--ras-panel) 88%, transparent);
+}
+
+.knowledge-flow-list {
+  display: grid;
+  gap: .42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-flow-list li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: .55rem;
+  align-items: start;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  padding: .5rem .55rem;
+}
+
+.knowledge-flow-list li.is-complete {
+  border-color: color-mix(in srgb, var(--ras-safe) 38%, var(--ras-border));
+}
+
+.knowledge-flow-list span {
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 36%, var(--ras-border));
+  border-radius: 999px;
+  color: var(--ras-accent);
+  font-size: .68rem;
+  font-weight: 900;
+  line-height: 1;
+  padding: .25rem .42rem;
+  text-transform: uppercase;
+}
+
+.knowledge-flow-list p {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ras-muted);
+  font-size: .8rem;
+  line-height: 1.35;
+}
+
 .knowledge-explainer,
 .mount-intro {
   display: grid;
@@ -2936,6 +2989,20 @@ button.runtime-chip {
   gap: .45rem;
 }
 
+.knowledge-result-group {
+  display: grid;
+  gap: .45rem;
+}
+
+.knowledge-result-group h3 {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
 .knowledge-result-card {
   display: grid;
   gap: .2rem;
@@ -2946,7 +3013,8 @@ button.runtime-chip {
 }
 
 .knowledge-result-card strong,
-.knowledge-result-card small {
+.knowledge-result-card small,
+.knowledge-result-type {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2954,8 +3022,22 @@ button.runtime-chip {
 }
 
 .knowledge-result-card small,
-.knowledge-result-card p {
+.knowledge-result-card p,
+.knowledge-result-type {
   color: var(--ras-muted);
+}
+
+.knowledge-result-type {
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 38%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-blue) 9%, transparent);
+  color: var(--ras-blue);
+  font-size: .66rem;
+  font-weight: 900;
+  line-height: 1;
+  padding: .2rem .42rem;
+  text-transform: uppercase;
 }
 
 .knowledge-result-card p {
@@ -8505,6 +8587,10 @@ button.helper-row:hover {
 
   .workspace-preview-panel,
   .workspace-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-flow-list li {
     grid-template-columns: 1fr;
   }
 

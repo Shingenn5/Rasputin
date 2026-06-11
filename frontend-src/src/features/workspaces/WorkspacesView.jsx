@@ -38,6 +38,7 @@ export function WorkspacesView({
   indexWorkspaceKnowledge,
   searchWorkspaceKnowledge,
   refreshKnowledgeStats,
+  setPrompt,
 }) {
   const [filter, setFilter] = useState("");
   const [quickAddError, setQuickAddError] = useState("");
@@ -58,12 +59,43 @@ export function WorkspacesView({
   const entries = workspaceBrowse?.entries || [];
   const currentRoot = workspaceBrowse?.root || {};
   const currentFolder = workspaceBrowse?.displayName || displayWorkspaceName(workspaceBrowse?.path);
+  const currentPath = workspaceBrowse?.path || workspace.activePath || ".";
   const filteredEntries = useMemo(() => {
     const query = filter.trim().toLowerCase();
     if (!query) return entries;
     return entries.filter((entry) => String(entry.displayName || entry.name || "").toLowerCase().includes(query));
   }, [entries, filter]);
   const breadcrumbs = useMemo(() => buildBreadcrumbs(currentRoot, workspaceBrowse?.path), [currentRoot, workspaceBrowse?.path]);
+  const ragHits = knowledgeResults?.ragResult?.hits || [];
+  const graphNodes = knowledgeResults?.graphResult?.nodes || [];
+  const graphEdges = knowledgeResults?.graphResult?.edges || [];
+  const workflowSteps = [
+    {
+      label: "Select",
+      text: activeName || "No workspace selected",
+      complete: Boolean(workspace.activePath),
+    },
+    {
+      label: "Browse",
+      text: currentFolder || "Open an approved folder",
+      complete: Boolean(workspaceBrowse),
+    },
+    {
+      label: "Preview",
+      text: preview ? "Safe file preview loaded" : selectedEntry?.kind === "file" ? "File selected" : "Pick a text or code file",
+      complete: Boolean(preview),
+    },
+    {
+      label: "Index",
+      text: activeIndexed ? "Workspace marked indexed" : "Run index for this folder",
+      complete: Boolean(activeIndexed),
+    },
+    {
+      label: "Search",
+      text: knowledgeResults ? `${ragHits.length} RAG hits, ${graphNodes.length + graphEdges.length} graph items` : "Search after indexing",
+      complete: Boolean(knowledgeResults),
+    },
+  ];
 
   useEffect(() => {
     setSelectedEntry(null);
@@ -157,6 +189,15 @@ export function WorkspacesView({
     } catch (error) {
       setKnowledgeStatus(error.message);
     }
+  }
+
+  function loadWorkspaceAnalysisPrompt() {
+    if (!setPrompt) return;
+    const folderName = displayWorkspaceName(currentPath);
+    setPrompt(
+      `Analyze the approved workspace "${folderName}". Use only local files, RAG citations, and Graphify evidence from ${currentPath}. Summarize what the folder contains, call out important files, and list any uncertainty.`,
+      "analyze",
+    );
   }
 
   return (
@@ -369,6 +410,32 @@ export function WorkspacesView({
         </main>
 
         <aside className="workspace-preview-panel" data-testid="workspace-preview-panel" aria-label="File preview and knowledge">
+          <section className="workspace-section workspace-knowledge-flow" data-testid="workspace-knowledge-flow">
+            <div className="section-row">
+              <div>
+                <span className="eyebrow">Local File Test Flow</span>
+                <h2>Prove Rasputin can use this folder</h2>
+                <p>Select a mounted folder, preview a safe file, index it locally, search evidence, then load an analyze task.</p>
+              </div>
+            </div>
+            <ol className="knowledge-flow-list" aria-label="Workspace knowledge test steps">
+              {workflowSteps.map((step) => (
+                <li className={step.complete ? "is-complete" : ""} key={step.label}>
+                  <span>{step.label}</span>
+                  <p>{step.text}</p>
+                </li>
+              ))}
+            </ol>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={loadWorkspaceAnalysisPrompt}
+              data-testid="workspace-load-analysis-prompt"
+            >
+              Load analyze task
+            </button>
+          </section>
+
           <section className="workspace-section workspace-knowledge-panel" data-testid="workspace-knowledge-panel">
             <div className="section-row">
               <div>
@@ -390,7 +457,7 @@ export function WorkspacesView({
               <Metric label="Edges" value={graphStats?.edges ?? 0} />
             </div>
             <div className="workspace-action-row">
-              <button type="button" className="send-text-button" onClick={indexCurrentFolder}>
+              <button type="button" className="send-text-button" onClick={indexCurrentFolder} data-testid="workspace-index-folder">
                 Index current folder
               </button>
               <button type="button" className="secondary-action" onClick={refreshKnowledgeStats}>
@@ -406,24 +473,33 @@ export function WorkspacesView({
                   placeholder="Search indexed files and graph links"
                 />
               </label>
-              <button type="submit" className="secondary-action">Search</button>
+              <button type="submit" className="secondary-action" data-testid="workspace-knowledge-search">Search</button>
             </form>
             {knowledgeStatus && <p className="workspace-help-text" role="status">{knowledgeStatus}</p>}
             {knowledgeResults && (
               <div className="knowledge-result-stack">
-                {(knowledgeResults.ragResult?.hits || []).slice(0, 3).map((hit) => (
-                  <article className="knowledge-result-card" key={`${hit.source}-${hit.chunk}`}>
-                    <strong>{hit.path}</strong>
-                    <small>Lines {hit.lineStart}-{hit.lineEnd}</small>
-                    <p>{hit.text}</p>
-                  </article>
-                ))}
-                {(knowledgeResults.graphResult?.nodes || []).slice(0, 3).map((node) => (
-                  <GraphNodeCard node={node} compact key={node.id} />
-                ))}
-                {(knowledgeResults.graphResult?.edges || []).slice(0, 3).map((edge) => (
-                  <GraphEdgeCard edge={edge} compact key={`${edge.sourceId || edge.source}-${edge.relation}-${edge.targetId || edge.target}`} />
-                ))}
+                <div className="knowledge-result-group" data-testid="workspace-rag-results">
+                  <h3>RAG retrieval hits</h3>
+                  {ragHits.slice(0, 3).map((hit) => (
+                    <article className="knowledge-result-card" key={`${hit.source}-${hit.chunk}`}>
+                      <span className="knowledge-result-type">Citation</span>
+                      <strong>{hit.path}</strong>
+                      <small>Lines {hit.lineStart}-{hit.lineEnd}</small>
+                      <p>{hit.text}</p>
+                    </article>
+                  ))}
+                  {!ragHits.length && <p className="workspace-help-text">No retrieval hits for this query.</p>}
+                </div>
+                <div className="knowledge-result-group" data-testid="workspace-graph-results">
+                  <h3>Graphify evidence</h3>
+                  {graphNodes.slice(0, 3).map((node) => (
+                    <GraphNodeCard node={node} compact key={node.id} />
+                  ))}
+                  {graphEdges.slice(0, 3).map((edge) => (
+                    <GraphEdgeCard edge={edge} compact key={`${edge.sourceId || edge.source}-${edge.relation}-${edge.targetId || edge.target}`} />
+                  ))}
+                  {!graphNodes.length && !graphEdges.length && <p className="workspace-help-text">No graph relationships for this query.</p>}
+                </div>
               </div>
             )}
           </section>
