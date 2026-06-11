@@ -531,7 +531,11 @@ export function WorkspacesView({
             )}
           </section>
 
-          <section className="workspace-section workspace-guide">
+          <details className="advanced-block workspace-section workspace-guide">
+            <summary>
+              <span>Access and index notes</span>
+              <small>Docker mounts and local knowledge storage</small>
+            </summary>
             <div className="guide-card">
               <HardDrive size={20} />
               <div>
@@ -546,7 +550,7 @@ export function WorkspacesView({
                 <p>RAG and Graphify data stay under local data storage.</p>
               </div>
             </div>
-          </section>
+          </details>
 
           <details className="advanced-block workspace-mount-panel">
             <summary>

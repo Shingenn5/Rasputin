@@ -574,8 +574,12 @@ export function ModelsView({
           </ol>
         </section>
 
-        <section className="model-builder-panel local-model-panel" aria-labelledby="localModelTitle">
-          <div className="section-row">
+        <details className="advanced-block model-builder-panel local-model-panel" data-testid="local-model-advanced">
+          <summary>
+            <span>Connect a local endpoint</span>
+            <small>LM Studio, Ollama, text-generation-webui, or another localhost server</small>
+          </summary>
+          <div className="section-row" aria-labelledby="localModelTitle">
             <div>
               <span className="eyebrow">Local Endpoint</span>
               <h2 id="localModelTitle">Connect any OpenAI-compatible localhost model</h2>
@@ -641,10 +645,14 @@ export function ModelsView({
               <small>After connecting, use Test health to verify `/models` and chat completion support.</small>
             </div>
           </form>
-        </section>
+        </details>
 
-        <section className="model-builder-panel api-model-panel" aria-labelledby="apiModelTitle">
-          <div className="section-row">
+        <details className="advanced-block model-builder-panel api-model-panel" data-testid="api-model-advanced">
+          <summary>
+            <span>Connect an API provider</span>
+            <small>External providers stay blocked while Privacy Lock is enabled</small>
+          </summary>
+          <div className="section-row" aria-labelledby="apiModelTitle">
             <div>
               <span className="eyebrow">API Providers</span>
               <h2 id="apiModelTitle">Connect OpenAI, Anthropic, Gemini, or another API</h2>
@@ -738,7 +746,7 @@ export function ModelsView({
               </article>
             ))}
           </div>
-        </section>
+        </details>
 
         <details className="advanced-model-registry" data-testid="advanced-model-registry">
           <summary data-testid="advanced-model-registry-toggle">

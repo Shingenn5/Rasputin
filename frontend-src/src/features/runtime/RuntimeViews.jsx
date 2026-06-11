@@ -886,6 +886,29 @@ export function WarsatView({
           <SummaryTile title="Execution" value={warsat?.executionEnabled ? "Enabled" : "Plan only"} />
         </div>
 
+        <ol className="warsat-workflow-steps" aria-label="Warsat deployment workflow">
+          <li className={selectedCatalogModel ? "is-complete" : "is-current"}>
+            <span>1</span>
+            <strong>Choose model</strong>
+          </li>
+          <li className={selectedProtocol ? (selectedCatalogModel ? "is-current" : "") : ""}>
+            <span>2</span>
+            <strong>Select runtime</strong>
+          </li>
+          <li className={plan ? "is-complete" : ""}>
+            <span>3</span>
+            <strong>Preview plan</strong>
+          </li>
+          <li className={approvalPending ? "is-current" : approvalApproved || deploymentRegistered ? "is-complete" : ""}>
+            <span>4</span>
+            <strong>Approve deploy</strong>
+          </li>
+          <li className={deploymentRegistered ? "is-complete" : deploying ? "is-current" : ""}>
+            <span>5</span>
+            <strong>Register model</strong>
+          </li>
+        </ol>
+
         <WarsatHardwarePanel hardware={hardware} refresh={refresh} />
 
         <Card className="settings-card warsat-panel warsat-model-finder shadow-sm" data-testid="warsat-model-finder">

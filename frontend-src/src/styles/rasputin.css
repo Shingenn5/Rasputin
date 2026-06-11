@@ -4235,6 +4235,59 @@ button.runtime-chip {
   gap: .75rem;
 }
 
+.warsat-workflow-steps {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warsat-workflow-steps li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 32%, transparent);
+  color: var(--ras-muted);
+  padding: .52rem .62rem;
+}
+
+.warsat-workflow-steps span {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: .76rem;
+  font-weight: 900;
+}
+
+.warsat-workflow-steps strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .84rem;
+}
+
+.warsat-workflow-steps li.is-current,
+.warsat-workflow-steps li.is-complete {
+  border-color: color-mix(in srgb, var(--ras-accent) 44%, var(--ras-border));
+  color: var(--ras-text);
+}
+
+.warsat-workflow-steps li.is-complete span {
+  background: color-mix(in srgb, var(--ras-safe) 22%, transparent);
+  color: var(--ras-safe);
+}
+
 .warsat-summary-strip .border {
   border-color: var(--ras-border) !important;
   background: color-mix(in srgb, var(--ras-panel-2) 42%, var(--ras-panel)) !important;
@@ -9152,6 +9205,260 @@ button.helper-row:hover {
   .warmind-sigil {
     width: 64px;
     height: 64px;
+  }
+}
+
+.task-dashboard,
+.settings-panels,
+.models-content,
+.warsat-dashboard {
+  gap: clamp(.72rem, 1.3vw, 1rem);
+}
+
+.workspace-section,
+.workspace-browser,
+.workspace-preview-panel,
+.activity-panel,
+.settings-card,
+.model-command-card,
+.model-health-card,
+.model-readiness-panel,
+.model-builder-panel,
+.model-catalog-panel,
+.warsat-panel,
+.warsat-plan-card {
+  box-shadow: none !important;
+}
+
+.workspace-section,
+.workspace-browser,
+.activity-panel,
+.settings-card,
+.model-command-card,
+.model-health-card,
+.model-readiness-panel,
+.model-builder-panel,
+.model-catalog-panel,
+.warsat-panel,
+.warsat-plan-card {
+  border-color: color-mix(in srgb, var(--ras-border) 72%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-panel-2) 34%, transparent), transparent 160px),
+    color-mix(in srgb, var(--ras-panel) 90%, transparent);
+}
+
+.section-row {
+  gap: .7rem;
+}
+
+.section-row p,
+.page-header p,
+.workspace-hero p,
+.model-readiness-head p,
+.model-catalog-head p,
+.model-health-card p,
+.model-builder-panel p,
+.warsat-dashboard .text-body-secondary,
+.workspace-help-text,
+.test-checklist-item p,
+.setup-step-body p {
+  max-width: 72ch;
+}
+
+.models-view .model-builder-panel p,
+.models-view .model-health-card p,
+.warsat-dashboard .text-body-secondary,
+.workspaces-view .workspace-help-text,
+.settings-view .text-body-secondary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.model-readiness-grid,
+.knowledge-stat-grid,
+.run-summary-grid,
+.warsat-summary-strip,
+.model-catalog-meta,
+.warsat-model-finder-meta {
+  gap: .45rem;
+}
+
+.model-readiness-step,
+.stat-card,
+.knowledge-stat-grid > *,
+.warsat-summary-strip > *,
+.model-catalog-meta span,
+.model-catalog-meta strong,
+.warsat-model-finder-meta span,
+.warsat-model-finder-meta strong {
+  min-height: auto;
+  padding: .58rem .65rem;
+}
+
+.model-readiness-step p,
+.model-catalog-row small,
+.warsat-model-result small,
+.workspace-root-main small,
+.workspace-entry-name small,
+.task-run-info dd,
+.task-card .meta-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-readiness-step strong,
+.model-readiness-step p,
+.model-readiness-step .ras-button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.models-content,
+.settings-pane {
+  overflow-x: hidden;
+}
+
+.model-catalog-row-meta,
+.warsat-model-result-tags,
+.workspace-root-actions,
+.model-action-row,
+.warsat-model-finder-actions,
+.models-header-actions {
+  gap: .4rem;
+}
+
+.model-catalog-row-meta em,
+.warsat-model-result-tags em,
+.workspace-permission,
+.status-pill,
+.model-health-pill {
+  padding-block: .12rem;
+}
+
+.model-catalog-list,
+.warsat-model-result-list,
+.workspace-entry-list,
+.activity-list {
+  scrollbar-gutter: stable;
+}
+
+.models-view .local-model-panel,
+.models-view .api-model-panel {
+  padding: 0;
+}
+
+.models-view .local-model-panel[open],
+.models-view .api-model-panel[open] {
+  padding: .85rem;
+}
+
+.models-view .local-model-panel > summary,
+.models-view .api-model-panel > summary {
+  min-height: 50px;
+  padding: .72rem .85rem;
+}
+
+.workspace-guide[open] {
+  display: grid;
+  gap: .65rem;
+}
+
+.workspace-guide > summary {
+  min-height: 48px;
+}
+
+.workspace-guide > .guide-card {
+  margin-top: .65rem;
+}
+
+.activity-tabs {
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.activity-tab {
+  flex: 0 0 auto;
+}
+
+.tool-relay-card,
+.task-card,
+.approval-card,
+.workspace-root-card,
+.workspace-entry-row,
+.model-catalog-row,
+.warsat-model-result {
+  border-color: color-mix(in srgb, var(--ras-border) 70%, transparent);
+}
+
+.tool-relay-card p,
+.task-message-block,
+.approval-card p,
+.model-warning,
+.knowledge-explainer {
+  line-height: 1.45;
+}
+
+.knowledge-explainer p,
+.mount-intro p,
+.model-warning span {
+  margin-bottom: 0;
+}
+
+.settings-view .setup-ordered-list,
+.settings-view .test-checklist-grid {
+  margin-top: .65rem;
+}
+
+@media (min-width: 1040px) {
+  .model-readiness-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .warsat-summary-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1401px) {
+  .workspace-layout {
+    grid-template-columns: minmax(260px, .82fr) minmax(420px, 1.28fr) minmax(320px, .9fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .workspace-layout,
+  .model-catalog-layout,
+  .warsat-model-finder-grid {
+    gap: .75rem;
+  }
+
+  .workspace-side,
+  .workspace-main,
+  .workspace-preview-panel {
+    padding: .75rem;
+  }
+
+  .warsat-dashboard.has-plan {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .warsat-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .warsat-workflow-steps {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: .2rem;
+  }
+
+  .warsat-workflow-steps li {
+    flex: 0 0 160px;
   }
 }
 

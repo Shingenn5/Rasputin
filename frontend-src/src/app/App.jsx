@@ -548,6 +548,7 @@ export function App() {
       } else {
         next[mode] = modelKey;
       }
+      modeModelOverridesRef.current = next;
       if (mode === taskMode) {
         const routedModel = modelKeyForMode(mode, next);
         if (routedModel) setSelectedModel(routedModel);
@@ -1071,13 +1072,19 @@ export function App() {
 
   async function saveTrialRoute(runId, outputId, mode) {
     const result = await postJson(`/api/trials/${runId}/routing`, { outputId, mode });
-    const overrides = result.preferences?.modeModelOverrides || {};
+    const route = result.route || {};
+    const routeModelKey = route.modelKey || route.model_key;
+    const overrides = result.preferences?.modeModelOverrides || result.preferences?.mode_model_overrides || (
+      routeModelKey ? { ...modeModelOverridesRef.current, [mode]: routeModelKey } : modeModelOverridesRef.current
+    );
+    modeModelOverridesRef.current = overrides;
     setModeModelOverrides(overrides);
-    if (mode === taskMode && result.route?.modelKey) {
-      setSelectedModel(result.route.modelKey);
+    await postJson("/api/preferences", { modeModelOverrides: overrides });
+    if (mode === taskMode && routeModelKey) {
+      setSelectedModel(routeModelKey);
     }
     await loadTrials();
-    setTrialsStatus(`Saved ${result.route?.modelName || result.route?.modelKey} for ${mode}.`);
+    setTrialsStatus(`Saved ${route.modelName || route.model_name || routeModelKey || "model route"} for ${mode}.`);
     return result;
   }
 
