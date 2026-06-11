@@ -13,8 +13,10 @@ services:
       HOST: 0.0.0.0
       PORT: 8787
       WRAPPER_RUNTIME: docker
-      RASPUTIN_ENV: gui-test
+      RASPUTIN_ENV: test
       RASPUTIN_TEST_AUTH_BYPASS: "1"
+      RASPUTIN_ADMIN_USER: admin
+      RASPUTIN_ADMIN_PASSWORD: rasputin-test-admin
       RASPUTIN_COOKIE_SECURE: "0"
       RASPUTIN_LOCALHOST_BYPASS: "0"
       RASPUTIN_UI_PREVIEW: "1"
