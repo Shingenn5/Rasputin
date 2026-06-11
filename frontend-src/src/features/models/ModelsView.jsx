@@ -249,6 +249,38 @@ export function ModelsView({
         </div>
       </header>
 
+      <div className="models-command-strip" aria-label="Model quick controls">
+        <div className="models-command-status" role="status" aria-live="polite">
+          <span className={`model-health-pill ${healthy ? "is-healthy" : "is-unhealthy"}`}>
+            {healthy ? "Reachable" : labelize(status)}
+          </span>
+          <strong>{activeModel?.model || activeName}</strong>
+          <small>{endpointKind}</small>
+        </div>
+        <div className="models-command-actions">
+          <button className="ras-button small-button" type="button" onClick={() => runModelAction("test")}>
+            <CheckCircle2 size={16} aria-hidden="true" />
+            Health check
+          </button>
+          <button className="ras-button small-button" type="button" onClick={() => runModelAction("repair")}>
+            <Wrench size={16} aria-hidden="true" />
+            Repair id
+          </button>
+          <button className="ras-button small-button" type="button" onClick={scanGguf}>
+            <HardDrive size={16} aria-hidden="true" />
+            Scan library
+          </button>
+          <button
+            className="ras-button primary small-button"
+            type="button"
+            onClick={selectedCatalogModel?.deployable ? () => prepareCatalogModelForWarsat?.(selectedCatalogModel) : openWarsat}
+          >
+            <Play size={16} aria-hidden="true" />
+            {selectedCatalogModel?.deployable ? "Prepare in Warsat" : "Open Warsat"}
+          </button>
+        </div>
+      </div>
+
       <div className="models-content gui-workspace models-gui-workspace">
         <aside className="gui-sidebar models-gui-sidebar" aria-label="Model readiness">
         <section className="model-readiness-panel" aria-labelledby="modelReadinessTitle" data-testid="model-readiness-panel">

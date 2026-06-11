@@ -53,6 +53,44 @@ export function ActivityView({
         </button>
       </header>
 
+      <div className="activity-command-strip" aria-label="Activity quick controls">
+        <div
+          className="activity-tabs activity-tabs-compact"
+          role="tablist"
+          aria-label="Activity quick navigation"
+          onKeyDown={(event) => {
+            if (["ArrowRight", "ArrowDown"].includes(event.key)) {
+              event.preventDefault();
+              moveTab(1);
+            }
+            if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
+              event.preventDefault();
+              moveTab(-1);
+            }
+          }}
+        >
+          {activityTabs.map((item) => (
+            <button
+              key={item}
+              id={`activity-tab-${item.toLowerCase()}`}
+              data-testid={`activity-tab-${item.toLowerCase()}`}
+              type="button"
+              className={tab === item ? "activity-tab is-active" : "activity-tab"}
+              role="tab"
+              aria-label={`Open ${item} activity`}
+              aria-selected={tab === item}
+              aria-controls={`activity-panel-${item.toLowerCase()}`}
+              tabIndex={tab === item ? 0 : -1}
+              onClick={() => setTab(item)}
+            >
+              <span>{item}</span>
+              <small>{activityTabBadge(item, tasks.length, activeTasks.length, pendingApprovals.length, recentSessions.length, toolCount)}</small>
+            </button>
+          ))}
+        </div>
+        <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length, toolCount)}</p>
+      </div>
+
       <div className="task-dashboard activity-workspace">
         <aside className="activity-nav-panel" aria-label="Activity sections">
           <div className="activity-status-card">
@@ -60,43 +98,6 @@ export function ActivityView({
             <strong>{activeTasks.length ? `${activeTasks.length} active` : "Idle"}</strong>
             <span>{pendingApprovals.length ? `${pendingApprovals.length} approval${pendingApprovals.length === 1 ? "" : "s"} waiting` : "No approvals waiting"}</span>
           </div>
-          <nav className="activity-tab-shell" aria-label="Activity navigation">
-            <div
-              className="activity-tabs"
-              role="tablist"
-              aria-label="Activity sections"
-              onKeyDown={(event) => {
-                if (["ArrowRight", "ArrowDown"].includes(event.key)) {
-                  event.preventDefault();
-                  moveTab(1);
-                }
-                if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
-                  event.preventDefault();
-                  moveTab(-1);
-                }
-              }}
-            >
-              {activityTabs.map((item) => (
-                <button
-                  key={item}
-                  id={`activity-tab-${item.toLowerCase()}`}
-                  data-testid={`activity-tab-${item.toLowerCase()}`}
-                  type="button"
-                  className={tab === item ? "activity-tab is-active" : "activity-tab"}
-                  role="tab"
-                  aria-label={`Open ${item} activity`}
-                  aria-selected={tab === item}
-                  aria-controls={`activity-panel-${item.toLowerCase()}`}
-                  tabIndex={tab === item ? 0 : -1}
-                  onClick={() => setTab(item)}
-                >
-                  <span>{item}</span>
-                  <small>{activityTabBadge(item, tasks.length, activeTasks.length, pendingApprovals.length, recentSessions.length, toolCount)}</small>
-                </button>
-              ))}
-            </div>
-            <p className="activity-tab-context" aria-live="polite">{activityContext(tab, activeTasks.length, pendingApprovals.length, toolCount)}</p>
-          </nav>
         </aside>
 
         <div className="activity-main-panel">
