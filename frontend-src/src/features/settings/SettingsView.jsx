@@ -7,6 +7,7 @@ import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 
 export function SettingsView(props) {
   const { view, section, setSection } = props;
+  const activeSetting = settingsItems.find(([id]) => id === section) || settingsItems[0];
   return (
     <section className={`app-view settings-view ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
       <header className="page-header border-bottom bg-body">
@@ -15,8 +16,8 @@ export function SettingsView(props) {
           <p className="text-body-secondary mb-0">Runtime defaults, approved folders, model workflows, safety, and appearance.</p>
         </div>
       </header>
-      <div className="settings-layout">
-        <Nav className="settings-nav flex-column bg-body-tertiary" aria-label="Settings sections">
+      <div className="settings-layout gui-workspace settings-gui-workspace">
+        <Nav className="settings-nav flex-column bg-body-tertiary gui-sidebar" aria-label="Settings sections">
           {settingsItems.map(([id, label, small]) => (
             <Button
               key={id}
@@ -32,7 +33,7 @@ export function SettingsView(props) {
             </Button>
           ))}
         </Nav>
-        <div className="settings-panels">
+        <div className="settings-panels gui-main">
           {section === "general" && <GeneralSettings {...props} />}
           {section === "workspaces" && <WorkspaceSettings {...props} />}
           {section === "safety" && <SafetySettings {...props} />}
@@ -42,9 +43,37 @@ export function SettingsView(props) {
           {section === "appearance" && <AppearanceSettings {...props} />}
           {section === "admin" && <AdminSettings {...props} />}
         </div>
+        <aside className="settings-inspector-panel gui-inspector" aria-label="Settings inspector">
+          <span className="eyebrow">Current Section</span>
+          <h2>{activeSetting[1]}</h2>
+          <p>{settingsInspectorText(activeSetting[0])}</p>
+          <dl className="activity-inspector-stats">
+            <div><dt>Section</dt><dd>{activeSetting[1]}</dd></div>
+            <div><dt>Scope</dt><dd>{activeSetting[2]}</dd></div>
+          </dl>
+          <div className="activity-inspector-actions">
+            <button type="button" className="tiny-action" onClick={() => setSection("general")}>General</button>
+            <button type="button" className="tiny-action" onClick={() => setSection("safety")}>Safety</button>
+            <button type="button" className="tiny-action" onClick={() => setSection("tool-relays")}>Tool Relays</button>
+          </div>
+        </aside>
       </div>
     </section>
   );
+}
+
+function settingsInspectorText(section) {
+  const copy = {
+    general: "Startup readiness, private testing checklist, and setup status.",
+    workspaces: "Mounted folder access and Docker-visible workspace controls.",
+    safety: "Draft permission changes before saving local security policy.",
+    "tool-relays": "Local stdio MCP servers, discovered tools, and classification.",
+    knowledge: "Local RAG indexing, Graphify evidence, and citation search.",
+    output: "Markdown export folder and file-write permission status.",
+    appearance: "Saved theme preferences and accessibility-oriented variants.",
+    admin: "Local account session controls.",
+  };
+  return copy[section] || "Local settings for this Rasputin instance.";
 }
 
 function GeneralSettings({ setup, refreshSetupStatus, setSection, go }) {

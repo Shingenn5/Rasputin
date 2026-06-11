@@ -219,7 +219,7 @@ export function WorkspacesView({
         </button>
       </header>
 
-      <div className="workspace-layout explorer-layout">
+      <div className="workspace-layout explorer-layout gui-workspace workspaces-gui-workspace">
         <aside className="workspace-side" aria-label="Approved folders">
           <section className="workspace-active-panel" aria-describedby="activeWorkspaceHelp">
             <div className="workspace-active-icon" aria-hidden="true">

@@ -485,7 +485,7 @@ export function ArchiveView({ view, archive, status, saveArchiveDraft, exportArc
   return (
     <section className={`app-view ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive" data-testid="archive-view">
       <PageHeader title="Archive" text="Local markdown drafting, cited source recall, and controlled export for document workflows." />
-      <div className="archive-layout">
+      <div className="archive-layout gui-workspace archive-gui-workspace">
         <aside className="archive-sidebar" aria-label="Archive drafts">
           <button className="ras-button primary w-100" type="button" onClick={newDraft}>New draft</button>
           <div className="archive-session-list">
@@ -711,7 +711,7 @@ export function TrialsView({ view, trials, models, status, runTrialCompare, reve
   return (
     <section className={`app-view ${view === "trials" ? "active" : ""}`} id="trialsView" data-app-view="trials" data-testid="trials-view">
       <PageHeader title="Trials" text="Blind prompt comparison for local and approved API models." />
-      <div className="trials-layout">
+      <div className="trials-layout gui-workspace trials-gui-workspace">
         <form className="trials-compose" onSubmit={submit} data-testid="trials-compose">
           <label>
             <span>Prompt</span>
@@ -878,7 +878,8 @@ export function WarsatView({
         text="Runtime recipes for local model containers. Generate plans first; execution stays approval-gated."
         action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Protocols</Button>}
       />
-      <div className={`task-dashboard warsat-dashboard ${plan ? "has-plan" : ""}`}>
+      <div className={`task-dashboard warsat-dashboard gui-workspace warsat-gui-workspace ${plan ? "has-plan" : ""}`}>
+        <aside className="gui-sidebar warsat-gui-sidebar" aria-label="Warsat readiness">
         <div className="warsat-summary-strip" aria-label="Warsat runtime status">
           <SummaryTile title="Runtime recipes" value={recipeCount || protocols.length} />
           <SummaryTile title="Managed containers" value={containers.length} />
@@ -910,7 +911,9 @@ export function WarsatView({
         </ol>
 
         <WarsatHardwarePanel hardware={hardware} refresh={refresh} />
+        </aside>
 
+        <div className="gui-main warsat-gui-main">
         <Card className="settings-card warsat-panel warsat-model-finder shadow-sm" data-testid="warsat-model-finder">
           <Card.Body>
             <div className="section-row align-items-start">
@@ -1295,7 +1298,9 @@ export function WarsatView({
             {error && <p className="text-danger mt-3 mb-0" role="alert">{error}</p>}
           </Card.Body>
         </Card>
+        </div>
 
+        <aside className="gui-inspector warsat-gui-inspector" aria-label="Warsat runtime library">
         <details className="warsat-library-panel" data-testid="warsat-hardware-profile-panel">
           <summary data-testid="warsat-hardware-profile-toggle" aria-label="Toggle hardware profile presets">
             <span>Hardware profile presets</span>
@@ -1359,6 +1364,7 @@ export function WarsatView({
             ))}
           </Row>
         </details>
+        </aside>
 
         {plan && (
           <Card className="settings-card warsat-plan-card shadow-sm mt-3" data-testid="warsat-launch-plan">

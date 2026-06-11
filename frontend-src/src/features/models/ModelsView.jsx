@@ -249,7 +249,8 @@ export function ModelsView({
         </div>
       </header>
 
-      <div className="models-content">
+      <div className="models-content gui-workspace models-gui-workspace">
+        <aside className="gui-sidebar models-gui-sidebar" aria-label="Model readiness">
         <section className="model-readiness-panel" aria-labelledby="modelReadinessTitle" data-testid="model-readiness-panel">
           <div className="model-readiness-head">
             <div>
@@ -289,7 +290,9 @@ export function ModelsView({
             ))}
           </div>
         </section>
+        </aside>
 
+        <div className="gui-main models-gui-main">
         <section className="models-grid">
           <article className="model-command-card" data-testid="active-model-card" id="models-active-card">
             <div className="model-command-top">
@@ -573,7 +576,9 @@ export function ModelsView({
             ))}
           </ol>
         </section>
+        </div>
 
+        <aside className="gui-inspector models-gui-inspector" aria-label="Advanced model setup">
         <details className="advanced-block model-builder-panel local-model-panel" data-testid="local-model-advanced">
           <summary>
             <span>Connect a local endpoint</span>
@@ -795,6 +800,7 @@ export function ModelsView({
             </div>
           </div>
         </details>
+        </aside>
       </div>
     </section>
   );

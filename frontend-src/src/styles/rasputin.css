@@ -9758,3 +9758,330 @@ button.helper-row:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* GUI mechanics alignment: shared view workspaces */
+.gui-workspace {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.models-gui-workspace,
+.settings-gui-workspace,
+.warsat-gui-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(240px, 310px);
+  grid-template-areas: "gui-sidebar gui-main gui-inspector";
+  align-items: stretch;
+  gap: .85rem;
+}
+
+.gui-sidebar {
+  grid-area: gui-sidebar;
+  min-width: 0;
+}
+
+.gui-main {
+  grid-area: gui-main;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.gui-inspector {
+  grid-area: gui-inspector;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.models-gui-sidebar,
+.models-gui-main,
+.models-gui-inspector,
+.settings-gui-workspace > .settings-nav,
+.settings-gui-workspace > .settings-panels,
+.settings-inspector-panel,
+.warsat-gui-sidebar,
+.warsat-gui-main,
+.warsat-gui-inspector {
+  min-height: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-panel-2) 30%, transparent), transparent 170px),
+    color-mix(in srgb, var(--ras-panel) 92%, transparent);
+  box-shadow: none;
+}
+
+.models-gui-sidebar,
+.models-gui-main,
+.models-gui-inspector,
+.settings-gui-workspace > .settings-panels,
+.settings-inspector-panel,
+.warsat-gui-sidebar,
+.warsat-gui-main,
+.warsat-gui-inspector {
+  display: grid;
+  align-content: start;
+  gap: .85rem;
+  padding: .75rem;
+}
+
+.models-gui-sidebar .model-readiness-panel,
+.models-gui-main .models-grid,
+.models-gui-main .model-catalog-panel,
+.models-gui-main .model-builder-panel,
+.models-gui-inspector .model-builder-panel,
+.models-gui-inspector .advanced-model-registry,
+.warsat-gui-sidebar .warsat-summary-strip,
+.warsat-gui-sidebar .warsat-workflow-steps,
+.warsat-gui-sidebar .warsat-hardware-panel,
+.warsat-gui-main .warsat-panel,
+.warsat-gui-inspector .warsat-library-panel {
+  max-width: none;
+  margin: 0;
+}
+
+.models-gui-sidebar .model-readiness-panel,
+.models-gui-inspector .model-builder-panel,
+.models-gui-inspector .advanced-model-registry,
+.warsat-gui-sidebar .warsat-hardware-panel,
+.warsat-gui-inspector .warsat-library-panel {
+  box-shadow: none !important;
+}
+
+.models-gui-sidebar .model-readiness-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.models-gui-sidebar .model-readiness-head,
+.models-gui-sidebar .model-readiness-summary,
+.models-gui-main .model-catalog-head,
+.settings-inspector-panel {
+  display: grid;
+  gap: .55rem;
+}
+
+.models-gui-main .models-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.models-gui-main .model-catalog-layout,
+.warsat-gui-main .warsat-model-finder-grid {
+  grid-template-columns: minmax(180px, .45fr) minmax(0, 1fr);
+}
+
+.models-gui-main .model-catalog-detail,
+.warsat-gui-main .warsat-model-selected {
+  grid-column: 1 / -1;
+}
+
+.models-gui-inspector details,
+.warsat-gui-inspector details {
+  width: 100%;
+}
+
+.settings-gui-workspace {
+  padding: .85rem;
+}
+
+.settings-gui-workspace > .settings-nav {
+  border-right: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  padding: .75rem;
+}
+
+.settings-gui-workspace > .settings-panels {
+  overflow: auto;
+}
+
+.settings-gui-workspace .settings-pane {
+  max-width: none;
+}
+
+.settings-inspector-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.settings-inspector-panel p {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .88rem;
+  line-height: 1.45;
+}
+
+.warsat-gui-sidebar .warsat-summary-strip {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.warsat-gui-sidebar .warsat-workflow-steps {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.warsat-gui-sidebar .warsat-hardware-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.warsat-gui-main .warsat-runtime-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.warsat-gui-inspector .warsat-profile-strip {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.warsat-gui-inspector .warsat-runtime-protocol-panel .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.warsat-gui-inspector .warsat-runtime-protocol-panel [class*="col-"] {
+  width: 100%;
+}
+
+.warsat-gui-workspace > .warsat-plan-card {
+  grid-area: warsat-plan;
+  grid-column: 1 / -1;
+  grid-row: auto;
+  max-width: none;
+  margin: 0;
+  position: relative;
+  top: auto;
+  z-index: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.warsat-gui-workspace {
+  grid-template-areas:
+    "gui-sidebar gui-main gui-inspector"
+    "warsat-plan warsat-plan warsat-plan";
+  grid-template-rows: minmax(0, auto) auto;
+}
+
+.workspaces-gui-workspace,
+.archive-gui-workspace,
+.trials-gui-workspace {
+  gap: .85rem;
+}
+
+.archive-gui-workspace .archive-sidebar,
+.archive-gui-workspace .archive-editor,
+.archive-gui-workspace .archive-support,
+.trials-gui-workspace .trials-compose,
+.trials-gui-workspace .trial-run-list {
+  border-color: color-mix(in srgb, var(--ras-border) 72%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-panel-2) 30%, transparent), transparent 170px),
+    color-mix(in srgb, var(--ras-panel) 92%, transparent);
+  box-shadow: none;
+}
+
+@media (max-width: 1320px) {
+  .models-gui-workspace,
+  .settings-gui-workspace,
+  .warsat-gui-workspace {
+    grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+    grid-template-areas:
+      "gui-sidebar gui-main"
+      "gui-inspector gui-inspector";
+    grid-auto-rows: minmax(0, auto);
+    align-items: start;
+    overflow: auto;
+  }
+
+  .warsat-gui-workspace {
+    grid-template-areas:
+      "gui-sidebar gui-main"
+      "gui-inspector gui-inspector"
+      "warsat-plan warsat-plan";
+  }
+
+  .models-gui-inspector,
+  .settings-inspector-panel,
+  .warsat-gui-inspector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    overflow: visible;
+  }
+
+  .settings-inspector-panel .activity-inspector-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1320px) and (max-height: 820px) {
+  .settings-inspector-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .models-gui-workspace,
+  .settings-gui-workspace,
+  .warsat-gui-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "gui-sidebar"
+      "gui-main"
+      "gui-inspector";
+    align-content: start;
+  }
+
+  .warsat-gui-workspace {
+    grid-template-areas:
+      "gui-sidebar"
+      "gui-main"
+      "gui-inspector"
+      "warsat-plan";
+  }
+
+  .models-gui-sidebar,
+  .settings-gui-workspace > .settings-nav,
+  .warsat-gui-sidebar {
+    overflow: visible;
+  }
+
+  .settings-gui-workspace > .settings-nav {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: .85rem;
+  }
+
+  .settings-gui-workspace .settings-tab {
+    flex: 0 0 154px;
+  }
+
+  .models-gui-inspector,
+  .settings-inspector-panel,
+  .warsat-gui-inspector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .models-gui-main .model-catalog-layout,
+  .warsat-gui-main .warsat-model-finder-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .models-gui-workspace,
+  .settings-gui-workspace,
+  .warsat-gui-workspace,
+  .workspaces-gui-workspace,
+  .archive-gui-workspace,
+  .trials-gui-workspace {
+    gap: .65rem;
+  }
+
+  .models-gui-sidebar,
+  .models-gui-main,
+  .models-gui-inspector,
+  .settings-gui-workspace > .settings-nav,
+  .settings-gui-workspace > .settings-panels,
+  .settings-inspector-panel,
+  .warsat-gui-sidebar,
+  .warsat-gui-main,
+  .warsat-gui-inspector {
+    padding: .65rem;
+  }
+}
