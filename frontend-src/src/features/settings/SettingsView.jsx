@@ -24,6 +24,7 @@ export function SettingsView(props) {
               variant={section === id ? "primary" : "light"}
               className="settings-tab text-start"
               data-testid={`settings-${id}`}
+              aria-current={section === id ? "page" : undefined}
               onClick={() => setSection(id)}
             >
               <span className="d-block fw-semibold">{label}</span>
@@ -59,6 +60,51 @@ function GeneralSettings({ setup, refreshSetupStatus, setSection, go }) {
     else if (step.id === "model") go?.("models");
     else if (step.id === "workspace") go?.("workspaces");
   }
+
+  const testerChecklist = [
+    {
+      id: "mcp",
+      title: "Verify Tool Relay and MCP",
+      detail: "Register the local operator fixture, approve it, discover tools, classify the safe tool, then run a test call.",
+      action: "Open Tool Relays",
+      open: () => setSection?.("tool-relays"),
+    },
+    {
+      id: "model",
+      title: "Verify active model",
+      detail: "Open Models, discover vLLM, repair mismatches, test health, and confirm the real model id appears in chat.",
+      action: "Open Models",
+      open: () => go?.("models"),
+    },
+    {
+      id: "workspace",
+      title: "Verify workspace browsing",
+      detail: "Open Workspaces, select a mounted folder, browse files, preview a safe text/code file, and set the folder active.",
+      action: "Open Workspaces",
+      open: () => go?.("workspaces"),
+    },
+    {
+      id: "knowledge",
+      title: "Verify RAG indexing",
+      detail: "Index the active workspace, search for a known file or phrase, and confirm cited retrieval hits appear.",
+      action: "Open Knowledge",
+      open: () => setSection?.("knowledge"),
+    },
+    {
+      id: "graph",
+      title: "Verify Graphify evidence",
+      detail: "Build graph relationships for the workspace and confirm search explains why files/functions are connected.",
+      action: "Open Workspaces",
+      open: () => go?.("workspaces"),
+    },
+    {
+      id: "warsat",
+      title: "Verify Warsat planning",
+      detail: "Open Warsat, run readiness checks, choose a model/runtime, generate a dry-run launch plan, and stop before deployment unless explicitly approved.",
+      action: "Open Warsat",
+      open: () => go?.("warsat"),
+    },
+  ];
 
   return (
     <section className="settings-pane active" id="settings-general">
@@ -138,6 +184,32 @@ function GeneralSettings({ setup, refreshSetupStatus, setSection, go }) {
             <li>Test or register a local model from Models.</li>
             <li>Choose a mounted workspace from Workspaces and run a dry task.</li>
           </ol>
+        </Card.Body>
+      </Card>
+      <Card className="settings-card setup-card mt-3 shadow-sm" data-testid="test-rasputin-checklist">
+        <Card.Body>
+          <div className="section-row align-items-start">
+            <div>
+              <span className="eyebrow">Private test build</span>
+              <h3>Test Rasputin Checklist</h3>
+              <p className="text-body-secondary mb-0">
+                Use this path to verify the core local operator workflows without enabling downloads, remote MCP, or Docker deployment.
+              </p>
+            </div>
+          </div>
+          <div className="test-checklist-grid">
+            {testerChecklist.map((item) => (
+              <article className="test-checklist-item" key={item.id} data-testid={`test-check-${item.id}`}>
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </div>
+                <Button variant="outline-secondary" size="sm" type="button" onClick={item.open}>
+                  {item.action}
+                </Button>
+              </article>
+            ))}
+          </div>
         </Card.Body>
       </Card>
     </section>

@@ -966,11 +966,27 @@ Stop conditions:
 - implementation requires binary document mutation
 - implementation requires reading outside approved roots
 
-### [ ] 17. Testable Build Polish And Accessibility Sweep
+### [x] 17. Testable Build Polish And Accessibility Sweep
 
 Branch: `codex/testable-build-polish-v1`
 
 Commit message: `Polish private test build`
+
+Status: complete
+
+Implemented:
+
+- added a Test Rasputin checklist under Settings for MCP, model, workspace browsing, RAG indexing, Graphify evidence, and Warsat planning
+- added active settings navigation state with `aria-current`
+- added responsive checklist layout and reduced-motion CSS handling
+- fixed a Trials preference auto-save race that could overwrite a newly saved mode route with stale `modeModelOverrides`
+- updated UI smoke coverage for the release checklist and active settings nav state
+
+Validation:
+
+- `npm.cmd run build`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Ui`: passed
+- `powershell.exe -ExecutionPolicy Bypass -File .\scripts\check-repo-safety.ps1`: passed through harness
 
 Goal: fix issues found during Passes 14-16 and make the private test build readable, accessible, and predictable.
 

@@ -105,6 +105,7 @@ export function App() {
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
   const bootPhaseRef = useRef("starting");
+  const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
 
   const selectedModelObject = useMemo(
@@ -217,6 +218,10 @@ export function App() {
   }, [selectedTaskId]);
 
   useEffect(() => {
+    modeModelOverridesRef.current = modeModelOverrides;
+  }, [modeModelOverrides]);
+
+  useEffect(() => {
     if (!selectedTaskId) return;
     const liveTask = tasks.find((task) => task.id === selectedTaskId);
     if (!liveTask) return;
@@ -242,7 +247,7 @@ export function App() {
         activeWorkspace: workspace.activePath || ".",
         skill: "general",
         taskMode,
-        modeModelOverrides,
+        modeModelOverrides: modeModelOverridesRef.current,
         subagents: subagentCount,
         workspaceExplorer,
         activeView: view,

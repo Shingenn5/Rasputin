@@ -1669,6 +1669,40 @@ button.runtime-chip {
   overflow-wrap: anywhere;
 }
 
+.test-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  margin-top: 1rem;
+}
+
+.test-checklist-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: .75rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ras-accent) 6%, transparent), transparent 52%),
+    color-mix(in srgb, var(--ras-panel-2) 36%, transparent);
+  padding: .85rem;
+}
+
+.test-checklist-item strong,
+.test-checklist-item p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.test-checklist-item p {
+  margin: .2rem 0 0;
+  color: var(--ras-muted);
+  font-size: .84rem;
+  line-height: 1.42;
+}
+
 .chat-composer {
   position: relative;
   z-index: 2;
@@ -8658,6 +8692,10 @@ button.helper-row:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .test-checklist-grid {
+    grid-template-columns: 1fr;
+  }
+
   .model-readiness-head,
   .model-readiness-summary {
     align-items: flex-start;
@@ -8975,6 +9013,11 @@ button.helper-row:hover {
     flex-direction: column;
   }
 
+  .setup-step,
+  .test-checklist-item {
+    grid-template-columns: 1fr;
+  }
+
   .settings-save-strip .hstack,
   .output-folder-row .btn {
     width: 100%;
@@ -9106,5 +9149,16 @@ button.helper-row:hover {
   .warmind-sigil {
     width: 64px;
     height: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
   }
 }

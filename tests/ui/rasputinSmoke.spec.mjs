@@ -288,6 +288,14 @@ test("key settings destinations are reachable", async ({ page, request }) => {
 
   await page.locator("[data-testid='nav-settings']").click();
   await expect(page.locator("[data-testid='setup-checklist']")).toBeVisible();
+  await expect(page.locator("[data-testid='settings-general']")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("[data-testid='test-rasputin-checklist']")).toBeVisible();
+  await expect(page.locator("[data-testid='test-check-mcp']")).toContainText("Verify Tool Relay and MCP");
+  await expect(page.locator("[data-testid='test-check-model']")).toContainText("Verify active model");
+  await expect(page.locator("[data-testid='test-check-workspace']")).toContainText("Verify workspace browsing");
+  await expect(page.locator("[data-testid='test-check-knowledge']")).toContainText("Verify RAG indexing");
+  await expect(page.locator("[data-testid='test-check-graph']")).toContainText("Verify Graphify evidence");
+  await expect(page.locator("[data-testid='test-check-warsat']")).toContainText("Verify Warsat planning");
   await expect(page.locator("[data-testid='setup-step-admin']")).toContainText("Secure local admin login");
   await expect(page.locator("[data-testid='setup-step-model']")).toContainText("Connect a chat model");
   await page.locator("[data-testid='setup-step-model']").getByRole("button", { name: "Open Models" }).click();
