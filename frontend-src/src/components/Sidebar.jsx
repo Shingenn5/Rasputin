@@ -117,7 +117,7 @@ export function Sidebar({
       <nav className="sidebar-nav" aria-label="Primary">
         {navItems.map((item) => {
           const Icon = icons[item.label] || Home;
-          const active = view === item.view && (!item.section || settingsSection === item.section);
+          const active = view === item.view && (item.view === "settings" || !item.section || settingsSection === item.section);
           return (
             <button
               key={`${item.view}-${item.section || item.label}`}

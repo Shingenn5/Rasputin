@@ -741,7 +741,7 @@ export function ModelsView({
         </section>
 
         <details className="advanced-model-registry" data-testid="advanced-model-registry">
-          <summary>
+          <summary data-testid="advanced-model-registry-toggle">
             <SlidersHorizontal size={17} aria-hidden="true" />
             Advanced model registry
           </summary>
@@ -765,6 +765,7 @@ export function ModelsView({
                 className="ras-button ghost small-button"
                 type="button"
                 data-testid="testing-mode-action"
+                aria-label={testingMode ? "Disable Testing Mode" : "Enable Testing Mode"}
                 onClick={() => updateTestingMode(!testingMode)}
               >
                 {testingMode ? "Disable" : "Enable"}

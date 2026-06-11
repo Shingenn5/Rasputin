@@ -1816,11 +1816,10 @@ button.runtime-chip {
 
 .agent-lane-tabs {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(152px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
   gap: .45rem;
   min-width: 0;
-  overflow-x: auto;
+  overflow: visible;
   overscroll-behavior-inline: contain;
   padding-bottom: .1rem;
 }
@@ -2767,9 +2766,9 @@ button.runtime-chip {
 
 .workspace-root-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: .45rem .65rem;
-  align-items: center;
+  align-items: start;
   border: 1px solid var(--ras-border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--ras-panel-2) 30%, transparent);
@@ -2788,11 +2787,11 @@ button.runtime-chip {
 
 .workspace-root-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: .4rem;
   align-items: center;
   flex-wrap: wrap;
-  max-width: 180px;
+  max-width: none;
 }
 
 .workspace-permission {
@@ -8719,12 +8718,16 @@ button.helper-row:hover {
     z-index: 1060;
     width: min(318px, calc(100vw - 46px));
     transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
     transition: transform .22s ease;
     box-shadow: 16px 0 36px rgba(0, 0, 0, .28);
   }
 
   body.mobile-sidebar-open .app-sidebar {
     transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
   }
 
   body.mobile-sidebar-open::before {

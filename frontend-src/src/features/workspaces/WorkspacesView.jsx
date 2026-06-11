@@ -255,7 +255,7 @@ export function WorkspacesView({
                 <span>Folder path</span>
                 <input name="path" placeholder="workspace/my-project, backend, or data/imports" />
               </label>
-              <button type="submit" className="send-text-button">
+              <button type="submit" className="send-text-button" aria-label="Approve visible folder">
                 Approve folder
               </button>
             </form>
@@ -347,6 +347,7 @@ export function WorkspacesView({
                 className="send-text-button"
                 type="button"
                 onClick={() => approvePath(workspaceBrowse?.path || workspace.activePath || ".")}
+                aria-label="Use the currently browsed folder as active workspace"
               >
                 Use folder as workspace
               </button>
@@ -574,7 +575,7 @@ export function WorkspacesView({
                   <small>Recommended. Rasputin can inspect files, but cannot write to this mount.</small>
                 </span>
               </label>
-              <button className="send-text-button" type="submit">
+              <button className="send-text-button" type="submit" aria-label="Generate a Docker mount plan">
                 <PlusCircle size={15} />
                 Generate mount plan
                 <ChevronRight size={15} />

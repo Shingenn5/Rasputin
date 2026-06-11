@@ -511,6 +511,7 @@ function AgentLaneStrip({ lanes, activeMode, setTaskMode }) {
               id={`agent-lane-tab-${lane.value}`}
               className={selected ? "agent-lane-tab is-active" : "agent-lane-tab"}
               data-testid="agent-lane"
+              title={`${lane.label} lane`}
               type="button"
               role="tab"
               aria-selected={selected}

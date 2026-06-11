@@ -24,6 +24,7 @@ import {
 } from "../features/runtime/RuntimeViews.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
 import {
+  settingsItems,
   themeOptions,
 } from "../lib/constants.js";
 import {
@@ -32,6 +33,40 @@ import {
   isModelHealthy,
   isUserFacingModel,
 } from "../lib/display.js";
+
+const routedViews = new Set([
+  "home",
+  "workspaces",
+  "activity",
+  "models",
+  "warsat",
+  "archive",
+  "trials",
+  "settings",
+  "agents",
+  "sessions",
+  "approvals",
+  "memory",
+  "skills",
+  "telegram",
+  "schedules",
+]);
+
+const routedSettingsSections = new Set(settingsItems.map(([section]) => section));
+
+function parseAppRouteHash() {
+  const raw = window.location.hash.replace(/^#\/?/, "").trim();
+  if (!raw) return { view: "home", section: undefined };
+  const [rawView, rawSection] = raw.split("/");
+  const routeView = routedViews.has(rawView) ? rawView : "home";
+  const routeSection = routeView === "settings" && routedSettingsSections.has(rawSection) ? rawSection : undefined;
+  return { view: routeView, section: routeSection };
+}
+
+function routeHashFor(view, section) {
+  if (view === "settings") return `#settings/${section || "general"}`;
+  return `#${view || "home"}`;
+}
 
 export function App() {
   const queryClient = useQueryClient();
@@ -191,6 +226,20 @@ export function App() {
   useEffect(() => {
     boot();
     return () => eventSourceRef.current?.close();
+  }, []);
+
+  useEffect(() => {
+    function applyHashRoute() {
+      const route = parseAppRouteHash();
+      go(route.view, route.section, { fromHistory: true });
+    }
+    applyHashRoute();
+    window.addEventListener("hashchange", applyHashRoute);
+    window.addEventListener("popstate", applyHashRoute);
+    return () => {
+      window.removeEventListener("hashchange", applyHashRoute);
+      window.removeEventListener("popstate", applyHashRoute);
+    };
   }, []);
 
   useEffect(() => {
@@ -534,7 +583,7 @@ export function App() {
     };
   }
 
-  function go(nextView, section) {
+  function applyView(nextView, section) {
     setView(nextView);
     if (section) setSettingsSection(section);
     if (nextView === "workspaces") {
@@ -553,6 +602,15 @@ export function App() {
       loadWarsat().catch((error) => setGlobalStatus(error.message));
     }
     setMobileSidebarOpen(false);
+  }
+
+  function go(nextView, section, options = {}) {
+    applyView(nextView, section);
+    if (options.fromHistory) return;
+    const nextHash = routeHashFor(nextView, section);
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, "", nextHash);
+    }
   }
 
   function toggleSidebar() {
@@ -1575,7 +1633,7 @@ export function App() {
       <SettingsView
         view={view}
         section={settingsSection}
-        setSection={setSettingsSection}
+        setSection={(section) => go("settings", section)}
         models={models}
         selectedModelObject={selectedModelObject}
         selectedModel={selectedModel}

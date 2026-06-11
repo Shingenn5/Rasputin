@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile
     init: true
     ports:
-      - "127.0.0.1:${RASPUTIN_GUI_TEST_PORT:-8899}:8787"
+      - "127.0.0.1:${RASPUTIN_GUI_TEST_PORT:-8989}:8787"
     environment:
       HOST: 0.0.0.0
       PORT: 8787

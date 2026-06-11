@@ -1148,8 +1148,8 @@ export function WarsatView({
                 </Row>
               </div>
 
-              <details className="warsat-tuning-panel" open>
-                <summary>Hardware and runtime tuning</summary>
+              <details className="warsat-tuning-panel" open data-testid="warsat-runtime-tuning-panel">
+                <summary data-testid="warsat-runtime-tuning-toggle">Hardware and runtime tuning</summary>
                 <Row className="g-3 align-items-start mt-1">
                   <Col lg={3} md={6}>
                     <Form.Label htmlFor="warsatStrengthProfile">Profile</Form.Label>
@@ -1242,8 +1242,8 @@ export function WarsatView({
                 </Row>
               </details>
 
-              <details className="warsat-tuning-panel" open>
-                <summary>Container limits</summary>
+              <details className="warsat-tuning-panel" open data-testid="warsat-container-limits-panel">
+                <summary data-testid="warsat-container-limits-toggle">Container limits</summary>
                 <Row className="g-3 align-items-start mt-1">
                   <Col lg={3} md={6}>
                     <Form.Label htmlFor="warsatMemoryLimitGb">Memory limit GB</Form.Label>
@@ -1273,8 +1273,8 @@ export function WarsatView({
           </Card.Body>
         </Card>
 
-        <details className="warsat-library-panel">
-          <summary>
+        <details className="warsat-library-panel" data-testid="warsat-hardware-profile-panel">
+          <summary data-testid="warsat-hardware-profile-toggle" aria-label="Toggle hardware profile presets">
             <span>Hardware profile presets</span>
             <small>{Object.keys(strengthProfiles).length || 0} presets. The selected preset is already applied in the Launch Recipe form.</small>
           </summary>
@@ -1284,6 +1284,7 @@ export function WarsatView({
                 className={`warsat-profile-card ${key === strengthProfile ? "is-selected" : ""}`}
                 key={key}
                 type="button"
+                aria-label={`Use ${profile.label || key} hardware profile`}
                 onClick={() => setStrengthProfile(key)}
               >
                 <strong>{profile.label || key}</strong>
@@ -1294,8 +1295,8 @@ export function WarsatView({
           </section>
         </details>
 
-        <details className="warsat-library-panel">
-          <summary>
+        <details className="warsat-library-panel" data-testid="warsat-runtime-protocol-panel">
+          <summary data-testid="warsat-runtime-protocol-toggle" aria-label="Toggle runtime protocol library">
             <span>Runtime protocol library</span>
             <small>{protocols.length} managed recipes. Use Models / Local Endpoint for servers you started yourself.</small>
           </summary>
@@ -1633,8 +1634,8 @@ function WarsatHardwarePanel({ hardware, refresh }) {
                 <dt>Docker Runtimes</dt><dd>{(detected.dockerRuntimes || []).join(", ") || "none reported"}</dd>
               </dl>
               {!!(hardware.recommendations || []).length && (
-                <details className="advanced-block mt-3">
-                  <summary>Manual next steps</summary>
+                <details className="advanced-block mt-3" data-testid="warsat-manual-next-steps-panel">
+                  <summary data-testid="warsat-manual-next-steps-toggle">Manual next steps</summary>
                   <ul className="warsat-note-list mt-3 mb-0">
                     {hardware.recommendations.map((item) => <li key={item}>{item}</li>)}
                   </ul>

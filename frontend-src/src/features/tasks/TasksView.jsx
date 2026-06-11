@@ -74,9 +74,11 @@ export function ActivityView({
               <button
                 key={item}
                 id={`activity-tab-${item.toLowerCase()}`}
+                data-testid={`activity-tab-${item.toLowerCase()}`}
                 type="button"
                 className={tab === item ? "activity-tab is-active" : "activity-tab"}
                 role="tab"
+                aria-label={`Open ${item} activity`}
                 aria-selected={tab === item}
                 aria-controls={`activity-panel-${item.toLowerCase()}`}
                 tabIndex={tab === item ? 0 : -1}
