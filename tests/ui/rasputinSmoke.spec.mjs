@@ -99,6 +99,27 @@ async function assertNoShellOverflow(page, label) {
   expect(metrics.offenders, `${label} overflowing shell nodes`).toEqual([]);
 }
 
+async function assertVisibleButtonsAreNamed(page, label) {
+  const unnamed = await page.evaluate(() => {
+    const visible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    return Array.from(document.querySelectorAll("button"))
+      .filter(visible)
+      .map((button) => ({
+        id: button.id || "",
+        testId: button.getAttribute("data-testid") || "",
+        className: button.className || "",
+        text: (button.textContent || "").replace(/\s+/g, " ").trim(),
+        label: button.getAttribute("aria-label") || button.getAttribute("title") || "",
+      }))
+      .filter((button) => !button.text && !button.label);
+  });
+  expect(unnamed, `${label} unnamed visible buttons`).toEqual([]);
+}
+
 test("home shell settings and dry-run task work", async ({ page, request }) => {
   await page.goto("/");
   await waitForAppReady(page);
@@ -147,13 +168,17 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='model-readiness-panel']")).toContainText("Context window");
   await expect(page.locator("[data-testid='model-readiness-panel']")).toContainText("Warsat hardware");
   await expect(page.locator("[data-testid='active-model-card']")).not.toContainText("Main Local Model");
+  await expect(page.locator("[data-testid='gguf-scan']")).toBeVisible();
+  await expect(page.locator("#modelsView")).toContainText("Warsat Deployment Plan");
+
+  await page.locator("[data-testid='model-section-tab']").filter({ hasText: "Catalog" }).click();
   await page.locator("[data-testid='models-dev-catalog']").scrollIntoViewIfNeeded();
   await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
   await expect(page.locator("[data-testid='catalog-model-card']").first()).toBeVisible();
   await expect(page.locator("[data-testid='catalog-send-to-warsat']")).toBeVisible();
-  await expect(page.locator("#modelsView")).toContainText("Warsat Deployment Plan");
+
+  await page.locator("[data-testid='model-section-tab']").filter({ hasText: "Registry" }).click();
   await expect(page.locator("[data-testid='advanced-model-registry']")).toBeVisible();
-  await expect(page.locator("[data-testid='gguf-scan']")).toBeVisible();
   await page.locator("[data-testid='advanced-model-registry'] summary").click();
   await expect(page.locator("#modelRegistry")).toContainText("Testing Mode");
   await page.locator("[data-testid='testing-mode-action']").scrollIntoViewIfNeeded();
@@ -220,6 +245,29 @@ test("sidebar collapse persists and themes switch", async ({ page }) => {
   await page.locator("[data-testid='nav-settings']").click();
   await page.locator("[data-testid='settings-appearance']").click();
   await page.locator("[data-testid='theme-select']").selectOption("rasputin-light");
+});
+
+test("direct hash routes override saved active view preferences", async ({ page, request }) => {
+  await request.post("/api/preferences", {
+    data: {
+      activeView: "settings",
+      activeSettingsSection: "admin",
+    },
+  });
+
+  await page.goto("/#models");
+  await waitForAppReady(page);
+  await expect(page.locator("#modelsView")).toBeVisible();
+  await expect(page.locator("#settingsShell")).not.toBeVisible();
+
+  await page.goto("/#settings/safety");
+  await waitForAppReady(page);
+  await expect(page.locator("#settingsShell")).toBeVisible();
+  await expect(page.locator("#settings-safety")).toBeVisible();
+
+  await page.goto("/#home");
+  await waitForAppReady(page);
+  await expect(page.locator("#homeView")).toBeVisible();
 });
 
 test("key settings destinations are reachable", async ({ page, request }) => {
@@ -494,12 +542,14 @@ test("primary views stay responsive across desktop split tablet and mobile", asy
       await openShellView(page, navTestId);
       await expect(page.locator(visibleSelector)).toBeVisible();
       await assertNoShellOverflow(page, `${viewportName}:${viewName}`);
+      await assertVisibleButtonsAreNamed(page, `${viewportName}:${viewName}`);
     }
 
     await openShellView(page, "nav-settings");
     await page.locator("[data-testid='settings-knowledge']").click();
     await expect(page.locator("#settings-knowledge")).toBeVisible();
     await assertNoShellOverflow(page, `${viewportName}:settings-knowledge`);
+    await assertVisibleButtonsAreNamed(page, `${viewportName}:settings-knowledge`);
   }
 });
 
@@ -612,6 +662,67 @@ test("warsat protocols produce dry-run launch plans", async ({ page }) => {
   await page.locator("[data-testid='warsat-plan-form']").evaluate(form => form.requestSubmit());
   await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("llama.cpp GGUF Server");
   await expect(page.locator("[data-testid='warsat-compose-preview']")).toContainText("/models/tiny-helper.gguf");
+});
+
+test("models catalog can prepare approve and complete a safe Warsat deployment QA flow", async ({ page, request }) => {
+  test.setTimeout(120000);
+  await request.post("/api/security", {
+    data: {
+      privacyLock: true,
+      allowDockerControl: true,
+      allowModelRegistryEdit: true,
+      allowRemoteModels: false,
+    },
+  });
+
+  await page.goto("/");
+  await waitForAppReady(page);
+
+  await page.locator("[data-testid='nav-models']").click();
+  await expect(page.locator("#modelsView")).toBeVisible();
+  await page.locator("[data-testid='model-section-tab']").filter({ hasText: "Catalog" }).click();
+  await expect(page.locator("[data-testid='models-dev-catalog']")).toBeVisible();
+  await page.locator("[data-testid='catalog-model-card']").filter({ hasText: "Qwen2.5 Coder" }).click();
+  await expect(page.locator("[data-testid='catalog-send-to-warsat']")).toBeEnabled();
+  await page.locator("[data-testid='catalog-send-to-warsat']").click();
+
+  await expect(page.locator("[data-testid='warsat-view']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("Qwen/Qwen2.5-Coder-7B-Instruct");
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("Execution is enabled");
+  await expect(page.locator("[data-testid='warsat-launch-plan']")).toContainText("localhost only");
+  await expect(page.locator("[data-testid='warsat-deploy-button']")).toBeEnabled();
+  await assertNoShellOverflow(page, "warsat:prepared-deploy-flow");
+
+  await page.locator("[data-testid='warsat-deploy-button']").click();
+  await expect(page.locator("[data-testid='warsat-deployment-result']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-deployment-result']")).toContainText("Approval code");
+  await expect(page.locator("[data-testid='warsat-approve-deploy']")).toBeVisible();
+  await expect(page.locator("[data-testid='warsat-deploy-button']")).toContainText("Waiting for approval");
+
+  await page.locator("[data-testid='warsat-approve-deploy']").click();
+  await expect(page.locator("[data-testid='warsat-deploy-button']")).toContainText("Run approved deploy");
+  await expect(page.locator("[data-testid='warsat-deploy-button']")).toBeEnabled();
+  await page.locator("[data-testid='warsat-deploy-button']").click();
+
+  await expect(page.locator("[data-testid='warsat-deployment-result']")).toContainText("registered", { timeout: 60000 });
+  await expect(page.locator("[data-testid='warsat-deployment-result']")).toContainText("reachable");
+  await expect(page.locator("[data-testid='warsat-deployment-result']")).toContainText("test mode");
+  await expect(page.locator("[data-testid='warsat-lifecycle']")).toContainText("Register model");
+  await assertNoShellOverflow(page, "warsat:registered-deploy-flow");
+
+  await page.locator("[data-testid='nav-models']").click();
+  await page.locator("[data-testid='model-section-tab']").filter({ hasText: "Registry" }).click();
+  await expect(page.locator("#modelRegistry")).toContainText("Qwen/Qwen2.5-Coder-7B-Instruct");
+
+  await request.post("/api/security", {
+    data: {
+      privacyLock: true,
+      allowDockerControl: false,
+      allowModelRegistryEdit: true,
+      allowRemoteModels: false,
+    },
+  });
 });
 
 test("visual review screenshots", async ({ page }) => {

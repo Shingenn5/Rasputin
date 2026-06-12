@@ -104,6 +104,17 @@ KV_CACHE_CHOICES = {"auto", "fp8", "fp8_e5m2", "fp8_e4m3"}
 QUANTIZATION_CHOICES = {"", "awq", "gptq", "fp8", "bitsandbytes"}
 
 
+def _truthy_env(name):
+    return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _fake_deploy_enabled():
+    if not _truthy_env("RASPUTIN_WARSAT_FAKE_DEPLOY"):
+        return False
+    env = str(os.environ.get("RASPUTIN_ENV", "")).strip().lower()
+    return env in {"test", "gui-test", "ci"} or _truthy_env("RASPUTIN_TEST_AUTH_BYPASS")
+
+
 def _slug(value):
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(value or "")).strip("-").lower() or "warsat-model"
 
@@ -128,6 +139,8 @@ def _protocol_files():
 
 
 def _docker_cli_path():
+    if _fake_deploy_enabled():
+        return "docker-test-double"
     return shutil.which("docker")
 
 
@@ -220,6 +233,41 @@ def summary():
 
 
 def _probe_command(args, timeout=10):
+    if _fake_deploy_enabled() and isinstance(args, list) and args and args[0] == "docker":
+        if args[:2] == ["docker", "version"]:
+            return {
+                "available": True,
+                "ok": True,
+                "returnCode": 0,
+                "stdout": json.dumps({
+                    "Client": {"Version": "test-double"},
+                    "Server": {"Version": "test-double"},
+                }),
+                "stderr": "",
+                "latencyMs": 1,
+            }
+        if args[:2] == ["docker", "info"]:
+            return {
+                "available": True,
+                "ok": True,
+                "returnCode": 0,
+                "stdout": json.dumps({
+                    "Runtimes": {"runc": {}, "nvidia": {}},
+                    "OSType": "linux",
+                    "Architecture": "x86_64",
+                }),
+                "stderr": "",
+                "latencyMs": 1,
+            }
+        if args[:2] == ["docker", "ps"]:
+            return {
+                "available": True,
+                "ok": True,
+                "returnCode": 0,
+                "stdout": "",
+                "stderr": "",
+                "latencyMs": 1,
+            }
     started = time.perf_counter()
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -785,6 +833,16 @@ def _command_log(phase, command, result=None, status="done", error=None):
 
 def _probe_model_endpoint(health_url, expected_model=None, attempts=None, interval=None):
     security.require_local_url(health_url)
+    if _fake_deploy_enabled():
+        return {
+            "ok": True,
+            "status": "reachable",
+            "attempts": 1,
+            "latencyMs": 3,
+            "statusCode": 200,
+            "availableModels": [str(expected_model or "warsat-test-model")],
+            "message": "Test-mode model endpoint passed the simulated health probe.",
+        }
     safe_attempts = max(1, min(int(attempts or HEALTH_PROBE_ATTEMPTS), 30))
     safe_interval = max(0.0, min(float(interval if interval is not None else HEALTH_PROBE_INTERVAL_SECONDS), 30.0))
     last_error = ""
@@ -966,9 +1024,66 @@ def _command_output(proc):
     return (proc.stdout or "").strip() or (proc.stderr or "").strip()
 
 
+def _fake_run_command(args, timeout=120, check=True):
+    if args[:2] == ["docker", "pull"]:
+        return {
+            "returnCode": 0,
+            "stdout": f"test mode: skipped image pull for {args[-1]}",
+            "stderr": "",
+        }
+    if args[:3] == ["docker", "rm", "-f"]:
+        return {
+            "returnCode": 0,
+            "stdout": "test mode: previous container removed if present",
+            "stderr": "",
+        }
+    if args[:3] == ["docker", "run", "-d"]:
+        container_name = "warsat-test-container"
+        if "--name" in args:
+            idx = args.index("--name")
+            if idx + 1 < len(args):
+                container_name = args[idx + 1]
+        return {
+            "returnCode": 0,
+            "stdout": f"test-{_slug(container_name)}",
+            "stderr": "",
+        }
+    if args[:2] == ["docker", "ps"]:
+        if "--format" in args and "{{.Status}}" in args:
+            return {"returnCode": 0, "stdout": "Up 2 seconds", "stderr": ""}
+        return {"returnCode": 0, "stdout": "", "stderr": ""}
+    if args[:2] == ["docker", "inspect"]:
+        return {
+            "returnCode": 0,
+            "stdout": json.dumps({
+                "rasputin.managed": "true",
+                "rasputin.protocol": "test",
+                "rasputin.runtime": "test",
+            }),
+            "stderr": "",
+        }
+    if args[:2] == ["docker", "logs"]:
+        return {
+            "returnCode": 0,
+            "stdout": "test mode: runtime logs are simulated",
+            "stderr": "",
+        }
+    if args[:2] in (["docker", "stop"], ["docker", "restart"]):
+        return {
+            "returnCode": 0,
+            "stdout": args[-1],
+            "stderr": "",
+        }
+    if check:
+        raise AppError("warsat_test_command_unhandled", f"Test-mode Warsat did not handle command: {' '.join(args[:4])}", 500)
+    return {"returnCode": 1, "stdout": "", "stderr": "test mode: command not handled"}
+
+
 def _run_command(args, timeout=120, check=True):
     if not isinstance(args, list) or not args or args[0] != "docker":
         raise AppError("warsat_command_rejected", "Warsat can only execute generated Docker commands.", 400)
+    if _fake_deploy_enabled():
+        return _fake_run_command(args, timeout, check)
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError:

@@ -17,6 +17,7 @@ services:
       RASPUTIN_TEST_AUTH_BYPASS: "1"
       RASPUTIN_COOKIE_SECURE: "0"
       RASPUTIN_LOCALHOST_BYPASS: "0"
+      RASPUTIN_WARSAT_FAKE_DEPLOY: "1"
       MAIN_VLLM_BASE_URL: ${MAIN_VLLM_BASE_URL:-http://host.docker.internal:8000/v1}
       CONTAINER_MODELS_DIR: /app/models
     extra_hosts:

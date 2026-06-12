@@ -375,8 +375,10 @@ export function App() {
     setModeModelOverrides(prefs.modeModelOverrides || {});
     setSubagentCount(Math.max(0, Math.min(Number(prefs.subagents || 0), 4)));
     setWorkspaceExplorer(prefs.workspaceExplorer || {});
-    setView(prefs.activeView || "home");
-    setSettingsSection(prefs.activeSettingsSection || "general");
+    const route = parseAppRouteHash();
+    const hasExplicitRoute = Boolean(window.location.hash.replace(/^#\/?/, "").trim());
+    setView(hasExplicitRoute ? route.view : prefs.activeView || "home");
+    setSettingsSection(hasExplicitRoute && route.view === "settings" ? route.section || "general" : prefs.activeSettingsSection || "general");
     setActiveChatFolder(prefs.activeChatFolder || "all");
     loadWorkspaceRoots(data.workspace?.activePath || ".", prefs.workspaceExplorer || {}).catch((error) => {
       setWorkspaceRoots([]);

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sys
 import tempfile
 import urllib.parse
@@ -1267,6 +1268,42 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(failed["health"]["ok"])
         self.assertNotIn("registryEntry", failed)
         self.assertTrue(any(item["id"] == "probing" and item["status"] == "error" for item in failed["lifecycle"]))
+
+    def testWarsatFakeDeployModeExercisesApprovalAndRegistration(self):
+        cfg = {
+            "allow_docker_control": True,
+            "allow_model_registry_edit": True,
+            "privacy_lock": True,
+            "allow_remote_models": False,
+        }
+        env = {
+            "RASPUTIN_WARSAT_FAKE_DEPLOY": "1",
+            "RASPUTIN_ENV": "test",
+        }
+        with patch.dict(os.environ, env, clear=False), patch("backend.security.load", return_value=cfg):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8033,
+                "role": "helper",
+                "strengthProfile": "small",
+            }))
+            self.assertTrue(plan["executionEnabled"])
+            pending = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": plan}))
+            self.assertTrue(pending["approvalRequired"])
+            self.assertEqual(pending["status"], "waitingForApproval")
+            self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
+            deployed = self.assertOk(self.client.post("/api/warsat/deploy", json={
+                "plan": plan,
+                "approvalId": pending["approval"]["id"],
+            }))
+
+        self.assertEqual(deployed["status"], "registered")
+        self.assertEqual(deployed["phase"], "registered")
+        self.assertTrue(deployed["health"]["ok"])
+        self.assertIn("test mode", deployed["pull"]["stdout"])
+        self.assertTrue(deployed["containerId"].startswith("test-"))
+        self.assertTrue(any(item["id"] == "registered" and item["status"] == "done" for item in deployed["lifecycle"]))
 
     def testWarsatRuntimeLifecycleIsApprovalGated(self):
         cfg = {

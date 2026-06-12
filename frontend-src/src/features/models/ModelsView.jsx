@@ -44,6 +44,13 @@ const hardwareProfiles = [
   ["Custom", "manual limits", "advanced tuning"],
 ];
 
+const modelSections = [
+  ["overview", "Overview", "active model and readiness"],
+  ["catalog", "Catalog", "find deployable models"],
+  ["connect", "Connect", "local and API endpoints"],
+  ["registry", "Registry", "advanced model controls"],
+];
+
 function firstNumber(...values) {
   for (const value of values) {
     const parsed = Number(value);
@@ -120,6 +127,7 @@ export function ModelsView({
   const [catalogPurpose, setCatalogPurpose] = React.useState("all");
   const [catalogRuntime, setCatalogRuntime] = React.useState("deployable");
   const [selectedCatalogId, setSelectedCatalogId] = React.useState(catalogItems[0]?.id || "");
+  const [modelSection, setModelSection] = React.useState("overview");
   const updateTestingMode = React.useCallback((enabled) => {
     const next = !!enabled;
     setTestingMode(next);
@@ -229,6 +237,30 @@ export function ModelsView({
       onAction: selectedCatalogModel?.deployable ? () => prepareCatalogModelForWarsat?.(selectedCatalogModel) : openWarsat,
     },
   ];
+  const selectedSection = modelSections.find(([id]) => id === modelSection) || modelSections[0];
+  const moveModelSection = React.useCallback((direction) => {
+    const current = modelSections.findIndex(([id]) => id === modelSection);
+    const next = (current + direction + modelSections.length) % modelSections.length;
+    setModelSection(modelSections[next][0]);
+  }, [modelSection]);
+  const handleModelSectionKeyDown = React.useCallback((event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      event.preventDefault();
+      moveModelSection(1);
+    }
+    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveModelSection(-1);
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setModelSection(modelSections[0][0]);
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setModelSection(modelSections[modelSections.length - 1][0]);
+    }
+  }, [moveModelSection]);
 
   return (
     <section className={`app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
@@ -282,7 +314,49 @@ export function ModelsView({
       </div>
 
       <div className="models-content gui-workspace models-gui-workspace">
-        <aside className="gui-sidebar models-gui-sidebar" aria-label="Model readiness">
+        <aside className="gui-sidebar models-gui-sidebar models-nav-panel" aria-label="Model sections">
+          <section className="model-section-card">
+            <span className="eyebrow">Model Workspace</span>
+            <h2>{selectedSection[1]}</h2>
+            <p>{selectedSection[2]}</p>
+            <div className="model-section-status">
+              <span className={`model-health-pill ${healthy ? "is-healthy" : "is-unhealthy"}`}>
+                {healthy ? "Reachable" : labelize(status)}
+              </span>
+              <strong>{activeModel?.model || activeName}</strong>
+              <small>{endpointKind}</small>
+            </div>
+          </section>
+          <nav
+            className="model-section-tabs"
+            aria-label="Model page sections"
+            role="tablist"
+            aria-orientation="vertical"
+            onKeyDown={handleModelSectionKeyDown}
+          >
+            {modelSections.map(([id, label, help]) => (
+              <button
+                className={`model-section-tab ${modelSection === id ? "is-active" : ""}`}
+                type="button"
+                role="tab"
+                id={`model-section-${id}`}
+                aria-selected={modelSection === id}
+                aria-controls={`model-panel-${id}`}
+                tabIndex={modelSection === id ? 0 : -1}
+                onClick={() => setModelSection(id)}
+                data-testid="model-section-tab"
+                key={id}
+              >
+                <span>{label}</span>
+                <small>{help}</small>
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        <div className="gui-main models-gui-main" role="tabpanel" id={`model-panel-${modelSection}`} aria-labelledby={`model-section-${modelSection}`}>
+        {modelSection === "overview" && (
+        <>
         <section className="model-readiness-panel" aria-labelledby="modelReadinessTitle" data-testid="model-readiness-panel">
           <div className="model-readiness-head">
             <div>
@@ -322,9 +396,7 @@ export function ModelsView({
             ))}
           </div>
         </section>
-        </aside>
 
-        <div className="gui-main models-gui-main">
         <section className="models-grid">
           <article className="model-command-card" data-testid="active-model-card" id="models-active-card">
             <div className="model-command-top">
@@ -409,7 +481,10 @@ export function ModelsView({
             </div>
           </aside>
         </section>
+        </>
+        )}
 
+        {modelSection === "catalog" && (
         <section className="model-catalog-panel" aria-labelledby="modelCatalogTitle" data-testid="models-dev-catalog">
           <div className="model-catalog-head">
             <div>
@@ -554,7 +629,9 @@ export function ModelsView({
             </aside>
           </div>
         </section>
+        )}
 
+        {modelSection === "overview" && (
         <section className="model-builder-panel" aria-labelledby="modelBuilderTitle">
           <div className="section-row">
             <div>
@@ -571,46 +648,50 @@ export function ModelsView({
             </button>
           </div>
 
-          <div className="deployment-layout">
-            <div className="deployment-column">
-              <h3>Runtime choices</h3>
-              <div className="runtime-option-grid">
-                {runtimeOptions.map(([name, text, input]) => (
-                  <article className="runtime-option" key={name}>
-                    <strong>{name}</strong>
-                    <p>{text}</p>
-                    <small>{input}</small>
-                  </article>
-                ))}
+          <details className="model-plan-details">
+            <summary>Show deployment details</summary>
+            <div className="deployment-layout">
+              <div className="deployment-column">
+                <h3>Runtime choices</h3>
+                <div className="runtime-option-grid">
+                  {runtimeOptions.map(([name, text, input]) => (
+                    <article className="runtime-option" key={name}>
+                      <strong>{name}</strong>
+                      <p>{text}</p>
+                      <small>{input}</small>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="deployment-column">
+                <h3>Hardware profiles</h3>
+                <div className="hardware-profile-grid">
+                  {hardwareProfiles.map(([name, vram, usage]) => (
+                    <article className="hardware-profile" key={name}>
+                      <span>{name}</span>
+                      <strong>{vram}</strong>
+                      <small>{usage}</small>
+                    </article>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="deployment-column">
-              <h3>Hardware profiles</h3>
-              <div className="hardware-profile-grid">
-                {hardwareProfiles.map(([name, vram, usage]) => (
-                  <article className="hardware-profile" key={name}>
-                    <span>{name}</span>
-                    <strong>{vram}</strong>
-                    <small>{usage}</small>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <ol className="deployment-steps">
-            {deploymentSteps.map(([title, text]) => (
-              <li key={title}>
-                <span>{title}</span>
-                <p>{text}</p>
-              </li>
-            ))}
-          </ol>
+            <ol className="deployment-steps">
+              {deploymentSteps.map(([title, text]) => (
+                <li key={title}>
+                  <span>{title}</span>
+                  <p>{text}</p>
+                </li>
+              ))}
+            </ol>
+          </details>
         </section>
-        </div>
+        )}
 
-        <aside className="gui-inspector models-gui-inspector" aria-label="Advanced model setup">
+        {modelSection === "connect" && (
+        <>
         <details className="advanced-block model-builder-panel local-model-panel" data-testid="local-model-advanced">
           <summary>
             <span>Connect a local endpoint</span>
@@ -784,7 +865,10 @@ export function ModelsView({
             ))}
           </div>
         </details>
+        </>
+        )}
 
+        {modelSection === "registry" && (
         <details className="advanced-model-registry" data-testid="advanced-model-registry">
           <summary data-testid="advanced-model-registry-toggle">
             <SlidersHorizontal size={17} aria-hidden="true" />
@@ -832,7 +916,8 @@ export function ModelsView({
             </div>
           </div>
         </details>
-        </aside>
+        )}
+        </div>
       </div>
     </section>
   );
