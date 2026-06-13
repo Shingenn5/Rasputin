@@ -87,3 +87,5 @@ graph.json
 # keep placeholder folders visible
 !workspace/.gitkeep
 !models/.gitkeep
+bundle.py
+repro-output.md
