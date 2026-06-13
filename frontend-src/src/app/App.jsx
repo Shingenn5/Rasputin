@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
+import { WorkspacePanelHost } from "../components/WorkspacePanelHost.jsx";
 import { api, postJson } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
@@ -66,6 +67,20 @@ function parseAppRouteHash() {
 function routeHashFor(view, section) {
   if (view === "settings") return `#settings/${section || "general"}`;
   return `#${view || "home"}`;
+}
+
+function readWorkspacePanelState() {
+  try {
+    const raw = localStorage.getItem("rasputin-workspace-panels");
+    if (!raw) return { active: null, minimized: [] };
+    const parsed = JSON.parse(raw);
+    return {
+      active: typeof parsed.active === "string" ? parsed.active : null,
+      minimized: Array.isArray(parsed.minimized) ? parsed.minimized.filter((item) => typeof item === "string") : [],
+    };
+  } catch {
+    return { active: null, minimized: [] };
+  }
 }
 
 export function App() {
@@ -136,9 +151,11 @@ export function App() {
   const [trialsStatus, setTrialsStatus] = useState("");
   const [setup, setSetup] = useState(null);
   const [globalStatus, setGlobalStatus] = useState("");
+  const [workspacePanelState, setWorkspacePanelState] = useState(readWorkspacePanelState);
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
+  const workspacePanelReturnRef = useRef(null);
   const bootPhaseRef = useRef("starting");
   const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
@@ -162,6 +179,104 @@ export function App() {
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const approvalCount = (approvals?.approvals || []).filter((approval) => approval.status === "pending").length;
+  const workspacePanelDefinitions = useMemo(() => [
+    {
+      id: "models",
+      kicker: "Routing",
+      title: "Model Panel",
+      subtitle: displayModelName(selectedModelObject, models),
+      content: (
+        <ModelRoutingPanel
+          model={selectedModelObject}
+          models={models}
+          visibleModels={visibleModels}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          runModelAction={runModelAction}
+          go={go}
+        />
+      ),
+    },
+    {
+      id: "warsat",
+      kicker: "Deployment",
+      title: "Warsat Panel",
+      subtitle: warsatPlan ? "Launch plan ready for review" : "Fit-first runtime planning",
+      content: (
+        <WarsatFocusedPanel
+          warsat={warsat}
+          hardware={warsatHardware}
+          plan={warsatPlan}
+          deployment={warsatDeployment}
+          deployPlan={deployWarsatPlan}
+          deploying={warsatDeploying}
+          go={go}
+        />
+      ),
+    },
+    {
+      id: "activity",
+      kicker: "Operations",
+      title: "Activity Panel",
+      subtitle={`${runningTasks.length} active / ${approvalCount} approvals`}
+      content: (
+        <ActivityFocusedPanel
+          runningTasks={runningTasks}
+          approvals={approvals}
+          models={models}
+          openTaskDetails={openTaskDetails}
+          go={go}
+        />
+      ),
+    },
+    {
+      id: "workspace-knowledge",
+      kicker: "Knowledge",
+      title: "Workspace Knowledge",
+      subtitle: activeWorkspaceName,
+      content: (
+        <WorkspaceKnowledgeFocusedPanel
+          workspace={workspace}
+          ragStats={ragStats}
+          graphStats={graphStats}
+          indexWorkspaceKnowledge={indexWorkspaceKnowledge}
+          refreshKnowledgeStats={refreshKnowledgeStats}
+          go={go}
+        />
+      ),
+    },
+    {
+      id: "tool-relay",
+      kicker: "Tools",
+      title: "Tool Relay",
+      subtitle={`${tools?.tools?.length || 0} registered tools`}
+      content: (
+        <ToolRelayFocusedPanel
+          tools={tools}
+          mcpRelays={mcpRelays}
+          go={go}
+        />
+      ),
+    },
+  ], [
+    activeWorkspaceName,
+    approvalCount,
+    approvals,
+    graphStats,
+    mcpRelays,
+    models,
+    ragStats,
+    runningTasks,
+    selectedModel,
+    selectedModelObject,
+    tools,
+    visibleModels,
+    warsat,
+    warsatDeployment,
+    warsatDeploying,
+    warsatHardware,
+    warsatPlan,
+  ]);
 
   const loadTaskDetails = useCallback(async (taskId, options = {}) => {
     if (!taskId) return null;
@@ -193,6 +308,42 @@ export function App() {
     loadTaskDetails(taskId);
   }, [loadTaskDetails]);
 
+  const restoreWorkspacePanelFocus = useCallback(() => {
+    const target = workspacePanelReturnRef.current;
+    if (!target) return;
+    requestAnimationFrame(() => target.focus?.());
+  }, []);
+
+  const openWorkspacePanel = useCallback((panelId) => {
+    if (!panelId) return;
+    workspacePanelReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setWorkspacePanelState((current) => ({
+      active: panelId,
+      minimized: current.minimized.filter((item) => item !== panelId),
+    }));
+  }, []);
+
+  const closeWorkspacePanel = useCallback((panelId) => {
+    setWorkspacePanelState((current) => ({
+      active: current.active === panelId ? null : current.active,
+      minimized: current.minimized.filter((item) => item !== panelId),
+    }));
+  }, []);
+
+  const minimizeWorkspacePanel = useCallback((panelId) => {
+    setWorkspacePanelState((current) => ({
+      active: current.active === panelId ? null : current.active,
+      minimized: current.minimized.includes(panelId) ? current.minimized : [...current.minimized, panelId],
+    }));
+  }, []);
+
+  const restoreWorkspacePanel = useCallback((panelId) => {
+    setWorkspacePanelState((current) => ({
+      active: panelId,
+      minimized: current.minimized.filter((item) => item !== panelId),
+    }));
+  }, []);
+
   const modelsQuery = useQuery({
     queryKey: ["model-registry"],
     queryFn: fetchModels,
@@ -216,6 +367,10 @@ export function App() {
     localStorage.setItem("rasputin-theme", theme);
     updateThemeChrome(theme);
   }, [theme, sidebarCollapsed, mobileSidebarOpen, ready]);
+
+  useEffect(() => {
+    localStorage.setItem("rasputin-workspace-panels", JSON.stringify(workspacePanelState));
+  }, [workspacePanelState]);
 
   useEffect(() => {
     if (!globalStatus) return undefined;
@@ -1472,6 +1627,7 @@ export function App() {
           go("home");
           setGlobalStatus(`${mode} prompt loaded.`);
         }}
+        openWorkspacePanel={openWorkspacePanel}
       />
       <WorkspacesView
         view={view}
@@ -1498,6 +1654,7 @@ export function App() {
           go("home");
           setGlobalStatus("Workspace analysis prompt loaded.");
         }}
+        openWorkspacePanel={openWorkspacePanel}
       />
       <AgentsView view={view} tasks={tasks} models={models} />
       <SessionsView
@@ -1579,6 +1736,7 @@ export function App() {
         modelCatalogError={modelCatalogError}
         loadModelCatalog={loadModelCatalog}
         prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+        openWorkspacePanel={openWorkspacePanel}
       />
       <ArchiveView
         view={view}
@@ -1623,6 +1781,7 @@ export function App() {
         warsatPlan={warsatPlan}
         security={security}
         openWarsat={() => go("warsat")}
+        openWorkspacePanel={openWorkspacePanel}
       />
       <ActivityView
         view={view}
@@ -1638,6 +1797,7 @@ export function App() {
         pauseTask={pauseTask}
         resumeTask={resumeTask}
         openTaskDetails={openTaskDetails}
+        openWorkspacePanel={openWorkspacePanel}
       />
       <SettingsView
         view={view}
@@ -1704,6 +1864,15 @@ export function App() {
         approveApproval={approveApproval}
         denyApproval={denyApproval}
         returnFocusRef={taskDetailsReturnRef}
+      />
+      <WorkspacePanelHost
+        panels={workspacePanelDefinitions}
+        activePanelId={workspacePanelState.active}
+        minimizedPanelIds={workspacePanelState.minimized}
+        closePanel={closeWorkspacePanel}
+        minimizePanel={minimizeWorkspacePanel}
+        restorePanel={restoreWorkspacePanel}
+        returnFocus={restoreWorkspacePanelFocus}
       />
     </AppShell>
   );

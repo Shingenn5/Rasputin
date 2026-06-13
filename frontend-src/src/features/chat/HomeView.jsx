@@ -78,6 +78,15 @@ const modeOptions = [
   },
 ];
 
+function readStoredList(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export function HomeView(props) {
   const {
     activeWorkspaceName,
@@ -110,6 +119,7 @@ export function HomeView(props) {
     runningTasks,
     openTaskDetails,
     setPrompt,
+    openWorkspacePanel,
   } = props;
 
   const threadScrollRef = useRef(null);
@@ -122,6 +132,8 @@ export function HomeView(props) {
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [modePanelOpen, setModePanelOpen] = useState(false);
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
+  const [favoriteModels, setFavoriteModels] = useState(() => readStoredList("rasputin-favorite-models"));
+  const [recentModels, setRecentModels] = useState(() => readStoredList("rasputin-recent-models"));
   const orderedHomeTasks = useMemo(
     () => [...homeTasks].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
     [homeTasks],
@@ -202,6 +214,28 @@ export function HomeView(props) {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [modelPanelOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("rasputin-favorite-models", JSON.stringify(favoriteModels));
+  }, [favoriteModels]);
+
+  useEffect(() => {
+    localStorage.setItem("rasputin-recent-models", JSON.stringify(recentModels));
+  }, [recentModels]);
+
+  function chooseModel(modelKey) {
+    if (!modelKey) return;
+    setSelectedModel(modelKey);
+    setRecentModels((current) => [modelKey, ...current.filter((item) => item !== modelKey)].slice(0, 6));
+  }
+
+  function toggleFavoriteModel(modelKey) {
+    setFavoriteModels((current) => (
+      current.includes(modelKey)
+        ? current.filter((item) => item !== modelKey)
+        : [modelKey, ...current].slice(0, 10)
+    ));
+  }
 
   function handleThreadScroll(event) {
     const target = event.currentTarget;

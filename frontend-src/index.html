@@ -1,109 +1,61 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#d9d3c8" />
-    <title>Rasputin</title>
-    <script>
-      (function () {
-        var themes = {
-          "rasputin-light": { bg: "#d9d3c8", accent: "#bd4a28", dark: false },
-          "rasputin-dark": { bg: "#090b0f", accent: "#d85b32", dark: true },
-          "contrast": { bg: "#ffffff", accent: "#005fcc", dark: false },
-          "bootswatch-slate": { bg: "#272b30", accent: "#d85b32", dark: true },
-          "bootswatch-cyborg": { bg: "#060606", accent: "#ff5b45", dark: true },
-          "bootswatch-darkly": { bg: "#222222", accent: "#00bc8c", dark: true },
-          "bootswatch-lux": { bg: "#f7f7f7", accent: "#1a1a1a", dark: false },
-          "bootswatch-solar": { bg: "#002b36", accent: "#b58900", dark: true },
-          "bootswatch-superhero": { bg: "#2b3e50", accent: "#df691a", dark: true }
-        };
-        function normalize(theme) {
-          return themes[theme] ? theme : "rasputin-light";
-        }
-        function ensure(selector, tag, attrs) {
-          var node = document.querySelector(selector);
-          if (!node) {
-            node = document.createElement(tag);
-            Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
-            document.head.appendChild(node);
-          }
-          return node;
-        }
-        function apply(theme) {
-          var selected = normalize(theme);
-          var cfg = themes[selected];
-          var root = document.documentElement;
-          root.dataset.theme = selected;
-          root.dataset.bsTheme = cfg.dark ? "dark" : "light";
-          root.dataset.contrast = selected === "contrast" ? "true" : "false";
-          root.style.background = cfg.bg;
-          ensure("meta[name='theme-color']", "meta", { name: "theme-color" }).setAttribute("content", cfg.bg);
-          var icon = ensure("link[rel='icon']", "link", { rel: "icon" });
-          var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="' + cfg.bg + '"/><path d="M14 32h36M32 14v36M20 20l24 24M44 20 20 44" stroke="' + cfg.accent + '" stroke-width="3" stroke-linecap="round" opacity=".72"/><circle cx="32" cy="32" r="11" fill="none" stroke="' + cfg.accent + '" stroke-width="4"/><text x="32" y="37" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="' + cfg.accent + '">R</text></svg>';
-          icon.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svg));
-          return selected;
-        }
-        window.rasputinTheme = { apply: apply, normalize: normalize, themes: themes };
-        apply(localStorage.getItem("rasputin-theme") || "rasputin-light");
-      })();
-    </script>
-    <style>
-      html, body, #root { min-height: 100%; }
-      body {
-        margin: 0;
-        background: #d9d3c8;
-        color: #17191d;
-      }
-      html[data-theme="rasputin-dark"] body {
-        background: #090b0f;
-        color: #e9edf2;
-      }
-      html[data-theme^="bootswatch-"] body {
-        background: #111;
-        color: #f4f4f4;
-      }
-      #rasputinLoader {
-        position: fixed;
-        inset: 0;
-        z-index: 9999;
-        display: grid;
-        place-items: center;
-        background:
-          linear-gradient(135deg, rgba(189, 74, 40, .12), transparent 34%),
-          linear-gradient(90deg, rgba(49, 94, 132, .06) 1px, transparent 1px),
-          linear-gradient(0deg, rgba(189, 74, 40, .06) 1px, transparent 1px),
-          var(--loader-bg, #ebe8e1);
-        background-size: auto, 38px 38px, 38px 38px, auto;
-        transition: opacity .24s ease, visibility .24s ease;
-      }
-      html[data-theme="rasputin-dark"] #rasputinLoader { --loader-bg: #090b0f; }
-      html[data-theme^="bootswatch-"] #rasputinLoader { --loader-bg: #111; }
-      body[data-ready="true"] #rasputinLoader {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-      }
-      .loader-core {
-        width: 54px;
-        height: 54px;
-        border: 1px solid rgba(189, 74, 40, .35);
-        border-radius: 50%;
-        display: grid;
-        place-items: center;
-        color: #bd4a28;
-        font: 700 18px/1 system-ui, sans-serif;
-        box-shadow: 0 0 36px rgba(189, 74, 40, .18);
-        animation: loaderPulse 1.2s ease-in-out infinite;
-      }
-      @keyframes loaderPulse {
-        50% { transform: scale(.96); opacity: .72; }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="rasputinLoader" aria-hidden="true"><div class="loader-core">R</div></div>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rasputin Command Center</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body class="command-center">
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">Rasputin</div>
+        <div class="status-bar">
+            <span class="status-item">System: Ready</span>
+            <span class="status-item">Memory: 8GB/16GB</span>
+            <span class="status-item">Agent: Active</span>
+        </div>
+        <div class="user-settings">
+            <button class="setting-btn">Settings</button>
+        </div>
+    </header>
+
+    <!-- Workspace Selector -->
+    <div class="workspace-selector">
+        <div class="mode-card research active" data-mode="research">
+            Research
+        </div>
+        <div class="mode-card documents" data-mode="documents">
+            Documents
+        </div>
+        <div class="mode-card coding" data-mode="coding">
+            Coding
+        </div>
+        <div class="mode-card general" data-mode="general">
+            General
+        </div>
+    </div>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+        <!-- Quick Action Center -->
+        <div class="quick-action">
+            <h2>Objective</h2>
+            <input type="text" class="objective-input" placeholder="Enter your objective here...">
+        </div>
+
+        <!-- Contextual Sidebar -->
+        <aside class="sidebar">
+            <h3>Recent Activity</h3>
+            <div class="activity-list">
+                <!-- Activity items will be dynamically populated -->
+            </div>
+            <h3>Active Knowledge</h3>
+            <div class="knowledge-status">
+                <span>Index: Ready</span>
+                <span>Graph: Ready</span>
+            </div>
+        </aside>
+    </main>
+</body>
 </html>

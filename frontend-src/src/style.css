@@ -1,0 +1,102 @@
+:root {
+    --primary-color: #4a5568;
+    --secondary-color: #64748b;
+    --accent-color: #3b82f6;
+    --background-color: #f8fafc;
+    --text-color: #1e293b;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background-color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.status-bar {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: #f8fafc;
+    border-radius: 4px;
+}
+
+.status-item {
+    font-size: 0.9rem;
+    color: var(--secondary-color);
+}
+
+.workspace-selector {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    background-color: #f8fafc;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.mode-card {
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mode-card.active {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--accent-color);
+}
+
+.workspace {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.quick-action {
+    flex: 1;
+    padding: 1rem;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.objective-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 4px;
+    font-size: 1.2rem;
+    margin-top: 0.5rem;
+}
+
+.sidebar {
+    width: 300px;
+    background-color: #ffffff;
+    border-left: 1px solid rgba(0,0,0,0.1);
+    padding: 1rem;
+}
+
+@media (max-width: 768px) {
+    .workspace {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid rgba(0,0,0,0.1);
+    }
+}
