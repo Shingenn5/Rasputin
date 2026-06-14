@@ -25,6 +25,7 @@ import {
   modelHealthLine,
   runtimeStatus,
 } from "../../lib/display.js";
+import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 
 const modeOptions = [
   {
@@ -122,6 +123,40 @@ export function HomeView(props) {
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [modePanelOpen, setModePanelOpen] = useState(false);
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
+  const [activeCommandWorkspace, setActiveCommandWorkspace] = useState("General");
+
+  // Phase 10: Button Reliability Framework State
+  const [uiState, setUiState] = useState({ status: 'idle', message: '' });
+  const executeAction = useReliableAction("HomeView");
+
+  const handleSendTask = async (e) => {
+    e.preventDefault();
+    if (!objective.trim()) return;
+    try {
+      await executeAction("SendTask", taskMode, async () => {
+        await sendTask(e);
+      }, setUiState);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleCancelTask = (id) => executeAction("CancelTask", id, async () => cancelTask(id), setUiState);
+  const handlePauseTask = (id) => executeAction("PauseTask", id, async () => pauseTask(id), setUiState);
+  const handleResumeTask = (id) => executeAction("ResumeTask", id, async () => resumeTask(id), setUiState);
+
+  function selectCommandWorkspace(ws) {
+    setActiveCommandWorkspace(ws);
+    if (ws === "Research") setTaskMode("research");
+    if (ws === "Documents") setTaskMode("analyze");
+    if (ws === "Coding") setTaskMode("code");
+    if (ws === "General") setTaskMode("chat");
+  }
+
+  let objectivePlaceholder = "Message Rasputin...";
+  if (activeCommandWorkspace === "Research") objectivePlaceholder = "What are we researching?";
+  if (activeCommandWorkspace === "Documents") objectivePlaceholder = "Ask about your documents or draft new ones...";
+  if (activeCommandWorkspace === "Coding") objectivePlaceholder = "Describe the coding task...";
   const orderedHomeTasks = useMemo(
     () => [...homeTasks].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
     [homeTasks],
@@ -220,256 +255,247 @@ function jumpToLatest() {
   }
 
   return (
-    <section className={`app-view home-view ${view === "home" ? "active" : ""}`} id="homeView" data-app-view="home" tabIndex="-1">
-      <header className="home-commandbar">
-        <button className="icon-button home-menu-button" type="button" aria-label="Open navigation" onClick={toggleSidebar}>
-          <PanelLeftOpen size={19} />
-        </button>
-        <div className="home-title">
-          <span className="system-label">Rasputin</span>
-          <span className="system-subtitle">Local companion</span>
+    <section className={`cc-layout app-view home-view ${view === "home" ? "active" : ""}`} id="homeView" data-app-view="home" tabIndex="-1">
+      {/* Header */}
+      <header className="cc-header">
+        <div className="cc-header-left">
+          <button className="icon-button" type="button" aria-label="Open navigation" onClick={toggleSidebar}>
+            <PanelLeftOpen size={19} />
+          </button>
+          <div className="cc-logo">
+            <span className="brand-mark" aria-hidden="true">R</span>
+            Rasputin
+          </div>
         </div>
-        <div className="home-runtime-strip" aria-label="Runtime state">
-          <button
-            id="workspacePill"
-            className="runtime-chip"
-            data-testid="active-workspace-chip"
-            type="button"
-            onClick={() => go("workspaces")}
-          >
-            <Folder size={15} />
-            <span>{activeWorkspaceName || "No workspace selected"}</span>
-          </button>
-          <button
-            className={`runtime-chip privacy-chip ${security.privacyLock ? "is-safe" : "is-warn"}`}
-            type="button"
-            onClick={() => go("settings", "safety")}
-            aria-label={`${privacyTitle}: ${privacyDetail}. Open safety settings.`}
-            title={`${privacyTitle}: ${privacyDetail}`}
-          >
-            <ShieldCheck size={15} />
-            <span>
-              <strong>{privacyTitle}</strong>
-              <small>{privacyDetail}</small>
-            </span>
-          </button>
+        <div className="cc-status-area">
+          <div className="cc-status-item">
+            <Cpu size={14} /> <span>{displayModelName(selectedModelObject, models)}</span>
+          </div>
+          <div className="cc-status-item" title={`${privacyTitle}: ${privacyDetail}`}>
+            <ShieldCheck size={14} /> <span>{privacyTitle}</span>
+          </div>
           <button className="icon-button" type="button" aria-label="Open settings" onClick={() => go("settings", "general")}>
             <Settings size={18} />
           </button>
         </div>
       </header>
 
-      <section className="chat-shell" aria-label="Conversation">
-        <div className="thread-scroll" ref={threadScrollRef} onScroll={handleThreadScroll}>
-          <section
-            className={orderedHomeTasks.length ? "welcome-panel hidden" : "welcome-panel"}
-            id="welcomePanel"
-            aria-label="Start a task"
-            data-testid="home-empty-state"
-          >
-            <div className="warmind-sigil" aria-hidden="true">
-              <span />
-            </div>
-            <h1>What are we working on?</h1>
-            <p>Ask a question, inspect an approved folder, or draft the next move.</p>
-            <div className="prompt-strip" aria-label="Quick actions">
-              <button type="button" className="prompt-chip" onClick={() => setPrompt?.("Inspect the active workspace and summarize the files you can see.", "analyze")}>
-                Inspect workspace
-              </button>
-              <button type="button" className="prompt-chip" onClick={() => go("workspaces")}>
-                Add folder
-              </button>
-              <button type="button" className="prompt-chip" onClick={() => setPrompt?.("Help me plan the next coding task for this project.", "code")}>
-                Plan coding work
-              </button>
-              <button type="button" className="prompt-chip" onClick={() => setPrompt?.("Draft a clean markdown document I can export later.", "write")}>
-                Draft document
-              </button>
-            </div>
-          </section>
+      <div className="cc-main-container">
+        {/* Content Area */}
+        <div className="cc-content-area">
+          {/* Workspace Selector */}
+          <div className="cc-workspace-selector">
+            <div className={`cc-workspace-card ${activeCommandWorkspace === "Research" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("Research")}>Research</div>
+            <div className={`cc-workspace-card ${activeCommandWorkspace === "Documents" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("Documents")}>Documents</div>
+            <div className={`cc-workspace-card ${activeCommandWorkspace === "Coding" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("Coding")}>Coding</div>
+            <div className={`cc-workspace-card ${activeCommandWorkspace === "General" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("General")}>General</div>
+          </div>
 
-          <div id="tasks" className="thread-list" aria-live="polite">
-            {activeHomeTasks.length > 1 && (
-              <div className="parallel-run-strip" role="status" aria-live="polite">
-                <Users size={16} />
-                <span>{activeHomeTasks.length} active runs in this chat. They will continue in parallel.</span>
-                <button type="button" onClick={() => go("activity")}>Open Activity</button>
-              </div>
-            )}
-            {orderedHomeTasks.map((task) => (
-              <TaskThread
-                key={task.id}
-                task={task}
-                models={models}
-                cancelTask={cancelTask}
-                pauseTask={pauseTask}
-                resumeTask={resumeTask}
-                openTaskDetails={openTaskDetails}
+          {/* Quick Action Center */}
+          <div className="cc-quick-action-center">
+            <h1 className="cc-objective-title">What is our objective?</h1>
+            
+            <form id="taskForm" className="cc-input-container" onSubmit={handleSendTask}>
+              <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
+              <textarea
+                id="objective"
+                className="cc-input"
+                rows={3}
+                placeholder={objectivePlaceholder}
+                value={objective}
+                onChange={(event) => setObjective(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form.requestSubmit();
+                  }
+                }}
               />
-            ))}
+              <div className="cc-input-actions">
+                <div className="cc-quick-actions">
+                  {activeCommandWorkspace === "Research" && (
+                    <>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Deep dive a topic", "research")}>Deep dive a topic</button>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Find latest references", "research")}>Find latest references</button>
+                    </>
+                  )}
+                  {activeCommandWorkspace === "Documents" && (
+                    <>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Summarize active workspace", "analyze")}>Summarize active workspace</button>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Organize files", "organize")}>Organize files</button>
+                    </>
+                  )}
+                  {activeCommandWorkspace === "Coding" && (
+                    <>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Review code", "code")}>Review code</button>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Plan next feature", "code")}>Plan next feature</button>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Find bugs", "code")}>Find bugs</button>
+                    </>
+                  )}
+                  {activeCommandWorkspace === "General" && (
+                    <>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("General chat", "chat")}>General chat</button>
+                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Brainstorm ideas", "chat")}>Brainstorm ideas</button>
+                    </>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {/* Button Reliability Status Readout */}
+                  {uiState.status !== 'idle' && (
+                    <div style={{ 
+                      padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem',
+                      backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
+                                      uiState.status === 'success' ? '#10B981' : 'var(--cc-surface)',
+                      color: '#fff', display: 'flex', alignItems: 'center'
+                    }}>
+                      {uiState.message}
+                    </div>
+                  )}
+                  {latestActiveTask && (
+                    <button className="cc-quick-action-chip" style={{ borderColor: 'var(--ras-danger)', color: 'var(--ras-danger)' }} type="button" onClick={() => handleCancelTask(latestActiveTask.id)}>
+                      <Square size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                      Stop latest
+                    </button>
+                  )}
+                  <button
+                    id="sendBtn"
+                    className="send-button cc-quick-action-chip"
+                    style={{ backgroundColor: 'var(--cc-accent)', color: '#fff', borderColor: 'var(--cc-accent)' }}
+                    type="submit"
+                    disabled={!healthy}
+                    aria-disabled={!healthy}
+                    aria-label="Send message"
+                    title={disabledReason || "Send message"}
+                  >
+                    <Send size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> Send
+                  </button>
+                </div>
+              </div>
+
+              {/* Render panels if open */}
+              {modePanelOpen && (
+                <ModeSidePanel
+                  panelRef={modePanelRef}
+                  modes={modeOptions}
+                  activeMode={taskMode}
+                  models={models}
+                  visibleModels={visibleModels}
+                  modeModelOverrides={modeModelOverrides || {}}
+                  setModeModelOverride={setModeModelOverride}
+                  modelKeyForMode={modelKeyForMode}
+                  setTaskMode={(nextMode) => {
+                    setTaskMode(nextMode);
+                    setModePanelOpen(false);
+                    window.requestAnimationFrame(() => modeButtonRef.current?.focus());
+                  }}
+                  subagentCount={subagentCount}
+                  setSubagentCount={setSubagentCount}
+                  close={() => {
+                    setModePanelOpen(false);
+                    window.requestAnimationFrame(() => modeButtonRef.current?.focus());
+                  }}
+                />
+              )}
+              {modelPanelOpen && (
+                <ModelSidePanel
+                  panelRef={modelPanelRef}
+                  models={models}
+                  visibleModels={visibleModels}
+                  selectedModel={selectedModel}
+                  setSelectedModel={(key) => {
+                    setSelectedModel(key);
+                    setModelPanelOpen(false);
+                    window.requestAnimationFrame(() => modelButtonRef.current?.focus());
+                  }}
+                  close={() => {
+                    setModelPanelOpen(false);
+                    window.requestAnimationFrame(() => modelButtonRef.current?.focus());
+                  }}
+                />
+              )}
+            </form>
+
+            <div style={{ display: 'none' }}>
+              <button ref={modeButtonRef} onClick={() => setModePanelOpen(true)}>Mode</button>
+              <button ref={modelButtonRef} onClick={() => setModelPanelOpen(true)}>Model</button>
+            </div>
           </div>
         </div>
 
-        {hasNewActivity && (
-          <button className="jump-latest-button" type="button" onClick={jumpToLatest}>
-            Jump to latest
-          </button>
-        )}
-
-        <form id="taskForm" className="chat-composer" data-testid="chat-composer" onSubmit={sendTask}>
-          <div className="composer-chip-row">
-            <div className="composer-context-actions" aria-label="Workspace actions">
-              <button className="composer-link-button" type="button" onClick={() => go("workspaces")}>
-                <Folder size={14} />
-                Add folder
-              </button>
-              <button
-                className="composer-link-button"
-                type="button"
-                onClick={() => setPrompt?.("Inspect the active workspace and summarize the files you can see.", "analyze")}
-              >
-                Inspect workspace
-              </button>
-            </div>
-            {approvalCount > 0 && (
-              <button className="runtime-chip is-warn" type="button" onClick={() => go("activity")}>
-                {approvalCount} approval{approvalCount === 1 ? "" : "s"}
-              </button>
-            )}
-            {(runningTasks?.length || 0) > 0 && (
-              <button className="runtime-chip is-live" type="button" onClick={() => go("activity")}>
-                <Users size={15} />
-                {runningTasks.length} active run{runningTasks.length === 1 ? "" : "s"}
-              </button>
-            )}
-          </div>
-
-          {composerStatus && <p id="composerStatus" className="composer-status" role="alert">{composerStatus}</p>}
-
-          <AgentLaneStrip lanes={laneSummaries} activeMode={activeMode.value} setTaskMode={setTaskMode} />
-
-          <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
-          <textarea
-            id="objective"
-            rows={3}
-            placeholder="Message Rasputin"
-            value={objective}
-            aria-describedby="selectedModelHealth"
-            onChange={(event) => setObjective(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                event.currentTarget.form.requestSubmit();
-              }
-            }}
-          />
-
-          <div className="composer-runbar" aria-label="Run settings">
-            <button
-              ref={modeButtonRef}
-              type="button"
-              className="mode-trigger"
-              data-testid="chat-mode-chip"
-              aria-haspopup="dialog"
-              aria-expanded={modePanelOpen}
-              onClick={() => setModePanelOpen(true)}
-            >
-              <SlidersHorizontal size={16} aria-hidden="true" />
-              <span className="run-trigger-copy">
-                <small>Mode</small>
-                <strong>{activeMode.label}</strong>
-                <em>{labelize(activeMode.role)} route</em>
-              </span>
-              <ChevronDown size={15} aria-hidden="true" />
-            </button>
-
-            <button
-              ref={modelButtonRef}
-              id="model"
-              className="model-trigger"
-              data-testid="active-model-chip"
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded={modelPanelOpen}
-              aria-label={`Active model: ${displayModelName(selectedModelObject, models)}. Open model selector.`}
-              onClick={() => setModelPanelOpen(true)}
-            >
-              <Cpu size={16} aria-hidden="true" />
-              <span className="run-trigger-copy">
-                <small>Model</small>
-                <strong>{displayModelName(selectedModelObject, models)}</strong>
-                <em>{runtimeStatus(selectedModelObject)}</em>
-              </span>
-              <ChevronDown size={15} aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="composer-meta">
-            <p id="selectedModelHealth" className={`model-health ${healthy ? "is-healthy" : "is-unhealthy"}`}>
-              {disabledReason || selectedModelHealthLine}
-            </p>
-            <div className="composer-actions">
-              {latestActiveTask && (
-                <button className="secondary-action" type="button" onClick={() => cancelTask(latestActiveTask.id)}>
-                  <Square size={14} />
-                  Stop latest
-                </button>
+        {/* Context Sidebar */}
+        <aside className="cc-sidebar">
+          <div className="cc-sidebar-section">
+            <h3 className="cc-sidebar-section-title">Recent Activity</h3>
+            <div className="thread-list" aria-live="polite" style={{ padding: 0 }} ref={threadScrollRef}>
+              {orderedHomeTasks.length === 0 && (
+                <div className="cc-sidebar-item">
+                  <p>No recent activity in this chat.</p>
+                </div>
               )}
-              <button
-                id="sendBtn"
-                className="send-button"
-                type="submit"
-                disabled={!healthy}
-                aria-disabled={!healthy}
-                aria-label="Send message"
-                title={disabledReason || "Send message"}
-              >
-                <Send size={18} />
-              </button>
+              {orderedHomeTasks.map((task) => (
+                <TaskThread
+                  key={task.id}
+                  task={task}
+                  models={models}
+                  cancelTask={handleCancelTask}
+                  pauseTask={handlePauseTask}
+                  resumeTask={handleResumeTask}
+                  openTaskDetails={openTaskDetails}
+                />
+              ))}
             </div>
           </div>
-          {modePanelOpen && (
-            <ModeSidePanel
-              panelRef={modePanelRef}
-              modes={modeOptions}
-              activeMode={taskMode}
-              models={models}
-              visibleModels={visibleModels}
-              modeModelOverrides={modeModelOverrides || {}}
-              setModeModelOverride={setModeModelOverride}
-              modelKeyForMode={modelKeyForMode}
-              setTaskMode={(nextMode) => {
-                setTaskMode(nextMode);
-                setModePanelOpen(false);
-                window.requestAnimationFrame(() => modeButtonRef.current?.focus());
-              }}
-              subagentCount={subagentCount}
-              setSubagentCount={setSubagentCount}
-              close={() => {
-                setModePanelOpen(false);
-                window.requestAnimationFrame(() => modeButtonRef.current?.focus());
-              }}
-            />
-          )}
-          {modelPanelOpen && (
-            <ModelSidePanel
-              panelRef={modelPanelRef}
-              models={models}
-              visibleModels={visibleModels}
-              selectedModel={selectedModel}
-              setSelectedModel={(key) => {
-                setSelectedModel(key);
-                setModelPanelOpen(false);
-                window.requestAnimationFrame(() => modelButtonRef.current?.focus());
-              }}
-              close={() => {
-                setModelPanelOpen(false);
-                window.requestAnimationFrame(() => modelButtonRef.current?.focus());
-              }}
-            />
-          )}
-        </form>
-      </section>
+
+          <div className="cc-sidebar-section">
+            <h3 className="cc-sidebar-section-title">Active Knowledge</h3>
+            {activeCommandWorkspace === "Research" ? (
+              <>
+                <div className="cc-sidebar-item">
+                  <h4>Graph Status</h4>
+                  <p>Knowledge graph active and indexing...</p>
+                </div>
+                <div className="cc-sidebar-item">
+                  <h4>Web Access</h4>
+                  <p>Enabled for deep research tasks.</p>
+                </div>
+              </>
+            ) : activeCommandWorkspace === "Documents" ? (
+              <>
+                <div className="cc-sidebar-item">
+                  <h4>Mounted Workspace</h4>
+                  <p>{activeWorkspaceName || "No workspace selected"}</p>
+                </div>
+                <div className="cc-sidebar-item">
+                  <h4>Document Index</h4>
+                  <p>Ready for summarization.</p>
+                </div>
+              </>
+            ) : activeCommandWorkspace === "Coding" ? (
+              <>
+                <div className="cc-sidebar-item">
+                  <h4>Target Repository</h4>
+                  <p>{activeWorkspaceName || "None"}</p>
+                </div>
+                <div className="cc-sidebar-item">
+                  <h4>Code Tools</h4>
+                  <p>Read/Write enabled.</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="cc-sidebar-item">
+                  <h4>Current Mode</h4>
+                  <p>General Chat</p>
+                </div>
+                <div className="cc-sidebar-item">
+                  <h4>Local Context</h4>
+                  <p>{activeWorkspaceName || "None"}</p>
+                </div>
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
     </section>
   );
 }
