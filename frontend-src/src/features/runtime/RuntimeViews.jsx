@@ -878,45 +878,6 @@ export function WarsatView({
         text="Runtime recipes for local model containers. Generate plans first; execution stays approval-gated."
         action={<Button variant="outline-secondary" size="sm" onClick={refresh}>Refresh Protocols</Button>}
       />
-      <div className="warsat-command-strip" aria-label="Warsat quick controls">
-        <div className="warsat-command-status" role="status" aria-live="polite">
-          <span className={`warsat-readiness-pill is-${hardware?.status || "unknown"}`}>{labelize(hardware?.status || "unknown")}</span>
-          <strong>{selectedCatalogModel?.name || "No model selected"}</strong>
-          <small>{selectedProtocol?.name || "Choose a protocol"} / {selectedProfile?.label || strengthProfile}</small>
-        </div>
-        <div className="warsat-command-actions">
-          <Button variant="outline-secondary" size="sm" onClick={() => loadModelCatalog?.(false)}>
-            Local catalog
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={() => loadModelCatalog?.(true)}
-            disabled={modelCatalogLoading}
-          >
-            {modelCatalogLoading ? "Refreshing..." : "Refresh models.dev"}
-          </Button>
-          <Button variant="primary" size="sm" type="submit" form="warsat-plan-form">
-            Create plan
-          </Button>
-          {(plan || error) && (
-            <Button variant="outline-secondary" size="sm" type="button" onClick={clearPlan} aria-label="Reset Warsat launch plan">
-              Reset
-            </Button>
-          )}
-          {plan && (
-            <Button
-              type="button"
-              size="sm"
-              variant={canDeployPlan ? "primary" : "outline-secondary"}
-              disabled={deployDisabled}
-              onClick={deployPlan}
-            >
-              {deployLabel}
-            </Button>
-          )}
-        </div>
-      </div>
       <div className={`task-dashboard warsat-dashboard gui-workspace warsat-gui-workspace ${plan ? "has-plan" : ""}`}>
         <aside className="gui-sidebar warsat-gui-sidebar" aria-label="Warsat readiness">
         <div className="warsat-summary-strip" aria-label="Warsat runtime status">
@@ -1070,7 +1031,7 @@ export function WarsatView({
           </Card.Body>
         </Card>
 
-        <Card className="settings-card warsat-panel warsat-runtime-manager shadow-sm">
+        <Card className="settings-card warsat-panel shadow-sm">
           <Card.Body>
             <div className="section-row align-items-start">
               <div>
@@ -1133,7 +1094,7 @@ export function WarsatView({
           </Card.Body>
         </Card>
 
-        <Card className="settings-card warsat-panel warsat-launch-recipe shadow-sm">
+        <Card className="settings-card warsat-panel shadow-sm">
           <Card.Body>
             <div className="section-row">
               <div>
@@ -1147,7 +1108,7 @@ export function WarsatView({
             {warsat?.message && (
               <p className="warsat-runtime-message mt-3 mb-0" role="status">{warsat.message}</p>
             )}
-            <Form id="warsat-plan-form" className="mt-3 warsat-plan-form" data-testid="warsat-plan-form" onSubmit={handleCreatePlan} onChange={handleFormChange}>
+            <Form className="mt-3 warsat-plan-form" data-testid="warsat-plan-form" onSubmit={handleCreatePlan} onChange={handleFormChange}>
               <div className="warsat-form-section">
                 <div className="warsat-form-title">
                   <strong>Recipe source</strong>
