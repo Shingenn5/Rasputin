@@ -50,17 +50,17 @@ const warsatTabs = [
 
 /* ── Helpers ── */
 function statusColor(st) {
-  if (["running", "reachable", "healthy", "ready", "approved", "done", "success"].includes(st)) return "#10B981";
+  if (["running", "reachable", "healthy", "ready", "approved", "done", "success"].includes(st)) return "var(--ras-safe)";
   if (["failed", "error", "denied", "blocked", "unhealthy"].includes(st)) return "var(--ras-danger)";
-  if (["paused", "pending", "queued", "warning", "stopped", "unknown"].includes(st)) return "#F59E0B";
+  if (["paused", "pending", "queued", "warning", "stopped", "unknown"].includes(st)) return "var(--ras-warn)";
   return "var(--cc-muted)";
 }
 
 function taskStatusIcon(status) {
-  if (["running"].includes(status)) return <Activity size={14} color="#10B981" />;
-  if (["queued"].includes(status)) return <Gauge size={14} color="#F59E0B" />;
-  if (["paused"].includes(status)) return <Pause size={14} color="#F59E0B" />;
-  if (["completed", "done", "success"].includes(status)) return <CheckCircle2 size={14} color="#10B981" />;
+  if (["running"].includes(status)) return <Activity size={14} color="var(--ras-safe)" />;
+  if (["queued"].includes(status)) return <Gauge size={14} color="var(--ras-warn)" />;
+  if (["paused"].includes(status)) return <Pause size={14} color="var(--ras-warn)" />;
+  if (["completed", "done", "success"].includes(status)) return <CheckCircle2 size={14} color="var(--ras-safe)" />;
   if (["failed", "error", "cancelled"].includes(status)) return <AlertTriangle size={14} color="var(--ras-danger)" />;
   return <Activity size={14} color="var(--cc-muted)" />;
 }
@@ -191,11 +191,11 @@ export function WarsatView({
         </div>
         <div className="w2-header-stats">
           <div className="w2-header-stat">
-            <strong style={{ color: "#10B981" }}>{runningTasks.length}</strong>
+            <strong style={{ color: "var(--ras-safe)" }}>{runningTasks.length}</strong>
             <small>Running</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{ color: "#F59E0B" }}>{pendingApprovals.length}</strong>
+            <strong style={{ color: "var(--ras-warn)" }}>{pendingApprovals.length}</strong>
             <small>Approvals</small>
           </div>
           <div className="w2-header-stat">
@@ -203,7 +203,7 @@ export function WarsatView({
             <small>Containers</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{ color: healthyModels.length > 0 ? "#10B981" : "var(--cc-muted)" }}>{healthyModels.length}</strong>
+            <strong style={{ color: healthyModels.length > 0 ? "var(--ras-safe)" : "var(--cc-muted)" }}>{healthyModels.length}</strong>
             <small>Models OK</small>
           </div>
           <div className="w2-header-stat">
@@ -211,7 +211,7 @@ export function WarsatView({
             <small>Failures</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{ color: privacyLocked ? "#10B981" : "#F59E0B" }}>
+            <strong style={{ color: privacyLocked ? "var(--ras-safe)" : "var(--ras-warn)" }}>
               {privacyLocked ? "Locked" : "Open"}
             </strong>
             <small>Privacy</small>
@@ -227,10 +227,10 @@ export function WarsatView({
             <button key={t.id} className={`w2-button ${activeTab === t.id ? "primary" : ""}`} type="button" onClick={() => setActiveTab(t.id)}>
               <Icon size={16} /> {t.label}
               {t.id === "queue" && activeTasks.length > 0 && (
-                <span style={{ fontSize: "0.6875rem", padding: "1px 6px", borderRadius: "999px", background: "#10B981", color: "#fff", marginLeft: "4px" }}>{activeTasks.length}</span>
+                <span style={{ fontSize: "0.6875rem", padding: "1px 6px", borderRadius: "999px", background: "var(--ras-safe)", color: "#fff", marginLeft: "4px" }}>{activeTasks.length}</span>
               )}
               {t.id === "safety" && pendingApprovals.length > 0 && (
-                <span style={{ fontSize: "0.6875rem", padding: "1px 6px", borderRadius: "999px", background: "#F59E0B", color: "#fff", marginLeft: "4px" }}>{pendingApprovals.length}</span>
+                <span style={{ fontSize: "0.6875rem", padding: "1px 6px", borderRadius: "999px", background: "var(--ras-warn)", color: "#fff", marginLeft: "4px" }}>{pendingApprovals.length}</span>
               )}
             </button>
           );
@@ -239,7 +239,7 @@ export function WarsatView({
         {uiState.status !== "idle" && (
           <div style={{
             padding: "8px 16px", borderRadius: "4px", fontSize: "0.875rem",
-            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "#10B981" : "var(--cc-surface)",
+            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "var(--ras-safe)" : "var(--cc-surface)",
             color: "#fff", display: "flex", alignItems: "center",
           }}>
             {uiState.message}
@@ -482,7 +482,7 @@ function DeployTab({
           </div>
           <div style={{ display: "flex", gap: "6px", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
             {item.vramEstimateGb && <span>{item.vramEstimateGb} GB</span>}
-            {item.fitLabel && <span style={{ color: item.fitLabel === "Strong fit" ? "#10B981" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
+            {item.fitLabel && <span style={{ color: item.fitLabel === "Strong fit" ? "var(--ras-safe)" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
           </div>
         </div>
       ))}
@@ -590,7 +590,7 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
             {plan.runtime} on port {plan.hostPort} · {plan.executionEnabled ? "Execution enabled" : "Plan only"}
           </div>
         </div>
-        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: plan.securityChecks?.localhostOnly ? "color-mix(in srgb, #10B981 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: plan.securityChecks?.localhostOnly ? "#10B981" : "var(--ras-danger)", fontWeight: 600 }}>
+        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: plan.securityChecks?.localhostOnly ? "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: plan.securityChecks?.localhostOnly ? "var(--ras-safe)" : "var(--ras-danger)", fontWeight: 600 }}>
           {plan.securityChecks?.localhostOnly ? "localhost only" : "review binding"}
         </span>
       </div>
@@ -635,7 +635,7 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
 
       {/* Deployment result */}
       {deployment && (
-        <div style={{ padding: "8px 12px", borderRadius: "6px", background: deployment.status === "failed" ? "color-mix(in srgb, var(--ras-danger) 8%, var(--cc-surface))" : "color-mix(in srgb, #10B981 8%, var(--cc-surface))", fontSize: "0.75rem" }}>
+        <div style={{ padding: "8px 12px", borderRadius: "6px", background: deployment.status === "failed" ? "color-mix(in srgb, var(--ras-danger) 8%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-safe) 8%, var(--cc-surface))", fontSize: "0.75rem" }}>
           <strong>{deployment.status === "failed" ? "Deployment failed" : deployment.status === "registered" ? "Model registered" : "Deploy updated"}</strong>
           {deployment.lastError && <div style={{ color: "var(--ras-danger)" }}>{deployment.lastError}</div>}
           {deployment.endpoint && <div style={{ color: "var(--cc-muted)" }}>Endpoint: {deployment.endpoint}</div>}
@@ -663,7 +663,7 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
       </div>
 
       {!runtimes?.executionEnabled && (
-        <div style={{ padding: "12px", fontSize: "0.75rem", color: "#F59E0B", background: "color-mix(in srgb, #F59E0B 8%, var(--cc-surface))", borderRadius: "6px" }}>
+        <div style={{ padding: "12px", fontSize: "0.75rem", color: "var(--ras-warn)", background: "color-mix(in srgb, var(--ras-warn) 8%, var(--cc-surface))", borderRadius: "6px" }}>
           <AlertTriangle size={13} style={{ verticalAlign: "-2px", marginRight: "4px" }} />
           {runtimes?.message || "Start Rasputin with Docker control and enable it in Safety settings to manage containers."}
         </div>
@@ -771,7 +771,7 @@ function SafetyTab({ security, warsat, hardware, pendingApprovals, approveApprov
               <div>
                 <strong>{check.label}</strong>
                 <div style={{ color: "var(--cc-muted)" }}>{check.message}</div>
-                {check.nextStep && <div style={{ color: "#F59E0B", fontSize: "0.6875rem" }}>{check.nextStep}</div>}
+                {check.nextStep && <div style={{ color: "var(--ras-warn)", fontSize: "0.6875rem" }}>{check.nextStep}</div>}
               </div>
             </div>
           ))}
@@ -786,7 +786,7 @@ function SafetyTab({ security, warsat, hardware, pendingApprovals, approveApprov
       {/* Pending approvals */}
       {pendingApprovals.length > 0 && (
         <div className="w2-card">
-          <h3 style={{ margin: 0, fontSize: "0.875rem" }}><AlertTriangle size={14} style={{ verticalAlign: "-2px", color: "#F59E0B" }} /> Pending Approvals ({pendingApprovals.length})</h3>
+          <h3 style={{ margin: 0, fontSize: "0.875rem" }}><AlertTriangle size={14} style={{ verticalAlign: "-2px", color: "var(--ras-warn)" }} /> Pending Approvals ({pendingApprovals.length})</h3>
           {pendingApprovals.map(approval => (
             <div key={approval.id} className="w2-list-item" style={{ cursor: "default" }}>
               <div>
@@ -824,13 +824,13 @@ function SafetyLockPanel({ security, warsat, hardware }) {
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.75rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Privacy Lock</span>
-            <strong style={{ color: security?.privacyLock ? "#10B981" : "#F59E0B" }}>
+            <strong style={{ color: security?.privacyLock ? "var(--ras-safe)" : "var(--ras-warn)" }}>
               {security?.privacyLock ? "LOCKED" : "OPEN"}
             </strong>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Remote Models</span>
-            <strong style={{ color: !security?.allowRemoteModels ? "#10B981" : "#F59E0B" }}>
+            <strong style={{ color: !security?.allowRemoteModels ? "var(--ras-safe)" : "var(--ras-warn)" }}>
               {security?.allowRemoteModels ? "ALLOWED" : "BLOCKED"}
             </strong>
           </div>

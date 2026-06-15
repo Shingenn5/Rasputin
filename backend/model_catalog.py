@@ -529,7 +529,7 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
 
     items = [_normalize_hf_model(m) for m in raw_models[:int(limit)]]
     if hardware:
-        items = evaluate_catalog({"items": items}, hardware).get("items", items)
+        items = _apply_fit(items, hardware)
     
     audit.log("hf_search", {"query": query, "type": model_type, "count": len(items)})
     return {

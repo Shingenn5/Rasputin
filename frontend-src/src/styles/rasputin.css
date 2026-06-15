@@ -77,7 +77,145 @@
   --ras-shadow: 0 18px 44px rgba(0, 0, 0, .34);
 }
 
-:root[data-theme="contrast"] {
+:root[data-theme="cyberpunk-neon"] {
+  color-scheme: dark;
+  --ras-bg: #09031c;
+  --ras-canvas: #0f0524;
+  --ras-panel: #160833;
+  --ras-panel-2: #240c4a;
+  --ras-rail: #070114;
+  --ras-rail-soft: #12042b;
+  --ras-sidebar-bg: #070114;
+  --ras-sidebar-bg-soft: #12042b;
+  --ras-sidebar-text: #e0d9ff;
+  --ras-sidebar-muted: #8b7acc;
+  --ras-sidebar-active-bg: rgba(255, 0, 153, .18);
+  --ras-sidebar-active-border: #ff0099;
+  --ras-sidebar-hover-bg: rgba(255, 0, 153, .12);
+  --ras-text: #e0d9ff;
+  --ras-muted: #8b7acc;
+  --ras-border: #3c1e7a;
+  --ras-border-strong: #6431c7;
+  --ras-accent: #ff0099;
+  --ras-accent-2: #00ffff;
+  --ras-blue: #00e5ff;
+  --ras-safe: #00ff9d;
+  --ras-warn: #ffea00;
+  --ras-danger: #ff2a2a;
+  --ras-shadow: 0 18px 44px rgba(255, 0, 153, .14);
+}
+
+:root[data-theme="ocean-abyss"] {
+  color-scheme: dark;
+  --ras-bg: #010b14;
+  --ras-canvas: #02111c;
+  --ras-panel: #04192a;
+  --ras-panel-2: #07263d;
+  --ras-rail: #01070d;
+  --ras-rail-soft: #031321;
+  --ras-sidebar-bg: #01070d;
+  --ras-sidebar-bg-soft: #031321;
+  --ras-sidebar-text: #cce4f7;
+  --ras-sidebar-muted: #628cae;
+  --ras-sidebar-active-bg: rgba(0, 204, 255, .18);
+  --ras-sidebar-active-border: #00ccff;
+  --ras-sidebar-hover-bg: rgba(0, 204, 255, .12);
+  --ras-text: #cce4f7;
+  --ras-muted: #628cae;
+  --ras-border: #133a59;
+  --ras-border-strong: #235882;
+  --ras-accent: #00ccff;
+  --ras-accent-2: #00ffa2;
+  --ras-blue: #3b82f6;
+  --ras-safe: #10b981;
+  --ras-warn: #f59e0b;
+  --ras-danger: #ef4444;
+  --ras-shadow: 0 18px 44px rgba(0, 0, 0, .44);
+}
+
+:root[data-theme="hacker-matrix"] {
+  color-scheme: dark;
+  --ras-bg: #000000;
+  --ras-canvas: #050505;
+  --ras-panel: #0a0a0a;
+  --ras-panel-2: #141414;
+  --ras-rail: #000000;
+  --ras-rail-soft: #030303;
+  --ras-sidebar-bg: #000000;
+  --ras-sidebar-bg-soft: #030303;
+  --ras-sidebar-text: #00ff00;
+  --ras-sidebar-muted: #005500;
+  --ras-sidebar-active-bg: rgba(0, 255, 0, .15);
+  --ras-sidebar-active-border: #00ff00;
+  --ras-sidebar-hover-bg: rgba(0, 255, 0, .08);
+  --ras-text: #00ff00;
+  --ras-muted: #00aa00;
+  --ras-border: #003300;
+  --ras-border-strong: #006600;
+  --ras-accent: #00ff00;
+  --ras-accent-2: #00cc00;
+  --ras-blue: #00ccff;
+  --ras-safe: #00ff00;
+  --ras-warn: #ffff00;
+  --ras-danger: #ff0000;
+  --ras-shadow: 0 18px 44px rgba(0, 255, 0, .08);
+}
+
+:root[data-theme="crimson-forge"] {
+  color-scheme: dark;
+  --ras-bg: #0f0a0a;
+  --ras-canvas: #140d0d;
+  --ras-panel: #1a1010;
+  --ras-panel-2: #241616;
+  --ras-rail: #0a0606;
+  --ras-rail-soft: #120a0a;
+  --ras-sidebar-bg: #0a0606;
+  --ras-sidebar-bg-soft: #120a0a;
+  --ras-sidebar-text: #fcebeb;
+  --ras-sidebar-muted: #9e7f7f;
+  --ras-sidebar-active-bg: rgba(255, 51, 51, .15);
+  --ras-sidebar-active-border: #ff3333;
+  --ras-sidebar-hover-bg: rgba(255, 51, 51, .08);
+  --ras-text: #fcebeb;
+  --ras-muted: #9e7f7f;
+  --ras-border: #3b2020;
+  --ras-border-strong: #5c3030;
+  --ras-accent: #ff3333;
+  --ras-accent-2: #ff6b6b;
+  --ras-blue: #3b82f6;
+  --ras-safe: #10b981;
+  --ras-warn: #f59e0b;
+  --ras-danger: #ff1a1a;
+  --ras-shadow: 0 18px 44px rgba(255, 0, 0, .08);
+}
+
+:root[data-theme="nord-frost"] {
+  color-scheme: dark;
+  --ras-bg: #2e3440;
+  --ras-canvas: #3b4252;
+  --ras-panel: #434c5e;
+  --ras-panel-2: #4c566a;
+  --ras-rail: #242933;
+  --ras-rail-soft: #2e3440;
+  --ras-sidebar-bg: #242933;
+  --ras-sidebar-bg-soft: #2e3440;
+  --ras-sidebar-text: #eceff4;
+  --ras-sidebar-muted: #8fbcbb;
+  --ras-sidebar-active-bg: rgba(136, 192, 208, .15);
+  --ras-sidebar-active-border: #88c0d0;
+  --ras-sidebar-hover-bg: rgba(136, 192, 208, .08);
+  --ras-text: #eceff4;
+  --ras-muted: #8fbcbb;
+  --ras-border: #4c566a;
+  --ras-border-strong: #5e81ac;
+  --ras-accent: #88c0d0;
+  --ras-accent-2: #81a1c1;
+  --ras-blue: #81a1c1;
+  --ras-safe: #a3be8c;
+  --ras-warn: #ebcb8b;
+  --ras-danger: #bf616a;
+  --ras-shadow: 0 18px 44px rgba(0, 0, 0, .25);
+}
   color-scheme: light;
   --ras-bg: #ffffff;
   --ras-canvas: #ffffff;

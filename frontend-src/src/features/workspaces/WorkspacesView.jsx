@@ -245,7 +245,7 @@ export function WorkspacesView({
             <div style={{ 
               padding: '8px 16px', borderRadius: '4px', fontSize: '0.875rem',
               backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                              uiState.status === 'success' ? '#10B981' : 'var(--cc-surface)',
+                              uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
               color: '#fff', display: 'flex', alignItems: 'center', marginRight: '16px'
             }}>
               {uiState.message}

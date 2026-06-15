@@ -84,11 +84,11 @@ export function ActivityView({
             <small>Total Runs</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{color: '#10B981'}}>{completedTasks.length}</strong>
+            <strong style={{color: 'var(--ras-safe)'}}>{completedTasks.length}</strong>
             <small>Successes</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{color: '#F59E0B'}}>{activeTasks.length}</strong>
+            <strong style={{color: 'var(--ras-warn)'}}>{activeTasks.length}</strong>
             <small>Running Now</small>
           </div>
           <div className="w2-header-stat">
@@ -115,7 +115,7 @@ export function ActivityView({
           <div style={{ 
             padding: '8px 16px', borderRadius: '4px', fontSize: '0.875rem',
             backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                            uiState.status === 'success' ? '#10B981' : 'var(--cc-surface)',
+                            uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
             color: '#fff', display: 'flex', alignItems: 'center'
           }}>
             {uiState.message}
@@ -182,7 +182,7 @@ export function ActivityView({
                     <div>Target: {log.target}</div>
                     <div style={{ 
                       color: log.status === 'failed' ? 'var(--ras-danger)' : 
-                             log.status === 'success' ? '#10B981' : 'var(--cc-muted)' 
+                             log.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-muted)' 
                     }}>
                       Status: {log.status} {log.details && `- ${log.details}`}
                     </div>
@@ -198,28 +198,28 @@ export function ActivityView({
               <h2 className="w2-section-title">System Health Panel</h2>
               <div className="w2-card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Server size={24} color="#10B981" />
+                  <Server size={24} color="var(--ras-safe)" />
                   <div>
                     <strong>API Status</strong>
                     <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Online - 32ms ping</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Database size={24} color="#10B981" />
+                  <Database size={24} color="var(--ras-safe)" />
                   <div>
                     <strong>Database Status</strong>
                     <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Connected</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <HardDrive size={24} color="#10B981" />
+                  <HardDrive size={24} color="var(--ras-safe)" />
                   <div>
                     <strong>Vector Store Status</strong>
                     <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Active - 12.4 MB</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Activity size={24} color="#F59E0B" />
+                  <Activity size={24} color="var(--ras-warn)" />
                   <div>
                     <strong>Worker Queue</strong>
                     <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>{activeTasks.length} jobs running</div>

@@ -56,9 +56,9 @@ function contextWindowFor(m) {
 }
 
 function statusColor(st) {
-  if (["reachable","healthy","ready","running"].includes(st)) return "#10B981";
+  if (["reachable","healthy","ready","running"].includes(st)) return "var(--ras-safe)";
   if (["unhealthy","error","failed","blocked"].includes(st)) return "var(--ras-danger)";
-  if (["stopped","unknown","warning"].includes(st)) return "#F59E0B";
+  if (["stopped","unknown","warning"].includes(st)) return "var(--ras-warn)";
   return "var(--cc-muted)";
 }
 
@@ -212,11 +212,11 @@ export function ModelsView({
             <small>Registered</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{ color: "#10B981" }}>{healthyCount}</strong>
+            <strong style={{ color: "var(--ras-safe)" }}>{healthyCount}</strong>
             <small>Healthy</small>
           </div>
           <div className="w2-header-stat">
-            <strong style={{ color: "#F59E0B" }}>{runningModels.length}</strong>
+            <strong style={{ color: "var(--ras-warn)" }}>{runningModels.length}</strong>
             <small>Running</small>
           </div>
           <div className="w2-header-stat">
@@ -240,7 +240,7 @@ export function ModelsView({
         {uiState.status !== "idle" && (
           <div style={{
             padding: "8px 16px", borderRadius: "4px", fontSize: "0.875rem",
-            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "#10B981" : "var(--cc-surface)",
+            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "var(--ras-safe)" : "var(--cc-surface)",
             color: "#fff", display: "flex", alignItems: "center",
           }}>
             {uiState.message}
@@ -375,13 +375,13 @@ export function ModelsView({
                   {runningModels.map(m => (
                     <div key={m.key} className="w2-list-item">
                       <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                        <Activity size={14} color="#10B981" />
+                        <Activity size={14} color="var(--ras-safe)" />
                         <div>
                           <strong style={{ fontSize: "0.8125rem" }}>{displayModelName(m, models)}</strong>
                           <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{m.runtime || m.provider} · {labelize(m.role || "chat")}</div>
                         </div>
                       </div>
-                      <span style={{ fontSize: "0.6875rem", color: "#10B981", fontWeight: 600 }}>Online</span>
+                      <span style={{ fontSize: "0.6875rem", color: "var(--ras-safe)", fontWeight: 600 }}>Online</span>
                     </div>
                   ))}
                 </div>
@@ -427,7 +427,7 @@ export function ModelsView({
               <div className="w2-card">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Cloud size={14} style={{ verticalAlign: "-2px" }} /> Connect API Provider</h3>
-                  <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: remoteBlocked ? "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))" : "color-mix(in srgb, #10B981 15%, var(--cc-surface))", color: remoteBlocked ? "var(--ras-danger)" : "#10B981", fontWeight: 600 }}>
+                  <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: remoteBlocked ? "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))", color: remoteBlocked ? "var(--ras-danger)" : "var(--ras-safe)", fontWeight: 600 }}>
                     {remoteBlocked ? "Remote blocked" : "Remote allowed"}
                   </span>
                 </div>
@@ -502,7 +502,7 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode }) {
           <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{item.modelId || item.id}</div>
         </div>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-          {item.deployable && <Zap size={13} color="#10B981" title="Deployable" />}
+          {item.deployable && <Zap size={13} color="var(--ras-safe)" title="Deployable" />}
           <span style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{labelize(item.purpose || "chat")}</span>
         </div>
       </div>
@@ -512,7 +512,7 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode }) {
         {item.downloads > 0 && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>↓ {item.downloads >= 1e6 ? `${(item.downloads/1e6).toFixed(1)}M` : item.downloads >= 1e3 ? `${(item.downloads/1e3).toFixed(1)}K` : item.downloads}</span>}
         {item.likes > 0 && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>♥ {item.likes >= 1e3 ? `${(item.likes/1e3).toFixed(1)}K` : item.likes}</span>}
         {item.license && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>{item.license}</span>}
-        {item.fitLabel && searchMode === "catalog" && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: item.fitLabel === "Strong fit" ? "#10B981" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
+        {item.fitLabel && searchMode === "catalog" && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: item.fitLabel === "Strong fit" ? "var(--ras-safe)" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
       </div>
 
       {item.summary && <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>{item.summary.slice(0, 120)}</p>}
@@ -558,7 +558,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
             {secondary && <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{secondary}</div>}
           </div>
         </div>
-        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: isHealthy ? "color-mix(in srgb, #10B981 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: isHealthy ? "#10B981" : "var(--ras-danger)", fontWeight: 600 }}>
+        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: isHealthy ? "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: isHealthy ? "var(--ras-safe)" : "var(--ras-danger)", fontWeight: 600 }}>
           {isHealthy ? "Healthy" : labelize(st)}
         </span>
       </div>
@@ -571,7 +571,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
       </div>
 
       {mismatch && (
-        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "#F59E0B", padding: "6px 8px", background: "color-mix(in srgb, #F59E0B 8%, var(--cc-surface))", borderRadius: "6px" }}>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "var(--ras-warn)", padding: "6px 8px", background: "color-mix(in srgb, var(--ras-warn) 8%, var(--cc-surface))", borderRadius: "6px" }}>
           <AlertTriangle size={13} /> {mismatch}
         </div>
       )}
@@ -602,14 +602,14 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
     <div className="w2-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <Cpu size={24} color={healthy ? "#10B981" : "var(--ras-danger)"} />
+          <Cpu size={24} color={healthy ? "var(--ras-safe)" : "var(--ras-danger)"} />
           <div>
             <div style={{ fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: ".05em", color: "var(--cc-muted)", fontWeight: 600 }}>Active Chat Model</div>
             <h2 style={{ margin: "2px 0 0", fontSize: "1.125rem" }}>{name}</h2>
             {secondary && <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--cc-muted)" }}>{secondary}</p>}
           </div>
         </div>
-        <span style={{ fontSize: "0.75rem", padding: "4px 12px", borderRadius: "999px", background: healthy ? "color-mix(in srgb, #10B981 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: healthy ? "#10B981" : "var(--ras-danger)", fontWeight: 600 }}>
+        <span style={{ fontSize: "0.75rem", padding: "4px 12px", borderRadius: "999px", background: healthy ? "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: healthy ? "var(--ras-safe)" : "var(--ras-danger)", fontWeight: 600 }}>
           {healthy ? "Reachable" : labelize(status)}
         </span>
       </div>
@@ -622,7 +622,7 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
       </div>
 
       {mismatch && (
-        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "#F59E0B", padding: "8px 10px", background: "color-mix(in srgb, #F59E0B 8%, var(--cc-surface))", borderRadius: "6px" }}>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "var(--ras-warn)", padding: "8px 10px", background: "color-mix(in srgb, var(--ras-warn) 8%, var(--cc-surface))", borderRadius: "6px" }}>
           <Wrench size={13} /> {mismatch}
         </div>
       )}
@@ -649,7 +649,7 @@ function InfraStatusCard({ warsatHardware, warsatRuntimes, warsat }) {
       <div className="w2-health-grid">
         <div className="w2-health-item"><Server size={16} color="var(--cc-muted)" /> Warsat: {warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked"}</div>
         <div className="w2-health-item"><MonitorSpeaker size={16} color="var(--cc-muted)" /> Containers: {runtimeCount}</div>
-        <div className="w2-health-item"><ShieldCheck size={16} color="#10B981" /> Docker: {warsat?.dockerControlEnabled ? "Enabled" : "Off"}</div>
+        <div className="w2-health-item"><ShieldCheck size={16} color="var(--ras-safe)" /> Docker: {warsat?.dockerControlEnabled ? "Enabled" : "Off"}</div>
       </div>
     </div>
   );
@@ -693,7 +693,7 @@ function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHar
       <h3 className="w2-section-title">Active Model</h3>
       <div className="w2-card">
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <Cpu size={18} color={healthy ? "#10B981" : "var(--ras-danger)"} />
+          <Cpu size={18} color={healthy ? "var(--ras-safe)" : "var(--ras-danger)"} />
           <strong style={{ fontSize: "0.875rem" }}>{name}</strong>
         </div>
         <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px" }}>

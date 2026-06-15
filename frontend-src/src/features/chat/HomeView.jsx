@@ -315,27 +315,27 @@ function jumpToLatest() {
                 <div className="cc-quick-actions">
                   {activeCommandWorkspace === "Research" && (
                     <>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Deep dive a topic", "research")}>Deep dive a topic</button>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Find latest references", "research")}>Find latest references</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Deep dive a topic", "research")}>Deep dive a topic</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Find latest references", "research")}>Find latest references</button>
                     </>
                   )}
                   {activeCommandWorkspace === "Documents" && (
                     <>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Summarize active workspace", "analyze")}>Summarize active workspace</button>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Organize files", "organize")}>Organize files</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Summarize active workspace", "analyze")}>Summarize active workspace</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Organize files", "organize")}>Organize files</button>
                     </>
                   )}
                   {activeCommandWorkspace === "Coding" && (
                     <>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Review code", "code")}>Review code</button>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Plan next feature", "code")}>Plan next feature</button>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Find bugs", "code")}>Find bugs</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Review code", "code")}>Review code</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Plan next feature", "code")}>Plan next feature</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Find bugs", "code")}>Find bugs</button>
                     </>
                   )}
                   {activeCommandWorkspace === "General" && (
                     <>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("General chat", "chat")}>General chat</button>
-                      <button type="button" className="cc-quick-action-chip" onClick={() => setPrompt?.("Brainstorm ideas", "chat")}>Brainstorm ideas</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("General chat", "chat")}>General chat</button>
+                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Brainstorm ideas", "chat")}>Brainstorm ideas</button>
                     </>
                   )}
                 </div>
@@ -345,7 +345,7 @@ function jumpToLatest() {
                     <div style={{ 
                       padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem',
                       backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                                      uiState.status === 'success' ? '#10B981' : 'var(--cc-surface)',
+                                      uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
                       color: '#fff', display: 'flex', alignItems: 'center'
                     }}>
                       {uiState.message}

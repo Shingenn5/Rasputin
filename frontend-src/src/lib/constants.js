@@ -21,6 +21,11 @@ export const settingsItems = [
 ];
 
 export const themeOptions = [
+  ["cyberpunk-neon", "Cyberpunk Neon", "Vibrant synthwave dark theme"],
+  ["ocean-abyss", "Ocean Abyss", "Deep dark blue and aqua"],
+  ["hacker-matrix", "Hacker Matrix", "Monochrome black and terminal green"],
+  ["crimson-forge", "Crimson Forge", "Dark grey and intense red"],
+  ["nord-frost", "Nord Frost", "Cool arctic blues and grays"],
   ["rasputin-light", "Rasputin Light", "Warm graphite on light shell"],
   ["rasputin-dark", "Rasputin Dark", "Default Warmind dark"],
   ["bootswatch-slate", "Slate Ops", "Bootswatch Slate inspired"],
@@ -33,6 +38,11 @@ export const themeOptions = [
 ];
 
 export const darkThemes = new Set([
+  "cyberpunk-neon",
+  "ocean-abyss",
+  "hacker-matrix",
+  "crimson-forge",
+  "nord-frost",
   "rasputin-dark",
   "bootswatch-slate",
   "bootswatch-cyborg",

@@ -149,6 +149,8 @@ export function Sidebar({
               <span className="visually-hidden">Search chats</span>
               <input
                 id="sidebarSessionSearch"
+                className="w2-input"
+                style={{ flex: 1 }}
                 data-testid="sidebar-session-search"
                 type="search"
                 value={sessionSearch}
@@ -162,7 +164,7 @@ export function Sidebar({
                 <span>Folder</span>
                 <select
                   id="sidebarFolderFilter"
-                  className="sidebar-folder-filter"
+                  className="sidebar-folder-filter w2-input"
                   data-testid="sidebar-folder-filter"
                   value={activeChatFolder}
                   onChange={(event) => setActiveChatFolder?.(event.target.value)}
@@ -178,6 +180,7 @@ export function Sidebar({
                 <span>Sort</span>
                 <select
                   id="sidebarSessionSort"
+                  className="w2-input"
                   data-testid="sidebar-session-sort"
                   value={sessionSort}
                   onChange={(event) => setSessionSort(event.target.value)}
@@ -195,8 +198,8 @@ export function Sidebar({
               </summary>
               <form className="sidebar-folder-create" data-testid="sidebar-folder-create" onSubmit={createChatFolder}>
                 <label className="visually-hidden" htmlFor="sidebarFolderName">New chat folder</label>
-                <input id="sidebarFolderName" name="name" type="text" placeholder="Folder name" autoComplete="off" />
-                <button type="submit" aria-label="Create chat folder">Create</button>
+                <input id="sidebarFolderName" className="w2-input" name="name" type="text" placeholder="Folder name" autoComplete="off" />
+                <button type="submit" className="w2-button w2-button-outline" style={{ padding: '6px 12px' }} aria-label="Create chat folder">Create</button>
               </form>
             </details>
           </div>
