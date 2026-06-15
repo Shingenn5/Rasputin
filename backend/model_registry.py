@@ -406,6 +406,39 @@ def upsert(model):
     return model
 
 
+PROTECTED_KEYS = {"dry-run", "local-embeddings"}
+
+
+def delete_model(key):
+    security.require("allow_model_registry_edit")
+    if key in PROTECTED_KEYS:
+        raise AppError("model_delete_protected", f"Cannot delete built-in model '{key}'.", 403)
+    data = _load()
+    model = None
+    for m in data["models"]:
+        if m.get("key") == key:
+            model = m
+            break
+    if not model:
+        raise AppError("model_missing", "Model is not registered.", 404)
+    # Stop and remove container if managed
+    if model.get("managed") and model.get("container"):
+        try:
+            import subprocess
+            subprocess.run(["docker", "rm", "-f", model["container"]], capture_output=True, text=True, timeout=20)
+        except Exception:
+            pass
+    # Clear API key if present
+    try:
+        model_secrets.clear_api_key(key)
+    except Exception:
+        pass
+    data["models"] = [m for m in data["models"] if m.get("key") != key]
+    _save(data)
+    audit.log("model_delete", {"key": key, "name": model.get("name"), "provider": model.get("provider")})
+    return {"deleted": True, "key": key, "name": model.get("name")}
+
+
 def discover_model(key, require_permission=True):
     if require_permission:
         security.require("allow_model_tests")

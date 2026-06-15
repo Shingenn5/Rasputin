@@ -437,8 +437,17 @@ class SessionCreateIn(CamelModel):
     folder: str | None = ""
 
 
+
 class ModelCatalogRefreshIn(CamelModel):
     force: bool = False
+
+
+class HfSearchIn(CamelModel):
+    query: str = ""
+    model_type: str = ""
+    sort: str = "downloads"
+    direction: int = -1
+    limit: int = 100
 
 
 class WarsatPlanIn(CamelModel):
@@ -664,6 +673,19 @@ async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=
     return ok(model_catalog.catalog(refresh=True, force=bool(req.force if req else False)))
 
 
+@app.get("/api/model-catalog/search")
+async def model_catalog_search(
+    q: str = "", type: str = "", sort: str = "downloads",
+    direction: int = -1, limit: int = 100, _user=Depends(current_user)
+):
+    return ok(model_catalog.search_hf(query=q, model_type=type, sort=sort, direction=direction, limit=limit))
+
+
+@app.get("/api/model-catalog/model/{model_id:path}")
+async def model_catalog_detail(model_id: str, _user=Depends(current_user)):
+    return ok(model_catalog.hf_model_detail(model_id))
+
+
 @app.post("/api/model-registry/upsert")
 async def model_registry_upsert(req: ModelIn, _user=Depends(current_user)):
     return ok(model_registry.upsert(req.model_dump()))
@@ -707,6 +729,11 @@ async def model_registry_repair(req: ModelKeyIn, _user=Depends(current_user)):
 @app.post("/api/model-registry/logs")
 async def model_registry_logs(req: ModelLogsIn, _user=Depends(current_user)):
     return ok(model_registry.logs_model(req.key, req.limit))
+
+
+@app.post("/api/model-registry/delete")
+async def model_registry_delete(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.delete_model(req.key))
 
 
 @app.get("/api/security")

@@ -1,16 +1,32 @@
-import React from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
+  Activity,
+  AlertTriangle,
+  BookOpen,
   CheckCircle2,
   Cloud,
   Cpu,
+  Database,
+  Download,
+  ExternalLink,
+  Gauge,
   HardDrive,
   KeyRound,
+  Layers,
+  MonitorSpeaker,
+  Package,
   Play,
+  Power,
   RefreshCw,
   Search,
+  Server,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
+  Users,
   Wrench,
+  Zap,
 } from "lucide-react";
 import {
   discoveredModelIds,
@@ -21,65 +37,34 @@ import {
   modelMismatchLine,
   runtimeStatus,
 } from "../../lib/display.js";
+import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
+import { api } from "../../api/client.js";
 
-const deploymentSteps = [
-  ["Select", "Choose a managed runtime or connect an existing localhost endpoint."],
-  ["Profile", "Pick a VRAM target, quantization preference, context length, and exposed local port."],
-  ["Generate", "Create a Docker Compose launch plan and Dockerfile only when the selected runtime needs one."],
-  ["Review", "Show mounts, environment variables, ports, and security flags before anything starts."],
-  ["Deploy", "Run only after Docker control is enabled and the plan is explicitly approved."],
+/* ── Tab config ── */
+const modelsTabs = [
+  { id: "library",    label: "Library",     icon: BookOpen },
+  { id: "installed",  label: "Installed",   icon: Package },
+  { id: "running",    label: "Running",     icon: Activity },
+  { id: "settings",   label: "Settings",    icon: Settings },
 ];
 
-const runtimeOptions = [
-  ["vLLM CUDA", "Best for a larger primary chat or coding model with enough VRAM.", "Hugging Face model id"],
-  ["llama.cpp GGUF", "Best for smaller helper models, quantized local files, and low VRAM.", "Mounted .gguf file"],
-  ["Ollama", "Good for quick local model testing through Ollama's OpenAI-compatible API.", "Ollama model name"],
-  ["External local endpoint", "Use LM Studio, Ollama, text-generation-webui, or anything exposing a local /v1 API.", "localhost /v1 endpoint"],
-];
-
-const hardwareProfiles = [
-  ["Small", "4-8 GB VRAM", "helper, summarize, organize"],
-  ["Medium", "10-16 GB VRAM", "chat, analyze, code helper"],
-  ["Large", "20+ GB VRAM", "main model, coding, long context"],
-  ["Custom", "manual limits", "advanced tuning"],
-];
-
-const modelSections = [
-  ["overview", "Overview", "active model and readiness"],
-  ["catalog", "Catalog", "find deployable models"],
-  ["connect", "Connect", "local and API endpoints"],
-  ["registry", "Registry", "advanced model controls"],
-];
-
-function firstNumber(...values) {
-  for (const value of values) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
+/* ── Helpers ── */
+function contextWindowFor(m) {
+  for (const k of ["contextWindow","context_window","maxModelLen","max_model_len"])
+    if (Number.isFinite(Number(m?.[k])) && Number(m?.[k]) > 0) return Number(m[k]);
   return 0;
 }
 
-function contextWindowFor(model) {
-  return firstNumber(
-    model?.contextWindow,
-    model?.context_window,
-    model?.maxModelLen,
-    model?.max_model_len,
-    model?.settings?.contextWindow,
-    model?.limits?.contextWindow,
-  );
+function statusColor(st) {
+  if (["reachable","healthy","ready","running"].includes(st)) return "#10B981";
+  if (["unhealthy","error","failed","blocked"].includes(st)) return "var(--ras-danger)";
+  if (["stopped","unknown","warning"].includes(st)) return "#F59E0B";
+  return "var(--cc-muted)";
 }
 
-function readinessTone(status) {
-  if (["ready", "pass", "reachable", "healthy", "ok", "registered"].includes(status)) return "ready";
-  if (["blocked", "fail", "failed", "error", "unreachable"].includes(status)) return "blocked";
-  return "warning";
-}
-
-function formatContextWindow(value) {
-  return value ? `${Number(value).toLocaleString()} tokens` : "Not declared";
-}
-
+/* ═══════════════════════════════════════════
+   MAIN COMPONENT
+   ═══════════════════════════════════════════ */
 export function ModelsView({
   view,
   models,
@@ -106,787 +91,614 @@ export function ModelsView({
   security,
   openWarsat,
 }) {
-  const activeModel = selectedModelObject || models?.[0] || null;
-  const activeName = displayModelName(activeModel, models);
-  const secondary = displayModelSecondary(activeModel, models);
-  const healthy = isModelHealthy(activeModel);
-  const status = runtimeStatus(activeModel);
-  const mismatch = modelMismatchLine(activeModel);
-  const discovered = discoveredModelIds(activeModel);
-  const apiProviders = modelProviders?.length ? modelProviders : [
-    { id: "openai", name: "OpenAI", defaultBaseUrl: "https://api.openai.com/v1", defaultKeyEnv: "OPENAI_API_KEY" },
-    { id: "anthropic", name: "Anthropic", defaultBaseUrl: "https://api.anthropic.com/v1", defaultKeyEnv: "ANTHROPIC_API_KEY" },
-    { id: "gemini", name: "Google Gemini", defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta", defaultKeyEnv: "GEMINI_API_KEY" },
-    { id: "openai-compatible-remote", name: "Other OpenAI-compatible API", defaultBaseUrl: "", defaultKeyEnv: "" },
-  ];
-  const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
+  const [activeTab, setActiveTab] = useState("library");
+  const [uiState, setUiState] = useState({ status: "idle", message: "" });
+  const executeAction = useReliableAction("ModelsView");
+
+  /* catalog state */
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogPurpose, setCatalogPurpose] = useState("all");
+  const [catalogRuntime, setCatalogRuntime] = useState("deployable");
+  const [searchMode, setSearchMode] = useState("catalog");
+  const [hfQuery, setHfQuery] = useState("");
+  const [hfResults, setHfResults] = useState([]);
+  const [hfLoading, setHfLoading] = useState(false);
+  const [hfSort, setHfSort] = useState("downloads");
+
+  /* derived */
   const catalogItems = modelCatalog?.items || [];
   const catalogCategories = modelCatalog?.categories || [];
   const catalogRuntimes = modelCatalog?.runtimes || [];
-  const [catalogSearch, setCatalogSearch] = React.useState("");
-  const [catalogPurpose, setCatalogPurpose] = React.useState("all");
-  const [catalogRuntime, setCatalogRuntime] = React.useState("deployable");
-  const [selectedCatalogId, setSelectedCatalogId] = React.useState(catalogItems[0]?.id || "");
-  const [modelSection, setModelSection] = React.useState("overview");
-  const updateTestingMode = React.useCallback((enabled) => {
-    const next = !!enabled;
-    setTestingMode(next);
-    if (next && models?.some((model) => model.key === "dry-run")) {
-      setSelectedModel?.("dry-run");
-      return;
-    }
-    if (!next && selectedModel === "dry-run") {
-      const fallback = (models || []).find((model) => model.role === "main" && model.key !== "dry-run")
-        || (models || []).find((model) => model.key !== "dry-run" && model.role !== "embeddings");
-      if (fallback) setSelectedModel?.(fallback.key);
+  const activeModel = selectedModelObject || models?.[0] || null;
+  const healthy = isModelHealthy(activeModel);
+  const status = runtimeStatus(activeModel);
+
+  const apiProviders = modelProviders?.length ? modelProviders : [
+    { id: "openai", name: "OpenAI", defaultKeyEnv: "OPENAI_API_KEY" },
+    { id: "anthropic", name: "Anthropic", defaultKeyEnv: "ANTHROPIC_API_KEY" },
+    { id: "gemini", name: "Google Gemini", defaultKeyEnv: "GEMINI_API_KEY" },
+    { id: "openai-compatible-remote", name: "Other OpenAI-compatible", defaultKeyEnv: "" },
+  ];
+  const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
+
+  const installedModels = useMemo(() => (models || []).filter(m => m.key !== "dry-run" && m.provider !== "hash-vector"), [models]);
+  const runningModels = useMemo(() => (models || []).filter(m => {
+    const s = (m.runtime_status || m.runtimeStatus || "").toLowerCase();
+    return (s === "reachable" || s === "running" || m.container_status === "running")
+      && m.key !== "dry-run" && m.provider !== "hash-vector" && m.provider !== "mock";
+  }), [models]);
+
+  const filteredCatalog = useMemo(() => {
+    const q = catalogSearch.trim().toLowerCase();
+    return catalogItems.filter(item => {
+      const text = [item.name, item.id, item.modelId, item.provider, item.purpose, ...(item.capabilities || [])].join(" ").toLowerCase();
+      if (q && !text.includes(q)) return false;
+      if (catalogPurpose !== "all" && item.purpose !== catalogPurpose) return false;
+      if (catalogRuntime === "deployable" && !item.deployable) return false;
+      if (catalogRuntime !== "all" && catalogRuntime !== "deployable" && !(item.runtimeOptions || []).some(o => o.protocolId === catalogRuntime)) return false;
+      return true;
+    });
+  }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime]);
+
+  /* HF search with debounce */
+  useEffect(() => {
+    if (searchMode !== "huggingface") return;
+    const t = setTimeout(async () => {
+      setHfLoading(true);
+      try {
+        const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: "100" });
+        if (catalogPurpose !== "all") {
+          const pm = { chat: "text-generation", coding: "text-generation", vision: "image-to-text", embeddings: "feature-extraction", speech: "automatic-speech-recognition" };
+          if (pm[catalogPurpose]) p.set("type", pm[catalogPurpose]);
+        }
+        const d = await api(`/api/model-catalog/search?${p.toString()}`);
+        setHfResults(d.items || []);
+      } catch (err) {
+        console.error("HF Search Error:", err);
+        setHfResults([]);
+      }
+      setHfLoading(false);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [hfQuery, hfSort, catalogPurpose, searchMode]);
+
+  const displayItems = searchMode === "huggingface" ? hfResults : filteredCatalog;
+
+  /* reliable actions */
+  const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
+  const handleScanGguf = () => executeAction("ScanGGUF", "system", async () => scanGguf?.(), setUiState);
+  const handleLoadCatalog = (remote) => executeAction("LoadCatalog", "system", async () => loadModelCatalog?.(remote), setUiState);
+
+  /* stats */
+  const totalModels = (models || []).length;
+  const healthyCount = (models || []).filter(m => isModelHealthy(m)).length;
+
+  const updateTestingMode = useCallback((on) => {
+    setTestingMode(!!on);
+    if (on && models?.some(m => m.key === "dry-run")) { setSelectedModel?.("dry-run"); return; }
+    if (!on && selectedModel === "dry-run") {
+      const fb = (models || []).find(m => m.role === "main" && m.key !== "dry-run")
+        || (models || []).find(m => m.key !== "dry-run" && m.role !== "embeddings");
+      if (fb) setSelectedModel?.(fb.key);
     }
   }, [models, selectedModel, setSelectedModel, setTestingMode]);
-  const filteredCatalogItems = React.useMemo(() => {
-    const search = catalogSearch.trim().toLowerCase();
-    return catalogItems.filter((item) => {
-      const matchesSearch = !search || [
-        item.name,
-        item.id,
-        item.modelId,
-        item.provider,
-        item.purpose,
-        ...(item.capabilities || []),
-      ].join(" ").toLowerCase().includes(search);
-      const matchesPurpose = catalogPurpose === "all" || item.purpose === catalogPurpose;
-      const options = item.runtimeOptions || [];
-      const matchesRuntime = catalogRuntime === "all"
-        || (catalogRuntime === "deployable" && item.deployable)
-        || options.some((option) => option.protocolId === catalogRuntime);
-      return matchesSearch && matchesPurpose && matchesRuntime;
-    });
-  }, [catalogItems, catalogPurpose, catalogRuntime, catalogSearch]);
-  const selectedCatalogModel = filteredCatalogItems.find((item) => item.id === selectedCatalogId)
-    || filteredCatalogItems[0]
-    || catalogItems[0];
-  const contextWindow = contextWindowFor(activeModel);
-  const contextStatus = activeModel?.key === "dry-run"
-    ? "ready"
-    : contextWindow >= 4096
-      ? "ready"
-      : contextWindow >= 1024
-        ? "warning"
-        : "warning";
-  const contextText = activeModel?.key === "dry-run"
-    ? "Testing Mode uses Rasputin's internal dry-run path."
-    : contextWindow >= 4096
-      ? "Enough room for normal chat and retrieved local context."
-      : contextWindow >= 1024
-        ? "Small context window. Rasputin will trim workspace and retrieval context aggressively."
-        : "No context window is declared. Rasputin will assume a conservative local budget.";
-  const endpointKind = activeModel?.provider?.includes("remote")
-    ? "Remote API"
-    : activeModel?.url || activeModel?.baseUrl
-      ? "Local endpoint"
-      : activeModel?.key === "dry-run"
-        ? "Testing Mode"
-        : "Endpoint missing";
-  const warsatStatus = warsatHardware?.status || (warsat?.count ? "warning" : "warning");
-  const warsatRuntimeCount = warsatRuntimes?.count ?? warsatRuntimes?.containers?.length ?? 0;
-  const hasLaunchPlan = Boolean(warsatPlan);
-  const readinessItems = [
-    {
-      id: "active-model",
-      title: "Active chat model",
-      value: activeName,
-      detail: healthy ? `${activeName} is reachable.` : modelMismatchLine(activeModel) || activeModel?.lastError || "Health check has not passed yet.",
-      status: healthy ? "ready" : "blocked",
-      action: "Test health",
-      onAction: () => runModelAction("test"),
-    },
-    {
-      id: "vllm-discovery",
-      title: "vLLM discovery and repair",
-      value: discovered.length ? `${discovered.length} model${discovered.length === 1 ? "" : "s"} discovered` : "No discovery result yet",
-      detail: mismatch || "Use discovery to verify the endpoint model id matches Rasputin's registry.",
-      status: mismatch ? "blocked" : discovered.length ? "ready" : "warning",
-      action: mismatch ? "Repair mismatch" : "Discover vLLM",
-      onAction: () => runModelAction(mismatch ? "repair" : "discover"),
-    },
-    {
-      id: "context-window",
-      title: "Context window",
-      value: formatContextWindow(contextWindow),
-      detail: contextText,
-      status: contextStatus,
-    },
-    {
-      id: "warsat-readiness",
-      title: "Warsat hardware",
-      value: warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked",
-      detail: `${warsatRuntimeCount} managed runtime${warsatRuntimeCount === 1 ? "" : "s"} detected. Docker control is ${warsat?.dockerControlEnabled ? "enabled" : "off by default"}.`,
-      status: readinessTone(warsatStatus),
-      action: "Open Warsat",
-      onAction: openWarsat,
-    },
-    {
-      id: "launch-plan",
-      title: "Launch-plan readiness",
-      value: hasLaunchPlan ? "Plan prepared" : selectedCatalogModel?.deployable ? "Catalog model selected" : "No deployable model selected",
-      detail: hasLaunchPlan
-        ? "Review and approve the plan in Warsat before any container starts."
-        : selectedCatalogModel?.deployable
-          ? "Send the selected catalog model to Warsat to generate a reviewed plan."
-          : "Pick a Warsat-ready catalog model before deployment planning.",
-      status: hasLaunchPlan || selectedCatalogModel?.deployable ? "ready" : "warning",
-      action: selectedCatalogModel?.deployable ? "Prepare in Warsat" : "Open Warsat",
-      onAction: selectedCatalogModel?.deployable ? () => prepareCatalogModelForWarsat?.(selectedCatalogModel) : openWarsat,
-    },
-  ];
-  const selectedSection = modelSections.find(([id]) => id === modelSection) || modelSections[0];
-  const moveModelSection = React.useCallback((direction) => {
-    const current = modelSections.findIndex(([id]) => id === modelSection);
-    const next = (current + direction + modelSections.length) % modelSections.length;
-    setModelSection(modelSections[next][0]);
-  }, [modelSection]);
-  const handleModelSectionKeyDown = React.useCallback((event) => {
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-      event.preventDefault();
-      moveModelSection(1);
-    }
-    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-      event.preventDefault();
-      moveModelSection(-1);
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      setModelSection(modelSections[0][0]);
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      setModelSection(modelSections[modelSections.length - 1][0]);
-    }
-  }, [moveModelSection]);
 
   return (
-    <section className={`app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
-      <header className="page-header models-header">
+    <section className={`w2-layout app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
+
+      {/* ── Header ── */}
+      <div className="w2-header-card">
         <div>
-          <h1>Models</h1>
-          <p>Inspect the active local model and plan model containers without leaving Rasputin.</p>
+          <h1>Models Center</h1>
+          <p>Discover, deploy, and manage AI models.</p>
         </div>
-        <div className="models-header-actions">
-          <button className="ras-button ghost" type="button" onClick={loadModels}>
-            <RefreshCw size={17} aria-hidden="true" />
-            Refresh registry
-          </button>
-          <button className="ras-button primary" type="button" onClick={() => runModelAction("discover")}>
-            <Search size={17} aria-hidden="true" />
-            Discover vLLM
-          </button>
+        <div className="w2-header-stats">
+          <div className="w2-header-stat">
+            <strong>{totalModels}</strong>
+            <small>Registered</small>
+          </div>
+          <div className="w2-header-stat">
+            <strong style={{ color: "#10B981" }}>{healthyCount}</strong>
+            <small>Healthy</small>
+          </div>
+          <div className="w2-header-stat">
+            <strong style={{ color: "#F59E0B" }}>{runningModels.length}</strong>
+            <small>Running</small>
+          </div>
+          <div className="w2-header-stat">
+            <strong style={{ color: "var(--ras-blue)" }}>{catalogItems.length}</strong>
+            <small>In Catalog</small>
+          </div>
         </div>
-      </header>
+      </div>
 
-      <div className="models-content gui-workspace models-gui-workspace">
-        <aside className="gui-sidebar models-gui-sidebar models-nav-panel" aria-label="Model sections">
-          <section className="model-section-card">
-            <span className="eyebrow">Model Workspace</span>
-            <h2>{selectedSection[1]}</h2>
-            <p>{selectedSection[2]}</p>
-            <div className="model-section-status">
-              <span className={`model-health-pill ${healthy ? "is-healthy" : "is-unhealthy"}`}>
-                {healthy ? "Reachable" : labelize(status)}
-              </span>
-              <strong>{activeModel?.model || activeName}</strong>
-              <small>{endpointKind}</small>
-            </div>
-          </section>
-          <nav
-            className="model-section-tabs"
-            aria-label="Model page sections"
-            role="tablist"
-            aria-orientation="vertical"
-            onKeyDown={handleModelSectionKeyDown}
-          >
-            {modelSections.map(([id, label, help]) => (
-              <button
-                className={`model-section-tab ${modelSection === id ? "is-active" : ""}`}
-                type="button"
-                role="tab"
-                id={`model-section-${id}`}
-                aria-selected={modelSection === id}
-                aria-controls={`model-panel-${id}`}
-                tabIndex={modelSection === id ? 0 : -1}
-                onClick={() => setModelSection(id)}
-                data-testid="model-section-tab"
-                key={id}
-              >
-                <span>{label}</span>
-                <small>{help}</small>
-              </button>
-            ))}
-          </nav>
-        </aside>
-
-        <div className="gui-main models-gui-main" role="tabpanel" id={`model-panel-${modelSection}`} aria-labelledby={`model-section-${modelSection}`}>
-        {modelSection === "overview" && (
-        <>
-        <section className="model-readiness-panel" aria-labelledby="modelReadinessTitle" data-testid="model-readiness-panel">
-          <div className="model-readiness-head">
-            <div>
-              <span className="eyebrow">Runtime Readiness</span>
-              <h2 id="modelReadinessTitle">Connect, verify, then plan deployment.</h2>
-              <p>
-                Follow these checks before private testing. Rasputin keeps the actual model id visible and only moves
-                into Warsat deployment after a reviewed launch plan exists.
-              </p>
-            </div>
-            <div className="model-readiness-summary" role="status" aria-live="polite">
-              <span className={`model-health-pill ${healthy ? "is-healthy" : "is-unhealthy"}`}>
-                {healthy ? "Chat ready" : "Chat blocked"}
-              </span>
-              <strong>{endpointKind}</strong>
-            </div>
-          </div>
-          <div className="model-readiness-grid">
-            {readinessItems.map((item) => (
-              <article className={`model-readiness-step is-${item.status}`} key={item.id}>
-                <div>
-                  <span>{item.title}</span>
-                  <strong>{item.value}</strong>
-                  <p>{item.detail}</p>
-                </div>
-                {item.action && (
-                  <button
-                    className="ras-button small-button"
-                    type="button"
-                    onClick={item.onAction}
-                    aria-label={`${item.action}: ${item.title}`}
-                  >
-                    {item.action}
-                  </button>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="models-grid">
-          <article className="model-command-card" data-testid="active-model-card" id="models-active-card">
-            <div className="model-command-top">
-              <span className="model-glyph" aria-hidden="true"><Cpu size={22} /></span>
-              <div>
-                <span className="eyebrow">Active Chat Model</span>
-                <h2>{activeName}</h2>
-                {secondary && <p>{secondary}</p>}
-              </div>
-              <span className={`model-health-pill ${healthy ? "is-healthy" : "is-unhealthy"}`}>
-                {healthy ? "Reachable" : labelize(status)}
-              </span>
-            </div>
-
-            <div className="model-truth-grid">
-              <div>
-                <span>Configured model id</span>
-                <strong>{activeModel?.model || "No model configured"}</strong>
-              </div>
-              <div>
-                <span>Endpoint</span>
-                <strong>{activeModel?.url || activeModel?.baseUrl || "Local endpoint not set"}</strong>
-              </div>
-              <div>
-                <span>Runtime</span>
-                <strong>{activeModel?.runtime || activeModel?.provider || "local"}</strong>
-              </div>
-              <div>
-                <span>Last health</span>
-                <strong>{runtimeStatus(activeModel)}</strong>
-              </div>
-            </div>
-
-            {mismatch && (
-              <div className="model-warning" role="status">
-                <Wrench size={17} aria-hidden="true" />
-                <span>{mismatch}</span>
-              </div>
-            )}
-
-            {!mismatch && activeModel?.lastError && (
-              <div className="model-warning" role="status">
-                <Wrench size={17} aria-hidden="true" />
-                <span>{activeModel.lastError}</span>
-              </div>
-            )}
-
-            {!!discovered.length && (
-              <div className="model-discovery-list">
-                <span>Discovered</span>
-                {discovered.slice(0, 4).map((id) => <code key={id}>{id}</code>)}
-              </div>
-            )}
-
-            <div className="model-action-row">
-              <button className="ras-button" type="button" onClick={() => runModelAction("test")}>
-                <CheckCircle2 size={17} aria-hidden="true" />
-                Test health
-              </button>
-              <button className="ras-button" type="button" onClick={() => runModelAction("repair")}>
-                <Wrench size={17} aria-hidden="true" />
-                Use discovered model
-              </button>
-              <button className="ras-button" type="button" data-testid="gguf-scan" onClick={scanGguf}>
-                <HardDrive size={17} aria-hidden="true" />
-                Scan GGUF library
-              </button>
-            </div>
-          </article>
-
-          <aside className="model-health-card">
-            <span className="eyebrow">Safety State</span>
-            <h2>Local runtime control stays gated.</h2>
-            <p>
-              Rasputin prepares and deploys Docker model runtimes through Warsat. Starting containers stays behind
-              Docker-control permission and an explicit approval step.
-            </p>
-            <div className="safety-stack">
-              <span><ShieldCheck size={16} aria-hidden="true" /> Ports bind to 127.0.0.1</span>
-              <span><ShieldCheck size={16} aria-hidden="true" /> Model mounts default read-only</span>
-              <span><ShieldCheck size={16} aria-hidden="true" /> Compose plans are previewed first</span>
-            </div>
-          </aside>
-        </section>
-        </>
-        )}
-
-        {modelSection === "catalog" && (
-        <section className="model-catalog-panel" aria-labelledby="modelCatalogTitle" data-testid="models-dev-catalog">
-          <div className="model-catalog-head">
-            <div>
-              <span className="eyebrow">Model Catalog</span>
-              <h2 id="modelCatalogTitle">Choose a model, then prepare it in Warsat</h2>
-              <p>
-                Rasputin keeps a local deployable shortlist and can refresh public metadata from models.dev.
-                API-only entries stay out of Warsat unless they have a real local runtime target.
-              </p>
-            </div>
-            <div className="model-catalog-actions">
-              <button className="ras-button" type="button" onClick={() => loadModelCatalog?.(false)}>
-                <RefreshCw size={17} aria-hidden="true" />
-                Load local catalog
-              </button>
-              <button className="ras-button primary" type="button" onClick={() => loadModelCatalog?.(true)} disabled={modelCatalogLoading}>
-                <Cloud size={17} aria-hidden="true" />
-                {modelCatalogLoading ? "Refreshing..." : "Refresh models.dev"}
-              </button>
-            </div>
-          </div>
-
-          <div className="model-catalog-meta" role="status">
-            <span>{modelCatalog?.count || catalogItems.length || 0} models</span>
-            <span>{modelCatalog?.deployableCount || 0} Warsat-ready</span>
-            <span>Source: {modelCatalog?.source?.status || "local fallback"}</span>
-            {modelCatalogError && <strong>{modelCatalogError}</strong>}
-          </div>
-
-          <div className="model-catalog-layout">
-            <aside className="model-catalog-filters" aria-label="Model catalog filters">
-              <label>
-                <span>Search</span>
-                <input
-                  value={catalogSearch}
-                  onChange={(event) => setCatalogSearch(event.target.value)}
-                  placeholder="coder, 7b, vision, qwen"
-                />
-              </label>
-              <label>
-                <span>Use</span>
-                <select value={catalogPurpose} onChange={(event) => setCatalogPurpose(event.target.value)}>
-                  <option value="all">All uses</option>
-                  {catalogCategories.map((category) => (
-                    <option key={category.id} value={category.id}>{category.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Runtime</span>
-                <select value={catalogRuntime} onChange={(event) => setCatalogRuntime(event.target.value)}>
-                  <option value="deployable">Warsat-ready</option>
-                  <option value="all">All catalog entries</option>
-                  {catalogRuntimes.map((runtime) => (
-                    <option key={runtime.id} value={runtime.id}>{runtime.label}</option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="ras-button ghost"
-                type="button"
-                onClick={() => {
-                  setCatalogSearch("");
-                  setCatalogPurpose("all");
-                  setCatalogRuntime("deployable");
-                }}
-              >
-                Clear filters
-              </button>
-            </aside>
-
-            <div className="model-catalog-list" aria-label="Model catalog results">
-              {filteredCatalogItems.slice(0, 36).map((item) => (
-                <button
-                  className={`model-catalog-row ${selectedCatalogModel?.id === item.id ? "is-selected" : ""}`}
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSelectedCatalogId(item.id)}
-                  data-testid="catalog-model-card"
-                >
-                  <span>
-                    <strong>{item.name}</strong>
-                    <small>{item.modelId || item.id}</small>
-                  </span>
-                  <span className="model-catalog-row-meta">
-                    <em>{labelize(item.purpose || "chat")}</em>
-                    <em>{item.fitLabel ? `${item.fitLabel} ${item.fitScore ?? ""}`.trim() : "Fit unknown"}</em>
-                    <em>{item.vramEstimateGb ? `${item.vramEstimateGb} GB est.` : "VRAM unknown"}</em>
-                    <em>{item.deployable ? "Warsat-ready" : "API only"}</em>
-                  </span>
-                </button>
-              ))}
-              {!filteredCatalogItems.length && (
-                <div className="model-catalog-empty">No models match those filters.</div>
-              )}
-            </div>
-
-            <aside className="model-catalog-detail" aria-label="Selected catalog model">
-              {selectedCatalogModel ? (
-                <>
-                  <span className="eyebrow">{selectedCatalogModel.source || "catalog"}</span>
-                  <h3>{selectedCatalogModel.name}</h3>
-                  <p>{selectedCatalogModel.summary || "No summary available."}</p>
-                  <dl className="model-catalog-detail-grid">
-                    <dt>Model id</dt><dd>{selectedCatalogModel.modelId || selectedCatalogModel.id}</dd>
-                    <dt>Provider</dt><dd>{selectedCatalogModel.provider}</dd>
-                    <dt>Use</dt><dd>{labelize(selectedCatalogModel.purpose || "chat")}</dd>
-                    <dt>Context</dt><dd>{selectedCatalogModel.contextWindow ? Number(selectedCatalogModel.contextWindow).toLocaleString() : "Unknown"}</dd>
-                    <dt>VRAM</dt><dd>{selectedCatalogModel.vramEstimateGb ? `${selectedCatalogModel.vramEstimateGb} GB estimated` : "Unknown"}</dd>
-                    <dt>Fit</dt><dd>{selectedCatalogModel.fitLabel ? `${selectedCatalogModel.fitLabel} (${selectedCatalogModel.fitScore ?? 0})` : "Unknown"}</dd>
-                    <dt>Runtime</dt><dd>{selectedCatalogModel.recommendedProtocol || "API only"}</dd>
-                  </dl>
-                  {!!(selectedCatalogModel.fitReasons || selectedCatalogModel.blockedReasons || []).length && (
-                    <ul className="model-catalog-note-list">
-                      {[...(selectedCatalogModel.blockedReasons || []), ...(selectedCatalogModel.fitReasons || [])].slice(0, 4).map((reason) => (
-                        <li key={reason}>{reason}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="model-catalog-capabilities">
-                    {(selectedCatalogModel.capabilities || []).slice(0, 8).map((capability) => (
-                      <span key={capability}>{labelize(capability)}</span>
-                    ))}
-                  </div>
-                  <button
-                    className="ras-button primary"
-                    type="button"
-                    disabled={!selectedCatalogModel.deployable}
-                    onClick={() => prepareCatalogModelForWarsat?.(selectedCatalogModel)}
-                    data-testid="catalog-send-to-warsat"
-                  >
-                    <Play size={17} aria-hidden="true" />
-                    {selectedCatalogModel.deployable ? "Prepare in Warsat" : "API-only model"}
-                  </button>
-                  {!selectedCatalogModel.deployable && (
-                    <small className="model-catalog-note">Register API-only models in the API Providers section below.</small>
-                  )}
-                </>
-              ) : (
-                <p>No model selected.</p>
-              )}
-            </aside>
-          </div>
-        </section>
-        )}
-
-        {modelSection === "overview" && (
-        <section className="model-builder-panel" aria-labelledby="modelBuilderTitle">
-          <div className="section-row">
-            <div>
-              <span className="eyebrow">Warsat Deployment Plan</span>
-              <h2 id="modelBuilderTitle">Generate and deploy model containers with Warsat</h2>
-              <p>
-                Use Warsat to select a runtime, choose hardware limits, review the Docker command, request approval,
-                and deploy a local-only model endpoint.
-              </p>
-            </div>
-            <button className="ras-button primary" type="button" onClick={openWarsat}>
-              <Play size={17} aria-hidden="true" />
-              Open Warsat
+      {/* ── Tab Bar ── */}
+      <div style={{ padding: "0 24px", display: "flex", gap: "12px", overflowX: "auto", marginBottom: "16px" }}>
+        {modelsTabs.map(t => {
+          const Icon = t.icon;
+          return (
+            <button key={t.id} className={`w2-button ${activeTab === t.id ? "primary" : ""}`} type="button" onClick={() => setActiveTab(t.id)}>
+              <Icon size={16} /> {t.label}
             </button>
+          );
+        })}
+        <div style={{ flex: 1 }} />
+        {uiState.status !== "idle" && (
+          <div style={{
+            padding: "8px 16px", borderRadius: "4px", fontSize: "0.875rem",
+            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "#10B981" : "var(--cc-surface)",
+            color: "#fff", display: "flex", alignItems: "center",
+          }}>
+            {uiState.message}
           </div>
-
-          <details className="model-plan-details">
-            <summary>Show deployment details</summary>
-            <div className="deployment-layout">
-              <div className="deployment-column">
-                <h3>Runtime choices</h3>
-                <div className="runtime-option-grid">
-                  {runtimeOptions.map(([name, text, input]) => (
-                    <article className="runtime-option" key={name}>
-                      <strong>{name}</strong>
-                      <p>{text}</p>
-                      <small>{input}</small>
-                    </article>
-                  ))}
-                </div>
-              </div>
-
-              <div className="deployment-column">
-                <h3>Hardware profiles</h3>
-                <div className="hardware-profile-grid">
-                  {hardwareProfiles.map(([name, vram, usage]) => (
-                    <article className="hardware-profile" key={name}>
-                      <span>{name}</span>
-                      <strong>{vram}</strong>
-                      <small>{usage}</small>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <ol className="deployment-steps">
-              {deploymentSteps.map(([title, text]) => (
-                <li key={title}>
-                  <span>{title}</span>
-                  <p>{text}</p>
-                </li>
-              ))}
-            </ol>
-          </details>
-        </section>
         )}
+        <button className="w2-button" type="button" onClick={handleRefresh}>
+          <RefreshCw size={16} /> Refresh
+        </button>
+      </div>
 
-        {modelSection === "connect" && (
-        <>
-        <details className="advanced-block model-builder-panel local-model-panel" data-testid="local-model-advanced">
-          <summary>
-            <span>Connect a local endpoint</span>
-            <small>LM Studio, Ollama, text-generation-webui, or another localhost server</small>
-          </summary>
-          <div className="section-row" aria-labelledby="localModelTitle">
-            <div>
-              <span className="eyebrow">Local Endpoint</span>
-              <h2 id="localModelTitle">Connect any OpenAI-compatible localhost model</h2>
-              <p>
-                Use this for models Rasputin does not launch itself: LM Studio, Ollama, text-generation-webui,
-                a custom server, or another local wrapper. The endpoint must stay local while privacy lock is on.
-              </p>
-            </div>
-          </div>
-          <form className="local-model-form" onSubmit={registerLocalModel} data-testid="local-model-form">
-            <label>
-              <span>Display name</span>
-              <input name="name" placeholder="My Local Coder" />
-            </label>
-            <label>
-              <span>Model id</span>
-              <input name="model" placeholder="qwen2.5-coder:7b" required />
-            </label>
-            <label>
-              <span>Base endpoint</span>
-              <input name="baseUrl" placeholder="http://127.0.0.1:1234/v1" required />
-            </label>
-            <label>
-              <span>Purpose</span>
-              <select name="role" defaultValue="helper">
-                <option value="main">Main</option>
-                <option value="planner">Planner</option>
-                <option value="executor">Executor</option>
-                <option value="coder">Coder</option>
-                <option value="researcher">Researcher</option>
-                <option value="summarizer">Summarizer</option>
-                <option value="memory">Memory</option>
-                <option value="helper">Helper</option>
-              </select>
-            </label>
-            <label>
-              <span>Provider</span>
-              <select name="provider" defaultValue="openai-compatible">
-                <option value="openai-compatible">OpenAI-compatible</option>
-                <option value="ollama">Ollama</option>
-                <option value="lm-studio">LM Studio</option>
-                <option value="text-generation-webui">text-generation-webui</option>
-                <option value="custom-local">Custom local</option>
-              </select>
-            </label>
-            <label>
-              <span>Context window</span>
-              <input name="contextWindow" type="number" min="512" placeholder="4096" />
-            </label>
-            <label>
-              <span>Max output tokens</span>
-              <input name="maxTokens" type="number" min="1" placeholder="512" />
-            </label>
-            <label className="local-model-notes">
-              <span>Notes</span>
-              <input name="notes" placeholder="Started outside Rasputin" />
-            </label>
-            <div className="local-model-actions">
-              <button className="ras-button primary" type="submit">
-                <CheckCircle2 size={17} aria-hidden="true" />
-                Connect local model
-              </button>
-              <small>After connecting, use Test health to verify `/models` and chat completion support.</small>
-            </div>
-          </form>
-        </details>
+      {/* ── Content ── */}
+      <div className="w2-main-grid" style={{ gridTemplateColumns: "1fr 340px" }}>
+        <div className="w2-column">
 
-        <details className="advanced-block model-builder-panel api-model-panel" data-testid="api-model-advanced">
-          <summary>
-            <span>Connect an API provider</span>
-            <small>External providers stay blocked while Privacy Lock is enabled</small>
-          </summary>
-          <div className="section-row" aria-labelledby="apiModelTitle">
-            <div>
-              <span className="eyebrow">API Providers</span>
-              <h2 id="apiModelTitle">Connect OpenAI, Anthropic, Gemini, or another API</h2>
-              <p>
-                Use this only when you intentionally want Rasputin to call an external provider. Keys are stored as
-                environment references or in Rasputin's ignored local secret store, never in the model registry.
-              </p>
-            </div>
-            <span className={`model-health-pill ${remoteBlocked ? "is-unhealthy" : "is-healthy"}`}>
-              {remoteBlocked ? "Remote blocked" : "Remote allowed"}
-            </span>
-          </div>
-          {remoteBlocked && (
-            <div className="model-warning" role="status">
-              <ShieldCheck size={17} aria-hidden="true" />
-              <span>Safety currently blocks remote model endpoints. Disable Privacy lock and enable Remote models before testing an API provider.</span>
+          {/* ═══ LIBRARY TAB ═══ */}
+          {activeTab === "library" && (
+            <div className="w2-section" style={{ flex: 1 }}>
+              {/* Source toggle */}
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
+                  <Database size={14} /> Local Catalog
+                </button>
+                <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("huggingface")}>
+                  <Cloud size={14} /> Hugging Face
+                </button>
+                <div style={{ flex: 1 }} />
+                {searchMode === "catalog" && (
+                  <>
+                    <button className="w2-button" type="button" onClick={() => handleLoadCatalog(false)}>
+                      <RefreshCw size={14} /> Local
+                    </button>
+                    <button className="w2-button primary" type="button" onClick={() => handleLoadCatalog(true)} disabled={modelCatalogLoading}>
+                      <Cloud size={14} /> {modelCatalogLoading ? "Refreshing..." : "Refresh Remote"}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Search + filters */}
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <Search size={16} color="var(--cc-muted)" />
+                <input
+                  className="w2-input"
+                  value={searchMode === "huggingface" ? hfQuery : catalogSearch}
+                  onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
+                  placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter catalog by name, provider..."}
+                />
+                <select className="w2-input" style={{ width: "140px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
+                  <option value="all">All types</option>
+                  {catalogCategories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+                {searchMode === "huggingface" && (
+                  <select className="w2-input" style={{ width: "130px", flex: "none" }} value={hfSort} onChange={e => setHfSort(e.target.value)}>
+                    <option value="downloads">Downloads</option>
+                    <option value="likes">Likes</option>
+                    <option value="trending">Trending</option>
+                    <option value="lastModified">Recent</option>
+                  </select>
+                )}
+                {searchMode === "catalog" && (
+                  <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogRuntime} onChange={e => setCatalogRuntime(e.target.value)}>
+                    <option value="deployable">Deployable</option>
+                    <option value="all">All</option>
+                    {catalogRuntimes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                  </select>
+                )}
+              </div>
+
+              {/* Status line */}
+              <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+                {searchMode === "catalog"
+                  ? `${filteredCatalog.length} models · Source: ${modelCatalog?.source?.status || "local"}`
+                  : hfLoading ? "Searching Hugging Face..." : `${hfResults.length} results`}
+              </div>
+
+              {/* Model list */}
+              {displayItems.slice(0, 40).map(item => (
+                <CatalogCard key={item.id} item={item} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} />
+              ))}
+
+              {!displayItems.length && (
+                <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
+                  {searchMode === "huggingface" ? "No models found. Try broadening your search or choosing a different category." : "No models match. Try different filters."}
+                </div>
+              )}
             </div>
           )}
-          <form className="local-model-form" onSubmit={registerApiModel} data-testid="api-model-form">
-            <label>
-              <span>Provider</span>
-              <select name="provider" defaultValue="openai">
-                {apiProviders.map((provider) => (
-                  <option value={provider.id} key={provider.id}>{provider.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Display name</span>
-              <input name="name" placeholder="Claude Writer" />
-            </label>
-            <label>
-              <span>Model id</span>
-              <input name="model" placeholder="gpt-4o-mini / claude-3-5-sonnet-20241022 / gemini-2.5-flash" required />
-            </label>
-            <label>
-              <span>Base endpoint</span>
-              <input name="baseUrl" placeholder="Leave blank for provider default" />
-            </label>
-            <label>
-              <span>Purpose</span>
-              <select name="role" defaultValue="helper">
-                <option value="main">Main</option>
-                <option value="planner">Planner</option>
-                <option value="executor">Executor</option>
-                <option value="coder">Coder</option>
-                <option value="researcher">Researcher</option>
-                <option value="summarizer">Summarizer</option>
-                <option value="memory">Memory</option>
-                <option value="helper">Helper</option>
-              </select>
-            </label>
-            <label>
-              <span>API key environment variable</span>
-              <input name="apiKeyEnv" placeholder="OPENAI_API_KEY" />
-            </label>
-            <label>
-              <span>Or local secret key</span>
-              <input name="apiKey" type="password" autoComplete="off" placeholder="Stored in ignored local secrets" />
-            </label>
-            <label>
-              <span>Anthropic version</span>
-              <input name="anthropicVersion" placeholder="2023-06-01" />
-            </label>
-            <label>
-              <span>Context window</span>
-              <input name="contextWindow" type="number" min="512" placeholder="8192" />
-            </label>
-            <label>
-              <span>Max output tokens</span>
-              <input name="maxTokens" type="number" min="1" placeholder="512" />
-            </label>
-            <label className="local-model-notes">
-              <span>Notes</span>
-              <input name="notes" placeholder="External API; do not use for private local files" />
-            </label>
-            <div className="local-model-actions">
-              <button className="ras-button primary" type="submit">
-                <KeyRound size={17} aria-hidden="true" />
-                Register API model
-              </button>
-              <small>Use env vars for shared setups. Use the local secret field for one-machine testing only.</small>
-            </div>
-          </form>
-          <div className="api-provider-grid" aria-label="Supported API provider styles">
-            {apiProviders.map((provider) => (
-              <article className="runtime-option" key={provider.id}>
-                <strong><Cloud size={15} aria-hidden="true" /> {provider.name}</strong>
-                <p>{provider.apiStyle || "OpenAI-compatible"}</p>
-                <small>{provider.defaultKeyEnv || "custom key source"}</small>
-              </article>
-            ))}
-          </div>
-        </details>
-        </>
-        )}
 
-        {modelSection === "registry" && (
-        <details className="advanced-model-registry" data-testid="advanced-model-registry">
-          <summary data-testid="advanced-model-registry-toggle">
-            <SlidersHorizontal size={17} aria-hidden="true" />
-            Advanced model registry
-          </summary>
-          <div className="advanced-model-body">
-            <div className="testing-mode-control">
-              <label className="testing-mode-label">
-                <input
-                  data-testid="testing-mode-toggle"
-                  type="checkbox"
-                  checked={testingMode}
-                  onClick={(event) => updateTestingMode(event.currentTarget.checked)}
-                  onInput={(event) => updateTestingMode(event.currentTarget.checked)}
-                  onChange={(event) => updateTestingMode(event.currentTarget.checked)}
-                />
-                <span>
-                  <strong>Testing Mode</strong>
-                  <small>Show dry-run in the chat model picker and select it for local smoke tests.</small>
-                </span>
-              </label>
-              <button
-                className="ras-button ghost small-button"
-                type="button"
-                data-testid="testing-mode-action"
-                aria-label={testingMode ? "Disable Testing Mode" : "Enable Testing Mode"}
-                onClick={() => updateTestingMode(!testingMode)}
-              >
-                {testingMode ? "Disable" : "Enable"}
-              </button>
-            </div>
-            <div id="modelRegistry" className="model-list registry-grid">
-              {(models || []).map((model) => (
-                <article className="model-row registry-row" key={model.key}>
-                  <strong>{displayModelName(model, models)}</strong>
-                  <dl className="model-meta-grid mb-0">
-                    <dt>Purpose</dt><dd>{labelize(model.role || "chat")}</dd>
-                    <dt>Runtime</dt><dd>{model.runtime || model.provider || "local"}</dd>
-                    <dt>Health</dt><dd>{runtimeStatus(model)}</dd>
-                    {model.runtime === "remote-api" && <><dt>API key</dt><dd>{model.hasApiKey ? `Configured (${model.apiKeySource || "secret"})` : "Missing"}</dd></>}
-                    <dt>Key</dt><dd>{model.key}</dd>
-                  </dl>
-                </article>
+          {/* ═══ INSTALLED TAB ═══ */}
+          {activeTab === "installed" && (
+            <div className="w2-section" style={{ flex: 1 }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <h2 style={{ margin: 0, fontSize: "1rem" }}>Local Registry</h2>
+                <div style={{ flex: 1 }} />
+                <button className="w2-button" type="button" onClick={handleScanGguf}><HardDrive size={14} /> Scan GGUF</button>
+                <button className="w2-button" type="button" onClick={handleRefresh}><RefreshCw size={14} /> Refresh</button>
+              </div>
+
+              {installedModels.map(model => (
+                <InstalledCard key={model.key} model={model} allModels={models} runModelAction={runModelAction} executeAction={executeAction} setUiState={setUiState} />
               ))}
+
+              {!installedModels.length && (
+                <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
+                  No models registered. Use Library to discover, or Settings to connect endpoints.
+                </div>
+              )}
             </div>
-          </div>
-        </details>
-        )}
+          )}
+
+          {/* ═══ RUNNING TAB ═══ */}
+          {activeTab === "running" && (
+            <div className="w2-section" style={{ flex: 1 }}>
+              <ActiveModelCard
+                model={activeModel}
+                models={models}
+                healthy={healthy}
+                status={status}
+                runModelAction={runModelAction}
+                executeAction={executeAction}
+                setUiState={setUiState}
+                openWarsat={openWarsat}
+              />
+
+              {runningModels.length > 0 && (
+                <div className="w2-card">
+                  <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Active Deployments ({runningModels.length})</h3>
+                  {runningModels.map(m => (
+                    <div key={m.key} className="w2-list-item">
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <Activity size={14} color="#10B981" />
+                        <div>
+                          <strong style={{ fontSize: "0.8125rem" }}>{displayModelName(m, models)}</strong>
+                          <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{m.runtime || m.provider} · {labelize(m.role || "chat")}</div>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: "0.6875rem", color: "#10B981", fontWeight: 600 }}>Online</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <InfraStatusCard warsatHardware={warsatHardware} warsatRuntimes={warsatRuntimes} warsat={warsat} />
+            </div>
+          )}
+
+          {/* ═══ SETTINGS TAB ═══ */}
+          {activeTab === "settings" && (
+            <div className="w2-section" style={{ flex: 1 }}>
+              {/* Testing Mode */}
+              <div className="w2-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <strong>Testing Mode</strong>
+                    <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>Show dry-run model for local smoke tests.</div>
+                  </div>
+                  <button className={`w2-button ${testingMode ? "primary" : ""}`} type="button" onClick={() => updateTestingMode(!testingMode)}>
+                    {testingMode ? "Disable" : "Enable"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Connect Local */}
+              <div className="w2-card">
+                <h3 style={{ margin: 0, fontSize: "0.875rem" }}><HardDrive size={14} style={{ verticalAlign: "-2px" }} /> Connect Local Endpoint</h3>
+                <form onSubmit={registerLocalModel} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <input className="w2-input" name="name" placeholder="Display Name" />
+                  <input className="w2-input" name="model" placeholder="Model ID *" required />
+                  <input className="w2-input" name="baseUrl" placeholder="http://127.0.0.1:1234/v1 *" required />
+                  <select className="w2-input" name="role" defaultValue="helper">
+                    <option value="main">Main</option><option value="coder">Coder</option><option value="researcher">Researcher</option><option value="helper">Helper</option><option value="planner">Planner</option><option value="summarizer">Summarizer</option>
+                  </select>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <button className="w2-button primary" type="submit" style={{ width: "100%" }}><CheckCircle2 size={14} /> Connect Model</button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Connect API */}
+              <div className="w2-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Cloud size={14} style={{ verticalAlign: "-2px" }} /> Connect API Provider</h3>
+                  <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: remoteBlocked ? "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))" : "color-mix(in srgb, #10B981 15%, var(--cc-surface))", color: remoteBlocked ? "var(--ras-danger)" : "#10B981", fontWeight: 600 }}>
+                    {remoteBlocked ? "Remote blocked" : "Remote allowed"}
+                  </span>
+                </div>
+                <form onSubmit={registerApiModel} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <select className="w2-input" name="provider" defaultValue="openai">
+                    {apiProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <input className="w2-input" name="name" placeholder="Display Name" />
+                  <input className="w2-input" name="model" placeholder="Model ID *" required />
+                  <input className="w2-input" name="baseUrl" placeholder="Base URL (blank = default)" />
+                  <select className="w2-input" name="role" defaultValue="helper">
+                    <option value="main">Main</option><option value="coder">Coder</option><option value="researcher">Researcher</option><option value="helper">Helper</option>
+                  </select>
+                  <input className="w2-input" name="apiKey" type="password" autoComplete="off" placeholder="API Key (local secret)" />
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <button className="w2-button primary" type="submit" style={{ width: "100%" }}><KeyRound size={14} /> Register API Model</button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Warsat */}
+              <div className="w2-card">
+                <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Play size={14} style={{ verticalAlign: "-2px" }} /> Warsat Deployment</h3>
+                <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>Use Warsat to deploy local model endpoints via Docker.</p>
+                <button className="w2-button primary" type="button" onClick={openWarsat} style={{ alignSelf: "flex-start" }}><Play size={14} /> Open Warsat</button>
+              </div>
+
+              {/* Full registry list */}
+              <div className="w2-card">
+                <h3 style={{ margin: 0, fontSize: "0.875rem" }}><SlidersHorizontal size={14} style={{ verticalAlign: "-2px" }} /> Full Registry</h3>
+                {(models || []).map(m => (
+                  <div key={m.key} className="w2-list-item" style={{ cursor: "default" }}>
+                    <div>
+                      <strong style={{ fontSize: "0.8125rem" }}>{displayModelName(m, models)}</strong>
+                      <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{labelize(m.role || "chat")} · {m.runtime || m.provider || "local"} · {runtimeStatus(m)}</div>
+                    </div>
+                    <span style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{m.key}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* ── Right Column (context) ── */}
+        <div className="w2-column">
+          <RightPanel
+            activeTab={activeTab}
+            activeModel={activeModel}
+            models={models}
+            healthy={healthy}
+            status={status}
+            warsatHardware={warsatHardware}
+          />
         </div>
       </div>
     </section>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
+   CATALOG CARD
+   ═══════════════════════════════════════════ */
+function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode }) {
+  return (
+    <div className="w2-card" style={{ gap: "8px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <strong style={{ fontSize: "0.875rem" }}>{item.name}</strong>
+          <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{item.modelId || item.id}</div>
+        </div>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          {item.deployable && <Zap size={13} color="#10B981" title="Deployable" />}
+          <span style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{labelize(item.purpose || "chat")}</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", fontSize: "0.6875rem" }}>
+        {item.vramEstimateGb && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>{item.vramEstimateGb} GB VRAM</span>}
+        {item.downloads > 0 && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>↓ {item.downloads >= 1e6 ? `${(item.downloads/1e6).toFixed(1)}M` : item.downloads >= 1e3 ? `${(item.downloads/1e3).toFixed(1)}K` : item.downloads}</span>}
+        {item.likes > 0 && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>♥ {item.likes >= 1e3 ? `${(item.likes/1e3).toFixed(1)}K` : item.likes}</span>}
+        {item.license && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>{item.license}</span>}
+        {item.fitLabel && searchMode === "catalog" && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: item.fitLabel === "Strong fit" ? "#10B981" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
+      </div>
+
+      {item.summary && <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>{item.summary.slice(0, 120)}</p>}
+
+      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        {item.deployable && (
+          <button className="w2-button primary" type="button" onClick={() => prepareCatalogModelForWarsat?.(item)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
+            <Play size={12} /> Deploy via Warsat
+          </button>
+        )}
+        {item.sourceUrl && item.source === "huggingface" && (
+          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.6875rem", color: "var(--ras-blue)", display: "flex", alignItems: "center", gap: "4px", textDecoration: "none" }}>
+            <ExternalLink size={11} /> HF Page
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
+   INSTALLED CARD
+   ═══════════════════════════════════════════ */
+function InstalledCard({ model, allModels, runModelAction, executeAction, setUiState }) {
+  const name = displayModelName(model, allModels);
+  const secondary = displayModelSecondary(model, allModels);
+  const st = runtimeStatus(model);
+  const isHealthy = isModelHealthy(model);
+  const mismatch = modelMismatchLine(model);
+  const ctx = contextWindowFor(model);
+
+  const handleTest = () => executeAction("TestHealth", model.key, async () => runModelAction?.("test"), setUiState);
+  const handleDiscover = () => executeAction("Discover", model.key, async () => runModelAction?.("discover"), setUiState);
+
+  return (
+    <div className="w2-card" style={{ gap: "8px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <Cpu size={18} color={statusColor(st)} />
+          <div>
+            <strong style={{ fontSize: "0.875rem" }}>{name}</strong>
+            {secondary && <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{secondary}</div>}
+          </div>
+        </div>
+        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: isHealthy ? "color-mix(in srgb, #10B981 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: isHealthy ? "#10B981" : "var(--ras-danger)", fontWeight: 600 }}>
+          {isHealthy ? "Healthy" : labelize(st)}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: "16px", fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+        <span>Model: {model.model || "—"}</span>
+        <span>Runtime: {model.runtime || model.provider || "local"}</span>
+        <span>Role: {labelize(model.role || "chat")}</span>
+        {ctx > 0 && <span>Context: {ctx.toLocaleString()}</span>}
+      </div>
+
+      {mismatch && (
+        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "#F59E0B", padding: "6px 8px", background: "color-mix(in srgb, #F59E0B 8%, var(--cc-surface))", borderRadius: "6px" }}>
+          <AlertTriangle size={13} /> {mismatch}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button className="w2-button" type="button" onClick={handleTest} style={{ fontSize: "0.75rem", padding: "4px 10px" }}><CheckCircle2 size={12} /> Test</button>
+        <button className="w2-button" type="button" onClick={handleDiscover} style={{ fontSize: "0.75rem", padding: "4px 10px" }}><Search size={12} /> Discover</button>
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
+   ACTIVE MODEL CARD
+   ═══════════════════════════════════════════ */
+function ActiveModelCard({ model, models, healthy, status, runModelAction, executeAction, setUiState, openWarsat }) {
+  const name = displayModelName(model, models);
+  const secondary = displayModelSecondary(model, models);
+  const mismatch = modelMismatchLine(model);
+  const ctx = contextWindowFor(model);
+
+  const handleTest = () => executeAction("TestHealth", model?.key, async () => runModelAction?.("test"), setUiState);
+  const handleDiscover = () => executeAction("Discover", model?.key, async () => runModelAction?.("discover"), setUiState);
+  const handleRepair = () => executeAction("Repair", model?.key, async () => runModelAction?.("repair"), setUiState);
+
+  return (
+    <div className="w2-card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <Cpu size={24} color={healthy ? "#10B981" : "var(--ras-danger)"} />
+          <div>
+            <div style={{ fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: ".05em", color: "var(--cc-muted)", fontWeight: 600 }}>Active Chat Model</div>
+            <h2 style={{ margin: "2px 0 0", fontSize: "1.125rem" }}>{name}</h2>
+            {secondary && <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--cc-muted)" }}>{secondary}</p>}
+          </div>
+        </div>
+        <span style={{ fontSize: "0.75rem", padding: "4px 12px", borderRadius: "999px", background: healthy ? "color-mix(in srgb, #10B981 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: healthy ? "#10B981" : "var(--ras-danger)", fontWeight: 600 }}>
+          {healthy ? "Reachable" : labelize(status)}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: "16px", fontSize: "0.75rem", color: "var(--cc-muted)", flexWrap: "wrap" }}>
+        <span>Model: {model?.model || "Not configured"}</span>
+        <span>Endpoint: {model?.url || model?.base_url || "Not set"}</span>
+        <span>Runtime: {model?.runtime || model?.provider || "local"}</span>
+        {ctx > 0 && <span>Context: {ctx.toLocaleString()}</span>}
+      </div>
+
+      {mismatch && (
+        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "#F59E0B", padding: "8px 10px", background: "color-mix(in srgb, #F59E0B 8%, var(--cc-surface))", borderRadius: "6px" }}>
+          <Wrench size={13} /> {mismatch}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button className="w2-button" type="button" onClick={handleTest}><CheckCircle2 size={14} /> Test</button>
+        <button className="w2-button" type="button" onClick={handleDiscover}><Search size={14} /> Discover</button>
+        <button className="w2-button" type="button" onClick={handleRepair}><Wrench size={14} /> Repair</button>
+        <button className="w2-button primary" type="button" onClick={openWarsat}><Play size={14} /> Warsat</button>
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
+   INFRA STATUS
+   ═══════════════════════════════════════════ */
+function InfraStatusCard({ warsatHardware, warsatRuntimes, warsat }) {
+  const runtimeCount = warsatRuntimes?.count ?? warsatRuntimes?.containers?.length ?? 0;
+  return (
+    <div className="w2-card">
+      <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Infrastructure</h3>
+      <div className="w2-health-grid">
+        <div className="w2-health-item"><Server size={16} color="var(--cc-muted)" /> Warsat: {warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked"}</div>
+        <div className="w2-health-item"><MonitorSpeaker size={16} color="var(--cc-muted)" /> Containers: {runtimeCount}</div>
+        <div className="w2-health-item"><ShieldCheck size={16} color="#10B981" /> Docker: {warsat?.dockerControlEnabled ? "Enabled" : "Off"}</div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
+   RIGHT PANEL
+   ═══════════════════════════════════════════ */
+function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHardware }) {
+  const name = displayModelName(activeModel, models);
+
+  if (activeTab === "library") {
+    return (
+      <div className="w2-section">
+        <h3 className="w2-section-title">Quick Start</h3>
+        <div className="w2-card">
+          <strong style={{ fontSize: "0.875rem" }}>How to add a model</strong>
+          <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+            <li>Browse or search for a model</li>
+            <li>Click "Deploy via Warsat" on a deployable model</li>
+            <li>Or use Settings to connect a running endpoint</li>
+          </ol>
+        </div>
+        <div className="w2-card">
+          <strong style={{ fontSize: "0.875rem" }}>Supported Runtimes</strong>
+          <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px" }}>
+            <span>• vLLM CUDA (Hugging Face models)</span>
+            <span>• llama.cpp (GGUF files)</span>
+            <span>• Ollama (quick experiments)</span>
+            <span>• External local endpoints</span>
+            <span>• Remote APIs (OpenAI, Anthropic, Gemini)</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w2-section">
+      <h3 className="w2-section-title">Active Model</h3>
+      <div className="w2-card">
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <Cpu size={18} color={healthy ? "#10B981" : "var(--ras-danger)"} />
+          <strong style={{ fontSize: "0.875rem" }}>{name}</strong>
+        </div>
+        <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px" }}>
+          <span>Status: {healthy ? "Reachable" : labelize(status)}</span>
+          <span>Model: {activeModel?.model || "—"}</span>
+          <span>Runtime: {activeModel?.runtime || activeModel?.provider || "—"}</span>
+          <span>Role: {labelize(activeModel?.role || "main")}</span>
+        </div>
+      </div>
+
+      {warsatHardware?.detectedHardware?.gpus?.length > 0 && (
+        <>
+          <h3 className="w2-section-title">GPU Hardware</h3>
+          <div className="w2-card">
+            {warsatHardware.detectedHardware.gpus.map((gpu, i) => (
+              <div key={i} style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+                <strong style={{ color: "var(--cc-text)" }}>{gpu.name}</strong>
+                <div>{gpu.memory_total_mb ? `${(gpu.memory_total_mb / 1024).toFixed(1)} GB VRAM` : "Unknown VRAM"}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -11,9 +11,12 @@ from . import audit
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 CACHE_FILE = DATA_DIR / "models_dev_catalog.json"
+HF_SEARCH_CACHE_FILE = DATA_DIR / "hf_search_cache.json"
 MODELS_DEV_URL = os.environ.get("MODELS_DEV_API_URL", "https://models.dev/api.json")
+HF_API_URL = os.environ.get("HF_API_URL", "https://huggingface.co/api/models")
 CACHE_TTL_SECONDS = int(os.environ.get("MODELS_DEV_CACHE_TTL_SECONDS", "86400"))
 FETCH_TIMEOUT_SECONDS = float(os.environ.get("MODELS_DEV_FETCH_TIMEOUT_SECONDS", "8"))
+HF_FETCH_TIMEOUT = float(os.environ.get("HF_FETCH_TIMEOUT_SECONDS", "12"))
 MAX_REMOTE_ITEMS = int(os.environ.get("MODELS_DEV_MAX_ITEMS", "280"))
 
 PURPOSES = [
@@ -23,8 +26,32 @@ PURPOSES = [
     {"id": "research", "label": "Research"},
     {"id": "vision", "label": "Vision"},
     {"id": "embeddings", "label": "Embeddings"},
+    {"id": "reranker", "label": "Reranker"},
+    {"id": "speech", "label": "Speech"},
+    {"id": "multimodal", "label": "Multimodal"},
     {"id": "fast", "label": "Fast / low VRAM"},
 ]
+
+# HF pipeline_tag → Rasputin purpose mapping
+HF_PIPELINE_MAP = {
+    "text-generation": "chat",
+    "text2text-generation": "chat",
+    "conversational": "chat",
+    "fill-mask": "chat",
+    "feature-extraction": "embeddings",
+    "sentence-similarity": "embeddings",
+    "image-to-text": "vision",
+    "visual-question-answering": "vision",
+    "image-classification": "vision",
+    "object-detection": "vision",
+    "automatic-speech-recognition": "speech",
+    "text-to-speech": "speech",
+    "text-to-image": "multimodal",
+    "text-classification": "research",
+    "question-answering": "research",
+    "summarization": "research",
+    "translation": "research",
+}
 
 RUNTIMES = [
     {"id": "vllmCudaOpenai", "label": "vLLM", "input": "Hugging Face model id"},
@@ -387,3 +414,157 @@ def catalog(refresh=False, force=False, hardware=None):
             return {**cached, "items": _apply_fit(cached.get("items", []), hardware), "source": {**cached.get("source", {}), "status": "cacheAfterRefreshError", "error": str(exc)}}
         payload = _catalog_payload(source_status="fallbackAfterRefreshError", source_error=str(exc), hardware=hardware)
         return payload
+
+
+# ── Hugging Face Hub API search ──────────────────────────────────────
+
+def _hf_purpose_from_pipeline(pipeline_tag):
+    return HF_PIPELINE_MAP.get(pipeline_tag or "", "chat")
+
+
+def _normalize_hf_model(hf_model):
+    """Convert a HF API model dict into a Rasputin catalog item."""
+    model_id = hf_model.get("modelId") or hf_model.get("id") or "unknown"
+    pipeline_tag = hf_model.get("pipeline_tag") or ""
+    purpose = _hf_purpose_from_pipeline(pipeline_tag)
+    tags = hf_model.get("tags") or []
+    params = _parameter_count(model_id, {"name": model_id, "tags": " ".join(tags)})
+    license_tag = ""
+    for tag in tags:
+        if tag.startswith("license:"):
+            license_tag = tag.replace("license:", "")
+            break
+    # Detect quantization from tags
+    quant = ""
+    for tag in tags:
+        tag_lower = tag.lower()
+        if any(q in tag_lower for q in ["gguf", "gptq", "awq", "bnb", "exl2", "fp16", "fp8", "int4", "int8"]):
+            quant = tag
+            break
+    # Detect architecture
+    architecture = ""
+    if hf_model.get("config") and isinstance(hf_model["config"], dict):
+        arch_list = hf_model["config"].get("architectures") or []
+        if arch_list:
+            architecture = arch_list[0]
+    # Override purpose for known patterns
+    blob = _text_blob(model_id, " ".join(tags))
+    if any(w in blob for w in ["coder", "coding", "code"]):
+        purpose = "coding"
+    elif any(w in blob for w in ["reason", "thinking", "r1"]):
+        purpose = "reasoning"
+    elif any(w in blob for w in ["rerank"]):
+        purpose = "reranker"
+    elif "embed" in blob:
+        purpose = "embeddings"
+    elif any(w in blob for w in ["vision", "llava", "visual"]):
+        purpose = "vision"
+    elif any(w in blob for w in ["whisper", "speech", "tts"]):
+        purpose = "speech"
+
+    is_gguf = "gguf" in blob
+    has_open_weights = "/" in model_id  # HF models with org/name are usually open weights
+    runtime_options = []
+    if is_gguf:
+        runtime_options.append({"protocolId": "llamaCppGgufServer", "label": "Run GGUF with llama.cpp"})
+    if has_open_weights and purpose not in {"embeddings", "reranker"}:
+        runtime_options.append({"protocolId": "vllmCudaOpenai", "label": "Run through vLLM"})
+    if not runtime_options:
+        runtime_options.append({"protocolId": "apiOnly", "label": "Register as provider API"})
+
+    return {
+        "id": model_id,
+        "modelId": model_id,
+        "name": model_id.split("/")[-1] if "/" in model_id else model_id,
+        "provider": model_id.split("/")[0] if "/" in model_id else "huggingface",
+        "providerId": "huggingface",
+        "purpose": purpose,
+        "capabilities": _capabilities(model_id, {"name": model_id, "tags": " ".join(tags)}, purpose),
+        "contextWindow": None,
+        "parameterCountB": params,
+        "vramEstimateGb": _vram_estimate(params),
+        "recommendedProfile": "small" if purpose == "fast" else "balanced",
+        "recommendedProtocol": runtime_options[0]["protocolId"],
+        "runtimeOptions": runtime_options,
+        "deployable": runtime_options[0]["protocolId"] != "apiOnly",
+        "apiOnly": runtime_options[0]["protocolId"] == "apiOnly",
+        "source": "huggingface",
+        "sourceUrl": f"https://huggingface.co/{model_id}",
+        "summary": (hf_model.get("description") or "")[:200] or f"Hugging Face model: {model_id}",
+        "downloads": hf_model.get("downloads") or 0,
+        "likes": hf_model.get("likes") or 0,
+        "license": license_tag,
+        "quantization": quant,
+        "architecture": architecture,
+        "pipelineTag": pipeline_tag,
+        "lastModified": hf_model.get("lastModified") or "",
+    }
+
+
+def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100):
+    """Search Hugging Face Hub API for models."""
+    params = {
+        "limit": min(int(limit), 100),
+        "sort": sort or "downloads",
+        "direction": str(direction),
+    }
+    if query:
+        params["search"] = query
+    if model_type:
+        params["pipeline_tag"] = model_type
+
+    try:
+        with httpx.Client(timeout=HF_FETCH_TIMEOUT, follow_redirects=True) as client:
+            response = client.get(HF_API_URL, params=params)
+            response.raise_for_status()
+            raw_models = response.json()
+    except Exception as exc:
+        audit.log("hf_search_failed", {"query": query, "error": str(exc)})
+        return {"items": [], "count": 0, "error": str(exc), "source": "huggingface"}
+
+    if not isinstance(raw_models, list):
+        return {"items": [], "count": 0, "error": "Unexpected HF API response format", "source": "huggingface"}
+
+    items = [_normalize_hf_model(m) for m in raw_models[:int(limit)]]
+    audit.log("hf_search", {"query": query, "type": model_type, "count": len(items)})
+    return {
+        "items": items,
+        "count": len(items),
+        "query": query,
+        "modelType": model_type,
+        "sort": sort,
+        "source": "huggingface",
+    }
+
+
+def hf_model_detail(model_id):
+    """Fetch detailed info for a single HF model."""
+    url = f"{HF_API_URL}/{model_id}"
+    try:
+        with httpx.Client(timeout=HF_FETCH_TIMEOUT, follow_redirects=True) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            raw = response.json()
+    except Exception as exc:
+        return {"error": str(exc), "modelId": model_id}
+
+    item = _normalize_hf_model(raw)
+    # Enrich with extra detail fields
+    siblings = raw.get("siblings") or []
+    files = [{"rfilename": s.get("rfilename", ""), "size": s.get("size")} for s in siblings[:50]]
+    item["files"] = files
+    item["sha"] = raw.get("sha", "")
+    item["private"] = raw.get("private", False)
+    item["gated"] = raw.get("gated", False)
+    item["disabled"] = raw.get("disabled", False)
+    config = raw.get("config") or {}
+    if isinstance(config, dict):
+        item["architecture"] = (config.get("architectures") or [""])[0] if config.get("architectures") else item.get("architecture", "")
+        item["modelType"] = config.get("model_type", "")
+        item["torchDtype"] = config.get("torch_dtype", "")
+    card = raw.get("cardData") or {}
+    if isinstance(card, dict):
+        item["language"] = card.get("language", [])
+        item["datasets"] = card.get("datasets", [])
+        item["library"] = card.get("library_name", "")
+    return item

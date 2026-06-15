@@ -530,14 +530,14 @@ body.sidebar-collapsed .app-frame {
 }
 
 .app-view {
-  display: none;
+  display: none !important;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
 }
 
 .app-view.active {
-  display: flex;
+  display: flex !important;
   flex-direction: column;
 }
 

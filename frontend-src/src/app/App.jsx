@@ -20,8 +20,8 @@ import {
   SkillsView,
   TelegramView,
   TrialsView,
-  WarsatView,
 } from "../features/runtime/RuntimeViews.jsx";
+import { WarsatView } from "../features/warsat/WarsatView.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
 import {
   settingsItems,
@@ -1579,6 +1579,12 @@ export function App() {
         modelCatalogError={modelCatalogError}
         loadModelCatalog={loadModelCatalog}
         prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+        tasks={tasks}
+        models={models}
+        security={security}
+        cancelTask={cancelTask}
+        pauseTask={pauseTask}
+        resumeTask={resumeTask}
       />
       <ArchiveView
         view={view}
