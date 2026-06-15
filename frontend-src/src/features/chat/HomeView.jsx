@@ -359,8 +359,8 @@ function jumpToLatest() {
                   )}
                   <button
                     id="sendBtn"
-                    className="send-button cc-quick-action-chip"
-                    style={{ backgroundColor: 'var(--cc-accent)', color: '#fff', borderColor: 'var(--cc-accent)' }}
+                    className="w2-button w2-button-primary"
+                    style={{ padding: '6px 16px' }}
                     type="submit"
                     disabled={!healthy}
                     aria-disabled={!healthy}
