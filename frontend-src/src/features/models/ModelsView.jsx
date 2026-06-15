@@ -137,10 +137,9 @@ export function ModelsView({
       if (catalogPurpose !== "all" && item.purpose !== catalogPurpose) return false;
       if (catalogRuntime === "deployable" && !item.deployable) return false;
       if (catalogRuntime !== "all" && catalogRuntime !== "deployable" && !(item.runtimeOptions || []).some(o => o.protocolId === catalogRuntime)) return false;
-      if (catalogFit === "fits" && (item.fitLabel === "Weak fit" || item.fitLabel === "Blocked")) return false;
       return true;
     });
-  }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime, catalogFit]);
+  }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime]);
 
   /* HF search with debounce */
   useEffect(() => {
@@ -164,11 +163,20 @@ export function ModelsView({
     return () => clearTimeout(t);
   }, [hfQuery, hfSort, catalogPurpose, searchMode]);
 
+  const totalVramGb = useMemo(() => {
+    const gpus = warsatHardware?.detectedHardware?.gpus || [];
+    return gpus.reduce((sum, g) => sum + (g.memoryTotalMb || g.memory_total_mb || 0), 0) / 1024;
+  }, [warsatHardware]);
+
   const displayItems = useMemo(() => {
     const list = searchMode === "huggingface" ? hfResults : filteredCatalog;
     if (catalogFit !== "fits") return list;
-    return list.filter(item => item.fitLabel !== "Weak fit" && item.fitLabel !== "Blocked");
-  }, [searchMode, hfResults, filteredCatalog, catalogFit]);
+    const vramLimit = totalVramGb > 0 ? totalVramGb : 12; // Fallback to 12GB if no GPU detected
+    return list.filter(item => {
+      if (!item.vramEstimateGb) return true;
+      return item.vramEstimateGb <= vramLimit + 1; // 1GB headroom
+    });
+  }, [searchMode, hfResults, filteredCatalog, catalogFit, totalVramGb]);
 
   /* reliable actions */
   const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);

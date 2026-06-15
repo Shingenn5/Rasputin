@@ -27,15 +27,14 @@
   --ras-shadow: 0 14px 30px rgba(23, 20, 17, .10);
   --ras-focus: rgba(239, 154, 82, .38);
   
-  /* Command Center Design Tokens */
-  --cc-bg: #0F172A;
-  --cc-surface: #1E293B;
-  --cc-border: #334155;
-  --cc-text: #E2E8F0;
-  --cc-accent: #3B82F6;
-  --cc-muted: #94A3B8;
-  --cc-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  
+  /* Command Center Design Tokens mapped to theme */
+  --cc-bg: var(--ras-canvas);
+  --cc-surface: var(--ras-panel);
+  --cc-border: var(--ras-border);
+  --cc-text: var(--ras-text);
+  --cc-accent: var(--ras-blue);
+  --cc-muted: var(--ras-muted);
+  --cc-shadow: var(--ras-shadow);
   --ras-heading-font: "Inter", system-ui, sans-serif;
   --bs-body-bg: var(--ras-canvas);
   --bs-body-color: var(--ras-text);
