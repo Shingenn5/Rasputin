@@ -32,7 +32,7 @@
   --cc-surface: var(--ras-panel);
   --cc-border: var(--ras-border);
   --cc-text: var(--ras-text);
-  --cc-accent: var(--ras-blue);
+  --cc-accent: var(--ras-accent);
   --cc-muted: var(--ras-muted);
   --cc-shadow: var(--ras-shadow);
   --ras-heading-font: "Inter", system-ui, sans-serif;

@@ -159,48 +159,53 @@ export function Sidebar({
                 onChange={(event) => setSessionSearch(event.target.value)}
               />
             </label>
-            <div className="sidebar-library-controls">
-              <label htmlFor="sidebarFolderFilter">
-                <span>Folder</span>
-                <select
-                  id="sidebarFolderFilter"
-                  className="sidebar-folder-filter w2-input"
-                  data-testid="sidebar-folder-filter"
-                  value={activeChatFolder}
-                  onChange={(event) => setActiveChatFolder?.(event.target.value)}
-                >
-                  <option value="all">All chats</option>
-                  <option value="unfiled">Unfiled</option>
-                  {folders.map((folder) => (
-                    <option key={folder.id} value={folder.name}>{folder.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label htmlFor="sidebarSessionSort">
-                <span>Sort</span>
-                <select
-                  id="sidebarSessionSort"
-                  className="w2-input"
-                  data-testid="sidebar-session-sort"
-                  value={sessionSort}
-                  onChange={(event) => setSessionSort(event.target.value)}
-                >
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="az">A-Z</option>
-                </select>
-              </label>
-            </div>
-            <details className="sidebar-folder-create-shell">
-              <summary data-testid="sidebar-folder-create-toggle">
-                <Plus size={14} aria-hidden="true" />
-                <span>New folder</span>
-              </summary>
-              <form className="sidebar-folder-create" data-testid="sidebar-folder-create" onSubmit={createChatFolder}>
-                <label className="visually-hidden" htmlFor="sidebarFolderName">New chat folder</label>
-                <input id="sidebarFolderName" className="w2-input" name="name" type="text" placeholder="Folder name" autoComplete="off" />
-                <button type="submit" className="w2-button w2-button-outline" style={{ padding: '6px 12px' }} aria-label="Create chat folder">Create</button>
-              </form>
+            <details>
+              <summary style={{ fontSize: '0.75rem', color: 'var(--ras-muted)', cursor: 'pointer', marginTop: '4px' }}>Advanced Filters</summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                <div className="sidebar-library-controls">
+                  <label htmlFor="sidebarFolderFilter">
+                    <span>Folder</span>
+                    <select
+                      id="sidebarFolderFilter"
+                      className="sidebar-folder-filter w2-input"
+                      data-testid="sidebar-folder-filter"
+                      value={activeChatFolder}
+                      onChange={(event) => setActiveChatFolder?.(event.target.value)}
+                    >
+                      <option value="all">All chats</option>
+                      <option value="unfiled">Unfiled</option>
+                      {folders.map((folder) => (
+                        <option key={folder.id} value={folder.name}>{folder.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label htmlFor="sidebarSessionSort">
+                    <span>Sort</span>
+                    <select
+                      id="sidebarSessionSort"
+                      className="w2-input"
+                      data-testid="sidebar-session-sort"
+                      value={sessionSort}
+                      onChange={(event) => setSessionSort(event.target.value)}
+                    >
+                      <option value="newest">Newest</option>
+                      <option value="oldest">Oldest</option>
+                      <option value="az">A-Z</option>
+                    </select>
+                  </label>
+                </div>
+                <details className="sidebar-folder-create-shell">
+                  <summary data-testid="sidebar-folder-create-toggle">
+                    <Plus size={14} aria-hidden="true" />
+                    <span>New folder</span>
+                  </summary>
+                  <form className="sidebar-folder-create" data-testid="sidebar-folder-create" onSubmit={createChatFolder}>
+                    <label className="visually-hidden" htmlFor="sidebarFolderName">New chat folder</label>
+                    <input id="sidebarFolderName" className="w2-input" name="name" type="text" placeholder="Folder name" autoComplete="off" />
+                    <button type="submit" className="w2-button w2-button-outline" style={{ padding: '6px 12px' }} aria-label="Create chat folder">Create</button>
+                  </form>
+                </details>
+              </div>
             </details>
           </div>
           <div className="sidebar-session-list" data-testid="sidebar-session-list">
