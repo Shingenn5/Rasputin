@@ -99,6 +99,7 @@ export function ModelsView({
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogPurpose, setCatalogPurpose] = useState("all");
   const [catalogRuntime, setCatalogRuntime] = useState("deployable");
+  const [catalogFit, setCatalogFit] = useState("all");
   const [searchMode, setSearchMode] = useState("catalog");
   const [hfQuery, setHfQuery] = useState("");
   const [hfResults, setHfResults] = useState([]);
@@ -136,9 +137,10 @@ export function ModelsView({
       if (catalogPurpose !== "all" && item.purpose !== catalogPurpose) return false;
       if (catalogRuntime === "deployable" && !item.deployable) return false;
       if (catalogRuntime !== "all" && catalogRuntime !== "deployable" && !(item.runtimeOptions || []).some(o => o.protocolId === catalogRuntime)) return false;
+      if (catalogFit === "fits" && (item.fitLabel === "Weak fit" || item.fitLabel === "Blocked")) return false;
       return true;
     });
-  }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime]);
+  }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime, catalogFit]);
 
   /* HF search with debounce */
   useEffect(() => {
@@ -146,7 +148,7 @@ export function ModelsView({
     const t = setTimeout(async () => {
       setHfLoading(true);
       try {
-        const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: "100" });
+        const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: "100", fit: "true" });
         if (catalogPurpose !== "all") {
           const pm = { chat: "text-generation", coding: "text-generation", vision: "image-to-text", embeddings: "feature-extraction", speech: "automatic-speech-recognition" };
           if (pm[catalogPurpose]) p.set("type", pm[catalogPurpose]);
@@ -162,7 +164,11 @@ export function ModelsView({
     return () => clearTimeout(t);
   }, [hfQuery, hfSort, catalogPurpose, searchMode]);
 
-  const displayItems = searchMode === "huggingface" ? hfResults : filteredCatalog;
+  const displayItems = useMemo(() => {
+    const list = searchMode === "huggingface" ? hfResults : filteredCatalog;
+    if (catalogFit !== "fits") return list;
+    return list.filter(item => item.fitLabel !== "Weak fit" && item.fitLabel !== "Blocked");
+  }, [searchMode, hfResults, filteredCatalog, catalogFit]);
 
   /* reliable actions */
   const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
@@ -289,10 +295,14 @@ export function ModelsView({
                 {searchMode === "catalog" && (
                   <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogRuntime} onChange={e => setCatalogRuntime(e.target.value)}>
                     <option value="deployable">Deployable</option>
-                    <option value="all">All</option>
+                    <option value="all">All Runtimes</option>
                     {catalogRuntimes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                   </select>
                 )}
+                <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogFit} onChange={e => setCatalogFit(e.target.value)}>
+                  <option value="all">Any fit</option>
+                  <option value="fits">Fits on device</option>
+                </select>
               </div>
 
               {/* Status line */}

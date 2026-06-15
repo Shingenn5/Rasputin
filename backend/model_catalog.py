@@ -501,8 +501,10 @@ def _normalize_hf_model(hf_model):
     }
 
 
-def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100):
+def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100, hardware=None):
     """Search Hugging Face Hub API for models."""
+    if sort == "trending":
+        sort = "trendingScore"
     params = {
         "limit": min(int(limit), 100),
         "sort": sort or "downloads",
@@ -526,6 +528,9 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
         return {"items": [], "count": 0, "error": "Unexpected HF API response format", "source": "huggingface"}
 
     items = [_normalize_hf_model(m) for m in raw_models[:int(limit)]]
+    if hardware:
+        items = evaluate_catalog({"items": items}, hardware).get("items", items)
+    
     audit.log("hf_search", {"query": query, "type": model_type, "count": len(items)})
     return {
         "items": items,

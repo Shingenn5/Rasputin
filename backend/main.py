@@ -676,9 +676,10 @@ async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=
 @app.get("/api/model-catalog/search")
 async def model_catalog_search(
     q: str = "", type: str = "", sort: str = "downloads",
-    direction: int = -1, limit: int = 100, _user=Depends(current_user)
+    direction: int = -1, limit: int = 100, fit: bool = False, _user=Depends(current_user)
 ):
-    return ok(model_catalog.search_hf(query=q, model_type=type, sort=sort, direction=direction, limit=limit))
+    hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
+    return ok(model_catalog.search_hf(query=q, model_type=type, sort=sort, direction=direction, limit=limit, hardware=hardware))
 
 
 @app.get("/api/model-catalog/model/{model_id:path}")
