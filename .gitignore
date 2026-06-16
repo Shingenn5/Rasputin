@@ -52,6 +52,9 @@ output/
 testdata/
 playwright-report/
 test-results/
+*.png
+*.webp
+*.webm
 
 # Rasputin private state files, even if copied outside data/
 auth.json
