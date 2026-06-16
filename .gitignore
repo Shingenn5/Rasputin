@@ -52,6 +52,8 @@ output/
 testdata/
 playwright-report/
 test-results/
+.playwright-mcp/
+.agents/
 *.png
 *.webp
 *.webm
