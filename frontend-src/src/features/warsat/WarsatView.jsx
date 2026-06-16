@@ -498,9 +498,6 @@ function QueueTab({ tasks, activeTasks, failedTasks, models, handleCancel, handl
 function DeployTab({
   warsat, protocols, strengthProfiles, protocolId, setProtocolId,
   strengthProfile, setStrengthProfile, selectedProtocol, selectedProfile,
-  catalogSearch, setCatalogSearch, catalogPurpose, setCatalogPurpose,
-  catalogCategories, warsatCatalogItems, selectedCatalogModel, setSelectedCatalogId,
-  modelCatalogLoading, modelCatalogError, loadModelCatalog, prepareCatalogModelForWarsat,
   createPlan, plan, error, clearPlan, handleFormChange,
   deployPlan, deploying, deployment, deployLabel, deployDisabled, canDeployPlan,
   approvalPending, approvalClosed, approvalStatus, currentApproval,
@@ -508,75 +505,16 @@ function DeployTab({
 }) {
   const formRef = React.useRef(null);
 
-  const handleConfigureModel = (item) => {
-    setSelectedCatalogId(item.id);
-    if (setProtocolId) setProtocolId(item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai");
-    if (formRef.current) {
-      formRef.current.elements.modelRef.value = item.warsatModelRef || item.modelId || item.id || "";
-      formRef.current.elements.role.value = item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper";
-      formRef.current.elements.hostPort.value = "";
-      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Auto-populate form based on current plan if needed
+  React.useEffect(() => {
+    if (plan && formRef.current && !formRef.current.elements.modelRef.value) {
+      formRef.current.elements.modelRef.value = plan.modelRef || "";
+      if (plan.hostPort) formRef.current.elements.hostPort.value = plan.hostPort;
     }
-  };
+  }, [plan]);
 
   return (
     <div className="w2-section" style={{ flex: 1 }}>
-      {/* Model Finder */}
-      <div className="w2-card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Find A Model</h3>
-            <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>Search deployable catalog entries to generate a launch plan.</div>
-          </div>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button className="w2-button" type="button" onClick={() => loadModelCatalog?.(false)} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Local</button>
-            <button className="w2-button primary" type="button" onClick={() => loadModelCatalog?.(true)} disabled={modelCatalogLoading} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-              {modelCatalogLoading ? "Refreshing..." : "Refresh Remote"}
-            </button>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <Search size={14} color="var(--cc-muted)" />
-          <input className="w2-input" value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)} placeholder="qwen, coder, 7b, vision..." />
-          <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
-            <option value="all">All deployable</option>
-            {catalogCategories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-        </div>
-        <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
-          {warsatCatalogItems.length} deployable{modelCatalogError && <span style={{ color: "var(--ras-danger)" }}> · {modelCatalogError}</span>}
-        </div>
-      </div>
-
-      {/* Catalog results */}
-      {warsatCatalogItems.slice(0, 20).map(item => (
-        <div key={item.id} className={`w2-list-item ${selectedCatalogModel?.id === item.id ? "is-active" : ""}`} onClick={() => setSelectedCatalogId(item.id)}>
-          <div>
-            <strong style={{ fontSize: "0.8125rem" }}>{item.name}</strong>
-            <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{item.modelId || item.id} · {labelize(item.purpose || "chat")}</div>
-          </div>
-          <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
-              {item.vramEstimateGb && <span>{item.vramEstimateGb} GB VRAM</span>}
-              {item.fitLabel && <span style={{ color: item.fitLabel === "Strong fit" ? "var(--ras-safe)" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
-            </div>
-            {selectedCatalogModel?.id === item.id && (
-              <button 
-                className="w2-button primary" 
-                type="button" 
-                onClick={(e) => { 
-                  e.stopPropagation(); 
-                  handleConfigureModel(item);
-                }} 
-                style={{ fontSize: "0.75rem", padding: "4px 10px", marginLeft: "8px" }}
-              >
-                Create Plan
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-
       {/* Launch Recipe Form */}
       <div className="w2-card">
         <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Launch Recipe</h3>

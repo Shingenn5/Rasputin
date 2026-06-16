@@ -1581,11 +1581,6 @@ export function App() {
           setGlobalStatus("");
         }}
         refresh={loadWarsat}
-        modelCatalog={modelCatalog}
-        modelCatalogLoading={modelCatalogLoading}
-        modelCatalogError={modelCatalogError}
-        loadModelCatalog={loadModelCatalog}
-        prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
         tasks={tasks}
         models={models}
         security={security}
