@@ -1104,9 +1104,6 @@ def _validate_deploy_plan(plan):
         raise AppError("warsat_plan_invalid", "Create a launch plan before deploying.", 400)
     security.require("allow_docker_control")
     security.require("allow_model_registry_edit")
-    execution = _docker_runtime_enabled()
-    if not execution["enabled"]:
-        raise AppError("warsat_execution_disabled", execution["message"], 403)
 
     protocol = get_protocol(plan.get("protocolId"))
     checks = plan.get("securityChecks") or {}

@@ -11052,3 +11052,19 @@ button.helper-row:hover {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+
+/* ═══════════════════════════════════════════
+   TRIALS V3
+   ═══════════════════════════════════════════ */
+
+.trials-view {
+  /* Using w2-layout, so basic padding/display are handled */
+}
+
+.trials-view .w2-header-card {
+  margin-bottom: 24px;
+}
+
+.trials-view .w2-main-grid {
+  padding: 0 24px;
+}

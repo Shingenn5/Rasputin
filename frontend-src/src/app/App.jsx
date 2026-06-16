@@ -12,16 +12,16 @@ import { WorkspacesView } from "../features/workspaces/WorkspacesView.jsx";
 import { AuditView } from "../features/audit/AuditView.jsx";
 import {
   AgentsView,
-  ArchiveView,
   ApprovalsView,
   MemoryView,
   SchedulesView,
   SessionsView,
   SkillsView,
   TelegramView,
-  TrialsView,
 } from "../features/runtime/RuntimeViews.jsx";
+import { ArchiveView } from "../features/archive/ArchiveView.jsx";
 import { WarsatView } from "../features/warsat/WarsatView.jsx";
+import { TrialsView } from "../features/trials/TrialsView.jsx";
 import { readStoredFlag, useLocalStorageFlag } from "../hooks/useLocalStorageFlag.js";
 import {
   settingsItems,

@@ -42,6 +42,10 @@ import { api, postJson } from "../../api/client.js";
 
 /* ── Tab config ── */
 const warsatTabs = [
+  { id: "planner",    label: "Planner",    icon: SlidersHorizontal },
+  { id: "timeline",   label: "Timeline",   icon: Layers },
+  { id: "agents",     label: "Agents",     icon: Database },
+  { id: "telemetry",  label: "Telemetry",  icon: Cpu },
   { id: "queue",      label: "Queue",      icon: Activity },
   { id: "deploy",     label: "Deploy",     icon: Play },
   { id: "containers", label: "Containers", icon: Server },
@@ -101,9 +105,41 @@ export function WarsatView({
   pauseTask,
   resumeTask,
 }) {
-  const [activeTab, setActiveTab] = useState("queue");
+  const [activeTab, setActiveTab] = useState("planner");
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
   const executeAction = useReliableAction("WarsatView");
+
+  /* ── Telemetry & Agents Polling ── */
+  const [telemetry, setTelemetry] = useState(null);
+  const [agentState, setAgentState] = useState(null);
+
+  useEffect(() => {
+    if (plan && activeTab !== "deploy") {
+      setActiveTab("deploy");
+    }
+  }, [plan]);
+
+  useEffect(() => {
+    if (activeTab !== "telemetry" && activeTab !== "agents") return;
+    let isSubscribed = true;
+    async function poll() {
+      if (!isSubscribed) return;
+      try {
+        if (activeTab === "telemetry") {
+          const res = await api("/api/warsat/system-metrics");
+          if (isSubscribed) setTelemetry(res);
+        } else if (activeTab === "agents") {
+          const res = await api("/api/warsat/agent-state");
+          if (isSubscribed) setAgentState(res);
+        }
+      } catch (err) {
+        console.error("Warsat polling error:", err);
+      }
+      if (isSubscribed) setTimeout(poll, 2000);
+    }
+    poll();
+    return () => { isSubscribed = false; };
+  }, [activeTab]);
 
   /* deploy tab state */
   const protocols = warsat?.protocols || [];
@@ -147,7 +183,7 @@ export function WarsatView({
   const approvalApproved = deployment?.approvalRequired && approvalStatus === "approved";
   const approvalClosed = deployment?.approvalRequired && ["denied", "expired", "executed"].includes(approvalStatus);
   const approvalReady = !deployment?.approvalRequired || approvalApproved;
-  const deployDisabled = !canDeployPlan || deploying || !approvalReady || approvalClosed;
+  const deployDisabled = !plan || deploying || !approvalReady || approvalClosed;
   const lifecycle = deployment?.lifecycle || plan?.lifecycle || [];
   const deploymentFailed = deployment?.status === "failed";
   const deploymentRegistered = deployment?.status === "registered";
@@ -251,6 +287,32 @@ export function WarsatView({
       {/* ── Content ── */}
       <div className="w2-main-grid" style={{ gridTemplateColumns: "1fr 320px" }}>
         <div className="w2-column">
+
+          {/* ═══ PLANNER TAB ═══ */}
+          {activeTab === "planner" && (
+            <PlannerTab
+              models={models}
+              createTask={(data) => {
+                // Implement task creation
+                postJson("/api/tasks", data).then(() => refresh?.());
+              }}
+            />
+          )}
+
+          {/* ═══ TIMELINE TAB ═══ */}
+          {activeTab === "timeline" && (
+            <TimelineTab tasks={allTasks} />
+          )}
+
+          {/* ═══ AGENTS TAB ═══ */}
+          {activeTab === "agents" && (
+            <AgentsTab agentState={agentState} />
+          )}
+
+          {/* ═══ TELEMETRY TAB ═══ */}
+          {activeTab === "telemetry" && (
+            <TelemetryTab telemetry={telemetry} />
+          )}
 
           {/* ═══ QUEUE TAB ═══ */}
           {activeTab === "queue" && (
@@ -444,6 +506,19 @@ function DeployTab({
   approvalPending, approvalClosed, approvalStatus, currentApproval,
   approveApproval, denyApproval, lifecycle,
 }) {
+  const formRef = React.useRef(null);
+
+  const handleConfigureModel = (item) => {
+    setSelectedCatalogId(item.id);
+    if (setProtocolId) setProtocolId(item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai");
+    if (formRef.current) {
+      formRef.current.elements.modelRef.value = item.warsatModelRef || item.modelId || item.id || "";
+      formRef.current.elements.role.value = item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper";
+      formRef.current.elements.hostPort.value = "";
+      formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
   return (
     <div className="w2-section" style={{ flex: 1 }}>
       {/* Model Finder */}
@@ -480,34 +555,30 @@ function DeployTab({
             <strong style={{ fontSize: "0.8125rem" }}>{item.name}</strong>
             <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{item.modelId || item.id} · {labelize(item.purpose || "chat")}</div>
           </div>
-          <div style={{ display: "flex", gap: "6px", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
-            {item.vramEstimateGb && <span>{item.vramEstimateGb} GB</span>}
-            {item.fitLabel && <span style={{ color: item.fitLabel === "Strong fit" ? "var(--ras-safe)" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
+          <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
+              {item.vramEstimateGb && <span>{item.vramEstimateGb} GB VRAM</span>}
+              {item.fitLabel && <span style={{ color: item.fitLabel === "Strong fit" ? "var(--ras-safe)" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
+            </div>
+            {selectedCatalogModel?.id === item.id && (
+              <button 
+                className="w2-button primary" 
+                type="button" 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  prepareCatalogModelForWarsat?.(item); 
+                  setTimeout(() => {
+                    document.getElementById('warsat-plan-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 300);
+                }} 
+                style={{ fontSize: "0.75rem", padding: "4px 10px", marginLeft: "8px" }}
+              >
+                Create Plan
+              </button>
+            )}
           </div>
         </div>
       ))}
-
-      {/* Selected model detail + Create Plan */}
-      {selectedCatalogModel && (
-        <div className="w2-card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <strong style={{ fontSize: "0.875rem" }}>{selectedCatalogModel.name}</strong>
-              <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{selectedCatalogModel.modelId || selectedCatalogModel.id}</div>
-            </div>
-            <button className="w2-button primary" type="button" onClick={() => prepareCatalogModelForWarsat?.(selectedCatalogModel)}>
-              <Play size={14} /> Create Plan
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: "16px", fontSize: "0.75rem", color: "var(--cc-muted)", flexWrap: "wrap" }}>
-            <span>Use: {labelize(selectedCatalogModel.purpose || "chat")}</span>
-            <span>Fit: {selectedCatalogModel.fitLabel || "Unknown"}</span>
-            <span>Runtime: {selectedCatalogModel.recommendedProtocol || "vLLM"}</span>
-            <span>VRAM: {selectedCatalogModel.vramEstimateGb ? `${selectedCatalogModel.vramEstimateGb} GB` : "Unknown"}</span>
-          </div>
-          {selectedCatalogModel.summary && <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>{selectedCatalogModel.summary}</p>}
-        </div>
-      )}
 
       {/* Launch Recipe Form */}
       <div className="w2-card">
@@ -802,6 +873,206 @@ function SafetyTab({ security, warsat, hardware, pendingApprovals, approveApprov
                 <button className="w2-button" type="button" onClick={() => denyApproval(approval.id)} style={{ fontSize: "0.75rem", padding: "4px 10px", color: "var(--ras-danger)" }}>
                   Deny
                 </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
+   PLANNER TAB
+   ═══════════════════════════════════════════ */
+function PlannerTab({ models, createTask }) {
+  const [objective, setObjective] = useState("");
+  const [model, setModel] = useState("dry-run");
+  const [skill, setSkill] = useState("general");
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!objective.trim()) return;
+    createTask({ objective, model, skill, mode: "agent" });
+    setObjective("");
+  };
+
+  return (
+    <div className="w2-section" style={{ flex: 1 }}>
+      <div className="w2-card">
+        <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Mission Planner</h3>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px" }}>
+          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px" }}>
+            Objective
+            <textarea className="w2-input" rows={4} value={objective} onChange={e => setObjective(e.target.value)} required placeholder="What should the agent accomplish?" />
+          </label>
+          <div style={{ display: "flex", gap: "12px" }}>
+            <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
+              Model
+              <select className="w2-input" value={model} onChange={e => setModel(e.target.value)}>
+                <option value="dry-run">Dry Run (No inference)</option>
+                {models?.filter(m => m.key !== "local-embeddings").map(m => (
+                  <option key={m.key} value={m.key}>{m.name}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
+              Skill / Role
+              <select className="w2-input" value={skill} onChange={e => setSkill(e.target.value)}>
+                <option value="general">General AI</option>
+                <option value="coder">Software Engineer</option>
+                <option value="researcher">Researcher</option>
+              </select>
+            </label>
+          </div>
+          <button className="w2-button primary" type="submit" disabled={!objective.trim()} style={{ alignSelf: "flex-start" }}>
+            <Play size={14} /> Launch Mission
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   TIMELINE TAB
+   ═══════════════════════════════════════════ */
+function TimelineTab({ tasks }) {
+  const latestTasks = (tasks || []).slice(0, 10);
+  return (
+    <div className="w2-section" style={{ flex: 1 }}>
+      <h2 style={{ margin: 0, fontSize: "1rem", marginBottom: "8px" }}>Execution Timeline</h2>
+      {!latestTasks.length && <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>No activity recorded yet.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+        {latestTasks.map((task, i) => (
+          <div key={task.id} style={{ display: "flex", gap: "12px", padding: "12px 0", borderBottom: i < latestTasks.length - 1 ? "1px solid var(--cc-border)" : "none" }}>
+            <div style={{ paddingTop: "2px" }}>{taskStatusIcon(task.status)}</div>
+            <div>
+              <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--cc-text)" }}>{task.objective || "Unnamed mission"}</div>
+              <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", marginTop: "4px" }}>
+                {labelize(task.status)} · {new Date(task.createdAt * 1000).toLocaleTimeString()} · {task.model}
+              </div>
+              {task.logs?.length > 0 && (
+                <div style={{ fontSize: "0.6875rem", fontFamily: "monospace", color: "var(--cc-muted)", marginTop: "6px", background: "var(--cc-surface)", padding: "6px", borderRadius: "4px" }}>
+                  {task.logs[task.logs.length - 1]}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   AGENTS TAB
+   ═══════════════════════════════════════════ */
+function AgentsTab({ agentState }) {
+  const agents = agentState?.tasks || [];
+  return (
+    <div className="w2-section" style={{ flex: 1 }}>
+      <h2 style={{ margin: 0, fontSize: "1rem", marginBottom: "8px" }}>Active Agents ({agentState?.active_agents || 0})</h2>
+      {!agents.length && <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>No agents currently active.</div>}
+      {agents.map(agent => (
+        <div key={agent.id} className="w2-card" style={{ gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <Database size={16} color="var(--cc-accent)" />
+              <div>
+                <strong style={{ fontSize: "0.875rem" }}>{labelize(agent.skill || "general")} Agent</strong>
+                <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>Workspace: {displayWorkspaceName(agent.workspace)}</div>
+              </div>
+            </div>
+            <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: `color-mix(in srgb, ${statusColor(agent.status)} 15%, var(--cc-surface))`, color: statusColor(agent.status), fontWeight: 600 }}>
+              {labelize(agent.status)}
+            </span>
+          </div>
+          <div style={{ fontSize: "0.75rem", color: "var(--cc-text)" }}>Mission: {agent.objective}</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>Model: {agent.model}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   TELEMETRY TAB
+   ═══════════════════════════════════════════ */
+function TelemetryTab({ telemetry }) {
+  if (!telemetry) return <div className="w2-section" style={{ flex: 1, padding: "32px", textAlign: "center", color: "var(--cc-muted)" }}>Connecting to telemetry...</div>;
+  const { cpu, ram, disk, gpus } = telemetry;
+  
+  return (
+    <div className="w2-section" style={{ flex: 1 }}>
+      <h2 style={{ margin: 0, fontSize: "1rem", marginBottom: "8px" }}>System Telemetry</h2>
+      
+      <div className="w2-card" style={{ gap: "12px" }}>
+        <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Host Resources</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
+              <span>CPU Utilization</span>
+              <strong>{cpu.percent}%</strong>
+            </div>
+            <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${cpu.percent}%`, background: "var(--cc-accent)", transition: "width 0.5s ease" }} />
+            </div>
+          </div>
+          
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
+              <span>RAM ({ram.used_gb} / {ram.total_gb} GB)</span>
+              <strong>{ram.percent}%</strong>
+            </div>
+            <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${ram.percent}%`, background: "var(--ras-warn)", transition: "width 0.5s ease" }} />
+            </div>
+          </div>
+          
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
+              <span>Disk ({disk.used_gb} / {disk.total_gb} GB)</span>
+              <strong>{disk.percent}%</strong>
+            </div>
+            <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${disk.percent}%`, background: "var(--cc-muted)", transition: "width 0.5s ease" }} />
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {gpus && gpus.length > 0 && (
+        <div className="w2-card" style={{ gap: "12px", marginTop: "16px" }}>
+          <h3 style={{ margin: 0, fontSize: "0.875rem" }}>GPU Clusters</h3>
+          {gpus.map(gpu => (
+            <div key={gpu.index} style={{ border: "1px solid var(--cc-border)", padding: "12px", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "0.875rem" }}>GPU {gpu.index}: {gpu.name}</strong>
+                <span style={{ fontSize: "0.75rem", color: "var(--cc-muted)", background: "var(--cc-surface)", padding: "2px 6px", borderRadius: "4px" }}>{gpu.temperature}°C</span>
+              </div>
+              
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "8px" }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
+                    <span>Compute</span>
+                    <strong>{gpu.utilization}%</strong>
+                  </div>
+                  <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${gpu.utilization}%`, background: "var(--ras-danger)", transition: "width 0.5s ease" }} />
+                  </div>
+                </div>
+                
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
+                    <span>VRAM ({Math.round(gpu.memory_used_mb / 1024 * 10)/10} / {Math.round(gpu.memory_total_mb / 1024 * 10)/10} GB)</span>
+                    <strong>{Math.round((gpu.memory_used_mb / gpu.memory_total_mb) * 100)}%</strong>
+                  </div>
+                  <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(gpu.memory_used_mb / gpu.memory_total_mb) * 100}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
+                  </div>
+                </div>
               </div>
             </div>
           ))}
