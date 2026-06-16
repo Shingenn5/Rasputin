@@ -1157,10 +1157,17 @@ export function App() {
   }
 
   async function approveApproval(id) {
-    await postJson(`/api/approvals/${id}/approve`, {});
+    const approval = await postJson(`/api/approvals/${id}/approve`, {});
     await refreshApprovals();
     if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-    setGlobalStatus("Approval accepted.");
+    
+    // Auto-resume Warsat deployments
+    if (approval.action_type === "warsat_deploy" || approval.actionType === "warsat_deploy") {
+      setGlobalStatus("Approval accepted. Starting deployment...");
+      deployWarsatPlan();
+    } else {
+      setGlobalStatus("Approval accepted.");
+    }
   }
 
   async function denyApproval(id) {

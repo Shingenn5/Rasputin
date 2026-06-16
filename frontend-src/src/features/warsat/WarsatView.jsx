@@ -566,10 +566,7 @@ function DeployTab({
                 type="button" 
                 onClick={(e) => { 
                   e.stopPropagation(); 
-                  prepareCatalogModelForWarsat?.(item); 
-                  setTimeout(() => {
-                    document.getElementById('warsat-plan-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }, 300);
+                  handleConfigureModel(item);
                 }} 
                 style={{ fontSize: "0.75rem", padding: "4px 10px", marginLeft: "8px" }}
               >
