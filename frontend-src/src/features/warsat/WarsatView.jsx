@@ -541,13 +541,15 @@ function DeployTab({
             </select>
           </label>
           <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            Model ID
+            {selectedProtocol?.modelFormat === "gguf" ? "Model Name (Optional)" : selectedProtocol?.id === "ollamaOpenaiServer" ? "Ollama Model Name" : "Model ID (Hugging Face)"}
             <input className="w2-input" name="modelRef" placeholder="Qwen/Qwen2.5-Coder-7B-Instruct" />
           </label>
-          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            Model Path (GGUF)
-            <input className="w2-input" name="modelPath" placeholder="models/my-model.gguf" />
-          </label>
+          {selectedProtocol?.modelFormat === "gguf" && (
+            <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+              Model Path (GGUF)
+              <input className="w2-input" name="modelPath" placeholder="models/my-model.gguf" />
+            </label>
+          )}
           <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
             Host Port
             <input className="w2-input" name="hostPort" type="number" min="1024" max="65535" placeholder="Auto" />
