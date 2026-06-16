@@ -1282,6 +1282,7 @@ export function App() {
       const plan = await postJson("/api/warsat/plan", {
         protocolId,
         modelRef,
+        modelPath: item.modelPath || (protocolId === "llamaCppGgufServer" ? modelRef : undefined),
         strengthProfile: profile,
         hostPort: port,
         role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),

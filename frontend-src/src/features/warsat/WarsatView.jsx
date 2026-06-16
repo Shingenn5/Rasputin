@@ -507,9 +507,16 @@ function DeployTab({
 
   // Auto-populate form based on current plan if needed
   React.useEffect(() => {
-    if (plan && formRef.current && !formRef.current.elements.modelRef.value) {
-      formRef.current.elements.modelRef.value = plan.modelRef || "";
-      if (plan.hostPort) formRef.current.elements.hostPort.value = plan.hostPort;
+    if (plan && formRef.current) {
+      if (!formRef.current.elements.modelRef.value && plan.modelRef) {
+        formRef.current.elements.modelRef.value = plan.modelRef;
+      }
+      if (!formRef.current.elements.modelPath.value && plan.modelPath) {
+        formRef.current.elements.modelPath.value = plan.modelPath;
+      }
+      if (!formRef.current.elements.hostPort.value && plan.hostPort) {
+        formRef.current.elements.hostPort.value = plan.hostPort;
+      }
     }
   }, [plan]);
 
