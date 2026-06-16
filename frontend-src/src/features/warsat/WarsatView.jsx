@@ -532,7 +532,7 @@ function DeployTab({
       {/* Launch Recipe Form */}
       <div className="w2-card">
         <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Launch Recipe</h3>
-        <form onSubmit={createPlan} onChange={handleFormChange} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+        <form ref={formRef} onSubmit={createPlan} onChange={handleFormChange} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
             Protocol
             <select className="w2-input" name="protocolId" value={protocolId} onChange={e => setProtocolId(e.target.value)} required>
