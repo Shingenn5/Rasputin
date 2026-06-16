@@ -158,6 +158,13 @@ export function WarsatView({
     if (!protocolId && firstProtocol?.id) setProtocolId(firstProtocol.id);
   }, [firstProtocol?.id, protocolId]);
 
+  useEffect(() => {
+    if (plan) {
+      if (plan.protocolId && plan.protocolId !== protocolId) setProtocolId(plan.protocolId);
+      if (plan.strengthProfile && plan.strengthProfile !== strengthProfile) setStrengthProfile(plan.strengthProfile);
+    }
+  }, [plan, protocolId, strengthProfile]);
+
   const selectedProtocol = protocols.find(p => p.id === protocolId) || firstProtocol;
   const selectedProfile = strengthProfiles[strengthProfile] || strengthProfiles.balanced || {};
 
