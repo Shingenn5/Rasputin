@@ -4,6 +4,9 @@ import { CheckCircle2, Download, Upload, RefreshCw, Save, ShieldAlert, ShieldChe
 import { settingsItems } from "../../lib/constants.js";
 import { useSettingsStore } from "./settingsStore.js";
 import { loadSettings, exportSettings, importSettings, restoreDefaults } from "./settingsActions.js";
+import { GeneralSettings } from "./GeneralSettings.jsx";
+import { SecuritySettings } from "./SecuritySettings.jsx";
+import { DeploymentSettings } from "./DeploymentSettings.jsx";
 
 // Import existing settings components that haven't been rewritten yet, if they exist
 // For now, we will create stubs for the new categories.
@@ -88,11 +91,11 @@ export function SettingsView(props) {
 
         {/* ── Main Settings Panel ── */}
         <div className="settings-panels gui-main">
-          {section === "general" && <PlaceholderPanel title="General Configuration" desc="Manage platform-wide behavior (Theme, Language, Workspace Defaults)." />}
+          {section === "general" && <GeneralSettings />}
           {section === "runtime" && <PlaceholderPanel title="Runtime Configuration" desc="Agent Limits, Concurrent Tasks, Queue Limits, Execution Timeouts." />}
-          {section === "security" && <PlaceholderPanel title="Security Center" desc="Manage Authentication, API Tokens, Secrets, and Security Policies." />}
+          {section === "security" && <SecuritySettings />}
           {section === "models" && <PlaceholderPanel title="Model Governance" desc="Control AI infrastructure behavior (Default Runtime, Download Rules)." />}
-          {section === "deployments" && <PlaceholderPanel title="Deployment Governance" desc="Control how models become deployed services (Docker, Kubernetes policies)." />}
+          {section === "deployments" && <DeploymentSettings />}
           {section === "integrations" && <PlaceholderPanel title="Integration Center" desc="Manage external systems (Registries, Storage Providers)." />}
           {section === "resources" && <PlaceholderPanel title="Resource Governance" desc="Manage infrastructure resources (CPU, RAM, GPU, Disk)." />}
           {section === "notifications" && <PlaceholderPanel title="Notification Management" desc="Control platform communication channels." />}
