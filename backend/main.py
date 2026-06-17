@@ -34,6 +34,7 @@ from . import tool_relay
 from . import mcp_relay
 from . import archive
 from . import trials
+from . import settings_api
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -1031,6 +1032,9 @@ async def telegram_get(_user=Depends(current_user)):
 @app.post("/api/integrations/telegram/configure")
 async def telegram_configure(req: TelegramConfigIn, _user=Depends(current_user)):
     return ok(telegram.configure(req.bot_token, req.allowed_chat_id, req.enabled, req.redaction_mode))
+
+
+app.include_router(settings_api.router)
 
 
 @app.post("/api/integrations/telegram/test")

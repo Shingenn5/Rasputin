@@ -10,14 +10,17 @@ export const navItems = [
 ];
 
 export const settingsItems = [
-  ["general", "General", "task defaults"],
-  ["workspaces", "Workspaces", "folder access"],
-  ["safety", "Safety", "permissions"],
-  ["tool-relays", "Tool Relays", "MCP servers"],
-  ["knowledge", "Knowledge", "RAG + graph"],
-  ["output", "Output", "markdown"],
-  ["appearance", "Appearance", "themes"],
-  ["admin", "Admin", "session"],
+  ["general", "General", "platform defaults"],
+  ["runtime", "Runtime", "system limits"],
+  ["security", "Security", "keys & secrets"],
+  ["models", "Models", "AI governance"],
+  ["deployments", "Deployments", "WarSat rules"],
+  ["integrations", "Integrations", "external systems"],
+  ["resources", "Resources", "hardware limits"],
+  ["notifications", "Notifications", "alerts"],
+  ["audit", "Audit", "compliance"],
+  ["diagnostics", "Diagnostics", "health checks"],
+  ["about", "About", "platform info"],
 ];
 
 export const themeOptions = [
