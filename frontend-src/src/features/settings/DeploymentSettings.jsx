@@ -24,7 +24,7 @@ export function DeploymentSettings() {
     <section className="settings-pane active animate-fade-in">
       <div className="mb-4 border-bottom pb-3 d-flex justify-content-between align-items-center">
         <div>
-          <h2 className="mb-1"><Rocket className="me-2 text-primary" size={24} />Deployment Governance</h2>
+          <h2 className="mb-1"><Rocket className="me-2 text-primary" size={28} />Deployment Governance</h2>
           <p className="text-body-secondary mb-0">Platform rules for how WarSat containerizes and hosts AI models.</p>
         </div>
         {loading && <Spinner animation="border" size="sm" variant="secondary" />}
@@ -36,147 +36,147 @@ export function DeploymentSettings() {
         </div>
       )}
 
-      <div className="d-grid gap-4">
-        {/* ── Orchestration Target ── */}
-        <Card className="shadow-sm">
-          <Card.Header className="bg-body-tertiary fw-semibold">
-            <Box size={16} className="me-2 text-muted" />
-            Orchestration Target
-          </Card.Header>
-          <Card.Body className="d-grid gap-3">
-            <Form.Group as={Row} className="align-items-center">
-              <Form.Label column sm={4} className="fw-medium">
-                Default Provider
-                <div className="text-muted small fw-normal">The engine WarSat will use to spin up capabilities.</div>
+      {/* Orchestration Target Section - Visual Cards */}
+      <div className="mb-5">
+        <h5 className="fw-semibold mb-3 d-flex align-items-center">
+          <Box size={20} className="me-2 text-primary" />
+          Primary Orchestration Provider
+        </h5>
+        <Row className="g-3 mb-3">
+          {[
+            { id: "docker", title: "Local Docker", icon: <Box size={32} />, desc: "Deploy single containers directly to the host Docker daemon." },
+            { id: "compose", title: "Docker Compose", icon: <Network size={32} />, desc: "Deploy multi-container stacks via Compose files." },
+            { id: "kubernetes", title: "Kubernetes", icon: <ServerCrash size={32} />, desc: "Deploy capabilities to a local or remote K8s cluster." }
+          ].map(provider => (
+            <Col md={4} key={provider.id}>
+              <Card 
+                className={`h-100 cursor-pointer transition-all ${deployments?.provider === provider.id ? 'border-primary bg-primary bg-opacity-10 shadow' : 'border-secondary border-opacity-25 opacity-75'}`}
+                onClick={() => handleChange("provider", provider.id)}
+                style={{ cursor: "pointer" }}
+              >
+                <Card.Body className="text-center p-4">
+                  <div className={`mb-3 ${deployments?.provider === provider.id ? 'text-primary' : 'text-muted'}`}>
+                    {provider.icon}
+                  </div>
+                  <h6 className="fw-bold">{provider.title}</h6>
+                  <p className="small text-muted mb-0">{provider.desc}</p>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+        
+        {deployments?.provider === "kubernetes" && (
+          <div className="bg-body-tertiary p-3 rounded border border-info border-opacity-50 animate-fade-in">
+            <Form.Group as={Row} className="align-items-center mb-0">
+              <Form.Label column sm={3} className="fw-medium text-info">
+                Kubeconfig Context
               </Form.Label>
-              <Col sm={8}>
-                <Form.Select 
-                  value={deployments?.provider || "docker"}
-                  onChange={(e) => handleChange("provider", e.target.value)}
-                >
-                  <option value="docker">Local Docker</option>
-                  <option value="compose">Docker Compose (Multi-container)</option>
-                  <option value="kubernetes">Kubernetes (Remote/K3s)</option>
-                </Form.Select>
+              <Col sm={9}>
+                <Form.Control 
+                  type="text" 
+                  value={deployments?.kubeContext || "default"}
+                  onChange={(e) => handleChange("kubeContext", e.target.value)}
+                  placeholder="e.g. minikube, docker-desktop"
+                />
               </Col>
             </Form.Group>
-            
-            {deployments?.provider === "kubernetes" && (
-              <>
-                <div className="border-top pt-3"></div>
-                <Form.Group as={Row} className="align-items-center">
-                  <Form.Label column sm={4} className="fw-medium">
-                    Kubeconfig Context
-                  </Form.Label>
-                  <Col sm={8}>
-                    <Form.Control 
-                      type="text" 
-                      value={deployments?.kubeContext || "default"}
-                      onChange={(e) => handleChange("kubeContext", e.target.value)}
-                      placeholder="e.g. minikube"
-                    />
-                  </Col>
-                </Form.Group>
-              </>
-            )}
-          </Card.Body>
-        </Card>
+          </div>
+        )}
+      </div>
 
-        {/* ── Container Policies ── */}
-        <Card className="shadow-sm">
-          <Card.Header className="bg-body-tertiary fw-semibold">
-            <Network size={16} className="me-2 text-muted" />
-            Container Policies
-          </Card.Header>
-          <Card.Body className="d-grid gap-3">
-            <Form.Group as={Row} className="align-items-center">
-              <Form.Label column sm={4} className="fw-medium">
-                Network Mode
-                <div className="text-muted small fw-normal">Isolation level for deployed containers.</div>
-              </Form.Label>
-              <Col sm={8}>
+      <Row className="g-4">
+        {/* Container Policies */}
+        <Col md={6}>
+          <Card className="shadow-sm h-100 border-0 bg-body-tertiary">
+            <Card.Body>
+              <h6 className="fw-semibold mb-4 d-flex align-items-center">
+                <Network size={18} className="me-2 text-warning" />
+                Container Sandbox Policies
+              </h6>
+              
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Network Mode</Form.Label>
                 <Form.Select 
+                  className="fs-6"
                   value={deployments?.networkMode || "bridge"}
                   onChange={(e) => handleChange("networkMode", e.target.value)}
                 >
-                  <option value="bridge">Bridge (Default)</option>
+                  <option value="bridge">Bridge (Default Isolation)</option>
                   <option value="host">Host Network (High Performance)</option>
-                  <option value="none">Isolated (No external internet)</option>
+                  <option value="none">Air-Gapped (No external internet)</option>
                 </Form.Select>
-              </Col>
-            </Form.Group>
+              </Form.Group>
 
-            <div className="border-top pt-3"></div>
-
-            <div className="d-flex justify-content-between align-items-center">
-              <div>
-                <div className="fw-medium">Restart Automatically</div>
-                <div className="text-muted small">Restart containers if they crash or the host machine reboots.</div>
+              <div className="bg-body p-3 rounded border">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <div className="fw-medium">Auto-Restart (Always)</div>
+                  <Form.Check 
+                    type="switch" 
+                    id="restart-policy-switch"
+                    checked={!!deployments?.autoRestart}
+                    onChange={() => handleToggle("autoRestart")}
+                  />
+                </div>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <span className="fw-medium">Auto-Prune Orphans</span>
+                  </div>
+                  <Form.Check 
+                    type="switch" 
+                    id="auto-prune-switch"
+                    checked={deployments?.autoPrune !== false}
+                    onChange={() => handleToggle("autoPrune")}
+                  />
+                </div>
               </div>
-              <Form.Check 
-                type="switch" 
-                id="restart-policy-switch"
-                checked={!!deployments?.autoRestart}
-                onChange={() => handleToggle("autoRestart")}
-              />
-            </div>
+            </Card.Body>
+          </Card>
+        </Col>
 
-            <div className="border-top pt-3"></div>
-
-            <div className="d-flex justify-content-between align-items-center">
-              <div>
-                <div className="fw-medium">Auto-Prune Orphaned Containers</div>
-                <div className="text-muted small">Destroy containers whose parent mission has been completely archived or deleted.</div>
-              </div>
-              <Form.Check 
-                type="switch" 
-                id="auto-prune-switch"
-                checked={deployments?.autoPrune !== false} // default true
-                onChange={() => handleToggle("autoPrune")}
-              />
-            </div>
-          </Card.Body>
-        </Card>
-
-        {/* ── Container Registries ── */}
-        <Card className="shadow-sm">
-          <Card.Header className="bg-body-tertiary fw-semibold">
-            <KeySquare size={16} className="me-2 text-muted" />
-            Registry Settings
-          </Card.Header>
-          <Card.Body className="d-grid gap-3">
-            <Form.Group as={Row} className="align-items-center">
-              <Form.Label column sm={4} className="fw-medium">
-                Base Image Registry
-                <div className="text-muted small fw-normal">Where WarSat pulls Llama.cpp or vLLM base images from.</div>
-              </Form.Label>
-              <Col sm={8}>
+        {/* Registry & Sourcing */}
+        <Col md={6}>
+          <Card className="shadow-sm h-100 border-0 bg-body-tertiary">
+            <Card.Body>
+              <h6 className="fw-semibold mb-4 d-flex align-items-center">
+                <KeySquare size={18} className="me-2 text-info" />
+                Image Registry Sourcing
+              </h6>
+              
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Base Image Registry URL</Form.Label>
                 <Form.Control 
                   type="text" 
+                  className="fs-6 font-monospace"
                   value={registryUrl}
                   onChange={(e) => setRegistryUrl(e.target.value)}
                   onBlur={() => handleChange("registryUrl", registryUrl)}
                   placeholder="docker.io"
                 />
-              </Col>
-            </Form.Group>
-            
-            <div className="d-flex justify-content-between align-items-center mt-2">
-              <div>
-                <div className="fw-medium text-warning">Force Image Pulls</div>
-                <div className="text-muted small">Always contact the registry for the latest layer hashes, skipping local cache.</div>
-              </div>
-              <Form.Check 
-                type="switch" 
-                id="force-pull-switch"
-                checked={!!deployments?.forcePull}
-                onChange={() => handleToggle("forcePull")}
-              />
-            </div>
-          </Card.Body>
-        </Card>
-
-      </div>
+                <Form.Text className="text-muted">Where WarSat pulls foundational runtime images from.</Form.Text>
+              </Form.Group>
+              
+              <Card className="border-warning border-opacity-50 bg-warning bg-opacity-10 shadow-none">
+                <Card.Body className="py-3">
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <div className="fw-bold text-warning text-darken">Force Image Pulls</div>
+                      <div className="text-muted small">Skip local cache, always fetch manifest.</div>
+                    </div>
+                    <Form.Check 
+                      type="switch" 
+                      id="force-pull-switch"
+                      className="fs-5"
+                      checked={!!deployments?.forcePull}
+                      onChange={() => handleToggle("forcePull")}
+                    />
+                  </div>
+                </Card.Body>
+              </Card>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
     </section>
   );
 }

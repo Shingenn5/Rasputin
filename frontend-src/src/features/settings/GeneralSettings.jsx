@@ -32,7 +32,7 @@ export function GeneralSettings() {
     <section className="settings-pane active animate-fade-in">
       <div className="mb-4 border-bottom pb-3 d-flex justify-content-between align-items-center">
         <div>
-          <h2 className="mb-1"><Settings2 className="me-2" size={24} />General Configuration</h2>
+          <h2 className="mb-1"><Settings2 className="me-2 text-primary" size={28} />General Configuration</h2>
           <p className="text-body-secondary mb-0">Manage platform-wide behavior, aesthetics, and workspace defaults.</p>
         </div>
         {loading && <Spinner animation="border" size="sm" variant="secondary" />}
@@ -45,46 +45,23 @@ export function GeneralSettings() {
         </div>
       )}
 
-      <div className="d-grid gap-4">
-        {/* ── Environment & Paths ── */}
-        <Card className="shadow-sm">
-          <Card.Header className="bg-body-tertiary fw-semibold">
-            <BookOpen size={16} className="me-2 text-muted" />
-            Environment & Paths
-          </Card.Header>
-          <Card.Body>
-            <Form.Group as={Row} className="align-items-center mb-0">
-              <Form.Label column sm={4} className="fw-medium">
-                Default Workspace Path
-                <div className="text-muted small fw-normal">The root directory for new agent tasks.</div>
-              </Form.Label>
-              <Col sm={8}>
-                <Form.Control 
-                  type="text" 
-                  value={workspacePath}
-                  onChange={(e) => setWorkspacePath(e.target.value)}
-                  onBlur={() => handleChange("workspacePath", workspacePath)}
-                  placeholder="/var/rasputin/workspace"
-                />
-              </Col>
-            </Form.Group>
-          </Card.Body>
-        </Card>
-
-        {/* ── Aesthetics & UI ── */}
-        <Card className="shadow-sm">
-          <Card.Header className="bg-body-tertiary fw-semibold">
-            <Monitor size={16} className="me-2 text-muted" />
-            Aesthetics & UI
-          </Card.Header>
-          <Card.Body className="d-grid gap-4">
-            <Form.Group as={Row} className="align-items-center">
-              <Form.Label column sm={4} className="fw-medium">
-                Platform Theme
-                <div className="text-muted small fw-normal">Color scheme for the Rasputin GUI.</div>
-              </Form.Label>
-              <Col sm={8}>
+      <Row className="g-4">
+        {/* Left Column */}
+        <Col md={6}>
+          <Card className="shadow-sm h-100 border-0 bg-body-tertiary">
+            <Card.Body>
+              <div className="d-flex align-items-center mb-4">
+                <div className="bg-primary bg-opacity-10 text-primary p-2 rounded me-3">
+                  <Monitor size={20} />
+                </div>
+                <h5 className="mb-0 fw-semibold">Aesthetics & UI</h5>
+              </div>
+              
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Platform Theme</Form.Label>
                 <Form.Select 
+                  size="lg"
+                  className="fs-6"
                   value={general?.theme || "rasputin-dark"}
                   onChange={(e) => handleChange("theme", e.target.value)}
                 >
@@ -92,18 +69,13 @@ export function GeneralSettings() {
                     <option key={val} value={val}>{label} - {desc}</option>
                   ))}
                 </Form.Select>
-              </Col>
-            </Form.Group>
+              </Form.Group>
 
-            <div className="border-top pt-3"></div>
-
-            <Form.Group as={Row} className="align-items-center">
-              <Form.Label column sm={4} className="fw-medium">
-                Interface Language
-                <div className="text-muted small fw-normal">Language used throughout the system.</div>
-              </Form.Label>
-              <Col sm={8}>
+              <Form.Group>
+                <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Interface Language</Form.Label>
                 <Form.Select 
+                  size="lg"
+                  className="fs-6"
                   value={general?.language || "en"}
                   onChange={(e) => handleChange("language", e.target.value)}
                 >
@@ -112,64 +84,82 @@ export function GeneralSettings() {
                   <option value="fr">Français</option>
                   <option value="ja">日本語</option>
                 </Form.Select>
-              </Col>
-            </Form.Group>
-          </Card.Body>
-        </Card>
+              </Form.Group>
+            </Card.Body>
+          </Card>
+        </Col>
 
-        {/* ── System Behavior ── */}
-        <Card className="shadow-sm">
-          <Card.Header className="bg-body-tertiary fw-semibold">
-            <ShieldAlert size={16} className="me-2 text-muted" />
-            System Behavior
-          </Card.Header>
-          <Card.Body className="d-grid gap-3">
-            <div className="d-flex justify-content-between align-items-center">
-              <div>
-                <div className="fw-medium">Testing Mode</div>
-                <div className="text-muted small">Run commands and relays in dry-run mode to prevent actual execution.</div>
+        {/* Right Column */}
+        <Col md={6}>
+          <Card className="shadow-sm h-100 border-0 bg-body-tertiary">
+            <Card.Body>
+              <div className="d-flex align-items-center mb-4">
+                <div className="bg-info bg-opacity-10 text-info p-2 rounded me-3">
+                  <BookOpen size={20} />
+                </div>
+                <h5 className="mb-0 fw-semibold">Environment</h5>
               </div>
-              <Form.Check 
-                type="switch" 
-                id="testing-mode-switch"
-                checked={!!general?.testingMode}
-                onChange={() => handleToggle("testingMode")}
-              />
-            </div>
+              
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Default Workspace Path</Form.Label>
+                <Form.Control 
+                  type="text" 
+                  size="lg"
+                  className="fs-6 font-monospace"
+                  value={workspacePath}
+                  onChange={(e) => setWorkspacePath(e.target.value)}
+                  onBlur={() => handleChange("workspacePath", workspacePath)}
+                  placeholder="/var/rasputin/workspace"
+                />
+                <Form.Text className="text-muted">The root directory for new agent tasks and file outputs.</Form.Text>
+              </Form.Group>
 
-            <div className="border-top pt-3"></div>
-
-            <div className="d-flex justify-content-between align-items-center">
-              <div>
-                <div className="fw-medium">Markdown Formatting</div>
-                <div className="text-muted small">Render outputs using GitHub-flavored markdown.</div>
+              <div className="bg-body p-3 rounded border">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <div className="fw-medium">Markdown Formatting</div>
+                  <Form.Check 
+                    type="switch" 
+                    id="markdown-switch"
+                    checked={general?.markdownOutput !== false}
+                    onChange={() => handleToggle("markdownOutput")}
+                  />
+                </div>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <span className="fw-medium">Testing Mode</span>
+                    <Badge bg="warning" text="dark" className="ms-2">Dry-Run</Badge>
+                  </div>
+                  <Form.Check 
+                    type="switch" 
+                    id="testing-mode-switch"
+                    checked={!!general?.testingMode}
+                    onChange={() => handleToggle("testingMode")}
+                  />
+                </div>
               </div>
-              <Form.Check 
-                type="switch" 
-                id="markdown-switch"
-                checked={general?.markdownOutput !== false} // default true
-                onChange={() => handleToggle("markdownOutput")}
-              />
-            </div>
-            
-            <div className="border-top pt-3"></div>
+            </Card.Body>
+          </Card>
+        </Col>
 
-            <div className="d-flex justify-content-between align-items-center">
+        {/* Full Width Footer Area */}
+        <Col md={12}>
+          <Card className="shadow-sm border-0 bg-primary bg-opacity-10 text-primary">
+            <Card.Body className="d-flex justify-content-between align-items-center py-3">
               <div>
-                <div className="fw-medium">Telemetry Sharing <Badge bg="secondary" className="ms-1">Beta</Badge></div>
-                <div className="text-muted small">Send anonymous performance data to improve WarSat reliability.</div>
+                <h6 className="mb-1 fw-bold">Telemetry & Analytics</h6>
+                <p className="mb-0 small opacity-75">Help us improve Rasputin by sharing anonymous usage data.</p>
               </div>
               <Form.Check 
                 type="switch" 
                 id="telemetry-switch"
+                className="fs-4"
                 checked={!!general?.telemetryEnabled}
                 onChange={() => handleToggle("telemetryEnabled")}
               />
-            </div>
-          </Card.Body>
-        </Card>
-
-      </div>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
     </section>
   );
 }
