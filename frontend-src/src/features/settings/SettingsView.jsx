@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "react-bootstrap";
-import { CheckCircle2, Download, Upload, RefreshCw, Save, ShieldAlert, ShieldCheck, Square, Wrench, Search, Info } from "lucide-react";
+import { CheckCircle2, Download, Upload, RefreshCw, Save, ShieldAlert, ShieldCheck, Square, Wrench, Search, Info, Settings2, Activity, BrainCircuit, Rocket, Plug, Server as ServerIcon, Bell, FileWarning, Stethoscope } from "lucide-react";
 import { settingsItems } from "../../lib/constants.js";
 import { useSettingsStore } from "./settingsStore.js";
 import { loadSettings, exportSettings, importSettings, restoreDefaults } from "./settingsActions.js";
@@ -13,6 +13,20 @@ export function SettingsView(props) {
   const activeSetting = settingsItems.find(([id]) => id === section) || settingsItems[0];
   const [searchQuery, setSearchQuery] = useState("");
   const loading = useSettingsStore(state => state.loading);
+
+  const iconMap = {
+    general: Settings2,
+    runtime: Activity,
+    security: ShieldCheck,
+    models: BrainCircuit,
+    deployments: Rocket,
+    integrations: Plug,
+    resources: ServerIcon,
+    notifications: Bell,
+    audit: FileWarning,
+    diagnostics: Stethoscope,
+    about: Info
+  };
 
   useEffect(() => {
     if (view === "settings") {
@@ -53,20 +67,23 @@ export function SettingsView(props) {
       <div className="settings-layout gui-workspace settings-gui-workspace">
         {/* ── Left Navigation ── */}
         <Nav className="settings-nav flex-column bg-body-tertiary gui-sidebar" aria-label="Settings sections">
-          {settingsItems.map(([id, label, small]) => (
-            <Button
-              key={id}
-              type="button"
-              variant={section === id ? "primary" : "light"}
-              className="settings-tab text-start"
-              data-testid={`settings-${id}`}
-              aria-current={section === id ? "page" : undefined}
-              onClick={() => setSection(id)}
-            >
-              <span className="d-block fw-semibold">{label}</span>
-              <small>{small}</small>
-            </Button>
-          ))}
+          {settingsItems.map(([id, label, small]) => {
+            const Icon = iconMap[id] || Square;
+            return (
+              <Button
+                key={id}
+                type="button"
+                variant={section === id ? "primary" : "light"}
+                className="settings-tab text-start d-flex align-items-center gap-3"
+                data-testid={`settings-${id}`}
+                aria-current={section === id ? "page" : undefined}
+                onClick={() => setSection(id)}
+              >
+                <Icon size={18} className="flex-shrink-0" />
+                <span className="fw-medium">{label}</span>
+              </Button>
+            );
+          })}
         </Nav>
 
         {/* ── Main Settings Panel ── */}
