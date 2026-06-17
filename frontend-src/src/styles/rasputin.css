@@ -5142,7 +5142,7 @@ button.runtime-chip {
 
 .settings-nav {
   align-content: start;
-  gap: .55rem;
+  gap: .35rem;
   overflow: auto;
   border-right: 1px solid var(--ras-border);
   background:
@@ -5151,20 +5151,20 @@ button.runtime-chip {
 }
 
 .settings-tab {
-  min-height: 58px;
+  min-height: 44px;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--ras-border) 88%, transparent) !important;
   background: color-mix(in srgb, var(--ras-panel) 80%, transparent) !important;
   color: var(--ras-text) !important;
   box-shadow: none !important;
-  padding: .72rem .8rem;
+  padding: .45rem .6rem;
 }
 
 .settings-tab small {
   display: block;
-  margin-top: .12rem;
+  margin-top: .08rem;
   color: var(--ras-muted);
-  font-size: .76rem;
+  font-size: .72rem;
   text-transform: uppercase;
 }
 
