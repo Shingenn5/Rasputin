@@ -1,12 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "react-bootstrap";
 import { CheckCircle2, Download, Upload, RefreshCw, Save, ShieldAlert, ShieldCheck, Square, Wrench, Search, Info, Settings2, Activity, BrainCircuit, Rocket, Plug, Server as ServerIcon, Bell, FileWarning, Stethoscope } from "lucide-react";
+import { GeneralSettings } from "./GeneralSettings.jsx";
 import { settingsItems } from "../../lib/constants.js";
 import { useSettingsStore } from "./settingsStore.js";
 import { loadSettings, exportSettings, importSettings, restoreDefaults } from "./settingsActions.js";
-import { GeneralSettings } from "./GeneralSettings.jsx";
 import { SecuritySettings } from "./SecuritySettings.jsx";
 import { DeploymentSettings } from "./DeploymentSettings.jsx";
+import { RuntimeSettings } from "./RuntimeSettings.jsx";
+import { ModelSettings } from "./ModelSettings.jsx";
+import { IntegrationSettings } from "./IntegrationSettings.jsx";
+import { ResourceSettings } from "./ResourceSettings.jsx";
+import { NotificationSettings } from "./NotificationSettings.jsx";
+import { AuditSettings } from "./AuditSettings.jsx";
+import { DiagnosticsSettings } from "./DiagnosticsSettings.jsx";
+import { AboutSettings } from "./AboutSettings.jsx";
 
 // Import existing settings components that haven't been rewritten yet, if they exist
 // For now, we will create stubs for the new categories.
@@ -92,16 +100,16 @@ export function SettingsView(props) {
         {/* ── Main Settings Panel ── */}
         <div className="settings-panels gui-main">
           {section === "general" && <GeneralSettings />}
-          {section === "runtime" && <PlaceholderPanel title="Runtime Configuration" desc="Agent Limits, Concurrent Tasks, Queue Limits, Execution Timeouts." />}
+          {section === "runtime" && <RuntimeSettings />}
           {section === "security" && <SecuritySettings />}
-          {section === "models" && <PlaceholderPanel title="Model Governance" desc="Control AI infrastructure behavior (Default Runtime, Download Rules)." />}
+          {section === "models" && <ModelSettings />}
           {section === "deployments" && <DeploymentSettings />}
-          {section === "integrations" && <PlaceholderPanel title="Integration Center" desc="Manage external systems (Registries, Storage Providers)." />}
-          {section === "resources" && <PlaceholderPanel title="Resource Governance" desc="Manage infrastructure resources (CPU, RAM, GPU, Disk)." />}
-          {section === "notifications" && <PlaceholderPanel title="Notification Management" desc="Control platform communication channels." />}
-          {section === "audit" && <PlaceholderPanel title="Audit Configuration" desc="Govern audit behavior (Retention, Compliance)." />}
-          {section === "diagnostics" && <PlaceholderPanel title="Diagnostics Center" desc="Display System Health, Generate Reports, Validate Configs." />}
-          {section === "about" && <PlaceholderPanel title="About Rasputin" desc="Version, License, and Platform information." />}
+          {section === "integrations" && <IntegrationSettings />}
+          {section === "resources" && <ResourceSettings />}
+          {section === "notifications" && <NotificationSettings />}
+          {section === "audit" && <AuditSettings />}
+          {section === "diagnostics" && <DiagnosticsSettings />}
+          {section === "about" && <AboutSettings />}
         </div>
 
         {/* ── Inspector Panel ── */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Card, Form, Row, Col, Badge, Spinner, Button } from "react-bootstrap";
-import { ShieldCheck, Lock, Unlock, Key, FileCheck2, Globe, Server, AlertTriangle } from "lucide-react";
+import { ShieldCheck, Lock, Unlock, Key, FileCheck2, Globe, Server, AlertTriangle, Box } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting, rotateSecrets } from "./settingsActions.js";
 
