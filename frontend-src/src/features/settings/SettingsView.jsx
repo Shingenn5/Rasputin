@@ -20,7 +20,7 @@ import { AboutSettings } from "./AboutSettings.jsx";
 // For now, we will create stubs for the new categories.
 
 export function SettingsView(props) {
-  const { view, section, setSection } = props;
+  const { view, section, setSection, setTheme } = props;
   const activeSetting = settingsItems.find(([id]) => id === section) || settingsItems[0];
   const [searchQuery, setSearchQuery] = useState("");
   const loading = useSettingsStore(state => state.loading);
@@ -99,7 +99,7 @@ export function SettingsView(props) {
 
         {/* ── Main Settings Panel ── */}
         <div className="settings-panels gui-main">
-          {section === "general" && <GeneralSettings />}
+          {section === "general" && <GeneralSettings setTheme={setTheme} />}
           {section === "runtime" && <RuntimeSettings />}
           {section === "security" && <SecuritySettings />}
           {section === "models" && <ModelSettings />}

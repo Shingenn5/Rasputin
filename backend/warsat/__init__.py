@@ -1482,3 +1482,142 @@ def deploy(plan, approval_id=None):
         "status": result["status"],
     })
     return result
+
+
+def deploy_stream(plan, approval_id):
+    protocol, pull_cmd, run_cmd, container_name = _validate_deploy_plan(plan)
+    registry_entry = _registry_entry_from_plan(plan)
+    logs_out = []
+
+    approvals.require_approved(approval_id, "warsat_deploy")
+
+    audit.log("warsat_deploy_started", {
+        "planId": plan.get("planId"),
+        "approvalId": approval_id,
+        "protocolId": protocol["id"],
+        "image": protocol["image"],
+        "container": container_name,
+        "modelKey": registry_entry["key"],
+    })
+
+    yield {
+        "ok": True,
+        "final": False,
+        "data": {
+            "status": "pulling",
+            "phase": "pulling",
+            "lifecycle": _lifecycle(active="pulling", done={"planned", "approvalPending"}),
+            "containerName": container_name,
+            "message": "Warsat is pulling the image...",
+        }
+    }
+
+    pull = _run_command(pull_cmd, timeout=DEPLOY_TIMEOUT_SECONDS)
+    logs_out.append(_command_log("pulling", pull_cmd, pull))
+    _run_command(["docker", "rm", "-f", container_name], timeout=60, check=False)
+
+    yield {
+        "ok": True,
+        "final": False,
+        "data": {
+            "status": "starting",
+            "phase": "starting",
+            "lifecycle": _lifecycle(active="starting", done={"planned", "approvalPending", "pulling"}),
+            "containerName": container_name,
+            "message": "Warsat is starting the container...",
+        }
+    }
+
+    started = _run_command(run_cmd, timeout=120)
+    logs_out.append(_command_log("starting", run_cmd, started))
+    status = _container_status(container_name)
+
+    yield {
+        "ok": True,
+        "final": False,
+        "data": {
+            "status": "probing",
+            "phase": "probing",
+            "lifecycle": _lifecycle(active="probing", done={"planned", "approvalPending", "pulling", "starting"}),
+            "containerName": container_name,
+            "message": "Warsat is running health probes...",
+        }
+    }
+
+    health = _probe_model_endpoint(plan.get("healthUrl"), registry_entry.get("model"))
+    logs_out.append({
+        "phase": "probing",
+        "status": "done" if health.get("ok") else "error",
+        "message": health.get("message") or health.get("lastError") or "",
+        "attempts": health.get("attempts"),
+        "latencyMs": health.get("latencyMs"),
+        "createdAt": time.time(),
+    })
+
+    if not health.get("ok"):
+        result = {
+            "planId": plan.get("planId"),
+            "approvalRequired": False,
+            "status": "failed",
+            "phase": "failed",
+            "failedPhase": "probing",
+            "lifecycle": _lifecycle(failed="probing", done={"planned", "approvalPending", "pulling", "starting"}),
+            "containerId": started["stdout"],
+            "containerName": container_name,
+            "modelKey": registry_entry["key"],
+            "endpoint": registry_entry["base_url"],
+            "healthUrl": plan.get("healthUrl"),
+            "health": health,
+            "pull": pull,
+            "run": started,
+            "logs": logs_out,
+            "lastError": health.get("lastError") or health.get("message"),
+            "message": "Container started, but Warsat did not register the model because the health probe failed.",
+            "nextSteps": [
+                "Open container logs from Managed Runtimes.",
+                "Wait for the model server to finish loading, then retry deployment approval if needed.",
+                "Check the selected model id, port, GPU settings, and mounted model path.",
+            ],
+        }
+        audit.log("warsat_deploy_failed", {
+            "planId": plan.get("planId"),
+            "container": container_name,
+            "modelKey": registry_entry["key"],
+            "failedPhase": "probing",
+            "error": result["lastError"],
+        })
+        yield {"ok": True, "final": True, "data": result}
+        return
+
+    saved = model_registry.upsert(registry_entry)
+
+    result = {
+        "planId": plan.get("planId"),
+        "approvalRequired": False,
+        "status": "registered",
+        "phase": "registered",
+        "lifecycle": _lifecycle(done={"planned", "approvalPending", "pulling", "starting", "probing", "registered"}),
+        "containerId": started["stdout"],
+        "containerName": container_name,
+        "modelKey": saved["key"],
+        "registryEntry": saved,
+        "endpoint": registry_entry["base_url"],
+        "healthUrl": plan.get("healthUrl"),
+        "health": health,
+        "containerStatus": "starting" if status.lower().startswith("up") else status,
+        "pull": pull,
+        "run": started,
+        "logs": logs_out,
+        "message": "Warsat container started, health probe passed, and the model registry entry was saved.",
+        "nextSteps": [
+            "Open Models and run Discover/Test if you want an additional latency check.",
+            "Select the model in chat after it reports healthy.",
+        ],
+    }
+    audit.log("warsat_deploy_completed", {
+        "planId": plan.get("planId"),
+        "container": container_name,
+        "modelKey": saved["key"],
+        "status": result["status"],
+    })
+    yield {"ok": True, "final": True, "data": result}

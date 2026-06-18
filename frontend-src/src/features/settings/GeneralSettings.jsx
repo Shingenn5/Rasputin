@@ -1,31 +1,46 @@
 import React, { useState, useEffect } from "react";
-import { Card, Form, Row, Col, Badge, Spinner } from "react-bootstrap";
-import { Monitor, Moon, Sun, ShieldAlert, BookOpen, Settings2 } from "lucide-react";
+import { Card, Form, Row, Col, Badge, Spinner, Button } from "react-bootstrap";
+import { Monitor, Moon, Sun, ShieldAlert, BookOpen, Settings2, Save } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 import { themeOptions } from "../../lib/constants.js";
 
-export function GeneralSettings() {
+export function GeneralSettings({ setTheme }) {
   const general = useSettingsStore(state => state.general);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.general);
 
-  // Local state for debouncing inputs
-  const [workspacePath, setWorkspacePath] = useState(general?.workspacePath || "");
+  // Local state for form
+  const [formData, setFormData] = useState({});
+  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
-    if (general?.workspacePath !== undefined) {
-      setWorkspacePath(general.workspacePath);
+    if (general) {
+      setFormData(general);
+      setIsDirty(false);
     }
-  }, [general?.workspacePath]);
-
-  const handleToggle = (key) => {
-    const newVal = !(general?.[key]);
-    updateSetting("general", key, newVal);
-  };
+  }, [general]);
 
   const handleChange = (key, val) => {
-    updateSetting("general", key, val);
+    setFormData(prev => ({ ...prev, [key]: val }));
+    setIsDirty(true);
+    if (key === "theme" && setTheme) {
+      setTheme(val);
+    }
+  };
+
+  const handleToggle = (key) => {
+    setFormData(prev => ({ ...prev, [key]: !prev[key] }));
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    for (const [key, val] of Object.entries(formData)) {
+      if (general?.[key] !== val) {
+        await updateSetting("general", key, val);
+      }
+    }
+    setIsDirty(false);
   };
 
   return (
@@ -35,7 +50,12 @@ export function GeneralSettings() {
           <h2 className="mb-1"><Settings2 className="me-2 text-primary" size={28} />General Configuration</h2>
           <p className="text-body-secondary mb-0">Manage platform-wide behavior, aesthetics, and workspace defaults.</p>
         </div>
-        {loading && <Spinner animation="border" size="sm" variant="secondary" />}
+        <div className="d-flex align-items-center gap-3">
+          {loading && <Spinner animation="border" size="sm" variant="secondary" />}
+          <Button variant="primary" disabled={!isDirty || loading} onClick={handleSave} className="d-flex align-items-center">
+            <Save size={16} className="me-2" /> Save Changes
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -62,7 +82,7 @@ export function GeneralSettings() {
                 <Form.Select 
                   size="lg"
                   className="fs-6"
-                  value={general?.theme || "rasputin-dark"}
+                  value={formData?.theme || "rasputin-dark"}
                   onChange={(e) => handleChange("theme", e.target.value)}
                 >
                   {themeOptions.map(([val, label, desc]) => (
@@ -76,7 +96,7 @@ export function GeneralSettings() {
                 <Form.Select 
                   size="lg"
                   className="fs-6"
-                  value={general?.language || "en"}
+                  value={formData?.language || "en"}
                   onChange={(e) => handleChange("language", e.target.value)}
                 >
                   <option value="en">English (US)</option>
@@ -106,9 +126,8 @@ export function GeneralSettings() {
                   type="text" 
                   size="lg"
                   className="fs-6 font-monospace"
-                  value={workspacePath}
-                  onChange={(e) => setWorkspacePath(e.target.value)}
-                  onBlur={() => handleChange("workspacePath", workspacePath)}
+                  value={formData?.workspacePath || ""}
+                  onChange={(e) => handleChange("workspacePath", e.target.value)}
                   placeholder="/var/rasputin/workspace"
                 />
                 <Form.Text className="text-muted">The root directory for new agent tasks and file outputs.</Form.Text>
@@ -120,7 +139,7 @@ export function GeneralSettings() {
                   <Form.Check 
                     type="switch" 
                     id="markdown-switch"
-                    checked={general?.markdownOutput !== false}
+                    checked={formData?.markdownOutput !== false}
                     onChange={() => handleToggle("markdownOutput")}
                   />
                 </div>
@@ -132,7 +151,7 @@ export function GeneralSettings() {
                   <Form.Check 
                     type="switch" 
                     id="testing-mode-switch"
-                    checked={!!general?.testingMode}
+                    checked={!!formData?.testingMode}
                     onChange={() => handleToggle("testingMode")}
                   />
                 </div>
@@ -153,7 +172,7 @@ export function GeneralSettings() {
                 type="switch" 
                 id="telemetry-switch"
                 className="fs-4"
-                checked={!!general?.telemetryEnabled}
+                checked={!!formData?.telemetryEnabled}
                 onChange={() => handleToggle("telemetryEnabled")}
               />
             </Card.Body>

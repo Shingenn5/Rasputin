@@ -16,8 +16,10 @@ import {
   RefreshCw,
   Shield,
   Activity,
-  AlertTriangle
+  AlertTriangle,
+  ArrowLeft
 } from "lucide-react";
+import { Modal, Button, Form, Table, Spinner, Badge, Alert, Card } from "react-bootstrap";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
@@ -45,19 +47,26 @@ export function WorkspacesView({
 }) {
   const [filter, setFilter] = useState("");
   const [selectedEntry, setSelectedEntry] = useState(null);
+  
+  // Preview State
+  const [previewMode, setPreviewMode] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewError, setPreviewError] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  
+  // Knowledge State
   const [knowledgeQuery, setKnowledgeQuery] = useState("");
   const [knowledgeStatus, setKnowledgeStatus] = useState("");
   const [knowledgeResults, setKnowledgeResults] = useState(null);
   
-  // Safe Folder Management State
-  const [mountStep, setMountStep] = useState(0); // 0 = closed, 1-6 = steps
+  // Safe Folder Management State (Streamlined Modal)
+  const [showAddModal, setShowAddModal] = useState(false);
   const [mountHostPath, setMountHostPath] = useState("");
   const [mountReadOnly, setMountReadOnly] = useState(true);
-  const [showAdvancedMount, setShowAdvancedMount] = useState(false);
   const [mountStatus, setMountStatus] = useState("");
+  const [isMounting, setIsMounting] = useState(false);
+  const [mountSuccess, setMountSuccess] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Phase 10: Button Reliability Framework State
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
@@ -89,6 +98,7 @@ export function WorkspacesView({
 
   useEffect(() => {
     setSelectedEntry(null);
+    setPreviewMode(false);
     setPreview(null);
     setPreviewError("");
     setPreviewLoading(false);
@@ -102,6 +112,7 @@ export function WorkspacesView({
     setPreviewError("");
     if (entry.kind !== "file" || !entry.previewable) return;
     try {
+      setPreviewMode(true);
       setPreviewLoading(true);
       setPreview(await previewWorkspaceFile(currentRoot.id, entry.path));
     } catch (error) {
@@ -117,6 +128,11 @@ export function WorkspacesView({
       return;
     }
     await inspectEntry(entry);
+  }
+
+  function closePreview() {
+    setPreviewMode(false);
+    setPreview(null);
   }
 
   async function indexCurrentFolder() {
@@ -181,47 +197,71 @@ export function WorkspacesView({
     }
   }
 
-  // --- Guided Mount Workflow ---
-  async function handleGeneratePlan(e) {
+  // --- Guided Mount Workflow (Streamlined Modal) ---
+  const resetMountModal = () => {
+    setShowAddModal(false);
+    setMountHostPath("");
+    setMountReadOnly(true);
+    setMountStatus("");
+    setMountSuccess(false);
+    setIsMounting(false);
+    setCopied(false);
+  };
+
+  async function handleAddFolderSubmit(e) {
     e.preventDefault();
     if (!mountHostPath) {
       setMountStatus("Host path is required.");
       return;
     }
+    
+    setIsMounting(true);
+    setMountStatus("");
+    
     try {
-      await executeAction("GenerateMountPlan", mountHostPath, async () => {
+      await executeAction("MountFolder", mountHostPath, async () => {
+        // Step 1: Generate Plan
         const formData = new FormData();
         formData.append("hostPath", mountHostPath);
         formData.append("name", displayWorkspaceName(mountHostPath));
-        if (mountReadOnly) {
-          formData.append("readOnly", "on");
-        }
+        if (mountReadOnly) formData.append("readOnly", "on");
+        
         await previewMount({ preventDefault: () => {}, currentTarget: formData });
-        setMountStep(4);
+        
+        // Use the reactive mountPlan from props if possible, but it might not be updated yet.
+        // The requestMount relies on mountPlan being in state.
+        // A better robust way is to wait a tick or rely on the updated prop.
+        // Assuming the previewMount triggers a re-render and mountPlan is populated:
       }, setUiState);
+      
+      // We will let a useEffect catch the mountPlan and submit it, or we require the user to hit "Confirm".
+      // Since previewMount is async but sets state in parent, we'll stop the spinner and show confirmation step in modal.
+      setIsMounting(false);
+      setMountSuccess(true);
+      
     } catch (error) {
       setMountStatus(error.message);
+      setIsMounting(false);
     }
   }
 
-  async function handleSaveMountRequest() {
-    if (!requestMount || !mountPlan || mountPlan.error) return;
-    try {
-      await executeAction("SaveMountRequest", mountPlan.containerPath || mountPlan.hostPath, async () => {
-        setMountStatus("");
-        await requestMount(mountPlan);
-        setMountStep(5);
-      }, setUiState);
-    } catch (error) {
-      setMountStatus(error.message);
+  // Effect to automatically save mount request once plan is generated
+  useEffect(() => {
+    if (showAddModal && mountSuccess && mountPlan && !mountPlan.error && requestMount) {
+       requestMount(mountPlan).then(() => {
+           loadWorkspaceRoots();
+       }).catch(err => {
+           setMountStatus("Failed to save mount request: " + err.message);
+       });
     }
-  }
+  }, [mountPlan, mountSuccess, showAddModal, requestMount]);
 
   async function copyMountVolume() {
     if (!mountPlan?.composeVolume) return;
     try {
       await navigator.clipboard.writeText(mountPlan.composeVolume);
-      setMountStatus("Volume line copied.");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
       setMountStatus("Copy failed. Select and copy the volume line manually.");
     }
@@ -240,12 +280,11 @@ export function WorkspacesView({
           <p>{displayPath(activePath)}</p>
         </div>
         <div className="w2-header-stats">
-          {/* Button Reliability Status Readout */}
           {uiState.status !== 'idle' && (
             <div style={{ 
               padding: '8px 16px', borderRadius: '4px', fontSize: '0.875rem',
               backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                              uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
+                               uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
               color: '#fff', display: 'flex', alignItems: 'center', marginRight: '16px'
             }}>
               {uiState.message}
@@ -270,323 +309,332 @@ export function WorkspacesView({
         </div>
       </div>
 
-      {/* PHASE 1: Three Column Layout */}
       <div className="w2-main-grid">
         
-        {/* Column 1: Navigation */}
+        {/* Left Column: Explorer Sidebar */}
         <div className="w2-column w2-column-nav">
-          <div className="w2-section">
-            <h2 className="w2-section-title">Navigation</h2>
-            <div className="w2-breadcrumbs">
-              {breadcrumbs.map((crumb, index) => (
-                <React.Fragment key={crumb.path || "root"}>
-                  {index > 0 && <ChevronRight size={14} />}
-                  <button type="button" onClick={() => browseWorkspace(currentRoot.id, crumb.path)}>
-                    {crumb.label}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
-            <input 
-              className="w2-input" 
-              placeholder="Search files and folders..." 
-              value={filter} 
-              onChange={e => setFilter(e.target.value)} 
-            />
-          </div>
-
-          <div className="w2-section">
+          
+          <div className="w2-section" style={{ gap: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="w2-section-title">Approved Folders</h2>
               <button className="icon-button" type="button" onClick={loadWorkspaceRoots} aria-label="Refresh roots">
                 <RefreshCw size={14} />
               </button>
             </div>
-            
-            <div className="w2-card" style={{ gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
               {workspaceRoots.map((root) => {
                 const rootPath = root.path || root.root;
                 const rootId = root.id;
                 const displayName = root.displayName || root.display_name || root.name || displayWorkspaceName(rootPath);
                 const active = rootId === activeId || normalizePath(rootPath) === normalizePath(workspace.activePath);
-                const readOnly = root.readOnly ?? root.read_only;
                 return (
-                  <div key={rootId} className={`w2-list-item ${active ? 'is-active' : ''}`} onClick={() => browseWorkspace(rootId)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <FolderOpen size={16} />
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{displayName}</span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>{readOnly ? "Read-only" : "Read/write"}</span>
-                      </div>
-                    </div>
-                    {!active && (
-                      <button className="w2-button" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={(e) => { e.stopPropagation(); selectWorkspace(rootId || rootPath); }}>
-                        Set Active
-                      </button>
-                    )}
+                  <div key={rootId} className={`w2-tree-item ${active ? 'is-active' : ''}`} onClick={() => browseWorkspace(rootId)} style={{ fontWeight: active ? 600 : 400 }}>
+                    <FolderOpen size={16} className="w2-tree-icon" />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
                   </div>
                 );
               })}
-              {workspaceRoots.length === 0 && <p style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>No approved folders.</p>}
-              <button className="w2-button primary" style={{ marginTop: '8px' }} onClick={() => setMountStep(1)}>
-                <PlusCircle size={16} /> Add Folder Workflow
-              </button>
+              {workspaceRoots.length === 0 && <div style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', padding: '4px 8px' }}>No approved folders.</div>}
+              <div 
+                className="w2-tree-item" 
+                style={{ color: 'var(--cc-primary)', marginTop: '4px' }}
+                onClick={() => setShowAddModal(true)}
+              >
+                <PlusCircle size={16} className="w2-tree-icon" style={{ color: 'var(--cc-primary)' }} />
+                <span>Add Folder</span>
+              </div>
             </div>
           </div>
 
-          {/* PHASE 4: Safe Folder Management (Guided Add Folder Workflow) */}
-          {mountStep > 0 && (
-            <div className="w2-section">
-              <h2 className="w2-section-title">Add Folder Workflow</h2>
-              <div className="w2-card">
-                {mountStep === 1 && (
-                  <div className="w2-guided-step">
-                    <span className="w2-step-indicator">Step 1 of 6</span>
-                    <h3>Select Host Folder</h3>
-                    <input className="w2-input" value={mountHostPath} onChange={e => setMountHostPath(e.target.value)} placeholder="e.g. C:\Projects\MyRepo" />
-                    <button className="w2-button primary" onClick={() => setMountStep(2)} disabled={!mountHostPath}>Next</button>
-                    <button className="w2-button" onClick={() => setMountStep(0)}>Cancel</button>
-                  </div>
-                )}
-                {mountStep === 2 && (
-                  <div className="w2-guided-step">
-                    <span className="w2-step-indicator">Step 2 of 6</span>
-                    <h3>Preview Mount</h3>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Rasputin runs in Docker. We will map this folder to the container.</p>
-                    <button className="w2-button primary" onClick={() => setMountStep(3)}>Next</button>
-                    <button className="w2-button" onClick={() => setMountStep(1)}>Back</button>
-                  </div>
-                )}
-                {mountStep === 3 && (
-                  <div className="w2-guided-step">
-                    <span className="w2-step-indicator">Step 3 of 6</span>
-                    <h3>Choose Access Mode</h3>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem' }}>
-                      <input type="radio" checked={mountReadOnly} onChange={() => setMountReadOnly(true)} />
-                      Read Only (Default - Recommended)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem' }}>
-                      <input type="radio" checked={!mountReadOnly} onChange={() => setMountReadOnly(false)} />
-                      Read / Write (Allow Agent Edits)
-                    </label>
-                    <button className="w2-button primary" onClick={handleGeneratePlan}>Generate Plan (Next)</button>
-                    <button className="w2-button" onClick={() => setMountStep(2)}>Back</button>
-                  </div>
-                )}
-                {mountStep === 4 && (
-                  <div className="w2-guided-step">
-                    <span className="w2-step-indicator">Step 4 of 6</span>
-                    <h3>Generated Mount Plan</h3>
-                    {mountPlan && !mountPlan.error ? (
-                      <div style={{ fontSize: '0.875rem', backgroundColor: 'var(--cc-bg)', padding: '8px', borderRadius: '4px' }}>
-                        <div><strong>Container Path:</strong> {mountPlan.containerPath}</div>
-                        <div><strong>Volume:</strong> <code>{mountPlan.composeVolume}</code></div>
-                      </div>
-                    ) : (
-                      <p style={{ color: 'var(--ras-danger)', fontSize: '0.875rem' }}>{mountPlan?.error || "Error generating plan"}</p>
-                    )}
-                    <button className="w2-button primary" onClick={handleSaveMountRequest} disabled={!security?.allowDockerControl || !mountPlan || mountPlan.error}>Approve & Save (Next)</button>
-                    {!security?.allowDockerControl && <p style={{ fontSize: '0.75rem', color: 'var(--ras-danger)' }}>Docker control disabled in safety settings.</p>}
-                    <button className="w2-button" onClick={() => setMountStep(3)}>Back</button>
-                  </div>
-                )}
-                {mountStep === 5 && (
-                  <div className="w2-guided-step">
-                    <span className="w2-step-indicator">Step 5 of 6</span>
-                    <h3>Approval Complete</h3>
-                    <p style={{ fontSize: '0.875rem' }}>The request has been saved locally.</p>
-                    <button className="w2-button primary" onClick={() => setMountStep(6)}>Next</button>
-                  </div>
-                )}
-                {mountStep === 6 && (
-                  <div className="w2-guided-step">
-                    <span className="w2-step-indicator">Step 6 of 6</span>
-                    <h3>Restart Required</h3>
-                    <p style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>You must restart the Rasputin container with the new volume mapping for it to take effect.</p>
-                    <button className="w2-button" onClick={copyMountVolume}>Copy Volume Line</button>
-                    <button className="w2-button primary" onClick={() => { setMountStep(0); loadWorkspaceRoots(); }}>Done</button>
-                  </div>
-                )}
-              </div>
+          <hr style={{ borderColor: 'var(--cc-border)', margin: '4px 0' }} />
+
+          <div className="w2-section" style={{ flex: 1, gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 className="w2-section-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>EXPLORER: {currentFolder}</h2>
             </div>
-          )}
-          
-          <div className="w2-section">
-            <button className="w2-button" onClick={() => setShowAdvancedMount(!showAdvancedMount)}>
-              {showAdvancedMount ? "Hide Advanced Section" : "Show Advanced Section"}
-            </button>
-            {showAdvancedMount && (
-              <div className="w2-card" style={{ fontSize: '0.75rem' }}>
-                <strong>Advanced Folder Setup</strong>
-                <p>Manual Path Entry</p>
-                <form onSubmit={(e) => { e.preventDefault(); approvePath(e.target.path.value); }}>
-                  <input className="w2-input" name="path" placeholder="Enter path manually..." style={{ marginBottom: '8px' }} />
-                  <button type="submit" className="w2-button">Approve</button>
-                </form>
-                {mountPlan && (
-                  <div style={{ marginTop: '8px' }}>
-                    <strong>Mount JSON:</strong>
-                    <pre>{JSON.stringify(mountPlan, null, 2)}</pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+            
+            <div className="w2-breadcrumbs" style={{ fontSize: '0.75rem', padding: '0 8px' }}>
+              {breadcrumbs.map((crumb, index) => (
+                <React.Fragment key={crumb.path || "root"}>
+                  {index > 0 && <ChevronRight size={12} />}
+                  <button type="button" onClick={() => browseWorkspace(currentRoot.id, crumb.path)} style={{ color: 'var(--cc-muted)' }}>
+                    {crumb.label}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+            
+            <div style={{ padding: '0 8px' }}>
+              <input 
+                className="w2-input" 
+                style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                placeholder="Search..." 
+                value={filter} 
+                onChange={e => setFilter(e.target.value)} 
+              />
+            </div>
 
-        </div>
-
-        {/* Column 2: Explorer */}
-        <div className="w2-column w2-column-explorer">
-          <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <h2 className="w2-section-title">File Explorer ({currentFolder})</h2>
-            <div className="w2-card" style={{ flex: 1, overflowY: 'auto', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', marginTop: '4px' }}>
               {filteredEntries.map((entry) => (
-                <div key={`${entry.kind}-${entry.path}`} className={`w2-list-item ${selectedEntry?.path === entry.path ? 'is-active' : ''}`} onClick={() => openEntry(entry)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <EntryIcon entry={entry} />
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{entry.displayName || entry.name}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>
-                        {entry.kind === "file" ? `${entry.extension || "file"} / ${formatBytes(entry.sizeBytes)}` : entry.kind}
-                      </span>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>{formatTime(entry.modifiedAt)}</span>
+                <div 
+                  key={`${entry.kind}-${entry.path}`} 
+                  className={`w2-tree-item ${selectedEntry?.path === entry.path ? 'is-active' : ''}`}
+                  onClick={() => openEntry(entry)}
+                  title={`${entry.kind === "folder" ? "Folder" : entry.extension || "File"}\nSize: ${entry.kind === "folder" ? "--" : formatBytes(entry.sizeBytes)}\nModified: ${formatTime(entry.modifiedAt)}`}
+                >
+                  <EntryIcon entry={entry} className="w2-tree-icon" />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.displayName || entry.name}
+                  </span>
                 </div>
               ))}
               {filteredEntries.length === 0 && (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--cc-muted)' }}>
-                  {entries.length ? "No matching items." : "Folder is empty or contents are hidden."}
+                <div style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', padding: '8px', textAlign: 'center' }}>
+                  {entries.length ? "No matching items." : "Folder is empty."}
                 </div>
               )}
             </div>
-            {selectedEntry && (
-              <div className="w2-card" style={{ marginTop: '16px' }}>
-                <h2 className="w2-section-title">File Details</h2>
-                <div style={{ fontSize: '0.875rem', display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px' }}>
-                  <strong style={{ color: 'var(--cc-muted)' }}>Name</strong> <span>{selectedEntry.name}</span>
-                  <strong style={{ color: 'var(--cc-muted)' }}>Path</strong> <span>{selectedEntry.path}</span>
-                  <strong style={{ color: 'var(--cc-muted)' }}>Size</strong> <span>{formatBytes(selectedEntry.sizeBytes)}</span>
-                </div>
-                {selectedEntry.kind === 'file' && selectedEntry.previewable && (
-                  <button className="w2-button primary" onClick={() => inspectEntry(selectedEntry)} disabled={previewLoading}>
-                    {previewLoading ? "Loading..." : "Preview File"}
-                  </button>
-                )}
-                {previewError && <p style={{ color: 'var(--ras-danger)', fontSize: '0.875rem' }}>{previewError}</p>}
-              </div>
-            )}
-            {preview && (
-              <div className="w2-preview-block" style={{ marginTop: '16px' }}>
-                {preview.content}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Column 3: Intelligence & Dashboard */}
-        <div className="w2-column w2-column-intelligence">
-          
-          {/* PHASE 3: Active Workspace Dashboard (Health) */}
-          <div className="w2-section">
-            <h2 className="w2-section-title">Workspace Health</h2>
-            <div className="w2-card w2-health-grid">
-              <div className="w2-health-item is-good"><Check size={16}/> Folder Access</div>
-              <div className={`w2-health-item ${activeIndexed ? 'is-good' : 'is-warn'}`}>
-                {activeIndexed ? <Check size={16}/> : <AlertTriangle size={16}/>} RAG Index
+        {/* Right Column: Editor / Dashboard */}
+        <div className="w2-column w2-column-explorer" style={{ display: 'flex', flexDirection: 'column' }}>
+          {previewMode ? (
+            // Full-Pane Preview Mode
+            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <h2 className="w2-section-title mb-0 d-flex align-items-center" style={{ textTransform: 'none', color: 'var(--cc-text)', fontSize: '1rem' }}>
+                  <FileText className="me-2 text-primary" size={20} />
+                  {selectedEntry?.name}
+                </h2>
+                <Button variant="outline-secondary" size="sm" onClick={closePreview} className="d-flex align-items-center">
+                  <ArrowLeft size={16} className="me-2"/> Close Preview
+                </Button>
               </div>
-              <div className={`w2-health-item ${graphStats?.nodes > 0 ? 'is-good' : 'is-warn'}`}>
-                {graphStats?.nodes > 0 ? <Check size={16}/> : <AlertTriangle size={16}/>} Graph DB
-              </div>
-              <div className="w2-health-item is-good"><Check size={16}/> Security</div>
-            </div>
-          </div>
-
-          {/* PHASE 3: Active Workspace Dashboard (Activity) */}
-          <div className="w2-section">
-            <h2 className="w2-section-title">Recent Activity</h2>
-            <div className="w2-card">
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.875rem' }}>
-                <Activity size={16} color="var(--cc-muted)" /> <span style={{ color: 'var(--cc-muted)' }}>No recent task activity tracked yet.</span>
-              </div>
-            </div>
-          </div>
-
-          {/* PHASE 2: Workspace Knowledge Center */}
-          <div className="w2-section">
-            <h2 className="w2-section-title">Knowledge Operations</h2>
-            <div className="w2-card">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.875rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <strong style={{ color: 'var(--cc-muted)' }}>RAG Indexed</strong>
-                  <span>{ragStats?.docs || 0} files</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <strong style={{ color: 'var(--cc-muted)' }}>Graph Built</strong>
-                  <span>{graphStats?.nodes || 0} nodes</span>
+              
+              <div className="w2-card mb-2" style={{ flexShrink: 0, padding: '8px 12px' }}>
+                <div style={{ fontSize: '0.75rem', display: 'flex', gap: '24px' }}>
+                  <div><strong style={{ color: 'var(--cc-muted)', marginRight: '8px' }}>Path</strong><span>{selectedEntry?.path}</span></div>
+                  <div><strong style={{ color: 'var(--cc-muted)', marginRight: '8px' }}>Size</strong><span>{formatBytes(selectedEntry?.sizeBytes)}</span></div>
+                  <div><strong style={{ color: 'var(--cc-muted)', marginRight: '8px' }}>Modified</strong><span>{formatTime(selectedEntry?.modifiedAt)}</span></div>
                 </div>
               </div>
               
-              <div className="w2-action-panel-grid" style={{ marginTop: '8px' }}>
-                <button className="w2-button primary" onClick={indexCurrentFolder}>Index Workspace</button>
-                <button className="w2-button" onClick={refreshKnowledgeStats}>Refresh Status</button>
+              <div className="w2-card" style={{ flex: 1, overflowY: 'auto', padding: 0, display: 'flex', flexDirection: 'column' }}>
+                {previewLoading ? (
+                  <div className="d-flex justify-content-center align-items-center h-100 p-5">
+                    <Spinner animation="border" variant="primary" />
+                  </div>
+                ) : previewError ? (
+                  <div className="p-4 text-danger">{previewError}</div>
+                ) : (
+                  <div className="w2-preview-block" style={{ flex: 1, border: 'none', margin: 0, borderRadius: 0 }}>
+                    {preview?.content}
+                  </div>
+                )}
               </div>
-
-              {knowledgeStatus && <p style={{ fontSize: '0.75rem', margin: '8px 0 0 0', color: 'var(--cc-muted)' }}>{knowledgeStatus}</p>}
-
-              <form onSubmit={searchKnowledge} style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                <input className="w2-input" value={knowledgeQuery} onChange={e => setKnowledgeQuery(e.target.value)} placeholder="Search index & graph..." />
-                <button className="w2-button" type="submit">Search</button>
-              </form>
-
-              {knowledgeResults && (
-                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {ragHits.length > 0 && (
-                    <div>
-                      <strong style={{ fontSize: '0.875rem' }}>Local Knowledge Search</strong>
-                      {ragHits.slice(0, 2).map((hit, i) => (
-                        <div key={i} style={{ fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--cc-bg)', borderRadius: '4px', marginTop: '4px' }}>
-                          <div style={{ fontWeight: 'bold' }}>{hit.path}</div>
-                          <div>{hit.text.substring(0, 100)}...</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {graphNodes.length > 0 && (
-                    <div>
-                      <strong style={{ fontSize: '0.875rem' }}>Graph Search</strong>
-                      {graphNodes.slice(0, 2).map(node => (
-                        <div key={node.id} style={{ fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--cc-bg)', borderRadius: '4px', marginTop: '4px' }}>
-                          Node: {node.id} ({node.type})
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            </div>
+          ) : (
+            // Empty State / Dashboard Mode
+            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              
+              <div style={{ maxWidth: '600px', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+                <div className="text-center mb-4">
+                  <FolderOpen size={48} style={{ color: 'var(--cc-muted)', marginBottom: '16px' }} />
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 600, margin: 0 }}>{activeName || "No workspace selected"}</h2>
+                  <p style={{ color: 'var(--cc-muted)', margin: '8px 0 0 0' }}>Select a file from the explorer to preview it.</p>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* PHASE 5: Workspace-Aware Task Launching */}
-          <div className="w2-section">
-            <h2 className="w2-section-title">Launch Workspace Task</h2>
-            <div className="w2-card">
-              <div className="w2-action-panel-grid">
-                <button className="w2-button" onClick={() => launchTask('summarize')}>Summarize</button>
-                <button className="w2-button" onClick={() => launchTask('analyze')}>Analyze</button>
-                <button className="w2-button" onClick={() => launchTask('search')}>Search</button>
-                <button className="w2-button" onClick={() => launchTask('graph')}>Build Graph</button>
-                <button className="w2-button" onClick={() => launchTask('docs')}>Generate Docs</button>
-                <button className="w2-button" onClick={() => launchTask('review')}>Review Repo</button>
+                <div className="w2-section">
+                  <h2 className="w2-section-title">Workspace Health</h2>
+                  <div className="w2-card w2-health-grid">
+                    <div className="w2-health-item is-good"><Check size={16}/> Folder Access</div>
+                    <div className={`w2-health-item ${activeIndexed ? 'is-good' : 'is-warn'}`}>
+                      {activeIndexed ? <Check size={16}/> : <AlertTriangle size={16}/>} RAG Index
+                    </div>
+                    <div className={`w2-health-item ${graphStats?.nodes > 0 ? 'is-good' : 'is-warn'}`}>
+                      {graphStats?.nodes > 0 ? <Check size={16}/> : <AlertTriangle size={16}/>} Graph DB
+                    </div>
+                    <div className="w2-health-item is-good"><Check size={16}/> Security</div>
+                  </div>
+                </div>
+
+                <div className="w2-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  
+                  <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h2 className="w2-section-title">Knowledge Operations</h2>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.875rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <strong style={{ color: 'var(--cc-muted)' }}>RAG Indexed</strong>
+                        <span>{ragStats?.docs || 0} files</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <strong style={{ color: 'var(--cc-muted)' }}>Graph Built</strong>
+                        <span>{graphStats?.nodes || 0} nodes</span>
+                      </div>
+                    </div>
+                    
+                    <div className="w2-action-panel-grid">
+                      <button className="w2-button primary" onClick={indexCurrentFolder}>Index Workspace</button>
+                      <button className="w2-button" onClick={refreshKnowledgeStats}>Refresh Status</button>
+                    </div>
+
+                    {knowledgeStatus && <p style={{ fontSize: '0.75rem', margin: '4px 0 0 0', color: 'var(--cc-muted)' }}>{knowledgeStatus}</p>}
+
+                    <form onSubmit={searchKnowledge} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <input className="w2-input" value={knowledgeQuery} onChange={e => setKnowledgeQuery(e.target.value)} placeholder="Search index & graph..." />
+                      <button className="w2-button" type="submit">Search</button>
+                    </form>
+
+                    {knowledgeResults && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                        {ragHits.length > 0 && (
+                          <div>
+                            <strong style={{ fontSize: '0.875rem' }}>Local Knowledge Search</strong>
+                            {ragHits.slice(0, 2).map((hit, i) => (
+                              <div key={i} style={{ fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--cc-bg)', borderRadius: '4px', marginTop: '4px' }}>
+                                <div style={{ fontWeight: 'bold' }}>{hit.path}</div>
+                                <div>{hit.text.substring(0, 100)}...</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {graphNodes.length > 0 && (
+                          <div>
+                            <strong style={{ fontSize: '0.875rem' }}>Graph Search</strong>
+                            {graphNodes.slice(0, 2).map(node => (
+                              <div key={node.id} style={{ fontSize: '0.75rem', padding: '8px', backgroundColor: 'var(--cc-bg)', borderRadius: '4px', marginTop: '4px' }}>
+                                Node: {node.id} ({node.type})
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h2 className="w2-section-title">Launch Workspace Task</h2>
+                    <div className="w2-action-panel-grid" style={{ gridTemplateColumns: '1fr' }}>
+                      <button className="w2-button" onClick={() => launchTask('summarize')}>Summarize Directory</button>
+                      <button className="w2-button" onClick={() => launchTask('analyze')}>Analyze Workspace</button>
+                      <button className="w2-button" onClick={() => launchTask('search')}>Search Vulnerabilities</button>
+                      <button className="w2-button" onClick={() => launchTask('graph')}>Review Dependencies</button>
+                      <button className="w2-button" onClick={() => launchTask('docs')}>Generate Documentation</button>
+                      <button className="w2-button" onClick={() => launchTask('review')}>Code Review</button>
+                    </div>
+                  </div>
+
+                </div>
+
               </div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', margin: '8px 0 0 0', textAlign: 'center' }}>
-                Tasks automatically receive full context for <strong>{currentFolder}</strong>.
-              </p>
             </div>
-          </div>
-
+          )}
         </div>
       </div>
+
+      {/* Streamlined Add Folder Modal */}
+      <Modal show={showAddModal} onHide={resetMountModal} centered size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title className="d-flex align-items-center">
+            <FolderOpen className="me-2 text-primary" size={24} />
+            Approve Local Folder
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="px-4 py-4">
+          {!mountSuccess ? (
+            <Form onSubmit={handleAddFolderSubmit}>
+              <p className="text-muted mb-4">
+                Grant Rasputin access to a local directory. Since Rasputin runs in a Docker container, it cannot access your files unless you explicitly approve and mount them here.
+              </p>
+              
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-semibold">Absolute Host Path</Form.Label>
+                <Form.Control 
+                  type="text" 
+                  value={mountHostPath}
+                  onChange={e => setMountHostPath(e.target.value)}
+                  placeholder="e.g. C:\Projects\MyRepo or /home/user/code"
+                  autoFocus
+                  required
+                />
+                <Form.Text className="text-muted">Enter the absolute path on your host machine.</Form.Text>
+              </Form.Group>
+
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-semibold">Access Permissions</Form.Label>
+                <Card className="border-0 bg-body-tertiary">
+                  <Card.Body className="p-3">
+                    <Form.Check 
+                      type="radio" 
+                      id="radio-readonly"
+                      name="accessMode"
+                      label={<><span className="fw-medium">Read Only (Recommended)</span><p className="text-muted small mb-0 mt-1">Agents can read files to answer questions and analyze code, but cannot edit files.</p></>}
+                      checked={mountReadOnly}
+                      onChange={() => setMountReadOnly(true)}
+                      className="mb-3"
+                    />
+                    <Form.Check 
+                      type="radio" 
+                      id="radio-readwrite"
+                      name="accessMode"
+                      label={<><span className="fw-medium">Read / Write</span><p className="text-muted small mb-0 mt-1">Agents can write new files and modify existing code autonomously.</p></>}
+                      checked={!mountReadOnly}
+                      onChange={() => setMountReadOnly(false)}
+                    />
+                  </Card.Body>
+                </Card>
+              </Form.Group>
+
+              {mountStatus && <Alert variant="danger">{mountStatus}</Alert>}
+
+              {!security?.allowDockerControl && (
+                <div className="alert alert-warning d-flex align-items-center mb-0">
+                  <Lock size={16} className="me-2" /> Docker control is disabled in Safety Settings. You cannot auto-mount folders.
+                </div>
+              )}
+
+              <div className="d-flex justify-content-end mt-4 pt-3 border-top">
+                <Button variant="light" className="me-2" onClick={resetMountModal}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={isMounting || !mountHostPath || !security?.allowDockerControl}>
+                  {isMounting ? <Spinner size="sm" /> : "Approve & Generate Mount"}
+                </Button>
+              </div>
+            </Form>
+          ) : (
+            <div className="text-center py-4">
+              <div className="mb-4 d-inline-flex justify-content-center align-items-center rounded-circle bg-success bg-opacity-10" style={{ width: '80px', height: '80px' }}>
+                <Check size={40} className="text-success" />
+              </div>
+              <h4 className="fw-bold mb-3">Folder Approved Successfully!</h4>
+              <p className="text-muted mb-4 px-4">
+                The folder has been added to your approved list. <br/>
+                <strong>Important:</strong> Because Rasputin is dockerized, you must restart the container with the newly generated volume mapping for the files to be accessible.
+              </p>
+              
+              <div className="bg-body-tertiary p-3 rounded mb-4 text-start font-monospace small position-relative border">
+                <div className="text-muted mb-2 fw-bold font-sans">Docker Compose Volume Line:</div>
+                <div className="user-select-all text-break">{mountPlan?.composeVolume}</div>
+                <Button 
+                  variant="outline-secondary" 
+                  size="sm" 
+                  className="position-absolute top-0 end-0 m-2"
+                  onClick={copyMountVolume}
+                >
+                  {copied ? <Check size={14}/> : <Copy size={14}/>}
+                </Button>
+              </div>
+
+              <Button variant="primary" size="lg" onClick={resetMountModal} className="px-5">
+                Done
+              </Button>
+            </div>
+          )}
+        </Modal.Body>
+      </Modal>
+
     </section>
   );
 }
@@ -598,11 +646,11 @@ function displayPath(value) {
   return text;
 }
 
-function EntryIcon({ entry }) {
+function EntryIcon({ entry, className }) {
   if (entry.kind === "file") {
-    return entry.previewable ? <FileText size={16} /> : <File size={16} />;
+    return entry.previewable ? <FileText size={16} className={className} /> : <File size={16} className={className} />;
   }
-  return <Folder size={16} />;
+  return <Folder size={16} className={className} />;
 }
 
 function buildBreadcrumbs(root, currentPath) {
@@ -635,6 +683,8 @@ function formatBytes(value) {
 
 function formatTime(value) {
   const stamp = Number(value || 0);
-  if (!stamp) return "Not available";
-  return new Date(stamp * 1000).toLocaleString();
+  if (!stamp) return "--";
+  return new Date(stamp * 1000).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
 }

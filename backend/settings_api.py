@@ -1,19 +1,113 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
+import copy
+import logging
+
+from . import runtime_store as store
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 class SettingUpdate(BaseModel):
     key: str
-    value: dict | str | bool | int | list | None = None
+    value: dict | str | bool | int | list | float | None = None
+
+DEFAULT_SETTINGS = {
+    "general": {
+        "theme": "rasputin-dark",
+        "language": "en",
+        "workspacePath": "/app/workspace",
+        "markdownOutput": True,
+        "testingMode": False,
+        "telemetryEnabled": False
+    },
+    "runtime": {
+        "autoRestart": True,
+        "maxMemory": "16GB",
+        "timeout": 3600,
+        "logLevel": "INFO",
+        "gpuEnabled": False
+    },
+    "security": {
+        "requireAuth": False,
+        "sessionTimeout": 24,
+        "strictMode": True,
+        "allowUnsigned": False
+    },
+    "deployments": {
+        "autoDeploy": False,
+        "registryUrl": "docker.io",
+        "approvalRequired": True,
+        "rollbackOnFail": True
+    },
+    "integrations": {
+        "huggingfaceEnabled": True,
+        "ollamaEnabled": True,
+        "githubEnabled": False
+    },
+    "resources": {
+        "cpuLimit": 4,
+        "memoryLimit": 8192,
+        "gpuAllocation": 0,
+        "diskQuota": 50
+    },
+    "notifications": {
+        "emailAlerts": False,
+        "slackAlerts": False,
+        "notifyOnFailure": True,
+        "notifyOnSuccess": False
+    },
+    "audit": {
+        "auditEnabled": True,
+        "retentionDays": 30,
+        "logPayloads": False
+    },
+    "diagnostics": {
+        "autoReport": False,
+        "debugMode": False,
+        "profiling": False
+    }
+}
+
+def _get_hydrated_settings():
+    saved_settings = store.get_kv("platform_settings", {})
+    if not isinstance(saved_settings, dict):
+        saved_settings = {}
+        
+    hydrated = copy.deepcopy(DEFAULT_SETTINGS)
+    for domain, domain_defaults in hydrated.items():
+        if domain in saved_settings and isinstance(saved_settings[domain], dict):
+            domain_defaults.update(saved_settings[domain])
+    return hydrated
+
+def _apply_dynamic_settings(domain: str, key: str, value: any):
+    if domain == "diagnostics" and key == "debugMode":
+        level = logging.DEBUG if value else logging.INFO
+        logging.getLogger().setLevel(level)
+        print(f"Set root logger level to {'DEBUG' if value else 'INFO'}")
+    elif domain == "runtime" and key == "logLevel":
+        if isinstance(value, str):
+            level_name = value.upper()
+            level = getattr(logging, level_name, logging.INFO)
+            logging.getLogger().setLevel(level)
+            print(f"Set root logger level to {level_name}")
 
 @router.get("")
 def get_all_settings():
-    return {}
+    return _get_hydrated_settings()
 
 @router.post("/{domain}")
 def update_setting(domain: str, data: SettingUpdate):
-    return {"updatedSettings": {data.key: data.value}}
+    all_settings = _get_hydrated_settings()
+    
+    if domain not in all_settings:
+        all_settings[domain] = {}
+        
+    all_settings[domain][data.key] = data.value
+    store.set_kv("platform_settings", all_settings)
+    
+    _apply_dynamic_settings(domain, data.key, data.value)
+    
+    return {"updatedSettings": all_settings[domain]}
 
 @router.post("/validate/{domain}")
 def validate_setting(domain: str, data: dict):
@@ -21,14 +115,23 @@ def validate_setting(domain: str, data: dict):
 
 @router.get("/export")
 def export_settings():
-    return {}
+    return _get_hydrated_settings()
 
 @router.post("/import")
 def import_settings(data: dict):
+    store.set_kv("platform_settings", data)
     return {"success": True}
 
 @router.post("/restore")
 def restore_defaults(data: dict):
+    domain = data.get("domain", "all")
+    if domain == "all":
+        store.set_kv("platform_settings", {})
+    else:
+        all_settings = store.get_kv("platform_settings", {})
+        if isinstance(all_settings, dict) and domain in all_settings:
+            del all_settings[domain]
+            store.set_kv("platform_settings", all_settings)
     return {"success": True}
 
 @router.get("/diagnostics")

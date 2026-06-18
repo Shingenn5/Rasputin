@@ -20,3 +20,47 @@ export function postJson(path, data) {
     body: JSON.stringify(data),
   });
 }
+export async function postJsonStream(path, data, onProgress) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Request failed: ${response.status} ${text}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let result = null;
+  let buffer = "";
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop(); // keep the last incomplete line in the buffer
+    
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const payload = JSON.parse(line);
+        if (payload.ok === false) throw new Error(payload.error?.message || payload.error);
+        if (payload.final) {
+          result = payload.data;
+        } else {
+          onProgress?.(payload.data);
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          // In case the line somehow wasn't fully parsed, ignore it. 
+          // But our split by newline should guarantee complete lines for NDJSON.
+        } else {
+          throw e;
+        }
+      }
+    }
+  }
+  return result;
+}

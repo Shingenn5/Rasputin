@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
@@ -35,6 +35,7 @@ from . import mcp_relay
 from . import archive
 from . import trials
 from . import settings_api
+from . import model_acquisition
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -695,6 +696,21 @@ async def models(_user=Depends(current_user)):
     return ok(model_registry.enabled_models())
 
 
+class ModelDownloadReq(BaseModel):
+    modelId: str
+
+@app.post("/api/models/download")
+async def start_model_download(req: ModelDownloadReq, _user=Depends(current_user)):
+    state = model_acquisition.start_download(req.modelId)
+    return ok(state)
+
+
+@app.get("/api/models/downloads/active")
+async def get_active_downloads(_user=Depends(current_user)):
+    return ok(model_acquisition.get_active_downloads())
+
+
+
 @app.get("/api/model-registry")
 async def model_registry_list(_user=Depends(current_user)):
     return ok({"models": model_registry.all_models(), "providers": model_providers.public_provider_options()})
@@ -1084,7 +1100,18 @@ async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
 
 @app.post("/api/warsat/deploy")
 async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
-    return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
+    if req.approval_id:
+        async def event_stream():
+            try:
+                for chunk in warsat.deploy_stream(req.plan, req.approval_id):
+                    yield json.dumps(chunk) + "\n"
+            except AppError as e:
+                yield json.dumps({"ok": False, "error": e.message, "code": e.code}) + "\n"
+            except Exception as e:
+                yield json.dumps({"ok": False, "error": str(e)}) + "\n"
+        return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+    else:
+        return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
 
 
 @app.post("/api/warsat/logs")

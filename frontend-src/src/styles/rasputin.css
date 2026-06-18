@@ -10869,17 +10869,36 @@ button.helper-row:hover {
 
 .w2-main-grid {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
-  gap: 24px;
+  grid-template-columns: minmax(220px, 260px) minmax(300px, 1fr) minmax(240px, 300px);
+  gap: 16px;
   padding: 0 24px 24px 24px;
   flex: 1;
-  overflow: hidden;
+  overflow: auto; /* Allow horizontal scrolling if constrained */
+}
+
+@media (max-width: 1200px) {
+  .w2-main-grid {
+    grid-template-columns: minmax(220px, 260px) minmax(300px, 1fr);
+  }
+  .w2-column-intelligence {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+
+@media (max-width: 800px) {
+  .w2-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .w2-column {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   overflow-y: auto;
   padding-right: 8px; /* scrollbar breathing room */
 }
@@ -11068,3 +11087,37 @@ button.helper-row:hover {
 .trials-view .w2-main-grid {
   padding: 0 24px;
 }
+
+/* Workspace VS Code Explorer Styles */
+.workspaces-view .w2-main-grid {
+  grid-template-columns: minmax(250px, 320px) 1fr;
+}
+@media (max-width: 800px) {
+  .workspaces-view .w2-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.w2-tree-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.875rem;
+  color: var(--cc-text);
+  border-radius: 4px;
+  margin-bottom: 2px;
+}
+.w2-tree-item:hover {
+  background-color: var(--cc-surface);
+}
+.w2-tree-item.is-active {
+  background-color: color-mix(in srgb, var(--cc-accent) 15%, transparent);
+  color: var(--cc-accent);
+}
+.w2-tree-item .w2-tree-icon {
+  margin-right: 8px;
+  color: var(--cc-muted);
+  flex-shrink: 0;
+}
+

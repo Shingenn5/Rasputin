@@ -105,6 +105,18 @@ export function ModelsView({
   const [hfResults, setHfResults] = useState([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfSort, setHfSort] = useState("downloads");
+  const [activeDownloads, setActiveDownloads] = useState([]);
+
+  useEffect(() => {
+    if (view !== "models") return;
+    const interval = setInterval(async () => {
+      try {
+        const d = await api("/api/models/downloads/active");
+        setActiveDownloads(d || []);
+      } catch (e) { }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [view]);
 
   /* derived */
   const catalogItems = modelCatalog?.items || [];
@@ -182,6 +194,14 @@ export function ModelsView({
   const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
   const handleScanGguf = () => executeAction("ScanGGUF", "system", async () => scanGguf?.(), setUiState);
   const handleLoadCatalog = (remote) => executeAction("LoadCatalog", "system", async () => loadModelCatalog?.(remote), setUiState);
+  const startDownload = async (modelId) => {
+    try {
+      await api("/api/models/download", "POST", { modelId });
+      setUiState({ status: "success", message: `Started download of ${modelId}` });
+    } catch (e) {
+      setUiState({ status: "failed", message: `Failed to start download: ${e.message}` });
+    }
+  };
 
   /* stats */
   const totalModels = (models || []).length;
@@ -320,9 +340,30 @@ export function ModelsView({
                   : hfLoading ? "Searching Hugging Face..." : `${hfResults.length} results`}
               </div>
 
+              {/* Active Downloads */}
+              {activeDownloads.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
+                  {activeDownloads.map(dl => (
+                    <div key={dl.id} className="w2-card" style={{ padding: "8px 12px", gap: "4px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
+                        <strong>{dl.modelId}</strong>
+                        <span style={{ color: "var(--cc-muted)" }}>{dl.status}</span>
+                      </div>
+                      <div style={{ height: "4px", background: "var(--cc-border)", borderRadius: "2px", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${dl.progress || 0}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
+                        <span>{(dl.downloadedBytes / 1024 / 1024 / 1024).toFixed(2)} GB / {dl.totalBytes > 0 ? (dl.totalBytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : "?"}</span>
+                        <span>{dl.progress.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Model list */}
               {displayItems.slice(0, 40).map(item => (
-                <CatalogCard key={item.id} item={item} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} />
+                <CatalogCard key={item.id} item={item} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
               ))}
 
               {!displayItems.length && (
@@ -493,7 +534,10 @@ export function ModelsView({
 /* ═══════════════════════════════════════════
    CATALOG CARD
    ═══════════════════════════════════════════ */
-function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode }) {
+function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads }) {
+  const modelId = item.modelId || item.id;
+  const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
+  const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
   return (
     <div className="w2-card" style={{ gap: "8px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -521,6 +565,11 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode }) {
         {item.deployable && (
           <button className="w2-button primary" type="button" onClick={() => prepareCatalogModelForWarsat?.(item)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
             <Play size={12} /> Deploy via Warsat
+          </button>
+        )}
+        {(searchMode === "huggingface" || item.source === "huggingface") && (
+          <button className={`w2-button ${isDownloading ? "primary" : ""}`} type="button" disabled={isDownloading} onClick={() => startDownload(modelId)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
+            <Download size={12} /> {isDownloading ? "Downloading..." : "Download Weights"}
           </button>
         )}
         {item.sourceUrl && item.source === "huggingface" && (

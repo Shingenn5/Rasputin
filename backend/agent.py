@@ -87,7 +87,31 @@ class AgentHub:
         self.listeners = set()
         self.mcp = McpLayer()
         self._memory_export_task = None
+        self._loop = None
         self._mark_interrupted()
+
+    def _trigger_broadcast(self, task_id):
+        if not hasattr(self, "_loop") or not self._loop or not self.listeners:
+            return
+        task = self.tasks.get(task_id)
+        if not task:
+            return
+        data = self.snapshot_task(task)
+        
+        def push_to_queues():
+            dead = []
+            for q in list(self.listeners):
+                try:
+                    q.put_nowait(data)
+                except Exception:
+                    dead.append(q)
+            for q in dead:
+                self.listeners.discard(q)
+                
+        try:
+            self._loop.call_soon_threadsafe(push_to_queues)
+        except Exception:
+            pass
 
     def _mark_interrupted(self):
         with store._lock, store.connect() as conn:
@@ -109,6 +133,7 @@ class AgentHub:
                 (task_id, kind, store._json(detail), store.now()),
             )
             conn.commit()
+        self._trigger_broadcast(task_id)
 
     def record_trace(self, task_id, kind, detail):
         with store._lock, store.connect() as conn:
@@ -117,6 +142,7 @@ class AgentHub:
                 (task_id, kind, store._json(detail), store.now()),
             )
             conn.commit()
+        self._trigger_broadcast(task_id)
 
     def record_output(self, task_id, kind, title, content):
         with store._lock, store.connect() as conn:
@@ -125,6 +151,7 @@ class AgentHub:
                 (store.new_id("out"), task_id, kind, title, str(content or ""), store.now()),
             )
             conn.commit()
+        self._trigger_broadcast(task_id)
 
     def _persist_session(self, task):
         stamp = store.now()
@@ -496,6 +523,10 @@ class AgentHub:
         return [dict(row) for row in reversed(rows)]
 
     async def subscribe(self):
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
         q = asyncio.Queue()
         self.listeners.add(q)
         return q

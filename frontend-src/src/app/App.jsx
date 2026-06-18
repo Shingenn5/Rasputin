@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
-import { api, postJson } from "../api/client.js";
+import { api, postJson, postJsonStream } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
 import { ModelsView } from "../features/models/ModelsView.jsx";
@@ -1389,7 +1389,14 @@ export function App() {
     const approvalId = warsatDeployment?.approval?.id || warsatDeployment?.approvalId;
     setGlobalStatus(approvalId ? "Warsat is pulling the image and starting the container. This can take several minutes." : "Creating Warsat deployment approval.");
     try {
-      const deployment = await postJson("/api/warsat/deploy", { plan: warsatPlan, approvalId });
+      let deployment;
+      if (approvalId) {
+        deployment = await postJsonStream("/api/warsat/deploy", { plan: warsatPlan, approvalId }, (partial) => {
+          setWarsatDeployment(partial);
+        });
+      } else {
+        deployment = await postJson("/api/warsat/deploy", { plan: warsatPlan });
+      }
       setWarsatDeployment(deployment);
       if (deployment.approvalRequired) {
         await refreshApprovals();
