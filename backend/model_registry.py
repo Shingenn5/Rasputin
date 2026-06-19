@@ -15,6 +15,7 @@ from . import model_secrets
 from . import security
 from . import workspace
 from .response import AppError
+from .warsat.providers import get_provider
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
@@ -290,7 +291,10 @@ def all_models():
         item["url"] = chat_url(item)
         if item.get("managed"):
             if docker_allowed:
-                item["container_status"] = container_status(item)
+                try:
+                    item["container_status"] = get_provider(item).status(item)
+                except Exception:
+                    item["container_status"] = "unknown"
                 item["runtime_status"] = "reachable" if item["container_status"] == "running" else "stopped"
             else:
                 item["container_status"] = "docker control disabled"
@@ -422,10 +426,9 @@ def delete_model(key):
     if not model:
         raise AppError("model_missing", "Model is not registered.", 404)
     # Stop and remove container if managed
-    if model.get("managed") and model.get("container"):
+    if model.get("managed"):
         try:
-            import subprocess
-            subprocess.run(["docker", "rm", "-f", model["container"]], capture_output=True, text=True, timeout=20)
+            get_provider(model).rm(model)
         except Exception:
             pass
     # Clear API key if present
@@ -665,29 +668,6 @@ def next_port():
     return port
 
 
-def docker_args(model):
-    if model.get("runtime") != "docker-llamacpp":
-        raise ValueError("model is not a managed llama.cpp entry")
-    file_path = _safe_file(model.get("host_model_path", ""))
-    parent = str(file_path.parent)
-    cmd = [
-        "docker", "run", "-d",
-        "--name", model.get("container") or f"ai-{model['key']}",
-        "-p", f"127.0.0.1:{int(model.get('port', 8081))}:8080",
-        "--security-opt", "no-new-privileges",
-        "-v", f"{parent}:/models:ro",
-        model.get("image") or "ghcr.io/ggml-org/llama.cpp:server",
-        "-m", f"/models/{file_path.name}",
-        "--host", "0.0.0.0",
-        "--port", "8080",
-        "-c", str(int(model.get("context", 4096))),
-    ]
-    gpu_layers = int(model.get("n_gpu_layers", 0))
-    if gpu_layers:
-        cmd.extend(["--n-gpu-layers", str(gpu_layers)])
-    return cmd
-
-
 def start_model(key):
     security.require("allow_docker_control")
     model = get_model(key)
@@ -695,17 +675,17 @@ def start_model(key):
         raise ValueError("model missing")
     if not model.get("managed"):
         return {"ok": False, "message": "external model, start it outside the wrapper"}
-    status = container_status(model)
-    if status == "running":
-        return {"ok": True, "status": status, "message": "already running"}
-    rm_model(key)
-    cmd = docker_args(model)
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if proc.returncode != 0:
-        audit.log("model_start_failed", {"key": key, "error": proc.stderr.strip() or proc.stdout.strip()})
-        return {"ok": False, "cmd": cmd, "error": proc.stderr.strip() or proc.stdout.strip()}
-    audit.log("model_start", {"key": key, "container": model.get("container"), "port": model.get("port")})
-    return {"ok": True, "container_id": proc.stdout.strip(), "cmd": cmd}
+    try:
+        provider = get_provider(model)
+        result = provider.start(model)
+        if result.get("ok"):
+            audit.log("model_start", {"key": key, "container": model.get("container"), "port": model.get("port")})
+        else:
+            audit.log("model_start_failed", {"key": key, "error": result.get("error", "unknown error")})
+        return result
+    except Exception as exc:
+        audit.log("model_start_failed", {"key": key, "error": str(exc)})
+        return {"ok": False, "error": str(exc)}
 
 
 def stop_model(key):
@@ -713,37 +693,23 @@ def stop_model(key):
     model = get_model(key)
     if not model or not model.get("managed"):
         return {"ok": False, "message": "model is not managed"}
-    name = model.get("container")
-    subprocess.run(["docker", "stop", name], capture_output=True, text=True, timeout=20)
-    subprocess.run(["docker", "rm", name], capture_output=True, text=True, timeout=20)
-    audit.log("model_stop", {"key": key, "container": name})
-    return {"ok": True, "status": container_status(model)}
+    try:
+        provider = get_provider(model)
+        result = provider.stop(model)
+        audit.log("model_stop", {"key": key, "container": model.get("container")})
+        return result
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def rm_model(key):
     security.require("allow_docker_control")
     model = get_model(key)
-    if model and model.get("managed") and model.get("container"):
-        subprocess.run(["docker", "rm", "-f", model["container"]], capture_output=True, text=True, timeout=20)
-
-
-def container_status(model):
-    name = model.get("container")
-    if not name:
-        return "external"
-    try:
-        proc = subprocess.run(
-            ["docker", "ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.Status}}"],
-            capture_output=True, text=True, timeout=10,
-        )
-    except Exception:
-        return "unknown"
-    text = proc.stdout.strip().lower()
-    if not text:
-        return "stopped"
-    if text.startswith("up"):
-        return "running"
-    return text
+    if model and model.get("managed"):
+        try:
+            get_provider(model).rm(model)
+        except Exception:
+            pass
 
 
 def test_model(key):
@@ -794,9 +760,7 @@ def logs_model(key, limit=120):
     model = get_model(key)
     if not model or not model.get("managed"):
         return {"ok": False, "message": "model is not managed", "logs": ""}
-    name = model.get("container")
     try:
-        proc = subprocess.run(["docker", "logs", "--tail", str(max(1, min(int(limit), 500))), name], capture_output=True, text=True, timeout=15)
+        return get_provider(model).logs(model, limit)
     except Exception as exc:
         return {"ok": False, "error": str(exc), "logs": ""}
-    return {"ok": proc.returncode == 0, "logs": proc.stdout + proc.stderr}

@@ -72,6 +72,7 @@ def init_db():
               task_id TEXT,
               role TEXT NOT NULL,
               content TEXT NOT NULL,
+              evicted INTEGER NOT NULL DEFAULT 0,
               created_at REAL NOT NULL,
               FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
@@ -193,6 +194,12 @@ def init_db():
         }
         if "folder" not in session_columns:
             conn.execute("ALTER TABLE sessions ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+            
+        messages_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "evicted" not in messages_columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN evicted INTEGER NOT NULL DEFAULT 0")
         if "folder_id" in session_columns:
             old_table = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_folders'"

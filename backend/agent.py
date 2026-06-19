@@ -517,7 +517,7 @@ class AgentHub:
     def recent_messages(self, session_id, limit=10):
         with store._lock, store.connect() as conn:
             rows = conn.execute(
-                "SELECT role,content,task_id,created_at FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT ?",
+                "SELECT role,content,task_id,created_at FROM messages WHERE session_id=? AND evicted=0 ORDER BY created_at DESC LIMIT ?",
                 (session_id, max(1, min(int(limit), 30))),
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
@@ -677,7 +677,7 @@ class AgentHub:
                 memory.remember("session", {"objective": task.objective, "result": reply, "model": task.model})
                 memory.suggest_from_task(task.id, task.objective, reply, task.workspace)
                 self._add_message(task.session_id, task.id, "assistant", reply)
-                self.compact_session(task.session_id)
+                await self.compact_session(task)
                 task.log("done")
             else:
                 task.progress = 8
@@ -706,7 +706,7 @@ class AgentHub:
                 memory.remember("session", {"objective": task.objective, "result": reflection, "model": task.model})
                 memory.suggest_from_task(task.id, task.objective, reflection, task.workspace)
                 self._add_message(task.session_id, task.id, "assistant", reflection)
-                self.compact_session(task.session_id)
+                await self.compact_session(task)
                 task.log("done")
         except asyncio.CancelledError:
             task.status = "cancelled"
@@ -730,6 +730,8 @@ class AgentHub:
         return await chat(model_key, [{"role": "user", "content": bundle["prompt"]}])
 
     async def chat_reply(self, task):
+        session_data = self.session(task.session_id).get("session", {})
+        session_summary = session_data.get("summary", "")
         previous_messages = self.recent_messages(task.session_id, 10)
         recall = memory.search(task.objective, 5)
         context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
@@ -753,6 +755,7 @@ class AgentHub:
                 priority=0,
             ),
             context_governor.section("current_user_message", "Current user message", task.objective, required=True, priority=0, min_chars=500),
+            context_governor.section("compacted_history", "Compacted earlier history", session_summary, priority=5, min_chars=180),
             context_governor.section("previous_conversation", "Previous conversation", self.format_conversation(previous_messages, task.id), priority=10, min_chars=220),
             context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
             context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall), priority=20, min_chars=180),
@@ -885,19 +888,46 @@ class AgentHub:
             return "researcher"
         return "executor"
 
-    def compact_session(self, session_id):
+    async def compact_session(self, task):
         with store._lock, store.connect() as conn:
-            messages = conn.execute(
-                "SELECT role,content FROM messages WHERE session_id=? ORDER BY created_at ASC",
-                (session_id,),
+            rows = conn.execute(
+                "SELECT id, role, content FROM messages WHERE session_id=? AND evicted=0 ORDER BY created_at ASC",
+                (task.session_id,),
             ).fetchall()
-            if len(messages) <= 12:
-                return None
-            older = messages[:-8]
-            summary = "Earlier context: " + " ".join(f"{m['role']}: {m['content'][:180]}" for m in older[:8])[:1800]
-            conn.execute("UPDATE sessions SET summary=?, updated_at=? WHERE id=?", (summary, store.now(), session_id))
+        messages = [dict(row) for row in rows]
+        if len(messages) <= 6:
+            return None
+            
+        total_tokens = sum(context_governor.estimate_tokens(m["content"]) for m in messages)
+        if not context_governor.needs_compaction(task.model, total_tokens):
+            return None
+            
+        older = messages[:-4]
+        evicted_ids = [m["id"] for m in older]
+        
+        prompt_text = "Please summarize the following conversation history into a dense, informative checkpoint. Capture all key decisions, code snippets, tool outputs, and facts so the AI does not lose context.\n\n"
+        for m in older:
+            prompt_text += f"{m['role'].upper()}: {m['content']}\n\n"
+            
+        model_key = self.phase_model(task, "summarizer")
+        try:
+            summary = await chat(model_key, [{"role": "user", "content": prompt_text}])
+        except Exception as e:
+            task.log(f"compaction summary failed: {e}")
+            return None
+            
+        with store._lock, store.connect() as conn:
+            session = conn.execute("SELECT summary FROM sessions WHERE id=?", (task.session_id,)).fetchone()
+            existing_summary = session["summary"] if session else ""
+            new_summary = f"{existing_summary}\n\n[Checkpoint]: {summary}".strip()
+            
+            conn.execute("UPDATE sessions SET summary=?, updated_at=? WHERE id=?", (new_summary, store.now(), task.session_id))
+            placeholders = ",".join("?" * len(evicted_ids))
+            conn.execute(f"UPDATE messages SET evicted=1 WHERE id IN ({placeholders})", evicted_ids)
             conn.commit()
-        return summary
+            
+        task.log(f"compacted {len(evicted_ids)} messages to save tokens")
+        return new_summary
 
     def needs_workspace_context(self, task):
         text = str(task.objective or "").lower()

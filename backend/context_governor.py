@@ -38,6 +38,13 @@ def estimate_tokens(text):
     return int(math.ceil(len(str(text or "")) / CHARS_PER_TOKEN))
 
 
+def needs_compaction(model_key, current_tokens):
+    limits = limits_for_model(model_key)
+    max_input_tokens = max(128, limits["contextWindow"] - limits["maxTokens"] - SAFETY_TOKENS)
+    threshold = int(max_input_tokens * 0.70)
+    return current_tokens > threshold
+
+
 def section(key, title, content, priority=50, required=False, min_chars=220):
     return {
         "key": key,
