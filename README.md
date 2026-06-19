@@ -1,326 +1,153 @@
-# Rasputin
+<div align="center">
+  <h1>🛡️ Rasputin</h1>
+  <p><b>Private, localhost AI workbench for autonomous agents, secure model routing, and brokered research.</b></p>
 
-Private, localhost AI workbench for local files, agent tasks, model routing, RAG, Graphify, and brokered web research.
+  ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
+  ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
+  ![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+  ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+  ![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
+</div>
 
-The core privacy model is:
+---
 
+Rasputin is a privacy-first, secure AI orchestration platform designed to run entirely on your local machine. It provides a robust backend to route LLM tasks, execute **Action Skills** via ephemeral Docker sandboxes, process RAG operations, and perform approval-gated capabilities, all while guaranteeing zero unbrokered outbound internet access for your models.
+
+## 📑 Table of Contents
+- [Core Architecture & Privacy](#-core-architecture--privacy)
+- [Key Features](#-key-features)
+- [Quick Start (Docker)](#-quick-start-docker)
+- [Native Development](#-native-development)
+- [Security & Approvals](#-security--approvals)
+- [Model Integrations & WarSat](#-model-integrations--warsat)
+- [Testing](#-testing)
+
+---
+
+## 🏗 Core Architecture & Privacy
+
+Rasputin operates on a strict zero-trust privacy model:
 ```text
-approved local folders -> Rasputin -> local model endpoints
-internet access -> MCP web broker only
+Approved Local Folders → Rasputin → Local Model Endpoints
+Internet Access        → MCP Web Broker Only
 ```
+Models **do not receive direct internet access**. Web search is brokered, query-guarded, approval-gated by default, and heavily audited. Action Skills (like generating or running code) are executed inside strictly isolated, ephemeral Docker Sandboxes (`rasputin-sandbox`) that are immediately destroyed after execution.
 
-Models do not receive direct internet access. Web search is brokered, query-guarded, approval-gated by default, and audited.
+## ✨ Key Features
 
-## Current Status
+- **Secure Agent Execution:** Run capabilities through isolated Ephemeral Docker Sandboxes.
+- **Task Orchestration:** Live SSE updates, cancellation, multi-modal tracing, and human-in-the-loop approvals.
+- **Graph RAG & Memory:** Persistent Warmind context engine that compacts old chat history into structured, graph-based local knowledge edges.
+- **Warsat Deployment Layer:** Curated protocols to acquire, build, containerize, and deploy AI models natively inside your Docker engine.
+- **Approval Gateways:** Pause/resume functionality with an asynchronous, persistent queue for risky actions (file writes, shell commands, model downloads).
+- **SQLite Runtime:** Durable storage for sessions, messages, memory schemas, traces, and metrics inside `data/rasputin.db`.
 
-Rasputin now includes:
+---
 
-- FastAPI backend served through `server.py`
-- local admin login with first-run password printed to server logs
-- session expiry plus a small local login-failure throttle
-- structured API responses
-- task manager with live SSE updates, cancellation, modes, traces, and outputs
-- SQLite-backed local runtime in `data/rasputin.db` for sessions, tasks, messages, approvals, memory, skills, schedules, traces, outputs, and user preferences
-- pause/resume task controls and durable session history
-- persistent approval queue for risky tool actions
-- optional Telegram approval integration using outbound Bot API polling only
-- Warmind recall store with review queue, SQLite search, and local Markdown exports
-- local master context export under `data/warmind-context/` for cross-session recall across chats, tasks, workspaces, and models
-- `SKILL.md` skill registry with built-in descriptors and session-to-skill previews
-- workspace registry for approved folders, read-only folder approvals, and GUI folder browsing
-- safety flags and audit log
-- local RAG index with citations and hash-vector retrieval
-- typed Graphify nodes/edges with evidence
-- vLLM/GGUF model registry and health checks
-- Warsat model-runtime protocols, safe Docker launch plans, approval-gated deployment, and managed runtime controls
-- Docker model controls blocked unless explicitly enabled
-- Docker Compose localhost deployment
-- React + Vite frontend source in `frontend-src/`, built into `frontend/` for FastAPI
+## 🚀 Quick Start (Docker)
 
-If you fork or publish Rasputin, set your own Git remote. Local runtime state, credentials, model files, generated indexes, and workspace contents are ignored by default.
-
-## Run With Docker
+The fastest and most robust way to launch Rasputin is using the provided Docker wrapper scripts.
 
 ```powershell
+# Clone the repository
 cd path\to\Rasputin
+
+# Launch the orchestrator
 .\start-wrapper.ps1
 ```
 
-The Docker container starts Rasputin and exposes the UI on localhost. Open this manually after the container is healthy:
+Once the container reports as healthy, access the UI at:
+**[http://127.0.0.1:8787](http://127.0.0.1:8787)**
 
-```text
-http://127.0.0.1:8787
-```
+> **Note:** First-run administrator credentials are automatically generated and printed in the container logs. Retrieve them using:
+> ```powershell
+> docker compose logs rasputin-wrapper
+> ```
 
-First-run credentials are printed in the server/container logs.
+### Advanced Docker Profiles
+- **Detached Mode:** `.\start-wrapper.ps1 -Detached`
+- **Docker Control Layer (WarSat):** `.\start-wrapper-docker-control.ps1`
+- **RAG Vector Database:** `docker compose --profile rag up --build`
+- **Search Broker (SearXNG):** `docker compose --profile search up --build`
+- **Stop Rasputin:** `.\stop-wrapper.ps1`
 
-Rasputin does not use an automatic restart policy. It starts when you start the Docker container or run the launcher.
+---
 
-## First Run Checklist
+## 💻 Native Development
 
-After the wrapper is running, open Settings -> General. The Release setup checklist shows the current state of the local install:
+If you prefer to run the application bare-metal without Docker, ensure you have Python 3.12+ and Node.js v22+ installed.
 
-1. Secure local admin login.
-2. Connect and test a chat model.
-3. Choose an approved workspace.
-4. Confirm privacy lock and remote model defaults.
-5. Check the Markdown output folder.
-
-The generated first-run password is printed once in the container logs:
-
+### 1. Start the Backend (FastAPI)
 ```powershell
-docker compose logs rasputin-wrapper
-```
-
-Change that password from Settings -> Admin after signing in. The generated password is not shown in the browser and should not be committed to Git or copied into docs.
-
-For a clean clone, the expected setup path is:
-
-```powershell
-.\start-wrapper.ps1
-docker compose logs rasputin-wrapper
-```
-
-Then open `http://127.0.0.1:8787`, sign in, change the password, test a local model from Models, and select a mounted workspace from Workspaces.
-
-Detached:
-
-```powershell
-.\start-wrapper.ps1 -Detached
-docker compose logs rasputin-wrapper
-```
-
-Stop:
-
-```powershell
-.\stop-wrapper.ps1
-```
-
-## Native Development
-
-Run the backend:
-
-```powershell
+pip install -r requirements.txt
 python server.py
 ```
 
-If Python is installed somewhere else, call that interpreter explicitly:
-
+### 2. Start the Frontend (Vite/React)
 ```powershell
-& "path\to\python.exe" server.py
-```
-
-Run the frontend dev server:
-
-```powershell
+cd frontend-src
 npm install
 npm run dev
 ```
 
-Build the frontend that Docker/FastAPI serves:
-
+### 3. Build for Production
+To bake the React frontend into static assets served natively by FastAPI:
 ```powershell
 npm run build
 ```
 
-Frontend source lives in `frontend-src/`. The built files in `frontend/` are the static app served by FastAPI, with cache-busted assets under `/static/assets/`.
+---
 
-Rasputin uses React + Vite with React-Bootstrap components. Bootstrap CSS is imported from the local npm package, and Rasputin-specific layout/branding lives in `frontend-src/src/styles/rasputin.css`.
+## 🔒 Security & Approvals
 
-Frontend redesign planning lives in:
+Rasputin prioritizes local safety through stringent defaults:
+- **Privacy Lock:** ON by default (disables remote model routing).
+- **Remote Endpoints:** BLOCKED unless manually trusted.
+- **Docker/Shell Control:** OFF by default.
+- **Workspace Operations:** Read-only unless explicitly granted; moves/writes trigger approval reviews.
+- **Web Brokering:** Searches are paused and sent to the approval queue.
+- **Sandbox Isolation:** AI-generated python execution is fenced in an unprivileged alpine container.
 
-```text
-docs/FRONTEND_REDESIGN_PLAN.md
-```
+> **Important:** Local models, memory databases, vector indexes, workspaces, and `data/model_secrets.json` are automatically ignored by Git.
 
-Full system guide:
+---
 
-```text
-docs/RASPUTIN_ARCHITECTURE_GUIDE.md
-```
+## 🧠 Model Integrations & WarSat
 
-Fresh clone setup guide:
+### Local Models (vLLM / llama.cpp)
+Rasputin defaults to a local vLLM endpoint (`http://127.0.0.1:8000/v1`). Any OpenAI-compatible backend (LM Studio, Ollama, text-generation-webui) can be natively registered in the interface.
 
-```text
-docs/RELEASE_SETUP.md
-```
+### WarSat Automation
+WarSat is Rasputin's model-runtime orchestration layer. It reads curated JSON protocols, generates safe Docker launch plans, approval-gates deployments, and manages local model endpoints directly through the host's Docker socket.
 
-Current implementation baseline:
+### Cloud Providers
+You can configure OpenAI, Anthropic, or Gemini API keys within the UI (stored securely in `data/model_secrets.json`). However, the Privacy Lock **must** be disabled to route requests outside the host machine.
 
-```text
-docs/CURRENT_BASELINE.md
-```
+---
 
-## Docker Profiles
+## 🧪 Testing
 
-Default wrapper only:
+Rasputin includes a dedicated testing harness that runs in a completely isolated environment mapping to `testdata/`.
 
-```powershell
-docker compose up --build
-```
-
-Advanced Docker control:
-
-```powershell
-.\start-wrapper-docker-control.ps1
-```
-
-Optional future vector DB:
-
-```powershell
-docker compose --profile rag up --build
-```
-
-Optional brokered search service:
-
-```powershell
-docker compose --profile search up --build
-```
-
-## Testing Harness
-
-The harness uses a separate Docker Compose file and writes only to `testdata/`.
-
-Windows:
-
+**Run Backend Smoke Tests (Windows):**
 ```powershell
 .\scripts\test.ps1
 ```
+*(Use `sh scripts/test.sh` on macOS/Linux)*
 
-Keep the isolated test wrapper running after the test:
-
-```powershell
-.\scripts\test.ps1 -KeepRunning
-```
-
-macOS/Linux:
-
-```bash
-sh scripts/test.sh
-```
-
-Keep it running on macOS/Linux:
-
-```bash
-RASPUTIN_KEEP_RUNNING=1 sh scripts/test.sh
-```
-
-What it runs:
-
-- isolated wrapper on `http://127.0.0.1:8877`
-- backend route smoke tests
-- live API smoke test
-- dry-run task lifecycle test
-- structured error check for bad GGUF paths
-- camelCase response checks
-
-Optional browser UI tests:
-
+**Run E2E UI Tests (Playwright):**
 ```powershell
 npm install
 npx playwright install chromium
 .\scripts\test.ps1 -Ui
 ```
 
-The `-Ui` path rebuilds the Vite frontend before Docker starts. The UI suite opens the test wrapper, checks the chat-first home screen, settings views, model registry, workspace browser, theme switching, dry-run send flow, and mobile screenshots.
-
-## RasputinTest GUI Preview
-
-GUI experiments run in an isolated preview container instead of production Rasputin.
-
-Start the preview container:
-
+**GUI Preview Environment:**
 ```powershell
 npm run preview:gui
 ```
+*(Preview UI available at `http://127.0.0.1:8899/preview/home`)*
 
-Open:
+---
 
-```text
-http://127.0.0.1:8899/preview/home
-```
-
-Run the preview smoke tests:
-
-```powershell
-npm run test:gui-preview
-```
-
-The preview container uses `docker-compose.gui-test.yml`, binds to `127.0.0.1:8899`, sets `RASPUTIN_UI_PREVIEW=1`, and stores all preview state under `testdata/gui-preview/`. Production Rasputin stays on `http://127.0.0.1:8787`.
-
-## Local Models
-
-Main vLLM endpoint defaults to:
-
-```text
-http://127.0.0.1:8000/v1
-```
-
-When Rasputin runs in Docker, localhost model URLs are translated to:
-
-```text
-http://host.docker.internal:8000/v1
-```
-
-GGUF auxiliary models can be registered for llama.cpp. Starting/stopping model containers requires Docker control mode and the `allow_docker_control` safety flag.
-
-Warsat is the model-runtime control layer. It reads curated protocols from `warsat/protocols/`, generates safe launch plans, creates an approval before Docker execution, and registers the model endpoint after the container starts. Deployment requires the docker-control compose overlay, Docker control enabled in Safety, and an approved `warsat_deploy` request. Warsat can also list managed containers, show logs, and approval-gate stop/restart actions.
-
-For model servers Rasputin does not launch itself, use the Models tab's local endpoint form. Any localhost OpenAI-compatible endpoint can be registered, tested, and selected while privacy lock blocks remote model URLs by default. Examples include LM Studio, Ollama, text-generation-webui, or a custom local server that exposes `/v1/models` and `/v1/chat/completions`.
-
-Rasputin can also register external API providers from the Models tab:
-
-- OpenAI and other OpenAI-compatible remote APIs
-- Anthropic Messages API
-- Google Gemini GenerateContent API
-
-External providers are intentionally gated. They only work after Safety allows remote model endpoints, which means Privacy lock must be off and Remote models must be on. API keys are never stored in `models.json`; use environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`, or paste a key into Rasputin's ignored local secret store at `data/model_secrets.json`.
-
-See `docs/WARSAT_PROTOCOLS_PLAN.md`.
-
-## Safety Defaults
-
-- Privacy lock is on.
-- Remote model endpoints are blocked.
-- Docker control is off.
-- Shell execution is off.
-- Folder reorganization is off.
-- File writes and moves require preview approval.
-- Web search requires approval before the broker sends a query.
-- Telegram approval messages are optional and redacted; they never include file contents, prompts, diffs, secrets, or raw model output.
-- New approved folders default to read-only unless a route explicitly grants write permission.
-- RAG and Graphify search are treated as local file access and are blocked when file read is disabled.
-- Markdown output writes are blocked when file write is disabled.
-- Docker model logs/status calls are blocked when Docker control is disabled.
-- Local memory, RAG indexes, graph indexes, model registry state, workspaces, and model files are ignored by Git.
-- External API secrets are ignored by Git and should live only in env vars or `data/model_secrets.json`.
-
-## Production Hardening Notes
-
-- Wrapper ports bind to `127.0.0.1`.
-- Unknown backend exceptions return a generic structured `internalError` response.
-- GGUF imports are limited to the mounted `models/` folder or approved workspaces.
-- Docker mount requests are preview/record only unless Docker control is enabled.
-- Managed-model container status does not call Docker while Docker control is disabled.
-
-## Repo Hygiene
-
-Before pushing:
-
-```powershell
-git status --short
-npm run checkRepoSafety
-```
-
-The staged set should include source, docs, Docker files, scripts, examples, and placeholder folders only. It should not include:
-
-- `data/`
-- `workspace/`
-- `models/`
-- logs
-- generated indexes
-- local memory
-- private model registry state
-- local auth files
-
-Rasputin stores private runtime state under ignored local `data/` storage. User preferences are imported from legacy `data/preferences.json` when present, then persisted in SQLite under `data/rasputin.db`. The legacy JSON file is not required for new preference writes and must not be committed.
+*For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) and [Frontend Planning](docs/FRONTEND_REDESIGN_PLAN.md) documents.*
