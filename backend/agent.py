@@ -730,7 +730,10 @@ class AgentHub:
         return await chat(model_key, [{"role": "user", "content": bundle["prompt"]}])
 
     async def chat_reply(self, task):
-        session_data = self.session(task.session_id).get("session", {})
+        try:
+            session_data = self.session(task.session_id).get("session", {})
+        except ValueError:
+            session_data = {}
         session_summary = session_data.get("summary", "")
         previous_messages = self.recent_messages(task.session_id, 10)
         recall = memory.search(task.objective, 5)

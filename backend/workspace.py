@@ -365,7 +365,8 @@ def search_files(root_id=None, path=None, query="", max_results=40, include_cont
         })
         matches.append(entry)
 
-    for current, dirs, files in target.walk():
+    import os
+    for current, dirs, files in os.walk(target):
         dirs[:] = [name for name in dirs if name not in IGNORED_DIRS]
         current_path = Path(current)
         for folder in sorted(dirs, key=str.lower):

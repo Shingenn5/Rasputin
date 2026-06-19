@@ -615,7 +615,10 @@ async def ui_config():
 
 @app.get("/api/ui/bootstrap")
 async def ui_bootstrap(_user=Depends(current_user)):
-    warsat_runtime_state = await asyncio.to_thread(warsat.containers)
+    try:
+        warsat_runtime_state = await asyncio.to_thread(warsat.containers)
+    except AppError:
+        warsat_runtime_state = {"containers": [], "enabled": False, "message": "Docker unreachable."}
     return ok({
         "models": model_registry.all_models(),
         "model_providers": model_providers.public_provider_options(),

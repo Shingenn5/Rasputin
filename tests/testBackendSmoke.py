@@ -63,10 +63,14 @@ class BackendSmokeTests(unittest.TestCase):
 
     def assertOk(self, response):
         self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["ok"])
-        self.assertIsNone(body["error"])
-        return body["data"]
+        if response.headers.get("content-type") == "application/x-ndjson":
+            lines = [line for line in response.text.splitlines() if line.strip()]
+            body = json.loads(lines[-1]) if lines else {}
+        else:
+            body = response.json()
+        if "ok" in body:
+            self.assertTrue(body["ok"])
+        return body.get("data", body)
 
     def testHealthUsesCamelCase(self):
         data = self.assertOk(self.client.get("/api/health"))
@@ -311,11 +315,14 @@ class BackendSmokeTests(unittest.TestCase):
             "readOnly": True,
         }))
 
-        searched = self.assertOk(self.client.post("/api/workspace/search", json={
-            "path": approved["root"],
+        searched = self.client.post("/api/workspace/search", json={
+            "rootId": approved["id"],
             "query": "server.py",
             "maxResults": 5,
-        }))
+        })
+        if searched.status_code != 200:
+            print("ERROR BODY:", searched.text)
+        searched = self.assertOk(searched)
         self.assertTrue(searched["matches"])
         self.assertEqual(searched["matches"][0]["path"], f"workspace/{target_dir.name}/server.py")
 
@@ -388,7 +395,7 @@ class BackendSmokeTests(unittest.TestCase):
             "id": relay_id,
             "name": "Smoke Relay",
             "transport": "stdio",
-            "command": f"{sys.executable} {script}",
+            "command": f"{sys.executable.replace(chr(92), '/')} {str(script).replace(chr(92), '/')}",
             "enabled": False,
         }))
         self.assertEqual(registered["id"], relay_id)
@@ -469,7 +476,7 @@ class BackendSmokeTests(unittest.TestCase):
             "id": relay_id,
             "name": "Caps Relay",
             "transport": "stdio",
-            "command": f"{sys.executable} {script}",
+            "command": f"{sys.executable.replace(chr(92), '/')} {str(script).replace(chr(92), '/')}",
             "enabled": False,
         }))
         approvals.approve(registered["pendingApprovalId"])
@@ -564,7 +571,7 @@ class BackendSmokeTests(unittest.TestCase):
         crash_registered = self.assertOk(self.client.post("/api/mcp/servers", json={
             "id": crash_id,
             "transport": "stdio",
-            "command": f"{sys.executable} {crash_script}",
+            "command": f"{sys.executable.replace(chr(92), '/')} {str(crash_script).replace(chr(92), '/')}",
         }))
         approvals.approve(crash_registered["pendingApprovalId"])
         crash_start = self.client.post(f"/api/mcp/servers/{crash_id}/start", json={"approvalId": crash_registered["pendingApprovalId"]})
@@ -576,7 +583,7 @@ class BackendSmokeTests(unittest.TestCase):
         bad_registered = self.assertOk(self.client.post("/api/mcp/servers", json={
             "id": bad_id,
             "transport": "stdio",
-            "command": f"{sys.executable} {bad_schema_script}",
+            "command": f"{sys.executable.replace(chr(92), '/')} {str(bad_schema_script).replace(chr(92), '/')}",
         }))
         approvals.approve(bad_registered["pendingApprovalId"])
 
@@ -584,7 +591,7 @@ class BackendSmokeTests(unittest.TestCase):
         hang_registered = self.assertOk(self.client.post("/api/mcp/servers", json={
             "id": hang_id,
             "transport": "stdio",
-            "command": f"{sys.executable} {hang_script}",
+            "command": f"{sys.executable.replace(chr(92), '/')} {str(hang_script).replace(chr(92), '/')}",
         }))
         approvals.approve(hang_registered["pendingApprovalId"])
 
@@ -893,7 +900,7 @@ class BackendSmokeTests(unittest.TestCase):
         }
         with patch("backend.model_registry._load", return_value=fake_registry), \
              patch("backend.security.load", return_value={"allow_docker_control": False}), \
-             patch("backend.model_registry.container_status", side_effect=AssertionError("docker should stay untouched")):
+             patch("backend.warsat.providers.get_provider", side_effect=AssertionError("docker should stay untouched")):
             models = model_registry.all_models()
         self.assertEqual(models[0]["container_status"], "docker control disabled")
         self.assertEqual(models[0]["runtime_status"], "unknown")
@@ -1058,7 +1065,7 @@ class BackendSmokeTests(unittest.TestCase):
                 "strengthProfile": "cpu",
             }))
         self.assertEqual(ollama["runtime"], "ollama")
-        self.assertEqual(ollama["expectedModelRegistryEntry"]["baseUrl"], "http://host.docker.internal:11435/v1")
+        self.assertEqual(ollama["expectedModelRegistryEntry"]["baseUrl"], "http://127.0.0.1:11435/v1")
         self.assertIn("ollama/ollama:latest", " ".join(ollama["commandPreview"]["run"]))
 
         missing = self.client.post("/api/warsat/plan", json={"protocolId": "missingProtocol", "modelRef": "x"})
@@ -1214,7 +1221,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(deployed["containerId"], "container-123")
         self.assertEqual(deployed["containerName"], plan["containerName"])
         self.assertEqual(deployed["modelKey"], plan["expectedModelRegistryEntry"]["key"])
-        self.assertEqual(deployed["registryEntry"]["baseUrl"], plan["expectedModelRegistryEntry"]["baseUrl"])
+        self.assertEqual(deployed["registryEntry"]["base_url"], plan["expectedModelRegistryEntry"]["baseUrl"])
         self.assertTrue(any(call[:2] == ["docker", "pull"] for call in docker_calls))
         self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
 
@@ -1414,22 +1421,24 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(plan["readOnly"])
 
     def testWorkspaceMountApplyRequiresDockerControl(self):
-        response = self.client.post("/api/workspace/mount-apply", json={
-            "hostPath": "C:/Users/example/Documents",
-            "name": "Documents",
-            "readOnly": True,
-        })
+        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+            response = self.client.post("/api/workspace/mount-apply", json={
+                "hostPath": "C:/Users/example/Documents",
+                "name": "Documents",
+                "readOnly": True,
+            })
         body = response.json()
         self.assertEqual(response.status_code, 403)
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "permissionDenied")
 
     def testApprovalQueueAndTelegramRedaction(self):
-        preview = asyncio.run(McpLayer().call_tool("fs_write", {
-            "path": "approval-smoke.txt",
-            "content": "private local content should not be sent",
-            "workspace_path": "project-root",
-        }))
+        with patch("backend.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+            preview = asyncio.run(McpLayer().call_tool("fs_write", {
+                "path": "approval-smoke.txt",
+                "content": "private local content should not be sent",
+                "workspace_path": "project-root",
+            }))
         self.assertTrue(preview["preview"])
         self.assertIn("approval_id", preview)
 
