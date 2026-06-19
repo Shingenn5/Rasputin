@@ -175,7 +175,7 @@ class BackendSmokeTests(unittest.TestCase):
         with patch("backend.models.secrets.api_key_for", return_value=("secret", "stored")), \
              patch("backend.core.security.require_local_url", lambda url: True), \
              patch("backend.models.providers._request_json", return_value={"content": [{"type": "text", "text": "anthropic ok"}]}):
-            text = asyncio.run(model_providers.chat({
+            text, tool_calls = asyncio.run(model_providers.chat({
                 "provider": "anthropic",
                 "base_url": "https://api.anthropic.com/v1",
                 "model": "claude-3-5-sonnet-20241022",
@@ -185,7 +185,7 @@ class BackendSmokeTests(unittest.TestCase):
         with patch("backend.models.secrets.api_key_for", return_value=("secret", "stored")), \
              patch("backend.core.security.require_local_url", lambda url: True), \
              patch("backend.models.providers._request_json", return_value={"candidates": [{"content": {"parts": [{"text": "gemini ok"}]}}]}):
-            text = asyncio.run(model_providers.chat({
+            text, tool_calls = asyncio.run(model_providers.chat({
                 "provider": "gemini",
                 "base_url": "https://generativelanguage.googleapis.com/v1beta",
                 "model": "gemini-2.5-flash",

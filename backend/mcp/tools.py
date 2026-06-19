@@ -220,6 +220,26 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "id": "archive_expand",
+        "display_name": "Archive Expand",
+        "description": "Fetches the full text of an archived message or tool result from the eviction log.",
+        "category": "Knowledge",
+        "risk": "safe",
+        "permission_flag": None,
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "not_required",
+        "timeout_seconds": 15,
+        "output_summary_policy": "content_redacted_length_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "archive_id": {"type": "string"},
+            },
+            "required": ["archive_id"],
+        },
+    },
+    {
         "id": "memory_search",
         "display_name": "Memory Search",
         "description": "Searches local saved memory and session recall metadata.",

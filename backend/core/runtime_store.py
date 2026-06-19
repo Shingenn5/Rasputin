@@ -77,6 +77,15 @@ def init_db():
               FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS eviction_log (
+              id TEXT PRIMARY KEY,
+              session_id TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              content TEXT NOT NULL,
+              created_at REAL NOT NULL,
+              FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS tasks (
               id TEXT PRIMARY KEY,
               session_id TEXT NOT NULL,

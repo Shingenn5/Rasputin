@@ -44,6 +44,7 @@ class McpLayer:
             "file_preview": self.file_preview,
             "workspace_mutation_preview": self.workspace_mutation_preview,
             "memory_search": self.memory_search,
+            "archive_expand": self.archive_expand,
             "model_health": self.model_health,
         }
 
@@ -325,6 +326,13 @@ class McpLayer:
         if not security.load().get("allow_file_read", False):
             return {"query": query, "nodes": [], "edges": [], "blocked": True}
         return await asyncio.to_thread(graphify.search, query, limit)
+
+    async def archive_expand(self, archive_id, _task_id=None, _tool_call_id=None):
+        with store._lock, store.connect() as conn:
+            row = conn.execute("SELECT content FROM eviction_log WHERE id=?", (archive_id,)).fetchone()
+        if not row:
+            raise AppError("not_found", f"Archive ID {archive_id} not found.", 404)
+        return {"archive_id": archive_id, "content": row["content"]}
 
     async def workspace_browse(self, root_id=None, path=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_read")

@@ -129,12 +129,12 @@ def _fit_messages(messages, cfg, max_tokens):
     return fitted or [{"role": "user", "content": ""}]
 
 
-async def chat(model_key, messages, temperature=0.2):
+async def chat(model_key, messages, temperature=0.2, tools=None):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
     url = model_registry.chat_url(cfg)
     if model_key == "dry-run" or cfg.get("provider") == "mock" or not url:
         user_msg = messages[-1]["content"] if messages else ""
-        return _dry_run_response(user_msg)
+        return _dry_run_response(user_msg), []
 
     cfg_for_limits = dict(cfg or {})
     if os.environ.get("RASPUTIN_MAX_OUTPUT_TOKENS") and not (cfg_for_limits.get("max_tokens") or cfg_for_limits.get("maxTokens")):
@@ -144,7 +144,7 @@ async def chat(model_key, messages, temperature=0.2):
 
     if model_providers.is_api_provider(cfg):
         try:
-            return await model_providers.chat(cfg, fitted_messages, max_tokens, temperature)
+            return await model_providers.chat(cfg, fitted_messages, max_tokens, temperature, tools=tools)
         except Exception as exc:
             message = _model_failure_message(model_key, cfg, url, exc)
             audit.log("model_chat_failed", {
@@ -166,6 +166,20 @@ async def chat(model_key, messages, temperature=0.2):
         "max_tokens": max_tokens,
         "stream": False,
     }
+    
+    if tools:
+        openai_tools = []
+        for t in tools:
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": t["id"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema", {"type": "object", "properties": {}})
+                }
+            })
+        payload["tools"] = openai_tools
+        
     def post_it():
         req = urllib.request.Request(
             url,
@@ -187,4 +201,23 @@ async def chat(model_key, messages, temperature=0.2):
             "error": message,
         })
         raise RuntimeError(message) from None
-    return data["choices"][0]["message"]["content"]
+        
+    message = data["choices"][0]["message"]
+    text = message.get("content") or ""
+    tool_calls = []
+    
+    for tc in message.get("tool_calls", []):
+        if tc.get("type") == "function":
+            fn = tc.get("function", {})
+            args = {}
+            try:
+                args = json.loads(fn.get("arguments", "{}"))
+            except Exception:
+                pass
+            tool_calls.append({
+                "id": tc.get("id"),
+                "name": fn.get("name"),
+                "args": args
+            })
+            
+    return text.strip(), tool_calls

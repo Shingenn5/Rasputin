@@ -718,7 +718,7 @@ class AgentHub:
             task.log(f"error: {exc}")
         await self.emit(task)
 
-    async def governed_chat(self, task, phase, role, sections):
+    async def governed_chat(self, task, phase, role, sections, tools=None):
         model_key = self.phase_model(task, role)
         bundle = context_governor.compose_prompt(model_key, phase, sections)
         trace = bundle["trace"]
@@ -727,7 +727,44 @@ class AgentHub:
             task.log(f"context trimmed: {', '.join(trace['trimmed'])}")
         if trace.get("omitted"):
             task.log(f"context omitted: {', '.join(trace['omitted'])}")
-        return await chat(model_key, [{"role": "user", "content": bundle["prompt"]}])
+            
+        messages = [{"role": "user", "content": bundle["prompt"]}]
+        
+        for attempt in range(15): # Max 15 tool execution loops
+            text, tool_calls = await chat(model_key, messages, tools=tools)
+            
+            if text or tool_calls:
+                messages.append({
+                    "role": "assistant", 
+                    "content": text, 
+                    "tool_calls": tool_calls
+                })
+                
+            if not tool_calls:
+                return text
+                
+            for tc in tool_calls:
+                task.log(f"tool: {tc['name']}")
+                try:
+                    args = tc.get("args", {})
+                    args["_task_id"] = task.id
+                    result = await self.mcp.call_tool(tc["name"], args)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "name": tc["name"],
+                        "content": json.dumps(result, ensure_ascii=False)
+                    })
+                except Exception as exc:
+                    task.log(f"tool error: {exc}")
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "name": tc["name"],
+                        "content": f"Error executing {tc['name']}: {exc}"
+                    })
+                    
+        return "Error: Maximum tool loop iterations exceeded."
 
     async def chat_reply(self, task):
         try:
@@ -778,7 +815,7 @@ class AgentHub:
                 priority=0,
             ),
         ]
-        return await self.governed_chat(task, "chat", "main", sections)
+        return await self.governed_chat(task, "chat", "main", sections, tools=tool_relay.TOOL_DEFINITIONS)
 
     def ground_chat_response(self, task, text):
         if task.sources or task.graph:
@@ -825,7 +862,7 @@ class AgentHub:
                 priority=0,
             ),
         ]
-        return await self.governed_chat(task, "planning", "planner", sections)
+        return await self.governed_chat(task, "planning", "planner", sections, tools=tool_relay.TOOL_DEFINITIONS)
 
     async def execute(self, task, plan):
         if task.skill and task.skill != "general":
@@ -836,16 +873,12 @@ class AgentHub:
             except ModuleNotFoundError:
                 task.log("skill missing, using model")
 
-        context = await self.mcp.call_tool("rag_search", {"query": task.objective + ' ' + plan[:600], "limit": 4, "workspace_path": task.workspace, "_task_id": task.id})
-        graph = await self.mcp.call_tool("graph_search", {"query": task.objective + ' ' + plan[:600], "limit": 6, "_task_id": task.id})
         sections = [
-            context_governor.section("executor_instruction", "Instruction", "Execute this plan. Use concise output.", required=True, priority=0),
+            context_governor.section("executor_instruction", "Instruction", "Execute this plan. Use tools to gather information and make changes as needed. Use concise output.", required=True, priority=0),
             context_governor.section("mode", "Mode", task.mode, required=True, priority=0),
             context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
             context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
             context_governor.section("plan", "Plan", plan, priority=15, min_chars=260),
-            context_governor.section("rag_sources", "Extra local context", self.format_context(context), priority=25, min_chars=240),
-            context_governor.section("graph_evidence", "Extra graph context", self.format_graph(graph), priority=30, min_chars=180),
             context_governor.section(
                 "rules",
                 "Rules",
@@ -856,15 +889,26 @@ class AgentHub:
                 priority=0,
             ),
         ]
-        return await self.governed_chat(task, "execution", self.execution_role(task), sections)
+        return await self.governed_chat(task, "execution", self.execution_role(task), sections, tools=tool_relay.TOOL_DEFINITIONS)
 
     async def reflect(self, task, plan, work):
+        work_str = str(work)
+        if len(work_str) > 4096:
+            archive_id = store.new_id("arc")
+            with store._lock, store.connect() as conn:
+                conn.execute(
+                    "INSERT INTO eviction_log(id, session_id, kind, content, created_at) VALUES(?, ?, ?, ?, ?)",
+                    (archive_id, task.session_id, "tool_archive", work_str, store.now())
+                )
+                conn.commit()
+            work_str = f"{work_str[:1500]}...\n\n[Full result archived ({len(work_str)} chars). Use 'archive_expand' with archive_id '{archive_id}' to retrieve.]"
+
         sections = [
             context_governor.section("reflection_instruction", "Instruction", "Write the final user-facing answer for this task.", required=True, priority=0),
             context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
             context_governor.section("rag_sources", "Actual local sources", self.format_task_sources(task.sources), priority=20, min_chars=180),
             context_governor.section("graph_evidence", "Actual graph evidence", self.format_task_graph(task.graph), priority=25, min_chars=180),
-            context_governor.section("work", "Work", work, priority=30, min_chars=300),
+            context_governor.section("work", "Work", work_str, priority=30, min_chars=300),
             context_governor.section("plan", "Plan", plan, priority=50, min_chars=220),
             context_governor.section(
                 "rules",
@@ -922,7 +966,17 @@ class AgentHub:
         with store._lock, store.connect() as conn:
             session = conn.execute("SELECT summary FROM sessions WHERE id=?", (task.session_id,)).fetchone()
             existing_summary = session["summary"] if session else ""
-            new_summary = f"{existing_summary}\n\n[Checkpoint]: {summary}".strip()
+            
+            archive_pointers = []
+            for m in older:
+                conn.execute(
+                    "INSERT INTO eviction_log(id, session_id, kind, content, created_at) VALUES(?, ?, ?, ?, ?)",
+                    (m["id"], task.session_id, "message_archive", m["content"], store.now())
+                )
+                archive_pointers.append(f"{m['role']}: '{m['id']}'")
+                
+            pointers_str = ", ".join(archive_pointers)
+            new_summary = f"{existing_summary}\n\n[Checkpoint]: {summary}\n[Archived exact messages: {pointers_str}. Use 'archive_expand' with archive_id to retrieve full text.]".strip()
             
             conn.execute("UPDATE sessions SET summary=?, updated_at=? WHERE id=?", (new_summary, store.now(), task.session_id))
             placeholders = ",".join("?" * len(evicted_ids))

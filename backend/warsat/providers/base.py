@@ -13,7 +13,7 @@ class DeploymentProvider(ABC):
         Deploy and start the model.
         Returns a dict like {"ok": True, "container_id": "...", "cmd": [...]}
         """
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def stop(self, model: dict) -> dict:
@@ -21,14 +21,14 @@ class DeploymentProvider(ABC):
         Stop the model deployment.
         Returns a dict like {"ok": True, "status": "stopped"}
         """
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def rm(self, model: dict) -> None:
         """
         Remove/destroy the deployment footprint entirely.
         """
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def status(self, model: dict) -> str:
@@ -36,7 +36,7 @@ class DeploymentProvider(ABC):
         Check the current status of the deployment.
         Returns one of: "running", "stopped", "external", "unknown", or native status.
         """
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def logs(self, model: dict, limit: int = 120) -> dict:
@@ -44,4 +44,4 @@ class DeploymentProvider(ABC):
         Fetch logs from the deployment.
         Returns {"ok": True, "logs": "..."}
         """
-        pass
+        raise NotImplementedError("Subclasses must implement this method")

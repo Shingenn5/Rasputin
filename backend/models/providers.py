@@ -170,25 +170,93 @@ def _merge_same_role(messages):
     return merged
 
 
-def _anthropic_payload(model, messages, max_tokens, temperature):
+def _anthropic_payload(model, messages, max_tokens, temperature, tools=None):
     system, kept = _system_and_messages(messages)
+    
+    # Anthropic uses alternating user/assistant messages. If we have tool outputs, we format them as user messages.
+    formatted_messages = []
+    for msg in kept:
+        if msg["role"] == "tool":
+            # Convert tool result to user message with tool_result content
+            formatted_messages.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id"),
+                    "content": str(msg.get("content"))
+                }]
+            })
+        elif msg.get("tool_calls"):
+            # Assistant message with tool calls
+            content = []
+            if msg.get("content"):
+                content.append({"type": "text", "text": msg["content"]})
+            for tc in msg["tool_calls"]:
+                content.append({
+                    "type": "tool_use",
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "input": tc.get("args", {})
+                })
+            formatted_messages.append({
+                "role": "assistant",
+                "content": content
+            })
+        else:
+            formatted_messages.append(msg)
+
     payload = {
         "model": model.get("model") or default_model("anthropic"),
         "max_tokens": max_tokens,
-        "messages": _merge_same_role(kept),
+        "messages": _merge_same_role(formatted_messages),
         "temperature": temperature,
     }
     if system:
         payload["system"] = system
+    
+    if tools:
+        anthropic_tools = []
+        for t in tools:
+            anthropic_tools.append({
+                "name": t["id"], # Rasputin defines tool names in "id"
+                "description": t.get("description", ""),
+                "input_schema": t.get("input_schema", {"type": "object", "properties": {}})
+            })
+        payload["tools"] = anthropic_tools
+
     return payload
 
 
-def _gemini_payload(model, messages, max_tokens, temperature):
+def _gemini_payload(model, messages, max_tokens, temperature, tools=None):
     system, kept = _system_and_messages(messages)
     contents = []
     for message in kept:
-        role = "model" if message["role"] == "assistant" else "user"
-        contents.append({"role": role, "parts": [{"text": message["content"]}]})
+        if message["role"] == "tool":
+            contents.append({
+                "role": "user",
+                "parts": [{
+                    "functionResponse": {
+                        "name": message.get("name") or "tool",
+                        "response": {"result": message.get("content")}
+                    }
+                }]
+            })
+        elif message.get("tool_calls"):
+            parts = []
+            if message.get("content"):
+                parts.append({"text": message["content"]})
+            for tc in message["tool_calls"]:
+                parts.append({
+                    "functionCall": {
+                        "name": tc["name"],
+                        "args": tc.get("args", {})
+                    }
+                })
+            contents.append({"role": "model", "parts": parts})
+        else:
+            role = "model" if message["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": message["content"]}]})
+            
     payload = {
         "contents": contents,
         "generationConfig": {
@@ -198,64 +266,134 @@ def _gemini_payload(model, messages, max_tokens, temperature):
     }
     if system:
         payload["systemInstruction"] = {"parts": [{"text": system}]}
+        
+    if tools:
+        gemini_tools = []
+        for t in tools:
+            gemini_tools.append({
+                "name": t["id"],
+                "description": t.get("description", ""),
+                "parameters": t.get("input_schema", {"type": "object", "properties": {}})
+            })
+        payload["tools"] = [{"functionDeclarations": gemini_tools}]
+        
     return payload
 
 
-def _openai_payload(model, messages, max_tokens, temperature):
-    return {
+def _openai_payload(model, messages, max_tokens, temperature, tools=None):
+    payload = {
         "model": model.get("model") or default_model(model.get("provider")),
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,
     }
+    if tools:
+        openai_tools = []
+        for t in tools:
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": t["id"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema", {"type": "object", "properties": {}})
+                }
+            })
+        payload["tools"] = openai_tools
+    return payload
 
 
-def _parse_anthropic_text(data):
-    parts = []
+def _parse_anthropic_response(data):
+    text_parts = []
+    tool_calls = []
     for item in data.get("content", []) if isinstance(data, dict) else []:
-        if isinstance(item, dict) and item.get("type") == "text":
-            parts.append(str(item.get("text") or ""))
-    return "\n".join(part for part in parts if part).strip()
+        if isinstance(item, dict):
+            if item.get("type") == "text":
+                text_parts.append(str(item.get("text") or ""))
+            elif item.get("type") == "tool_use":
+                tool_calls.append({
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "args": item.get("input", {})
+                })
+    return "\n".join(part for part in text_parts if part).strip(), tool_calls
 
 
-def _parse_gemini_text(data):
+def _parse_gemini_response(data):
     candidates = data.get("candidates", []) if isinstance(data, dict) else []
     if not candidates:
-        return ""
+        return "", []
     content = candidates[0].get("content", {})
     parts = content.get("parts", [])
-    return "\n".join(str(part.get("text") or "") for part in parts if isinstance(part, dict) and part.get("text")).strip()
+    
+    text_parts = []
+    tool_calls = []
+    
+    for part in parts:
+        if isinstance(part, dict):
+            if part.get("text"):
+                text_parts.append(str(part["text"]))
+            elif part.get("functionCall"):
+                fc = part["functionCall"]
+                tool_calls.append({
+                    "id": f"call_{fc.get('name')}",
+                    "name": fc.get("name"),
+                    "args": fc.get("args", {})
+                })
+                
+    return "\n".join(text_parts).strip(), tool_calls
 
 
-def chat_sync(model, messages, max_tokens, temperature):
+def _parse_openai_response(data):
+    message = data["choices"][0]["message"]
+    text = message.get("content") or ""
+    tool_calls = []
+    
+    for tc in message.get("tool_calls", []):
+        if tc.get("type") == "function":
+            fn = tc.get("function", {})
+            args = {}
+            try:
+                args = json.loads(fn.get("arguments", "{}"))
+            except Exception:
+                pass
+            tool_calls.append({
+                "id": tc.get("id"),
+                "name": fn.get("name"),
+                "args": args
+            })
+            
+    return text.strip(), tool_calls
+
+
+def chat_sync(model, messages, max_tokens, temperature, tools=None):
     provider = provider_key(model.get("provider"))
     url = chat_url(model)
     security.require_local_url(url)
     if provider in OPENAI_COMPATIBLE_API_PROVIDERS:
-        payload = _openai_payload(model, messages, max_tokens, temperature)
+        payload = _openai_payload(model, messages, max_tokens, temperature, tools)
         headers = _openai_headers(model)
-        parser = lambda data: data["choices"][0]["message"]["content"]
+        parser = _parse_openai_response
     elif provider == "anthropic":
-        payload = _anthropic_payload(model, messages, max_tokens, temperature)
+        payload = _anthropic_payload(model, messages, max_tokens, temperature, tools)
         headers = _anthropic_headers(model)
-        parser = _parse_anthropic_text
+        parser = _parse_anthropic_response
     elif provider == "gemini":
-        payload = _gemini_payload(model, messages, max_tokens, temperature)
+        payload = _gemini_payload(model, messages, max_tokens, temperature, tools)
         headers = _gemini_headers(model)
-        parser = _parse_gemini_text
+        parser = _parse_gemini_response
     else:
         raise AppError("model_provider_unsupported", f"Provider {provider or 'unknown'} is not supported.", 400)
 
     data = _request_json(url, "POST", payload, headers, 60)
-    text = parser(data)
-    if not text:
-        raise AppError("model_response_empty", "Provider returned no text response.", 502)
-    return text
+    text, tool_calls = parser(data)
+    if not text and not tool_calls:
+        raise AppError("model_response_empty", "Provider returned no text or tool response.", 502)
+    return text, tool_calls
 
 
-async def chat(model, messages, max_tokens, temperature):
-    return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature)
+async def chat(model, messages, max_tokens=1024, temperature=0.2, tools=None):
+    return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature, tools)
 
 
 def _parse_model_ids(payload, provider):
