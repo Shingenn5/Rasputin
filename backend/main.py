@@ -234,6 +234,8 @@ from backend.api.trials import router as trials_router
 from backend.api.archive import router as archive_router
 from backend.api.system import router as system_router
 
+from backend.api.sandbox import router as sandbox_router
+
 app.include_router(auth_router)
 app.include_router(models_router)
 app.include_router(mcp_router)
@@ -247,6 +249,7 @@ app.include_router(rag_router)
 app.include_router(trials_router)
 app.include_router(archive_router)
 app.include_router(system_router)
+app.include_router(sandbox_router)
 app.include_router(settings_api.router)
 
 @app.get("/")

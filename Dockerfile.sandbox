@@ -1,0 +1,18 @@
+FROM python:3.12-alpine
+
+WORKDIR /sandbox
+
+# We will need requests to act as the API client
+RUN pip install --no-cache-dir requests
+
+# Create a non-root user for executing scripts securely
+RUN addgroup -S sandboxgroup && adduser -S sandboxuser -G sandboxgroup
+RUN chown -R sandboxuser:sandboxgroup /sandbox
+
+COPY sandbox/client.py /sandbox/client.py
+COPY sandbox/wrapper.py /sandbox/wrapper.py
+ENV PYTHONPATH=/sandbox
+
+USER sandboxuser
+
+CMD ["python", "-c", "print('Sandbox Ready')"]
