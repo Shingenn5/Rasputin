@@ -4,10 +4,10 @@ import time
 from pathlib import Path
 from threading import Lock
 
-from .. import output
-from .. import graphify
-from .. import rag
-from .. import runtime_store as store
+from backend.engine import output
+from backend.rag import graph as graphify
+from backend.rag import vector as rag
+from backend.core import runtime_store as store
 
 from .models import ArchiveItem, ArchiveRetentionRule
 from .service import ArchiveService

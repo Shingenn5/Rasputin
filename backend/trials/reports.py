@@ -2,7 +2,7 @@
 
 import time
 from . import store
-from .. import audit
+from backend.core import audit
 
 
 def generate_report(name, report_type="experiment", experiment_ids=None):

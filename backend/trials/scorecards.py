@@ -2,7 +2,7 @@
 
 from . import store
 from .models import SCORECARD_CATEGORIES
-from .. import audit
+from backend.core import audit
 
 
 def generate_scorecard(experiment_id, name=None):

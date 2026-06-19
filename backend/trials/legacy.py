@@ -9,10 +9,10 @@ import time
 from pathlib import Path
 from threading import Lock
 
-from .. import models as chat_models
-from .. import model_registry
-from .. import preferences
-from .. import runtime_store as rts
+from backend.models import legacy as chat_models
+from backend.models import registry as model_registry
+from backend.core import preferences
+from backend.core import runtime_store as rts
 from .models import ROUTABLE_MODES
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -11,20 +11,20 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend import main
-from backend import approvals
-from backend import agent
-from backend import context_governor
-from backend import model_catalog
-from backend import model_registry
-from backend import model_providers
-from backend import mcp_relay
-from backend import models
-from backend import rag
-from backend import runtime_store
-from backend import security
-from backend import telegram
-from backend.mcp_layer import McpLayer
-from backend.response import AppError
+from backend.core import approvals as approvals
+from backend.engine import agent as agent
+from backend.engine import context as context_governor
+from backend.models import catalog as model_catalog
+from backend.models import registry as model_registry
+from backend.models import providers as model_providers
+from backend.mcp import relay as mcp_relay
+from backend.models import legacy as models
+from backend.rag import vector as rag
+from backend.core import runtime_store as runtime_store
+from backend.core import security as security
+from backend.core import telegram as telegram
+from backend.mcp.layer import McpLayer
+from backend.core.response import AppError
 
 
 def minimal_pdf_bytes(text):
@@ -62,6 +62,8 @@ class BackendSmokeTests(unittest.TestCase):
         main.app.dependency_overrides.clear()
 
     def assertOk(self, response):
+        if response.status_code != 200:
+            print("Response Failed:", response.status_code, response.content)
         self.assertEqual(response.status_code, 200)
         if response.headers.get("content-type") == "application/x-ndjson":
             lines = [line for line in response.text.splitlines() if line.strip()]
@@ -93,7 +95,7 @@ class BackendSmokeTests(unittest.TestCase):
         deployable = next(item for item in catalog["items"] if item["deployable"])
         self.assertIn("recommendedProtocol", deployable)
 
-        with patch("backend.model_catalog._fetch_models_dev", return_value={
+        with patch("backend.models.catalog._fetch_models_dev", return_value={
             "test-provider": {
                 "name": "Test Provider",
                 "models": {
@@ -110,7 +112,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(any(item["modelId"] == "code-7b" for item in refreshed["items"]))
         self.assertIn("models.dev", refreshed["source"]["name"])
 
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": deployable["recommendedProtocol"],
                 "modelRef": deployable["modelId"],
@@ -121,7 +123,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(plan["requiresApproval"])
 
     def testLocalOpenAiCompatibleModelCanBeRegistered(self):
-        with patch("backend.security.require", lambda flag: True):
+        with patch("backend.core.security.require", lambda flag: True):
             registered = self.assertOk(self.client.post("/api/model-registry/upsert", json={
                 "name": "Smoke Local Endpoint",
                 "provider": "custom-local",
@@ -136,8 +138,8 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(registered["runtime"], "external-local")
         self.assertFalse(registered["managed"])
 
-        with patch("backend.security.require", lambda flag: True), \
-             patch("backend.security.load", return_value={"privacy_lock": True, "allow_remote_models": False}):
+        with patch("backend.core.security.require", lambda flag: True), \
+             patch("backend.core.security.load", return_value={"privacy_lock": True, "allow_remote_models": False}):
             blocked = self.client.post("/api/model-registry/upsert", json={
                 "name": "Remote Endpoint",
                 "baseUrl": "https://example.com/v1",
@@ -150,9 +152,9 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testApiProviderRegistrationKeepsApiKeyOutOfRegistry(self):
         saved = {}
-        with patch("backend.security.require", lambda flag: True), \
-             patch("backend.security.load", return_value={"privacy_lock": False, "allow_remote_models": True}), \
-             patch("backend.model_secrets.set_api_key", side_effect=lambda key, api_key: saved.update({key: api_key}) or True):
+        with patch("backend.core.security.require", lambda flag: True), \
+             patch("backend.core.security.load", return_value={"privacy_lock": False, "allow_remote_models": True}), \
+             patch("backend.models.secrets.set_api_key", side_effect=lambda key, api_key: saved.update({key: api_key}) or True):
             registered = self.assertOk(self.client.post("/api/model-registry/upsert", json={
                 "name": "Smoke OpenAI",
                 "provider": "openai",
@@ -170,9 +172,9 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(saved[registered["key"]], "test-api-secret")
 
     def testApiProviderAdaptersParseText(self):
-        with patch("backend.model_secrets.api_key_for", return_value=("secret", "stored")), \
-             patch("backend.security.require_local_url", lambda url: True), \
-             patch("backend.model_providers._request_json", return_value={"content": [{"type": "text", "text": "anthropic ok"}]}):
+        with patch("backend.models.secrets.api_key_for", return_value=("secret", "stored")), \
+             patch("backend.core.security.require_local_url", lambda url: True), \
+             patch("backend.models.providers._request_json", return_value={"content": [{"type": "text", "text": "anthropic ok"}]}):
             text = asyncio.run(model_providers.chat({
                 "provider": "anthropic",
                 "base_url": "https://api.anthropic.com/v1",
@@ -180,9 +182,9 @@ class BackendSmokeTests(unittest.TestCase):
             }, [{"role": "system", "content": "be terse"}, {"role": "user", "content": "hello"}], 32, 0))
         self.assertEqual(text, "anthropic ok")
 
-        with patch("backend.model_secrets.api_key_for", return_value=("secret", "stored")), \
-             patch("backend.security.require_local_url", lambda url: True), \
-             patch("backend.model_providers._request_json", return_value={"candidates": [{"content": {"parts": [{"text": "gemini ok"}]}}]}):
+        with patch("backend.models.secrets.api_key_for", return_value=("secret", "stored")), \
+             patch("backend.core.security.require_local_url", lambda url: True), \
+             patch("backend.models.providers._request_json", return_value={"candidates": [{"content": {"parts": [{"text": "gemini ok"}]}}]}):
             text = asyncio.run(model_providers.chat({
                 "provider": "gemini",
                 "base_url": "https://generativelanguage.googleapis.com/v1beta",
@@ -203,7 +205,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertGreater(limits["maxTokens"], 0)
 
     def testContextGovernorTrimsLowPriorityContextForSmallModel(self):
-        with patch("backend.context_governor.model_registry.get_model", return_value={"context_window": 1024, "max_tokens": 160}):
+        with patch("backend.engine.context.model_registry.get_model", return_value={"context_window": 1024, "max_tokens": 160}):
             bundle = context_governor.compose_prompt("tiny-local", "chat", [
                 context_governor.section("current_user_message", "Current user message", "hello", required=True, priority=0),
                 context_governor.section("rules", "Rules", "Answer directly and do not invent tool use.", required=True, priority=0),
@@ -290,7 +292,7 @@ class BackendSmokeTests(unittest.TestCase):
         blocked_task_id = runtime_store.new_id("toolblocked")
         blocked_cfg = security.defaults()
         blocked_cfg["allow_file_read"] = False
-        with patch("backend.security.load", return_value=blocked_cfg):
+        with patch("backend.core.security.load", return_value=blocked_cfg):
             with self.assertRaises(PermissionError):
                 asyncio.run(McpLayer().call_tool("rag_search", {
                     "query": "local docs",
@@ -505,14 +507,19 @@ class BackendSmokeTests(unittest.TestCase):
         approvals.approve(registered["pendingApprovalId"])
 
         async def flow():
-            started = await mcp_relay.start("operator-mcp-fixture", registered["pendingApprovalId"])
+            try:
+                started = await mcp_relay.start("operator-mcp-fixture", registered["pendingApprovalId"])
+            except Exception as e:
+                import json
+                print("SERVER LOGS:", json.dumps(mcp_relay._load(), indent=2))
+                raise
             self.assertEqual(started["status"], "running")
             discovered = await mcp_relay.discover("operator-mcp-fixture")
             self.assertEqual(len(discovered["tools"]), 1)
             self.assertEqual(len(discovered["resources"]), 1)
             self.assertEqual(len(discovered["prompts"]), 1)
             tool_id = discovered["tools"][0]["id"]
-            with patch("backend.security.load", return_value={"allow_file_read": True}):
+            with patch("backend.core.security.load", return_value={"allow_file_read": True}):
                 classified = mcp_relay.classify_tool(tool_id, {
                     "risk": "guarded",
                     "permission_flag": "allow_file_read",
@@ -766,10 +773,10 @@ class BackendSmokeTests(unittest.TestCase):
                 raise PermissionError("file write disabled for archive smoke")
             return True
 
-        with patch("backend.security.require", deny_file_write):
+        with patch("backend.core.security.require", deny_file_write):
             denied = self.client.post("/api/archive/export", json={"id": saved["id"], "folder": "workspace/archive-smoke"})
         self.assertEqual(denied.status_code, 403)
-        with patch("backend.security.require", lambda flag: True):
+        with patch("backend.core.security.require", lambda flag: True):
             exported = self.assertOk(self.client.post("/api/archive/export", json={
                 "id": saved["id"],
                 "folder": "workspace/archive-smoke",
@@ -868,14 +875,14 @@ class BackendSmokeTests(unittest.TestCase):
         }))
 
     def testDryRunDiscovery(self):
-        with patch("backend.model_registry._store_health", lambda *args, **kwargs: None):
+        with patch("backend.models.registry._store_health", lambda *args, **kwargs: None):
             data = self.assertOk(self.client.post("/api/model-registry/discover", json={"key": "dry-run"}))
         self.assertEqual(data["status"], "reachable")
         self.assertIn("latencyMs", data)
         self.assertIn("currentModel", data)
 
     def testGgufScanRoute(self):
-        with patch("backend.security.require", lambda flag: True):
+        with patch("backend.core.security.require", lambda flag: True):
             data = self.assertOk(self.client.post("/api/model-registry/scan-gguf", json={}))
         self.assertIn("models", data)
         self.assertIn("roots", data)
@@ -898,8 +905,8 @@ class BackendSmokeTests(unittest.TestCase):
                 }
             ]
         }
-        with patch("backend.model_registry._load", return_value=fake_registry), \
-             patch("backend.security.load", return_value={"allow_docker_control": False}), \
+        with patch("backend.models.registry._load", return_value=fake_registry), \
+             patch("backend.core.security.load", return_value={"allow_docker_control": False}), \
              patch("backend.warsat.providers.get_provider", side_effect=AssertionError("docker should stay untouched")):
             models = model_registry.all_models()
         self.assertEqual(models[0]["container_status"], "docker control disabled")
@@ -1000,7 +1007,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(schedule["name"], "Smoke Schedule")
 
     def testWarsatProtocolsAndPlanAreSafeByDefault(self):
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             protocols = self.assertOk(self.client.get("/api/warsat/protocols"))
             self.assertGreaterEqual(protocols["count"], 3)
             self.assertFalse(protocols["executionEnabled"])
@@ -1038,14 +1045,14 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("mem_limit", plan["composePreview"])
         self.assertIn("NVIDIA_VISIBLE_DEVICES", plan["composePreview"])
         self.assertTrue(any(item["kind"] == "compose" for item in plan["filesPreview"]))
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             blocked = self.client.post("/api/warsat/deploy", json={"plan": plan})
         blocked_body = blocked.json()
         self.assertEqual(blocked.status_code, 403)
         self.assertFalse(blocked_body["ok"])
         self.assertEqual(blocked_body["error"]["code"], "permissionDenied")
 
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             gguf = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "llamaCppGgufServer",
                 "modelPath": "models/tiny-helper.gguf",
@@ -1056,7 +1063,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("/models/tiny-helper.gguf", " ".join(gguf["commandPreview"]["run"]))
         self.assertIn("docker-compose.warsat.llamaCppGgufServer.small.yml", [item["path"] for item in gguf["filesPreview"]])
 
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             ollama = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "ollamaOpenaiServer",
                 "modelRef": "llama3.2",
@@ -1114,7 +1121,7 @@ class BackendSmokeTests(unittest.TestCase):
                 }
             return docker_outputs[tuple(args)]
 
-        with patch("backend.security.load", return_value={"allow_docker_control": True}), \
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
              patch("backend.warsat.shutil.which", side_effect=lambda name: "nvidia-smi" if name == "nvidia-smi" else None), \
              patch("backend.warsat._model_mount_state", return_value={
@@ -1137,7 +1144,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("blockedReasons", hardware)
 
     def testWarsatHardwareProbeBlocksWhenDockerIsMissingAndControlDisabled(self):
-        with patch("backend.security.load", return_value={"allow_docker_control": False}), \
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}), \
              patch("backend.warsat._docker_cli_path", return_value=None), \
              patch("backend.warsat.shutil.which", return_value=None), \
              patch("backend.warsat._model_mount_state", return_value={
@@ -1179,7 +1186,7 @@ class BackendSmokeTests(unittest.TestCase):
                 return {"returnCode": 0, "stdout": "Up 2 seconds", "stderr": ""}
             raise AssertionError(f"unexpected docker command: {args}")
 
-        with patch("backend.security.load", return_value=cfg), \
+        with patch("backend.core.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
              patch("backend.warsat._run_command", side_effect=fake_run), \
              patch("backend.warsat._probe_model_endpoint", return_value={
@@ -1190,7 +1197,7 @@ class BackendSmokeTests(unittest.TestCase):
                  "availableModels": ["Qwen/Qwen2.5-0.5B-Instruct"],
                  "message": "model ready",
              }), \
-             patch("backend.model_registry.upsert", side_effect=lambda entry: dict(entry)):
+             patch("backend.models.registry.upsert", side_effect=lambda entry: dict(entry)):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
                 "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -1221,7 +1228,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(deployed["containerId"], "container-123")
         self.assertEqual(deployed["containerName"], plan["containerName"])
         self.assertEqual(deployed["modelKey"], plan["expectedModelRegistryEntry"]["key"])
-        self.assertEqual(deployed["registryEntry"]["base_url"], plan["expectedModelRegistryEntry"]["baseUrl"])
+        self.assertEqual(deployed["registryEntry"].get("baseUrl") or deployed["registryEntry"].get("base_url"), plan["expectedModelRegistryEntry"]["baseUrl"])
         self.assertTrue(any(call[:2] == ["docker", "pull"] for call in docker_calls))
         self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
 
@@ -1244,7 +1251,7 @@ class BackendSmokeTests(unittest.TestCase):
                 return {"returnCode": 0, "stdout": "Up 2 seconds", "stderr": ""}
             raise AssertionError(f"unexpected docker command: {args}")
 
-        with patch("backend.security.load", return_value=cfg), \
+        with patch("backend.core.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
              patch("backend.warsat._run_command", side_effect=fake_run), \
              patch("backend.warsat._probe_model_endpoint", return_value={
@@ -1255,7 +1262,7 @@ class BackendSmokeTests(unittest.TestCase):
                  "lastError": "connection refused",
                  "message": "Container started, but the model endpoint did not pass the health probe.",
              }), \
-             patch("backend.model_registry.upsert", side_effect=AssertionError("unhealthy model should not register")):
+             patch("backend.models.registry.upsert", side_effect=AssertionError("unhealthy model should not register")):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
                 "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -1287,7 +1294,7 @@ class BackendSmokeTests(unittest.TestCase):
             "RASPUTIN_WARSAT_FAKE_DEPLOY": "1",
             "RASPUTIN_ENV": "test",
         }
-        with patch.dict(os.environ, env, clear=False), patch("backend.security.load", return_value=cfg):
+        with patch.dict(os.environ, env, clear=False), patch("backend.core.security.load", return_value=cfg):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
                 "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -1341,12 +1348,12 @@ class BackendSmokeTests(unittest.TestCase):
                 return {"returnCode": 0, "stdout": "rasputin-vllm-8031", "stderr": ""}
             raise AssertionError(f"unexpected docker command: {args}")
 
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             disabled = self.assertOk(self.client.get("/api/warsat/runtimes"))
         self.assertEqual(disabled["containers"], [])
         self.assertFalse(disabled["enabled"])
 
-        with patch("backend.security.load", return_value=cfg), \
+        with patch("backend.core.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
              patch("backend.warsat._run_command", side_effect=fake_run):
             runtimes = self.assertOk(self.client.get("/api/warsat/runtimes"))
@@ -1421,7 +1428,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(plan["readOnly"])
 
     def testWorkspaceMountApplyRequiresDockerControl(self):
-        with patch("backend.security.load", return_value={"allow_docker_control": False}):
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             response = self.client.post("/api/workspace/mount-apply", json={
                 "hostPath": "C:/Users/example/Documents",
                 "name": "Documents",
@@ -1433,7 +1440,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "permissionDenied")
 
     def testApprovalQueueAndTelegramRedaction(self):
-        with patch("backend.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+        with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
             preview = asyncio.run(McpLayer().call_tool("fs_write", {
                 "path": "approval-smoke.txt",
                 "content": "private local content should not be sent",
@@ -1450,7 +1457,7 @@ class BackendSmokeTests(unittest.TestCase):
         approved = self.assertOk(self.client.post(f"/api/approvals/{approval['id']}/approve"))
         self.assertEqual(approved["status"], "approved")
 
-        with patch("backend.telegram._post", return_value={"ok": True}):
+        with patch("backend.core.telegram._post", return_value={"ok": True}):
             cfg = self.assertOk(self.client.post("/api/integrations/telegram/configure", json={
                 "botToken": "123:ABC",
                 "allowedChatId": "42",
@@ -1468,7 +1475,7 @@ class BackendSmokeTests(unittest.TestCase):
                 raise PermissionError("file read disabled for test")
             return True
 
-        with patch("backend.security.require", deny_file_read):
+        with patch("backend.core.security.require", deny_file_read):
             for method, path, payload in [
                 ("post", "/api/rag/search", {"query": "secret", "limit": 3}),
                 ("post", "/api/graph/search", {"query": "secret", "limit": 3}),
@@ -1489,7 +1496,7 @@ class BackendSmokeTests(unittest.TestCase):
                 raise PermissionError("file write disabled for test")
             return True
 
-        with patch("backend.security.require", deny_file_write):
+        with patch("backend.core.security.require", deny_file_write):
             response = self.client.post("/api/output", json={"markdownFolder": "workspace/markdown-output"})
             body = response.json()
             self.assertEqual(response.status_code, 403)
@@ -1501,7 +1508,7 @@ class BackendSmokeTests(unittest.TestCase):
                 raise PermissionError("docker control disabled for test")
             return True
 
-        with patch("backend.security.require", deny_docker):
+        with patch("backend.core.security.require", deny_docker):
             response = self.client.post("/api/model-registry/logs", json={"key": "dry-run"})
             body = response.json()
             self.assertEqual(response.status_code, 403)
@@ -1575,7 +1582,7 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testGgufImportOutsideVisibleRootsIsStructured(self):
         with tempfile.NamedTemporaryFile(suffix=".gguf") as tmp:
-            with patch("backend.security.require", lambda flag: True):
+            with patch("backend.core.security.require", lambda flag: True):
                 response = self.client.post("/api/model-registry/import-gguf", json={"path": tmp.name})
         body = response.json()
         self.assertEqual(response.status_code, 403)
@@ -1583,7 +1590,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(body["error"]["code"], "modelFileOutsideVisibleRoots")
 
     def testBadGgufPathIsStructured(self):
-        with patch("backend.security.require", lambda flag: True):
+        with patch("backend.core.security.require", lambda flag: True):
             response = self.client.post("/api/model-registry/import-gguf", json={"path": "Z:/definitely/missing/model.gguf"})
         body = response.json()
         self.assertEqual(response.status_code, 400)

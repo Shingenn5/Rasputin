@@ -10,11 +10,11 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from .. import approvals
-from .. import audit
-from .. import model_registry
-from .. import security
-from ..response import AppError
+from backend.core import approvals
+from backend.core import audit
+from backend.models import registry as model_registry
+from backend.core import security
+from backend.core.response import AppError
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PROTOCOL_DIR = ROOT / "warsat" / "protocols"
