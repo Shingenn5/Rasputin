@@ -352,4 +352,36 @@ def export_master_context():
     (MASTER_CONTEXT_DIR / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
 
 
+async def consolidate_long_term_memory(session_id, messages):
+    if not messages:
+        return
+    
+    try:
+        from backend.models.legacy import chat
+        from backend.models.registry import key_for_role
+        from backend.rag import graph as graphify
+    except ImportError:
+        return
+        
+    prompt = (
+        "You are a long-term memory background worker. "
+        "Summarize the following old conversation turns into a dense paragraph of key facts, "
+        "user preferences, and system architecture details. "
+        "IMPORTANT: To ensure our knowledge graph extracts these entities, write core concepts "
+        "in PascalCase (e.g., UserPreference, PythonBackend, LocalDatabase). Mention specific file paths "
+        "like `foo.py` if relevant. Do not include chatty filler.\n\n"
+    )
+    for m in messages:
+        prompt += f"{m['role'].upper()}: {m['content']}\n\n"
+
+    try:
+        model_key = key_for_role("memory", fallback=key_for_role("summarizer"))
+        text, _ = await chat(model_key, [{"role": "user", "content": prompt}])
+        if text:
+            add_item("session", f"Consolidated Memory for Session {session_id}:\n{text}")
+            graphify.build()
+            audit.log("memory_consolidation_success", {"session": session_id})
+    except Exception as exc:
+        audit.log("memory_consolidation_failed", {"session": session_id, "error": str(exc)})
+
 init_memory()

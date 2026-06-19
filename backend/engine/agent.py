@@ -983,6 +983,8 @@ class AgentHub:
             conn.execute(f"UPDATE messages SET evicted=1 WHERE id IN ({placeholders})", evicted_ids)
             conn.commit()
             
+        asyncio.create_task(memory.consolidate_long_term_memory(task.session_id, older))
+            
         task.log(f"compacted {len(evicted_ids)} messages to save tokens")
         return new_summary
 
