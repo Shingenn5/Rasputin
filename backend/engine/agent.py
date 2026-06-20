@@ -871,10 +871,10 @@ class AgentHub:
                 from backend.core.sandbox import run_skill_in_sandbox
                 from backend.mcp.skills import get_skill
                 skill_data = get_skill(task.skill)
-                if skill_data and skill_data.get("path"):
-                    return await run_skill_in_sandbox(skill_data["path"], task.objective, json.dumps(plan), task.log)
+                if skill_data and skill_data.get("content"):
+                    return await run_skill_in_sandbox(task.skill, skill_data["content"], task.objective, json.dumps(plan), task.log)
                 else:
-                    task.log("skill path missing, using model")
+                    task.log("skill code missing, using model")
             except Exception as e:
                 task.log(f"skill missing or failed: {str(e)}, using model")
 

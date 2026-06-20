@@ -209,6 +209,13 @@ def init_db():
         }
         if "evicted" not in messages_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN evicted INTEGER NOT NULL DEFAULT 0")
+            
+        skills_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(skills)").fetchall()
+        }
+        if "content" not in skills_columns:
+            conn.execute("ALTER TABLE skills ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+            
         if "folder_id" in session_columns:
             old_table = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_folders'"
