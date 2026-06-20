@@ -29,15 +29,21 @@ def defaults():
     }
 
 
+from backend.core import runtime_store as store
+
 def _load_raw():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not CONFIG_FILE.exists():
-        CONFIG_FILE.write_text(json.dumps(defaults(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("telegram_config")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if CONFIG_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = defaults()
+        else:
             data = defaults()
+        store.set_kv("telegram_config", data)
     merged = defaults()
     merged.update(data)
     return merged
@@ -48,7 +54,7 @@ def _save(data):
     merged.update(data)
     DATA_DIR.mkdir(exist_ok=True)
     with _lock:
-        CONFIG_FILE.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        store.set_kv("telegram_config", merged)
     return public_config(merged)
 
 

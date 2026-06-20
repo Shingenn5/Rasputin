@@ -27,14 +27,13 @@ def log(action, detail=None, actor="local-user"):
     return event
 
 
+from backend.core import runtime_store as store
+
 def _audit_on():
-    if not SECURITY_FILE.exists():
+    data = store.get_kv("security")
+    if not data:
         return True
-    try:
-        data = json.loads(SECURITY_FILE.read_text(encoding="utf-8"))
-        return bool(data.get("audit_enabled", True))
-    except Exception:
-        return True
+    return bool(data.get("audit_enabled", True))
 
 
 def recent(limit=100):

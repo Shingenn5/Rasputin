@@ -37,11 +37,24 @@ def _verify(password, salt, expected):
     return hmac.compare_digest(actual, expected_bytes)
 
 
+from backend.core import runtime_store as store
+
 def bootstrap():
     global _boot_password
+    data = store.get_kv("auth")
+    if data:
+        return load_public()
+        
     DATA_DIR.mkdir(exist_ok=True)
     if AUTH_FILE.exists():
-        return load_public()
+        with _lock:
+            try:
+                data = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+                store.set_kv("auth", data)
+                return load_public()
+            except Exception:
+                pass
+                
     username = os.environ.get("RASPUTIN_ADMIN_USER", "admin")
     password = os.environ.get("RASPUTIN_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
     hashed = _hash_password(password)
@@ -58,7 +71,7 @@ def bootstrap():
         ],
     }
     with _lock:
-        AUTH_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("auth", data)
     if not os.environ.get("RASPUTIN_ADMIN_PASSWORD"):
         _boot_password = password
         print("")
@@ -73,18 +86,18 @@ def bootstrap():
 def load():
     bootstrap()
     with _lock:
-        return json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+        return store.get_kv("auth")
 
 
 def load_public():
-    if not AUTH_FILE.exists():
+    data = store.get_kv("auth")
+    if not data:
         return {
             "configured": False,
             "username": "admin",
             "localhost_bypass": localhost_bypass_enabled(),
             "test_bypass": test_bypass_enabled(),
         }
-    data = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
     user = data.get("users", [{}])[0]
     return {
         "configured": True,
@@ -200,7 +213,7 @@ def change_password(username, current_password, new_password):
         user["password_hash"] = hashed["hash"]
         user["password_changed_at"] = time.time()
         with _lock:
-            AUTH_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            store.set_kv("auth", data)
         audit.log("auth_password_changed", {"username": username}, actor=username)
         return {"changed": True, "username": username}
     raise ValueError("user missing")

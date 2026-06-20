@@ -73,15 +73,21 @@ def _blank():
     }
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not REGISTRY_FILE.exists():
-        REGISTRY_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("mcp_relays")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if REGISTRY_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = _blank()
+        else:
             data = _blank()
+        store.set_kv("mcp_relays", data)
     if "servers" not in data:
         data = _blank()
     if not any(item.get("id") == "rasputin-tool-relay" for item in data.get("servers", [])):
@@ -94,7 +100,7 @@ def _save(data):
     DATA_DIR.mkdir(exist_ok=True)
     data["servers"] = [_normalize_server(item) for item in data.get("servers", [])]
     with _lock:
-        REGISTRY_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("mcp_relays", data)
 
 
 def _normalize_server(server):

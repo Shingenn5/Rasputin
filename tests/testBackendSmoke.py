@@ -18,7 +18,6 @@ from backend.models import catalog as model_catalog
 from backend.models import registry as model_registry
 from backend.models import providers as model_providers
 from backend.mcp import relay as mcp_relay
-from backend.models import legacy as models
 from backend.rag import vector as rag
 from backend.core import runtime_store as runtime_store
 from backend.core import security as security
@@ -191,13 +190,6 @@ class BackendSmokeTests(unittest.TestCase):
                 "model": "gemini-2.5-flash",
             }, [{"role": "user", "content": "hello"}], 32, 0))
         self.assertEqual(text, "gemini ok")
-
-    def testModelPromptIsTrimmedForSmallContextWindow(self):
-        message = {"role": "user", "content": "hello " + ("x" * 10000)}
-        fitted = models._fit_messages([message], {"context_window": 1024}, 160)
-        self.assertEqual(len(fitted), 1)
-        self.assertLessEqual(len(fitted[0]["content"]), (1024 - 160 - 64) * 2)
-        self.assertIn("prompt context shortened", fitted[0]["content"])
 
     def testContextGovernorNormalizesUnsafeModelLimits(self):
         limits = context_governor.normalize_limits({"context_window": 512, "max_tokens": 0})

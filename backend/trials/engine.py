@@ -3,7 +3,21 @@
 import asyncio
 import time
 
-from backend.models import legacy as chat_models
+from backend.models import providers as model_providers
+from backend.models import registry as model_registry
+
+async def _chat(model_key, messages, temperature=0.2, tools=None):
+    cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
+    if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
+        user_msg = messages[-1]["content"] if messages else ""
+        return f"This is a dry-run response to: {user_msg}", []
+        
+    try:
+        text, calls = await model_providers.chat(cfg, messages, 2048, temperature, tools=tools)
+        return text
+    except Exception as exc:
+        raise RuntimeError(str(exc)) from None
+
 from backend.models import registry as model_registry
 from backend.core import runtime_store as rts
 from backend.core import audit
@@ -81,7 +95,7 @@ async def run_quick_compare(prompt, model_keys=None):
     for index, key in enumerate(chosen):
         started = time.perf_counter()
         try:
-            text = await chat_models.chat(key, [{"role": "user", "content": prompt}], temperature=0.2)
+            text = await _chat(key, [{"role": "user", "content": prompt}], temperature=0.2)
             status = "done"
             error = ""
         except Exception as exc:
@@ -154,7 +168,7 @@ async def _run_model_experiment(experiment_id, config):
         for p in prompts[:20]:  # cap at 20 prompts
             started = time.perf_counter()
             try:
-                text = await chat_models.chat(model_key, [{"role": "user", "content": p}], temperature=0.2)
+                text = await _chat(model_key, [{"role": "user", "content": p}], temperature=0.2)
                 status = "done"
                 error = ""
             except Exception as exc:
@@ -213,7 +227,7 @@ async def _run_prompt_experiment(experiment_id, config):
     for label, prompt in [("A", prompt_a), ("B", prompt_b)]:
         started = time.perf_counter()
         try:
-            text = await chat_models.chat(model_key, [{"role": "user", "content": prompt}], temperature=0.2)
+            text = await _chat(model_key, [{"role": "user", "content": prompt}], temperature=0.2)
             status = "done"
             error = ""
         except Exception as exc:
@@ -256,7 +270,7 @@ async def _run_quick_compare(experiment_id, config):
     for index, key in enumerate(chosen):
         started = time.perf_counter()
         try:
-            text = await chat_models.chat(key, [{"role": "user", "content": prompt}], temperature=0.2)
+            text = await _chat(key, [{"role": "user", "content": prompt}], temperature=0.2)
             status = "done"
             error = ""
         except Exception as exc:

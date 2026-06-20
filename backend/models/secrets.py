@@ -20,15 +20,21 @@ def _provider(model):
     return str((model or {}).get("provider") or "").strip().lower()
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not SECRETS_FILE.exists():
-        return {"models": {}}
-    with _lock:
-        try:
-            data = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("model_secrets")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if SECRETS_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = {"models": {}}
+        else:
             data = {"models": {}}
+        store.set_kv("model_secrets", data)
     if "models" not in data:
         data = {"models": {}}
     return data
@@ -37,7 +43,7 @@ def _load():
 def _save(data):
     DATA_DIR.mkdir(exist_ok=True)
     with _lock:
-        SECRETS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("model_secrets", data)
 
 
 def set_api_key(model_key, api_key):

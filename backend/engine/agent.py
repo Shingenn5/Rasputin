@@ -7,14 +7,35 @@ import uuid
 from pathlib import Path
 
 from backend.mcp.layer import McpLayer
-from backend.models.legacy import chat
+from backend.models import providers as model_providers
+
+async def _chat(model_key, messages, tools=None):
+    cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
+    if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
+        user_msg = messages[-1]["content"] if messages else ""
+        return f"This is a dry-run response to: {user_msg}", []
+        
+    cfg_for_limits = dict(cfg or {})
+    max_tokens = context_governor.normalize_limits(cfg_for_limits)["maxTokens"]
+    
+    try:
+        return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools)
+    except Exception as exc:
+        security.audit.log("model_chat_failed", {
+            "key": model_key,
+            "model": cfg.get("model"),
+            "provider": cfg.get("provider"),
+            "error": str(exc),
+        })
+        raise RuntimeError(str(exc)) from None
+
 from backend.engine import context as context_governor
 from backend.rag import memory as memory
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
 from backend.core import security as security
 from backend.mcp import tools as tool_relay
-from backend import workspace
+from backend.core import workspace
 
 TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
@@ -731,7 +752,7 @@ class AgentHub:
         messages = [{"role": "user", "content": bundle["prompt"]}]
         
         for attempt in range(15): # Max 15 tool execution loops
-            text, tool_calls = await chat(model_key, messages, tools=tools)
+            text, tool_calls = await _chat(model_key, messages, tools=tools)
             
             if text or tool_calls:
                 messages.append({
@@ -963,7 +984,7 @@ class AgentHub:
             
         model_key = self.phase_model(task, "summarizer")
         try:
-            summary = await chat(model_key, [{"role": "user", "content": prompt_text}])
+            summary = await _chat(model_key, [{"role": "user", "content": prompt_text}])
         except Exception as e:
             task.log(f"compaction summary failed: {e}")
             return None

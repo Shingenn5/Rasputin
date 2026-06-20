@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from threading import Lock
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
 WORKSPACE_FILE = DATA_DIR / "workspace.json"
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".pytest_cache"}
@@ -55,15 +55,21 @@ def _normalize_project_root(data):
     return data
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not WORKSPACE_FILE.exists():
-        WORKSPACE_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(WORKSPACE_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("workspace_config")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if WORKSPACE_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(WORKSPACE_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = _blank()
+        else:
             data = _blank()
+        store.set_kv("workspace_config", data)
     if "active_path" in data and "workspaces" not in data:
         root = data.get("active_path") or "."
         data = _blank()
@@ -76,7 +82,7 @@ def _load():
 def _save(data):
     DATA_DIR.mkdir(exist_ok=True)
     with _lock:
-        WORKSPACE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("workspace_config", data)
 
 
 def _root_from_value(value):

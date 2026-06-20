@@ -9,7 +9,21 @@ import time
 from pathlib import Path
 from threading import Lock
 
-from backend.models import legacy as chat_models
+from backend.models import providers as model_providers
+from backend.models import registry as model_registry
+
+async def _chat(model_key, messages, temperature=0.2, tools=None):
+    cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
+    if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
+        user_msg = messages[-1]["content"] if messages else ""
+        return f"This is a dry-run response to: {user_msg}", []
+        
+    try:
+        text, calls = await model_providers.chat(cfg, messages, 2048, temperature, tools=tools)
+        return text
+    except Exception as exc:
+        raise RuntimeError(str(exc)) from None
+
 from backend.models import registry as model_registry
 from backend.core import preferences
 from backend.core import runtime_store as rts
@@ -70,7 +84,7 @@ async def compare(prompt, model_keys=None):
     for index, key in enumerate(chosen):
         started = time.perf_counter()
         try:
-            text = await chat_models.chat(key, [{"role": "user", "content": prompt}], temperature=0.2)
+            text = await _chat(key, [{"role": "user", "content": prompt}], temperature=0.2)
             status = "done"
             error = ""
         except Exception as exc:

@@ -20,7 +20,7 @@ from backend.models import catalog as model_catalog
 from backend.models import providers as model_providers
 from backend.rag import vector as rag
 from backend.rag import graph as graphify
-from backend import workspace
+from backend.core import workspace
 from backend.core import security as security
 from backend.core import audit as audit
 from backend.engine import output as output
@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 
 app = FastAPI(title="Rasputin", version="0.2.0")
-from backend.api.common import hub, current_user
+from backend.api.core import hub, current_user
 
 app.add_exception_handler(Exception, error_handler)
 app.add_exception_handler(HTTPException, http_error_handler)
@@ -220,36 +220,15 @@ async def production_headers(request: Request, call_next):
 
 
 
-from backend.api.auth import router as auth_router
-from backend.api.models import router as models_router
-from backend.api.mcp import router as mcp_router
-from backend.api.skills import router as skills_router
-from backend.api.sessions import router as sessions_router
-from backend.api.tasks import router as tasks_router
-from backend.api.memory import router as memory_router
-from backend.api.workspace import router as workspace_router
-from backend.api.warsat import router as warsat_router
-from backend.api.rag import router as rag_router
-from backend.api.trials import router as trials_router
-from backend.api.archive import router as archive_router
-from backend.api.system import router as system_router
+from backend.api.core import router as core_router
+from backend.api.agent import router as agent_router
+from backend.api.warsat_api import router as warsat_router
+from backend.api.mcp_routes import router as mcp_api_router
 
-from backend.api.sandbox import router as sandbox_router
-
-app.include_router(auth_router)
-app.include_router(models_router)
-app.include_router(mcp_router)
-app.include_router(skills_router)
-app.include_router(sessions_router)
-app.include_router(tasks_router)
-app.include_router(memory_router)
-app.include_router(workspace_router)
+app.include_router(core_router)
+app.include_router(agent_router)
 app.include_router(warsat_router)
-app.include_router(rag_router)
-app.include_router(trials_router)
-app.include_router(archive_router)
-app.include_router(system_router)
-app.include_router(sandbox_router)
+app.include_router(mcp_api_router)
 app.include_router(settings_api.router)
 
 @app.get("/")

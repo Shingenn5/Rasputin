@@ -13,7 +13,7 @@ from backend.core import audit as audit
 from backend.models import providers as model_providers
 from backend.models import secrets as model_secrets
 from backend.core import security as security
-from backend import workspace
+from backend.core import workspace
 from backend.core.response import AppError
 from backend.warsat.providers import get_provider
 
@@ -113,15 +113,21 @@ def _defaults():
     }
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not REGISTRY_FILE.exists():
-        REGISTRY_FILE.write_text(json.dumps(_defaults(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("models_registry")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if REGISTRY_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = _defaults()
+        else:
             data = _defaults()
+        store.set_kv("models_registry", data)
     if "models" not in data:
         data = _defaults()
     defaults = _defaults()["models"]
@@ -135,7 +141,7 @@ def _load():
 def _save(data):
     DATA_DIR.mkdir(exist_ok=True)
     with _lock:
-        REGISTRY_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("models_registry", data)
 
 
 def _slug(text):

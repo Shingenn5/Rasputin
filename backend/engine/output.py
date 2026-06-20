@@ -15,15 +15,21 @@ def _blank():
     return {"markdown_folder": "workspace/markdown-output"}
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not OUTPUT_FILE.exists():
-        OUTPUT_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            data = _blank()
+    data = store.get_kv("output")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if OUTPUT_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = {}
+        else:
+            data = {}
+        store.set_kv("output", data)
     base = _blank()
     base.update(data or {})
     return base
@@ -32,7 +38,7 @@ def _load():
 def _save(data):
     DATA_DIR.mkdir(exist_ok=True)
     with _lock:
-        OUTPUT_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("output", data)
 
 
 def _safe_path(path="."):

@@ -10,11 +10,8 @@ from pathlib import Path
 if not os.environ.get("SANDBOX_SECRET_TOKEN"):
     os.environ["SANDBOX_SECRET_TOKEN"] = secrets.token_hex(16)
 
-async def run_skill_in_sandbox(skill_path, objective, plan, log):
-    log(f"Starting sandbox for {skill_path}...")
-    
-    # Read the skill file
-    skill_code = Path(skill_path).read_text(encoding="utf-8")
+async def run_skill_in_sandbox(skill_name, skill_code, objective, plan, log):
+    log(f"Starting sandbox for {skill_name}...")
     
     token = os.environ.get("SANDBOX_SECRET_TOKEN")
     

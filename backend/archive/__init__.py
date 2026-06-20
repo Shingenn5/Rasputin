@@ -23,14 +23,18 @@ def _blank():
 
 
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not ARCHIVE_FILE.exists():
-        ARCHIVE_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(ARCHIVE_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("archive")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if ARCHIVE_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(ARCHIVE_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = _blank()
+        else:
             data = _blank()
+        store.set_kv("archive", data)
     if "sessions" not in data:
         data = _blank()
     return data
@@ -39,7 +43,7 @@ def _load():
 def _save(data):
     DATA_DIR.mkdir(exist_ok=True)
     with _lock:
-        ARCHIVE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        store.set_kv("archive", data)
 
 
 def _slug(text):

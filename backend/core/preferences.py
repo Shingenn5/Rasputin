@@ -87,12 +87,4 @@ def save(payload):
 
 
 def _load_legacy_json():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not PREFERENCES_FILE.exists():
-        return None
-    with _lock:
-        try:
-            import json
-            return json.loads(PREFERENCES_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return None
+    return None

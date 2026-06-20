@@ -1,32 +1,103 @@
-import os
-import asyncio
-from fastapi import APIRouter, Depends, Request
-from backend.core.response import ok, AppError
-from backend.api.common import CamelModel, current_user, hub
-from backend.core import security
-from backend.core import preferences
-from backend.core import audit
-from backend.core import auth
-from backend.engine import output
-from backend.core import telegram
-from backend.core import approvals
-from backend.models import registry as model_registry
-from backend.models import catalog as model_catalog
-from backend.models import providers as model_providers
-from backend.mcp import skills as skill_store
-from backend.mcp import tools as tool_relay
-from backend.mcp import relay as mcp_relay
-from backend.rag.memory import load_memory
-from backend.rag import memory as memory_store
-from backend.rag import vector as rag
-from backend.rag import graph as graphify
-from backend.core import schedules
-from backend import workspace
-from backend import warsat
+from fastapi import APIRouter, Depends, Request, Response, HTTPException
 from backend import archive
 from backend import trials
+from backend import warsat
+from backend.core import workspace
+from backend.core import approvals
+from backend.core import audit
+from backend.core import auth
+from backend.core import preferences
+from backend.core import schedules
+from backend.core import security
+from backend.core import telegram
+from backend.core.response import ok
+from backend.core.response import ok, AppError
+from backend.engine import output
+from backend.engine.agent import AgentHub
+from backend.mcp import relay as mcp_relay
+from backend.mcp import skills as skill_store
+from backend.mcp import tools as tool_relay
+from backend.models import acquisition as model_acquisition
+from backend.models import catalog as model_catalog
+from backend.models import providers as model_providers
+from backend.models import registry as model_registry
+from backend.rag import graph as graphify
+from backend.rag import memory as memory_store
+from backend.rag import vector as rag
+from backend.rag.memory import load_memory
+from fastapi import Request
+from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+import asyncio
+import os
 
-router = APIRouter(prefix="/api", tags=["system"])
+router = APIRouter()
+
+def to_camel(value: str) -> str:
+    parts = value.split("_")
+    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
+
+class CamelModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+def current_user(request: Request):
+    return {"username": "admin", "role": "admin"}
+
+hub = AgentHub()
+
+
+auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class LoginIn(CamelModel):
+    username: str = "admin"
+    password: str
+
+class PasswordChangeIn(CamelModel):
+    current_password: str
+    new_password: str
+
+@auth_router.get("/session")
+
+async def auth_session(request: Request):
+    host = request.client.host if request.client else ""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    return ok(auth.public_session(token, host))
+
+@auth_router.post("/login")
+
+async def auth_login(req: LoginIn, response: Response, request: Request):
+    host = request.client.host if request.client else "local"
+    token, info = auth.login(req.username, req.password, host)
+    response.set_cookie(
+        auth.COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=auth.cookie_secure(),
+        samesite="strict",
+        max_age=60 * 60 * 12,
+        path="/",
+    )
+    return ok(info)
+
+@auth_router.post("/logout")
+
+async def auth_logout(response: Response, request: Request):
+    token = request.cookies.get(auth.COOKIE_NAME)
+    out = auth.logout(token)
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    return ok(out)
+
+@auth_router.post("/change-password")
+
+async def auth_change_password(req: PasswordChangeIn, request: Request, user=Depends(current_user)):
+    username = user.get("username")
+    if username == "localhost":
+        username = auth.load_public().get("username", "admin")
+    return ok(auth.change_password(username, req.current_password, req.new_password))
+
+system_router = APIRouter(prefix="/api", tags=["system"])
+
 
 class TelegramConfigIn(CamelModel):
     bot_token: str | None = None
@@ -136,7 +207,8 @@ def _setup_status():
     }
 
 
-@router.get("/health")
+@system_router.get("/health")
+
 async def health():
     return ok({
         "name": "Rasputin",
@@ -145,7 +217,8 @@ async def health():
     })
 
 
-@router.get("/ui/config")
+@system_router.get("/ui/config")
+
 async def ui_config():
     return ok({
         "ui_preview_enabled": _ui_preview_enabled(),
@@ -153,7 +226,8 @@ async def ui_config():
     })
 
 
-@router.get("/ui/bootstrap")
+@system_router.get("/ui/bootstrap")
+
 async def ui_bootstrap(_user=Depends(current_user)):
     try:
         warsat_runtime_state = await asyncio.to_thread(warsat.containers)
@@ -190,78 +264,96 @@ async def ui_bootstrap(_user=Depends(current_user)):
     })
 
 
-@router.get("/setup/status")
+@system_router.get("/setup/status")
+
 async def setup_status(_user=Depends(current_user)):
     return ok(_setup_status())
 
-@router.get("/security")
+@system_router.get("/security")
+
 async def security_get(_user=Depends(current_user)):
     return ok(security.load())
 
-@router.post("/security")
+@system_router.post("/security")
+
 async def security_post(req: dict, _user=Depends(current_user)):
     return ok(security.save(req))
 
-@router.get("/preferences")
+@system_router.get("/preferences")
+
 async def preferences_get(_user=Depends(current_user)):
     return ok(preferences.load())
 
-@router.post("/preferences")
+@system_router.post("/preferences")
+
 async def preferences_post(req: dict, _user=Depends(current_user)):
     return ok(preferences.save(req))
 
-@router.get("/audit")
+@system_router.get("/audit")
+
 async def audit_get(limit: int = 100, _user=Depends(current_user)):
     return ok({"events": audit.recent(limit)})
 
-@router.get("/approvals")
+@system_router.get("/approvals")
+
 async def approvals_get(status: str | None = None, limit: int = 100, _user=Depends(current_user)):
     return ok(approvals.list_approvals(status, limit))
 
-@router.post("/approvals/{approval_id}/approve")
+@system_router.post("/approvals/{approval_id}/approve")
+
 async def approvals_approve(approval_id: str, _user=Depends(current_user)):
     return ok(approvals.approve(approval_id))
 
-@router.post("/approvals/{approval_id}/deny")
+@system_router.post("/approvals/{approval_id}/deny")
+
 async def approvals_deny(approval_id: str, _user=Depends(current_user)):
     return ok(approvals.deny(approval_id))
 
-@router.post("/approvals/{approval_id}/expire")
+@system_router.post("/approvals/{approval_id}/expire")
+
 async def approvals_expire(approval_id: str, _user=Depends(current_user)):
     return ok(approvals.expire(approval_id))
 
-@router.get("/integrations/telegram")
+@system_router.get("/integrations/telegram")
+
 async def telegram_get(_user=Depends(current_user)):
     return ok(telegram.public_config())
 
-@router.post("/integrations/telegram/configure")
+@system_router.post("/integrations/telegram/configure")
+
 async def telegram_configure(req: TelegramConfigIn, _user=Depends(current_user)):
     return ok(telegram.configure(req.bot_token, req.allowed_chat_id, req.enabled, req.redaction_mode))
 
-@router.post("/integrations/telegram/test")
+@system_router.post("/integrations/telegram/test")
+
 async def telegram_test(_user=Depends(current_user)):
     return ok(telegram.test_message())
 
-@router.post("/integrations/telegram/disable")
+@system_router.post("/integrations/telegram/disable")
+
 async def telegram_disable(_user=Depends(current_user)):
     return ok(telegram.disable())
 
-@router.get("/output")
+@system_router.get("/output")
+
 async def output_get(_user=Depends(current_user)):
     return ok(output.get_config())
 
-@router.post("/output")
+@system_router.post("/output")
+
 async def output_post(req: dict, _user=Depends(current_user)):
     security.require("allow_file_write")
     return ok(output.save_config(req))
 
-@router.post("/output/export-task")
+@system_router.post("/output/export-task")
+
 async def output_export_task(req: ExportTaskIn, _user=Depends(current_user)):
     security.require("allow_file_write")
     task = hub.get_task(req.task_id)
     return ok(output.export_markdown(task, req.folder))
 
-@router.get("/events")
+@system_router.get("/events")
+
 async def events(request: Request, _user=Depends(current_user)):
     from fastapi.responses import StreamingResponse
     q = await hub.subscribe()
@@ -280,3 +372,159 @@ async def events(request: Request, _user=Depends(current_user)):
             except Exception:
                 pass
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+models_router = APIRouter(prefix="/api", tags=["models"])
+
+
+class ModelDownloadReq(BaseModel):
+    modelId: str
+
+class ModelIn(CamelModel):
+    key: str | None = None
+    name: str | None = None
+    provider: str = "openai-compatible"
+    role: str = "helper"
+    base_url: str = ""
+    model: str = ""
+    api_key: str | None = None
+    api_key_env: str | None = None
+    anthropic_version: str | None = None
+    clear_api_key: bool = False
+    runtime: str | None = None
+    context_window: int | None = None
+    max_tokens: int | None = None
+    port: int | None = None
+    container: str | None = None
+    image: str | None = None
+    enabled: bool = True
+    managed: bool = False
+    notes: str | None = None
+
+class GgufImportIn(CamelModel):
+    path: str
+    key: str | None = None
+    name: str | None = None
+    role: str = "helper"
+    port: int | None = None
+    context: int = 4096
+    n_gpu_layers: int = 0
+    image: str | None = None
+    notes: str | None = None
+
+class GgufScanIn(CamelModel):
+    root: str | None = None
+
+class ModelKeyIn(CamelModel):
+    key: str
+
+class ModelLogsIn(CamelModel):
+    key: str
+    limit: int = 120
+
+class ModelCatalogRefreshIn(CamelModel):
+    force: bool = False
+
+@models_router.get("/models")
+
+async def models(_user=Depends(current_user)):
+    return ok(model_registry.enabled_models())
+
+@models_router.post("/models/download")
+
+async def start_model_download(req: ModelDownloadReq, _user=Depends(current_user)):
+    state = model_acquisition.start_download(req.modelId)
+    return ok(state)
+
+@models_router.get("/models/downloads/active")
+
+async def get_active_downloads(_user=Depends(current_user)):
+    return ok(model_acquisition.get_active_downloads())
+
+@models_router.get("/model-registry")
+
+async def model_registry_list(_user=Depends(current_user)):
+    return ok({"models": model_registry.all_models(), "providers": model_providers.public_provider_options()})
+
+@models_router.get("/model-providers")
+
+async def model_provider_list(_user=Depends(current_user)):
+    return ok({"providers": model_providers.public_provider_options()})
+
+@models_router.get("/model-catalog")
+
+async def model_catalog_get(fit: bool = False, _user=Depends(current_user)):
+    hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
+    return ok(model_catalog.catalog(refresh=False, hardware=hardware))
+
+@models_router.post("/model-catalog/refresh")
+
+async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=Depends(current_user)):
+    return ok(model_catalog.catalog(refresh=True, force=bool(req.force if req else False)))
+
+@models_router.get("/model-catalog/search")
+
+async def model_catalog_search(
+    q: str = "", type: str = "", sort: str = "downloads",
+    direction: int = -1, limit: int = 100, fit: bool = False, _user=Depends(current_user)
+):
+    hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
+    return ok(model_catalog.search_hf(query=q, model_type=type, sort=sort, direction=direction, limit=limit, hardware=hardware))
+
+@models_router.get("/model-catalog/model/{model_id:path}")
+
+async def model_catalog_detail(model_id: str, _user=Depends(current_user)):
+    return ok(model_catalog.hf_model_detail(model_id))
+
+@models_router.post("/model-registry/upsert")
+
+async def model_registry_upsert(req: ModelIn, _user=Depends(current_user)):
+    return ok(model_registry.upsert(req.model_dump()))
+
+@models_router.post("/model-registry/import-gguf")
+
+async def model_registry_import_gguf(req: GgufImportIn, _user=Depends(current_user)):
+    return ok(model_registry.import_gguf(req.model_dump()))
+
+@models_router.post("/model-registry/scan-gguf")
+
+async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(current_user)):
+    return ok(model_registry.scan_gguf(req.root if req else None))
+
+@models_router.post("/model-registry/start")
+
+async def model_registry_start(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.start_model(req.key))
+
+@models_router.post("/model-registry/stop")
+
+async def model_registry_stop(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.stop_model(req.key))
+
+@models_router.post("/model-registry/test")
+
+async def model_registry_test(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.test_model(req.key))
+
+@models_router.post("/model-registry/discover")
+
+async def model_registry_discover(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.discover_model(req.key))
+
+@models_router.post("/model-registry/repair")
+
+async def model_registry_repair(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.repair_model(req.key))
+
+@models_router.post("/model-registry/logs")
+
+async def model_registry_logs(req: ModelLogsIn, _user=Depends(current_user)):
+    return ok(model_registry.logs_model(req.key, req.limit))
+
+@models_router.post("/model-registry/delete")
+
+async def model_registry_delete(req: ModelKeyIn, _user=Depends(current_user)):
+    return ok(model_registry.delete_model(req.key))
+
+router.include_router(auth_router)
+router.include_router(system_router)
+router.include_router(models_router)

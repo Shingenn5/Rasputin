@@ -26,15 +26,21 @@ def _blank():
     return {"version": GRAPH_VERSION, "updated_at": None, "nodes": [], "edges": []}
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not GRAPH_FILE.exists():
-        GRAPH_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(GRAPH_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("rag_graph")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if GRAPH_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(GRAPH_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = _blank()
+        else:
             data = _blank()
+        store.set_kv("rag_graph", data)
     if data.get("version") != GRAPH_VERSION:
         return _blank()
     return data
@@ -44,7 +50,7 @@ def _save(graph):
     DATA_DIR.mkdir(exist_ok=True)
     graph["updated_at"] = time.time()
     with _lock:
-        GRAPH_FILE.write_text(json.dumps(graph, indent=2), encoding="utf-8")
+        store.set_kv("rag_graph", graph)
 
 
 def _clean(text):

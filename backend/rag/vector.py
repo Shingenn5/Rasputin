@@ -7,7 +7,7 @@ from collections import Counter
 from pathlib import Path
 from threading import Lock
 
-from backend import workspace
+from backend.core import workspace
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
@@ -32,15 +32,21 @@ def _blank():
     return {"version": 2, "updated_at": None, "docs": [], "chunks": []}
 
 
+from backend.core import runtime_store as store
+
 def _load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not INDEX_FILE.exists():
-        INDEX_FILE.write_text(json.dumps(_blank(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
-        except Exception:
+    data = store.get_kv("rag_vector")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if INDEX_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = _blank()
+        else:
             data = _blank()
+        store.set_kv("rag_vector", data)
     if data.get("version") != 2:
         return _blank()
     return data
@@ -54,7 +60,7 @@ def _save(index):
     DATA_DIR.mkdir(exist_ok=True)
     index["updated_at"] = time.time()
     with _lock:
-        INDEX_FILE.write_text(json.dumps(index, indent=2), encoding="utf-8")
+        store.set_kv("rag_vector", index)
 
 
 def query_terms(text):

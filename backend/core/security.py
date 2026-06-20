@@ -47,15 +47,22 @@ def defaults():
     }
 
 
+from backend.core import runtime_store as store
+
 def load():
-    DATA_DIR.mkdir(exist_ok=True)
-    if not SECURITY_FILE.exists():
-        SECURITY_FILE.write_text(json.dumps(defaults(), indent=2), encoding="utf-8")
-    with _lock:
-        try:
-            data = json.loads(SECURITY_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            data = defaults()
+    data = store.get_kv("security")
+    if not isinstance(data, dict):
+        DATA_DIR.mkdir(exist_ok=True)
+        if SECURITY_FILE.exists():
+            with _lock:
+                try:
+                    data = json.loads(SECURITY_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = {}
+        else:
+            data = {}
+        store.set_kv("security", data)
+        
     merged = defaults()
     merged.update(data)
     return merged
@@ -65,7 +72,7 @@ def save(data):
     merged = defaults()
     merged.update(_normalize(data))
     with _lock:
-        SECURITY_FILE.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        store.set_kv("security", merged)
     return merged
 
 

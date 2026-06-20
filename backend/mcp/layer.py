@@ -7,7 +7,7 @@ import shutil
 
 from backend.rag import vector as rag
 from backend.rag import graph as graphify
-from backend import workspace
+from backend.core import workspace
 from backend.core import audit as audit
 from backend.core import security as security
 from backend.core import leak_guard as leak_guard

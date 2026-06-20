@@ -12,6 +12,21 @@ MEMORY_JSON = DATA_DIR / "memory.json"
 MEMORY_DIR = DATA_DIR / "memory"
 MASTER_CONTEXT_DIR = DATA_DIR / "warmind-context"
 
+from backend.models import providers as model_providers
+from backend.models import registry as model_registry
+
+async def _chat(model_key, messages, tools=None):
+    cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
+    if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
+        user_msg = messages[-1]["content"] if messages else ""
+        return f"This is a dry-run response to: {user_msg}", []
+        
+    try:
+        text, calls = await model_providers.chat(cfg, messages, 2048, 0.2, tools=tools)
+        return text
+    except Exception as exc:
+        raise RuntimeError(str(exc)) from None
+
 KINDS = {
     "preference",
     "fact",
@@ -48,24 +63,7 @@ def _normalize_kind(kind):
 
 def init_memory():
     store.init_db()
-    imported = store.get_kv("memory_json_imported", False)
-    if not imported and MEMORY_JSON.exists():
-        try:
-            raw = json.loads(MEMORY_JSON.read_text(encoding="utf-8"))
-        except Exception:
-            raw = {}
-        for key, value in (raw.get("prefs") or {}).items():
-            add_item("preference", {"key": key, "value": value}, status="saved", export=False)
-        for value in raw.get("facts") or []:
-            add_item("fact", value, status="saved", export=False)
-        for value in raw.get("sessions") or []:
-            add_item("session", value, status="saved", export=False)
-        backup = MEMORY_JSON.with_suffix(f".json.backup-{int(time.time())}")
-        try:
-            shutil.copy2(MEMORY_JSON, backup)
-        except Exception:
-            pass
-        store.set_kv("memory_json_imported", True)
+    store.set_kv("memory_json_imported", True)
     export_markdown()
 
 
@@ -357,7 +355,9 @@ async def consolidate_long_term_memory(session_id, messages):
         return
     
     try:
-        from backend.models.legacy import chat
+        from backend.models.registry import key_for_role
+        from backend.rag import graph as graphify
+
         from backend.models.registry import key_for_role
         from backend.rag import graph as graphify
     except ImportError:
@@ -376,7 +376,7 @@ async def consolidate_long_term_memory(session_id, messages):
 
     try:
         model_key = key_for_role("memory", fallback=key_for_role("summarizer"))
-        text, _ = await chat(model_key, [{"role": "user", "content": prompt}])
+        text, _ = await _chat(model_key, [{"role": "user", "content": prompt}])
         if text:
             add_item("session", f"Consolidated Memory for Session {session_id}:\n{text}")
             graphify.build()
