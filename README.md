@@ -46,30 +46,49 @@ Models **do not receive direct internet access**. Web search is brokered, query-
 
 ## 🚀 Quick Start (Docker)
 
-The fastest and most robust way to launch Rasputin is using the provided Docker wrapper scripts.
+The fastest and most frictionless way to launch Rasputin is using the one-line setup command. It will automatically download the repository, launch the Interactive CLI manager, build the Docker sandboxes, extract your first-run admin credentials, and pop open your browser.
 
+> **Requirement:** You must have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running on your machine.
+
+### Option 1: 1-Line Bootstrapper (Recommended)
+
+**Windows (PowerShell):**
 ```powershell
-# Clone the repository
-cd path\to\Rasputin
-
-# Launch the orchestrator
-.\start-wrapper.ps1
+iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -useb | iex
 ```
 
-Once the container reports as healthy, access the UI at:
-**[http://127.0.0.1:8787](http://127.0.0.1:8787)**
+**macOS / Linux (Bash):**
+```bash
+curl -s https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.sh | bash
+```
 
-> **Note:** First-run administrator credentials are automatically generated and printed in the container logs. Retrieve them using:
-> ```powershell
-> docker compose logs rasputin-wrapper
-> ```
+---
 
-### Advanced Docker Profiles
-- **Detached Mode:** `.\start-wrapper.ps1 -Detached`
-- **Docker Control Layer (WarSat):** `.\start-wrapper-docker-control.ps1`
+### Option 2: Manual Clone & CLI
+
+If you prefer to clone the repository manually, you can use the interactive CLI tools provided in the project root:
+
+```bash
+git clone https://github.com/Shingenn5/Rasputin.git
+cd Rasputin
+```
+
+Then, launch the manager:
+- **Windows:** `.\rasputin.ps1 start`
+- **macOS/Linux:** `./rasputin.sh start`
+
+*Note: For the raw, unmanaged startup scripts, you can still use `.\start-wrapper.ps1` and `.\stop-wrapper.ps1`.*
+
+### Interactive CLI Commands
+The `rasputin` manager supports the following commands:
+- `start` : Builds and runs Rasputin in the background.
+- `start -EnableWarSat` : Runs Rasputin with the Docker Control layer enabled (allowing it to deploy local models).
+- `stop` : Safely tears down the containers.
+- `credentials` : Fetches your login credentials from the container logs.
+
+### Advanced Docker Profiles (Manual Mode)
 - **RAG Vector Database:** `docker compose --profile rag up --build`
 - **Search Broker (SearXNG):** `docker compose --profile search up --build`
-- **Stop Rasputin:** `.\stop-wrapper.ps1`
 
 ---
 
