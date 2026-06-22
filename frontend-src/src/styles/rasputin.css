@@ -12501,3 +12501,127 @@ textarea.cc-input.ras-autogrow {
 @media (prefers-reduced-motion: reduce) {
   textarea.cc-input.ras-autogrow { transition: none !important; }
 }
+
+
+/* ==========================================================================
+   Phase 7 — First-run onboarding overlay (.ras-onboarding*)
+   Self-contained lightweight dialog; dims the rest of the UI. Reduced-motion
+   honored by the global prefers-reduced-motion rule above.
+   ========================================================================== */
+.ras-onboarding-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.ras-onboarding-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, .48);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  animation: ras-onboarding-fade var(--dur, .18s) ease both;
+}
+
+.ras-onboarding-dialog {
+  position: relative;
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .6rem;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 36%, var(--ras-border));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-accent) 9%, transparent), transparent 200px),
+    var(--ras-canvas);
+  color: var(--ras-text);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .34);
+  padding: 1.6rem 1.7rem;
+  animation: ras-onboarding-rise var(--dur, .18s) ease both;
+}
+
+.ras-onboarding-progress {
+  display: flex;
+  gap: .4rem;
+  margin-bottom: .2rem;
+}
+
+.ras-onboarding-dot {
+  width: 26px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-border-strong) 70%, transparent);
+  transition: background-color .2s ease;
+}
+
+.ras-onboarding-dot.is-active {
+  background: var(--ras-accent);
+}
+
+.ras-onboarding-dot.is-done {
+  background: color-mix(in srgb, var(--ras-accent) 55%, transparent);
+}
+
+.ras-onboarding-kicker {
+  margin: 0;
+  font-family: var(--ras-heading-font);
+  font-size: .72rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ras-accent);
+}
+
+.ras-onboarding-title {
+  margin: 0;
+  font-size: clamp(1.4rem, 3vw, 1.8rem);
+  line-height: 1.15;
+}
+
+.ras-onboarding-body {
+  margin: 0;
+  color: var(--ras-muted);
+  line-height: 1.5;
+}
+
+.ras-onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  margin-top: .55rem;
+}
+
+.ras-onboarding-action {
+  min-width: 9.5rem;
+}
+
+.ras-onboarding-skip {
+  margin-top: .35rem;
+  border: 0;
+  background: none;
+  padding: .2rem 0;
+  color: var(--ras-muted);
+  font-size: .85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ras-onboarding-skip:hover {
+  color: var(--ras-text);
+}
+
+@keyframes ras-onboarding-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ras-onboarding-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

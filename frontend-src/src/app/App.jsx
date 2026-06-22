@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { Onboarding } from "../components/Onboarding.jsx";
 import { api, postJson, postJsonStream } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
@@ -144,6 +145,14 @@ export function App() {
   const bootPhaseRef = useRef("starting");
   const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
+
+  // First-run onboarding: show once when the model registry is empty and the
+  // flag is unset. Auto-mark onboarded once any model exists.
+  const [onboarded, setOnboarded] = useLocalStorageFlag("rasputin-onboarded", false);
+  const showOnboarding = authenticated && ready && !onboarded && models.length === 0;
+  useEffect(() => {
+    if (authenticated && ready && !onboarded && models.length > 0) setOnboarded(true);
+  }, [authenticated, ready, onboarded, models.length, setOnboarded]);
 
   const selectedModelObject = useMemo(
     () => models.find((model) => model.key === selectedModel) || models.find((model) => model.role === "main") || models[0],
@@ -1735,6 +1744,13 @@ export function App() {
         denyApproval={denyApproval}
         returnFocusRef={taskDetailsReturnRef}
       />
+      {showOnboarding && (
+        <Onboarding
+          onScanModels={() => { setOnboarded(true); go("warsat"); }}
+          onOpenRegistry={() => { setOnboarded(true); go("models"); }}
+          onDismiss={() => setOnboarded(true)}
+        />
+      )}
     </AppShell>
   );
 }
