@@ -39,6 +39,8 @@ import {
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { api } from "../../api/client.js";
+import { SkeletonList } from "../../components/Skeleton.jsx";
+import { Button } from "../../components/Button.jsx";
 
 /* ── Tab config ── */
 const modelsTabs = [
@@ -292,9 +294,9 @@ export function ModelsView({
                     <button className="w2-button" type="button" onClick={() => handleLoadCatalog(false)}>
                       <RefreshCw size={14} /> Local
                     </button>
-                    <button className="w2-button primary" type="button" onClick={() => handleLoadCatalog(true)} disabled={modelCatalogLoading}>
-                      <Cloud size={14} /> {modelCatalogLoading ? "Refreshing..." : "Refresh Remote"}
-                    </button>
+                    <Button primary onClick={() => handleLoadCatalog(true)} loading={modelCatalogLoading} loadingLabel="Refreshing…" icon={<Cloud size={14} />}>
+                      Refresh Remote
+                    </Button>
                   </>
                 )}
               </div>
@@ -366,7 +368,12 @@ export function ModelsView({
                 <CatalogCard key={item.id} item={item} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
               ))}
 
-              {!displayItems.length && (
+              {/* Loading skeletons while the catalog/search is in flight and nothing is shown yet */}
+              {!displayItems.length && (modelCatalogLoading || hfLoading) && (
+                <SkeletonList count={5} />
+              )}
+
+              {!displayItems.length && !modelCatalogLoading && !hfLoading && (
                 <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
                   {searchMode === "huggingface" ? "No models found. Try broadening your search or choosing a different category." : "No models match. Try different filters."}
                 </div>
@@ -594,8 +601,17 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const mismatch = modelMismatchLine(model);
   const ctx = contextWindowFor(model);
 
-  const handleTest = () => executeAction("TestHealth", model.key, async () => runModelAction?.("test"), setUiState);
-  const handleDiscover = () => executeAction("Discover", model.key, async () => runModelAction?.("discover"), setUiState);
+  const [busy, setBusy] = useState(null); // which action ("test"|"discover") is in flight
+  const runAction = async (key, name, op) => {
+    setBusy(key);
+    try {
+      await executeAction(name, model.key, async () => runModelAction?.(op), setUiState);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const handleTest = () => runAction("test", "TestHealth", "test");
+  const handleDiscover = () => runAction("discover", "Discover", "discover");
 
   return (
     <div className="w2-card" style={{ gap: "8px" }}>
@@ -626,8 +642,8 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
       )}
 
       <div style={{ display: "flex", gap: "8px" }}>
-        <button className="w2-button" type="button" onClick={handleTest} style={{ fontSize: "0.75rem", padding: "4px 10px" }}><CheckCircle2 size={12} /> Test</button>
-        <button className="w2-button" type="button" onClick={handleDiscover} style={{ fontSize: "0.75rem", padding: "4px 10px" }}><Search size={12} /> Discover</button>
+        <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Test</Button>
+        <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Discover</Button>
       </div>
     </div>
   );

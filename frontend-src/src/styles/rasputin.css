@@ -669,6 +669,88 @@ svg {
   .ras-toast { animation: none; }
 }
 
+/* ── Skeleton loading placeholders ── */
+.ras-skeleton {
+  display: block;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--ras-text) 7%, transparent) 30%,
+    color-mix(in srgb, var(--ras-text) 14%, transparent) 50%,
+    color-mix(in srgb, var(--ras-text) 7%, transparent) 70%
+  );
+  background-size: 200% 100%;
+  animation: ras-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.ras-skeleton-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.ras-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ras-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--ras-border);
+  border-radius: var(--radius);
+  background: var(--ras-panel);
+}
+
+.ras-skeleton-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.ras-skeleton-card__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+}
+
+@keyframes ras-skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ras-skeleton {
+    animation: none;
+    background: color-mix(in srgb, var(--ras-text) 9%, transparent);
+  }
+}
+
+/* ── Spinner + button loading state ── */
+.ras-spin {
+  animation: ras-spin 0.8s linear infinite;
+}
+
+@keyframes ras-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* w2-button had no disabled treatment; add one so loading/disabled reads clearly. */
+.w2-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.w2-button.is-loading {
+  cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ras-spin { animation-duration: 1.6s; }
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
