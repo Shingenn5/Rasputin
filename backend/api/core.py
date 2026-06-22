@@ -10,7 +10,6 @@ from backend.core import preferences
 from backend.core import schedules
 from backend.core import security
 from backend.core import telegram
-from backend.core.response import ok
 from backend.core.response import ok, AppError
 from backend.engine import output
 from backend.engine.agent import AgentHub
@@ -25,8 +24,6 @@ from backend.rag import graph as graphify
 from backend.rag import memory as memory_store
 from backend.rag import vector as rag
 from backend.rag.memory import load_memory
-from fastapi import Request
-from pydantic import BaseModel
 from pydantic import BaseModel, ConfigDict
 import asyncio
 import os

@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import Lock
 
 from backend.core import audit as audit
+from backend.core import runtime_store as store
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
@@ -36,8 +37,6 @@ def _verify(password, salt, expected):
     actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, 180_000)
     return hmac.compare_digest(actual, expected_bytes)
 
-
-from backend.core import runtime_store as store
 
 def bootstrap():
     global _boot_password

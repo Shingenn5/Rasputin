@@ -3,6 +3,8 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse
 
+from backend.core import runtime_store as store
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 SECURITY_FILE = DATA_DIR / "security.json"
@@ -46,8 +48,6 @@ def defaults():
         "notes": "Rasputin keeps model endpoints local. Web search is brokered and query-guarded.",
     }
 
-
-from backend.core import runtime_store as store
 
 def load():
     data = store.get_kv("security")
