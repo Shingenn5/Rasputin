@@ -178,7 +178,7 @@ export function HomeView(props) {
     [homeTasks],
   );
   const threadVersion = useMemo(
-    () => orderedHomeTasks.map((task) => `${task.id}:${task.status}:${task.progress}:${String(task.result || "").length}`).join("|"),
+    () => orderedHomeTasks.map((task) => `${task.id}:${task.status}:${task.progress}:${String(task.result || "").length}:${(task.logs || []).join("").length}`).join("|"),
     [orderedHomeTasks],
   );
   const activeHomeTasks = orderedHomeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));

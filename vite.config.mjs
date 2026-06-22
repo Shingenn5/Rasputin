@@ -5,6 +5,9 @@ export default defineConfig({
   root: "frontend-src",
   base: "/static/",
   plugins: [react()],
+  worker: {
+    format: "es",
+  },
   build: {
     outDir: "../frontend",
     emptyOutDir: true,

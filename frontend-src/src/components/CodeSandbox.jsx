@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Square, Terminal } from 'lucide-react';
+import PyodideWorker from '../lib/pyodideWorker.js?worker';
 
 // Singleton worker for Pyodide
 let pyodideWorker = null;
@@ -8,7 +9,7 @@ let messageId = 0;
 
 function getWorker() {
   if (!pyodideWorker) {
-    pyodideWorker = new Worker(new URL('../lib/pyodideWorker.js', import.meta.url), { type: 'module' });
+    pyodideWorker = new PyodideWorker();
     pyodideWorker.onmessage = (event) => {
       const { id, ...data } = event.data;
       if (callbacks[id]) {

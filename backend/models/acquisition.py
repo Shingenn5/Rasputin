@@ -66,6 +66,37 @@ def _download_thread(dl_id: str, model_id: str):
             state["progress"] = 100.0
             if total_size > 0:
                 state["downloadedBytes"] = total_size
+            
+            # Post-Acquisition Pipeline: Auto-register model for WarSat deployment
+            try:
+                from backend.models import registry
+                
+                # Deduce protocol
+                has_gguf = any(s.rfilename and s.rfilename.endswith(".gguf") for s in info.siblings)
+                protocol = "llamaCppGgufServer" if has_gguf else "vllmCudaOpenai"
+                
+                # Create a safe registry key from the model ID
+                model_name = model_id.split("/")[-1]
+                safe_key = model_name.lower().replace(".", "-").replace("_", "-")
+                
+                new_model = {
+                    "key": safe_key,
+                    "name": model_name,
+                    "model": model_id,
+                    "role": "helper",
+                    "provider": "openai-compatible",
+                    "base_url": "http://host.docker.internal:8000/v1",  # Placeholder until deployed
+                    "managed": True,
+                    "enabled": False,  # Disabled by default until deployed
+                    "warsatProtocol": protocol,
+                    "warsatModelRef": model_id
+                }
+                
+                registry.upsert(new_model)
+            except Exception as e:
+                # We log it but don't fail the download state if registration fails
+                print(f"[WarSat] Failed to auto-register model: {e}")
+                
         finally:
             stop_polling.set()
             poller.join(timeout=2.0)

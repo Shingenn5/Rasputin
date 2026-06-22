@@ -44,13 +44,56 @@ Models **do not receive direct internet access**. Web search is brokered, query-
 
 ---
 
-## 🚀 Quick Start (Docker)
+## 🚀 Installation & Quick Start
 
-The fastest and most frictionless way to launch Rasputin is using the one-line setup command. It will automatically download the repository, launch the Interactive CLI manager, build the Docker sandboxes, extract your first-run admin credentials, and pop open your browser.
+Rasputin runs inside an isolated, secure container on your machine. To make this happen, we use a tool called **Docker**. 
 
-> **Requirement:** You must have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running on your machine.
+### 🟢 Option 1: The Absolute Beginner's Guide (Windows)
 
-### Option 1: 1-Line Bootstrapper (Recommended)
+If you have never used Docker, WSL, or coding tools before, follow these exact steps to get Rasputin running on a completely fresh Windows PC.
+
+**Step 1: Enable BIOS Virtualization (Crucial First Step)**
+Before Docker can run on Windows, your computer must allow "Virtualization." Sometimes this is turned off by default.
+1. Open your Windows Start Menu, type **Task Manager**, and open it.
+2. Go to the **Performance** tab and click on **CPU**.
+3. Look at the bottom right. If **Virtualization: Enabled** is there, skip to Step 2!
+4. If it says **Disabled**, you need to turn it on in your BIOS.
+   <details>
+   <summary><b>Click here for a quick guide on enabling Virtualization in BIOS</b></summary>
+
+   - Restart your computer. As it turns on, repeatedly tap the BIOS key (usually `F2`, `F12`, `Delete`, or `Esc` depending on your PC brand).
+   - Once in the BIOS, use your arrow keys to look for an "Advanced", "Configuration", or "Security" tab.
+   - **For Intel CPUs:** Look for `Intel Virtualization Technology`, `Intel VT-x`, or `Virtualization`.
+   - **For AMD CPUs:** Look for `SVM Mode`, `AMD-V`, or `Secure Virtual Machine`.
+   - Change the setting from **Disabled** to **Enabled**.
+   - Save and Exit (usually `F10`), and let Windows boot up normally.
+   </details>
+
+**Step 2: Install Docker Desktop**
+Docker is the engine that runs Rasputin's isolated sandboxes.
+1. Download **Docker Desktop for Windows** from the [official website](https://www.docker.com/products/docker-desktop/).
+2. Run the installer. On the configuration screen, ensure the **"Use WSL 2 instead of Hyper-V"** option is checked (it usually is by default). *Note: This automatically installs the necessary Windows Subsystem for Linux (WSL) components for you.*
+3. Finish the installation. Windows will likely ask you to **Restart your computer**.
+
+**Step 3: Start the Docker Engine**
+1. After your PC restarts, open the **Docker Desktop** application from your Start Menu.
+2. Accept the Service Agreement.
+3. Wait a few moments for the engine to start. You will know it is ready when the bottom-left of the Docker dashboard says "Engine running" and the icon turns green.
+
+**Step 4: Run the Rasputin Bootstrapper**
+You don't need to manually install Git or Python. This command handles everything.
+1. Open **Windows PowerShell** (search for "PowerShell" in your start menu).
+2. Paste the following command and hit **Enter**:
+   ```powershell
+   iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -useb | iex
+   ```
+3. The bootstrapper will download Rasputin, build the sandboxes, and automatically open your browser. **Check your PowerShell window** for your temporary Username and Password to log in!
+
+---
+
+### 🔵 Option 2: 1-Line Bootstrapper (For Devs)
+
+If you already have Docker running, just run the bootstrapper:
 
 **Windows (PowerShell):**
 ```powershell
