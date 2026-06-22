@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   ChevronDown,
@@ -29,6 +29,7 @@ import {
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { extractFileContent } from "../../lib/fileExtraction.js";
+import { Avatar } from "../../components/Avatar.jsx";
 import { CodeSandbox } from "../../components/CodeSandbox.jsx";
 
 const modeOptions = [
@@ -118,6 +119,7 @@ export function HomeView(props) {
   } = props;
 
   const threadScrollRef = useRef(null);
+  const composerRef = useRef(null);
   const modeButtonRef = useRef(null);
   const modePanelRef = useRef(null);
   const modelButtonRef = useRef(null);
@@ -132,6 +134,20 @@ export function HomeView(props) {
   // Phase 10: Button Reliability Framework State
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
   const executeAction = useReliableAction("HomeView");
+
+  // Auto-grow the composer between its min (rows) and CSS max-height.
+  const resizeComposer = useCallback(() => {
+    const node = composerRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    const max = parseFloat(getComputedStyle(node).maxHeight) || 220;
+    const next = Math.min(node.scrollHeight, max);
+    node.style.height = `${next}px`;
+    node.style.overflowY = node.scrollHeight > max ? "auto" : "hidden";
+  }, []);
+
+  // Re-grow whenever the bound value changes (typing, paste, prompt-fill, clear).
+  useEffect(() => { resizeComposer(); }, [objective, resizeComposer]);
 
   // Modernization: Drag and Drop Attachments
   const [attachments, setAttachments] = useState([]);
@@ -379,11 +395,13 @@ function jumpToLatest() {
               <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
               <textarea
                 id="objective"
-                className="cc-input"
+                ref={composerRef}
+                className="cc-input ras-autogrow"
                 rows={3}
                 placeholder={objectivePlaceholder}
                 value={objective}
                 onChange={(event) => setObjective(event.target.value)}
+                onInput={resizeComposer}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -442,10 +460,10 @@ function jumpToLatest() {
                     className="w2-button w2-button-primary"
                     style={{ padding: '6px 16px' }}
                     type="submit"
-                    disabled={!healthy}
-                    aria-disabled={!healthy}
+                    disabled={!healthy || !objective.trim()}
+                    aria-disabled={!healthy || !objective.trim()}
                     aria-label="Send message"
-                    title={disabledReason || "Send message"}
+                    title={!objective.trim() ? "Enter a message" : (disabledReason || "Send message")}
                   >
                     <Send size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> Send
                   </button>
@@ -822,11 +840,15 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
   return (
     <article className="thread-item">
       <div className="message user-message">
-        <div className="message-label">You</div>
+        <div className="message-label">
+          <Avatar kind="user" name="You" size="sm" />
+          <span>You</span>
+        </div>
         <div className="message-body user-bubble">{task.objective}</div>
       </div>
       <div className="message assistant-message">
         <div className="message-label assistant-label">
+          <Avatar kind="model" name={displayModelName(task.model, models) || "Rasputin"} size="sm" />
           <span>Rasputin</span>
           <span className={`status-pill status-${status}`}>{status}</span>
           {active && (
