@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard } from "../knowledge/GraphEvidence.jsx";
+import { Skeleton, SkeletonText } from "../../components/Skeleton.jsx";
 
 const sections = [
   ["overview", "Overview"],
@@ -106,7 +107,14 @@ export function TaskDetailsDrawer({
         </header>
 
         {error && <p className="drawer-error" role="alert">{error}</p>}
-        {loading && <p className="drawer-loading" role="status">Loading task details...</p>}
+        {loading && !task && (
+          <div className="drawer-loading" role="status" aria-label="Loading task details" style={{ display: "flex", flexDirection: "column", gap: "var(--sp-4)", padding: "var(--sp-2) 0" }}>
+            <Skeleton width="40%" height={18} />
+            <SkeletonText lines={3} />
+            <Skeleton width="100%" height={64} radius="var(--radius)" />
+            <SkeletonText lines={2} />
+          </div>
+        )}
 
         {task && (
           <>
