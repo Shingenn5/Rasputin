@@ -12255,3 +12255,195 @@ button.helper-row:hover {
     transform: none !important;
   }
 }
+
+
+/* =========================================================================
+   Phase 3: Modal / Drawer primitives  (Modal.jsx, Drawer.jsx, useFocusTrap)
+   All classes namespaced .ras-modal* / .ras-drawer* to avoid Bootstrap's
+   .modal / .modal-backdrop collisions. Animations rely on the global
+   prefers-reduced-motion block above (it neutralises transitions/animations).
+   ========================================================================= */
+
+/* ---- shared overlay layer ---- */
+.ras-modal-layer,
+.ras-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1090;
+  display: flex;
+}
+
+.ras-modal-layer {
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.ras-modal-backdrop,
+.ras-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .42);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.ras-modal-layer.is-open .ras-modal-backdrop,
+.ras-drawer-layer.is-open .ras-drawer-backdrop {
+  opacity: 1;
+}
+
+/* =========================== Modal =========================== */
+.ras-modal {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 30%, var(--ras-border));
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-accent) 7%, transparent), transparent 200px),
+    var(--ras-panel);
+  color: var(--ras-text);
+  box-shadow: var(--ras-shadow), 0 24px 60px rgba(0, 0, 0, .35);
+  outline: none;
+  opacity: 0;
+  transform: translateY(10px) scale(.985);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.ras-modal-layer.is-open .ras-modal {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.ras-modal-sm { max-width: 420px; }
+.ras-modal-md { max-width: 600px; }
+.ras-modal-lg { max-width: 820px; }
+.ras-modal-xl { max-width: 1080px; }
+
+.ras-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--ras-border);
+  padding: 1rem 1.1rem;
+}
+
+.ras-modal-title {
+  margin: 0;
+  font-family: var(--ras-heading-font);
+  font-size: 1.2rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ras-modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 1.1rem;
+}
+
+.ras-modal-close,
+.ras-drawer-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 50%, transparent);
+  color: var(--ras-text);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.ras-modal-close:hover,
+.ras-drawer-close:hover {
+  background: color-mix(in srgb, var(--ras-accent) 16%, var(--ras-panel-2));
+  border-color: color-mix(in srgb, var(--ras-accent) 50%, var(--ras-border));
+}
+
+.ras-modal-close:focus-visible,
+.ras-drawer-close:focus-visible,
+.ras-modal:focus-visible,
+.ras-drawer:focus-visible {
+  outline: 2px solid var(--ras-accent-2);
+  outline-offset: 2px;
+}
+
+/* =========================== Drawer =========================== */
+.ras-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid color-mix(in srgb, var(--ras-accent) 36%, var(--ras-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-accent) 8%, transparent), transparent 240px),
+    var(--ras-canvas);
+  color: var(--ras-text);
+  box-shadow: -18px 0 42px rgba(0, 0, 0, .3);
+  outline: none;
+  transition: transform 220ms ease;
+}
+
+.ras-drawer-sm { width: min(420px, calc(100vw - 1.5rem)); }
+.ras-drawer-md { width: min(560px, calc(100vw - 1.5rem)); }
+.ras-drawer-lg { width: min(720px, calc(100vw - 1.5rem)); }
+
+.ras-drawer-right {
+  right: 0;
+  transform: translateX(100%);
+}
+
+.ras-drawer-left {
+  left: 0;
+  border-left: 0;
+  border-right: 1px solid color-mix(in srgb, var(--ras-accent) 36%, var(--ras-border));
+  box-shadow: 18px 0 42px rgba(0, 0, 0, .3);
+  transform: translateX(-100%);
+}
+
+.ras-drawer-layer.is-open .ras-drawer-right,
+.ras-drawer-layer.is-open .ras-drawer-left {
+  transform: translateX(0);
+}
+
+.ras-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--ras-border);
+  padding: 1rem 1.1rem;
+}
+
+.ras-drawer-title {
+  margin: 0;
+  font-family: var(--ras-heading-font);
+  font-size: 1.25rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ras-drawer-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 1.1rem;
+}
+
+/* When TaskDetailsDrawer (or similar) supplies its own grid shell via `bare`,
+   let that inner content own the full panel height. */
+.ras-drawer.task-details-drawer {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: 0;
+}

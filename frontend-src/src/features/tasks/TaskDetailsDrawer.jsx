@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pause, Play, RefreshCw, Square, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard } from "../knowledge/GraphEvidence.jsx";
 import { Skeleton, SkeletonText } from "../../components/Skeleton.jsx";
+import { Drawer } from "../../components/Drawer.jsx";
 
 const sections = [
   ["overview", "Overview"],
@@ -34,30 +35,15 @@ export function TaskDetailsDrawer({
   returnFocusRef,
 }) {
   const [section, setSection] = useState("overview");
-  const drawerRef = useRef(null);
   const task = detail?.task;
   const active = ["queued", "running", "paused"].includes(task?.status);
 
+  // Reset to the overview tab whenever a new task is opened. Focus trapping,
+  // Escape-to-close and focus restoration are now handled by <Drawer>.
   useEffect(() => {
-    if (!taskId) return undefined;
+    if (!taskId) return;
     setSection("overview");
-    window.setTimeout(() => drawerRef.current?.focus(), 0);
-    function onKeyDown(event) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeTaskDetails();
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [taskId, closeTaskDetails]);
-
-  useEffect(() => {
-    if (taskId) return undefined;
-    const target = returnFocusRef?.current;
-    if (target?.focus) window.setTimeout(() => target.focus(), 0);
-    return undefined;
-  }, [taskId, returnFocusRef]);
+  }, [taskId]);
 
   const logs = useMemo(() => {
     const taskLogs = task?.logs || [];
@@ -72,20 +58,18 @@ export function TaskDetailsDrawer({
     [detail],
   );
 
-  if (!taskId) return null;
-
   return (
-    <div className="task-drawer-layer" role="presentation">
-      <button className="task-drawer-backdrop" type="button" aria-label="Close task details" onClick={closeTaskDetails} />
-      <aside
-        ref={drawerRef}
-        className="task-details-drawer"
-        data-testid="task-details-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="taskDetailsTitle"
-        tabIndex="-1"
-      >
+    <Drawer
+      open={Boolean(taskId)}
+      onClose={closeTaskDetails}
+      bare
+      side="right"
+      size="lg"
+      labelledBy="taskDetailsTitle"
+      returnFocusRef={returnFocusRef}
+      className="task-details-drawer"
+      panelProps={{ "data-testid": "task-details-drawer" }}
+    >
         <header className="task-details-header">
           <div>
             <span className="eyebrow">Task Inspector</span>
@@ -291,8 +275,7 @@ export function TaskDetailsDrawer({
             </div>
           </>
         )}
-      </aside>
-    </div>
+    </Drawer>
   );
 }
 
