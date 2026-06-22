@@ -104,6 +104,7 @@ export function WarsatView({
   cancelTask,
   pauseTask,
   resumeTask,
+  go,
 }) {
   const [activeTab, setActiveTab] = useState("planner");
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
@@ -390,6 +391,7 @@ export function WarsatView({
               operation={operation}
               approvals={approvals}
               handleRefresh={handleRefresh}
+              go={go}
             />
           )}
 
@@ -502,6 +504,14 @@ function QueueTab({ tasks, activeTasks, failedTasks, models, handleCancel, handl
 /* ═══════════════════════════════════════════
    DEPLOY TAB
    ═══════════════════════════════════════════ */
+const PIPELINE_STEPS = [
+  { id: "planned",         label: "Plan" },
+  { id: "approvalPending", label: "Approve" },
+  { id: "pulling",         label: "Pull" },
+  { id: "starting",        label: "Start" },
+  { id: "registered",      label: "Register" },
+];
+
 function DeployTab({
   warsat, protocols, strengthProfiles, protocolId, setProtocolId,
   strengthProfile, setStrengthProfile, selectedProtocol, selectedProfile,
@@ -511,156 +521,255 @@ function DeployTab({
   approveApproval, denyApproval, lifecycle,
 }) {
   const formRef = React.useRef(null);
+  const activePhase = deployment?.phase || plan?.phase || "";
 
-  // Auto-populate form based on current plan if needed
   React.useEffect(() => {
     if (plan && formRef.current) {
-      if (formRef.current.elements.modelRef && !formRef.current.elements.modelRef.value && plan.modelRef) {
+      if (formRef.current.elements.modelRef && !formRef.current.elements.modelRef.value && plan.modelRef)
         formRef.current.elements.modelRef.value = plan.modelRef;
-      }
-      if (formRef.current.elements.modelPath && !formRef.current.elements.modelPath.value && plan.modelPath) {
+      if (formRef.current.elements.modelPath && !formRef.current.elements.modelPath.value && plan.modelPath)
         formRef.current.elements.modelPath.value = plan.modelPath;
-      }
-      if (formRef.current.elements.hostPort && !formRef.current.elements.hostPort.value && plan.hostPort) {
+      if (formRef.current.elements.hostPort && !formRef.current.elements.hostPort.value && plan.hostPort)
         formRef.current.elements.hostPort.value = plan.hostPort;
-      }
     }
   }, [plan]);
 
+  /* Derive which pipeline step is active/done */
+  const stepStatus = (stepId) => {
+    const phaseOrder = PIPELINE_STEPS.map(s => s.id);
+    const activeIdx = phaseOrder.indexOf(activePhase);
+    const stepIdx = phaseOrder.indexOf(stepId);
+    if (!plan && !deployment) return "pending";
+    if (stepIdx < activeIdx) return "done";
+    if (stepIdx === activeIdx) return "active";
+    return "pending";
+  };
+
   return (
     <div className="w2-section" style={{ flex: 1 }}>
-      {/* Launch Recipe Form */}
-      <div className="w2-card">
-        <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Launch Recipe</h3>
-        <form ref={formRef} onSubmit={createPlan} onChange={handleFormChange} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            Protocol
+
+      {/* ── Pipeline Stepper ── */}
+      {(plan || deployment) && (
+        <div className="ws-pipeline-stepper">
+          {PIPELINE_STEPS.map((step, i) => {
+            const st = stepStatus(step.id);
+            return (
+              <React.Fragment key={step.id}>
+                <div className={`ws-pipeline-step is-${st}`}>
+                  <div className="ws-pipeline-dot">
+                    {st === "done" ? <CheckCircle2 size={14} /> : <span>{i + 1}</span>}
+                  </div>
+                  <span>{step.label}</span>
+                </div>
+                {i < PIPELINE_STEPS.length - 1 && (
+                  <div className={`ws-pipeline-connector ${st === "done" ? "is-done" : ""}`} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Launch Recipe Form ── */}
+      <div className="ws-mission-recipe">
+        <div className="ws-recipe-header">
+          <SlidersHorizontal size={14} />
+          <span>Launch Recipe</span>
+          {protocols.length > 0 && (
+            <span className="ws-protocol-hint">{selectedProtocol?.runtime || ""}</span>
+          )}
+        </div>
+        <form ref={formRef} onSubmit={createPlan} onChange={handleFormChange} className="ws-recipe-form">
+          <label className="ws-recipe-field">
+            <span>Protocol</span>
             <select className="w2-input" name="protocolId" value={protocolId} onChange={e => setProtocolId(e.target.value)} required>
               <option value="" disabled>Choose protocol</option>
               {protocols.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
-          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            {selectedProtocol?.modelFormat === "gguf" ? "Model Name (Optional)" : selectedProtocol?.id === "ollamaOpenaiServer" ? "Ollama Model Name" : "Model ID (Hugging Face)"}
-            <input className="w2-input" name="modelRef" placeholder="Qwen/Qwen2.5-Coder-7B-Instruct" />
+          <label className="ws-recipe-field">
+            <span>{selectedProtocol?.modelFormat === "gguf" ? "Model Name (Optional)" : selectedProtocol?.id === "ollamaOpenaiServer" ? "Ollama Model" : "Model ID (HuggingFace)"}</span>
+            <input className="w2-input" name="modelRef" placeholder="e.g. Qwen/Qwen2.5-7B-Instruct" />
           </label>
           {selectedProtocol?.modelFormat === "gguf" && (
-            <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-              Model Path (GGUF)
+            <label className="ws-recipe-field" style={{ gridColumn: "1 / -1" }}>
+              <span>Model Path (GGUF)</span>
               <input className="w2-input" name="modelPath" placeholder="models/my-model.gguf" />
             </label>
           )}
-          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            Host Port
+          <label className="ws-recipe-field">
+            <span>Host Port</span>
             <input className="w2-input" name="hostPort" type="number" min="1024" max="65535" placeholder="Auto" />
           </label>
-          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            Role
+          <label className="ws-recipe-field">
+            <span>Role</span>
             <select className="w2-input" name="role" defaultValue={selectedProtocol?.defaultRole || "helper"}>
               <option value="main">Main</option><option value="planner">Planner</option><option value="coder">Coder</option>
-              <option value="researcher">Researcher</option><option value="summarizer">Summarizer</option><option value="embeddings">Embeddings</option><option value="helper">Helper</option>
+              <option value="researcher">Researcher</option><option value="summarizer">Summarizer</option>
+              <option value="embeddings">Embeddings</option><option value="helper">Helper</option>
             </select>
           </label>
-          <label style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            Profile
+          <label className="ws-recipe-field">
+            <span>Profile</span>
             <select className="w2-input" name="strengthProfile" value={strengthProfile} onChange={e => setStrengthProfile(e.target.value)}>
               {Object.entries(strengthProfiles).map(([k, p]) => <option key={k} value={k}>{p.label || k}</option>)}
               {!Object.keys(strengthProfiles).length && <option value="balanced">Balanced</option>}
             </select>
           </label>
-          <div style={{ gridColumn: "1 / -1", display: "flex", gap: "8px" }}>
-            <button className="w2-button primary" type="submit"><Zap size={14} /> Create Plan</button>
-            {(plan || error) && <button className="w2-button" type="button" onClick={clearPlan}>Clear</button>}
+          <div className="ws-recipe-actions">
+            <button className="w2-button primary" type="submit" style={{ flex: 1 }}>
+              <Zap size={14} /> Generate Plan
+            </button>
+            {(plan || error) && (
+              <button className="w2-button" type="button" onClick={clearPlan}>Clear</button>
+            )}
           </div>
         </form>
-        {error && <div style={{ fontSize: "0.75rem", color: "var(--ras-danger)", marginTop: "4px" }}>{error}</div>}
+        {error && (
+          <div className="ws-recipe-error">
+            <AlertTriangle size={13} /> {error}
+          </div>
+        )}
       </div>
 
-      {/* Plan Preview */}
-      {plan && <PlanPreview
-        plan={plan}
-        deployment={deployment}
-        deploying={deploying}
-        deployLabel={deployLabel}
-        deployDisabled={deployDisabled}
-        canDeployPlan={canDeployPlan}
-        deployPlan={deployPlan}
-        approvalPending={approvalPending}
-        approvalClosed={approvalClosed}
-        approvalStatus={approvalStatus}
-        currentApproval={currentApproval}
-        approveApproval={approveApproval}
-        denyApproval={denyApproval}
-        lifecycle={lifecycle}
-      />}
+      {/* ── Mission Brief (Plan Preview) ── */}
+      {plan && (
+        <PlanPreview
+          plan={plan}
+          deployment={deployment}
+          deploying={deploying}
+          deployLabel={deployLabel}
+          deployDisabled={deployDisabled}
+          canDeployPlan={canDeployPlan}
+          deployPlan={deployPlan}
+          approvalPending={approvalPending}
+          approvalClosed={approvalClosed}
+          approvalStatus={approvalStatus}
+          currentApproval={currentApproval}
+          approveApproval={approveApproval}
+          denyApproval={denyApproval}
+          lifecycle={lifecycle}
+        />
+      )}
     </div>
   );
 }
 
 
 /* ═══════════════════════════════════════════
-   PLAN PREVIEW
+   PLAN PREVIEW (Mission Brief)
    ═══════════════════════════════════════════ */
 function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle }) {
+  const isLocalhost = plan.securityChecks?.localhostOnly;
+  const deployFailed = deployment?.status === "failed";
+  const deployDone = deployment?.status === "registered";
+
   return (
-    <div className="w2-card" style={{ border: "1px solid var(--cc-accent)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+    <div className="ws-mission-brief">
+      {/* Brief Header */}
+      <div className="ws-brief-header">
         <div>
-          <div style={{ fontSize: "0.6875rem", textTransform: "uppercase", letterSpacing: ".05em", color: "var(--cc-muted)", fontWeight: 600 }}>Launch Plan</div>
-          <h3 style={{ margin: "2px 0 0", fontSize: "1rem" }}>{plan.protocolName}</h3>
-          <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            {plan.runtime} on port {plan.hostPort} · {plan.executionEnabled ? "Execution enabled" : "Plan only"}
+          <div className="ws-brief-label">Mission Brief</div>
+          <h3 className="ws-brief-title">{plan.protocolName}</h3>
+          <div className="ws-brief-subtitle">
+            {plan.runtime} · port {plan.hostPort} · {plan.executionEnabled ? "Execution enabled" : "Plan only"}
           </div>
         </div>
-        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: plan.securityChecks?.localhostOnly ? "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: plan.securityChecks?.localhostOnly ? "var(--ras-safe)" : "var(--ras-danger)", fontWeight: 600 }}>
-          {plan.securityChecks?.localhostOnly ? "localhost only" : "review binding"}
+        <span className={`ws-binding-badge ${isLocalhost ? "is-safe" : "is-warn"}`}>
+          {isLocalhost ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
+          {isLocalhost ? "localhost only" : "review binding"}
         </span>
       </div>
 
-      {/* Plan summary grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "0.75rem" }}>
-        <div><span style={{ color: "var(--cc-muted)" }}>Model:</span> <strong>{plan.modelRef || plan.modelPath || "Not set"}</strong></div>
-        <div><span style={{ color: "var(--cc-muted)" }}>Container:</span> <strong>{plan.containerName}</strong></div>
-        <div><span style={{ color: "var(--cc-muted)" }}>Endpoint:</span> <strong>{plan.expectedModelRegistryEntry?.baseUrl || plan.endpoint}</strong></div>
-        <div><span style={{ color: "var(--cc-muted)" }}>Profile:</span> <strong>{plan.resourceProfile?.label || plan.strengthProfile}</strong></div>
+      {/* Spec Grid */}
+      <div className="ws-brief-specs">
+        <div className="ws-brief-spec">
+          <span>Model</span>
+          <strong>{plan.modelRef || plan.modelPath || "Not set"}</strong>
+        </div>
+        <div className="ws-brief-spec">
+          <span>Container</span>
+          <strong>{plan.containerName}</strong>
+        </div>
+        <div className="ws-brief-spec">
+          <span>Endpoint</span>
+          <strong>{plan.expectedModelRegistryEntry?.baseUrl || plan.endpoint}</strong>
+        </div>
+        <div className="ws-brief-spec">
+          <span>Profile</span>
+          <strong>{plan.resourceProfile?.label || plan.strengthProfile}</strong>
+        </div>
       </div>
 
-      {/* Deploy actions */}
-      <div style={{ display: "flex", gap: "8px", alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--cc-border)" }}>
-        {approvalPending && currentApproval?.id && (
-          <>
-            <button className="w2-button primary" type="button" onClick={() => approveApproval?.(currentApproval.id)}>
-              <CheckCircle2 size={14} /> Approve
-            </button>
-            <button className="w2-button" type="button" onClick={() => denyApproval?.(currentApproval.id)} style={{ color: "var(--ras-danger)" }}>
-              Deny
-            </button>
-          </>
-        )}
-        <button className={`w2-button ${canDeployPlan ? "primary" : ""}`} type="button" disabled={deployDisabled} onClick={deployPlan}>
-          <Play size={14} /> {deployLabel}
-        </button>
-      </div>
-
-      {/* Lifecycle */}
+      {/* Lifecycle progress rail */}
       {lifecycle.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "0.75rem" }}>
-          {lifecycle.map(phase => (
-            <div key={phase.id} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: statusColor(phase.status || "pending"), flexShrink: 0 }} />
-              <strong>{phase.label || labelize(phase.id)}</strong>
-              <span style={{ color: "var(--cc-muted)" }}>{phase.message}</span>
+        <div className="ws-lifecycle-rail">
+          {lifecycle.map(phase => {
+            const st = phase.status || "pending";
+            return (
+              <div key={phase.id} className={`ws-lifecycle-step is-${st}`}>
+                <div className="ws-lifecycle-dot" />
+                <div className="ws-lifecycle-body">
+                  <strong>{phase.label || labelize(phase.id)}</strong>
+                  {phase.message && <span>{phase.message}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Docker command preview */}
+      {plan.dockerRun && (
+        <div className="ws-docker-cmd">
+          <div className="ws-docker-cmd-label"><Server size={11} /> docker run command</div>
+          <pre>{plan.dockerRun}</pre>
+        </div>
+      )}
+
+      {/* Warnings */}
+      {(plan.warnings || []).length > 0 && (
+        <div className="ws-brief-warnings">
+          {plan.warnings.map((w, i) => (
+            <div key={i} className="ws-brief-warning">
+              <AlertTriangle size={12} /> {w}
             </div>
           ))}
         </div>
       )}
 
-      {/* Deployment result */}
+      {/* Action zone */}
+      <div className="ws-brief-actions">
+        {approvalPending && currentApproval?.id && (
+          <>
+            <button className="ws-brief-btn is-approve" type="button" onClick={() => approveApproval?.(currentApproval.id)}>
+              <CheckCircle2 size={14} /> Approve
+            </button>
+            <button className="ws-brief-btn is-deny" type="button" onClick={() => denyApproval?.(currentApproval.id)}>
+              Deny
+            </button>
+          </>
+        )}
+        <button
+          className={`ws-brief-btn ${canDeployPlan ? "is-deploy" : ""} ${deploying ? "is-loading" : ""}`}
+          type="button"
+          disabled={deployDisabled}
+          onClick={deployPlan}
+        >
+          {deploying ? <RefreshCw size={14} className="ws-spin" /> : <Play size={14} />}
+          {deployLabel}
+        </button>
+      </div>
+
+      {/* Result banner */}
       {deployment && (
-        <div style={{ padding: "8px 12px", borderRadius: "6px", background: deployment.status === "failed" ? "color-mix(in srgb, var(--ras-danger) 8%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-safe) 8%, var(--cc-surface))", fontSize: "0.75rem" }}>
-          <strong>{deployment.status === "failed" ? "Deployment failed" : deployment.status === "registered" ? "Model registered" : "Deploy updated"}</strong>
-          {deployment.lastError && <div style={{ color: "var(--ras-danger)" }}>{deployment.lastError}</div>}
-          {deployment.endpoint && <div style={{ color: "var(--cc-muted)" }}>Endpoint: {deployment.endpoint}</div>}
+        <div className={`ws-deploy-result ${deployFailed ? "is-fail" : deployDone ? "is-done" : "is-info"}`}>
+          {deployFailed ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+          <div>
+            <strong>{deployFailed ? "Deployment failed" : deployDone ? "Model registered" : "Deploy updated"}</strong>
+            {deployment.lastError && <div className="ws-result-detail">{deployment.lastError}</div>}
+            {deployment.endpoint && <div className="ws-result-detail">Endpoint: {deployment.endpoint}</div>}
+          </div>
         </div>
       )}
     </div>
@@ -671,74 +780,252 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
 /* ═══════════════════════════════════════════
    CONTAINERS TAB
    ═══════════════════════════════════════════ */
-function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRuntimeAction, operation, approvals, handleRefresh }) {
+function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRuntimeAction, operation, approvals, handleRefresh, go }) {
+  const [activeLogContainer, setActiveLogContainer] = useState(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discovered, setDiscovered] = useState(null);
+  const [importingKey, setImportingKey] = useState(null);
+  const [importedKeys, setImportedKeys] = useState(new Set());
   const operationApproval = (approvals?.approvals || []).find(a => a.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
+
+  const running = containers.filter(c => ["running", "healthy", "reachable"].includes(c.status || c.state));
+  const stopped = containers.filter(c => !["running", "healthy", "reachable"].includes(c.status || c.state));
+
+  function toggleLogs(name) {
+    if (activeLogContainer === name) {
+      setActiveLogContainer(null);
+    } else {
+      setActiveLogContainer(name);
+      handleLoadLogs(name);
+    }
+  }
+
+  async function runDiscover() {
+    setDiscovering(true);
+    setDiscovered(null);
+    try {
+      const res = await api("/api/warsat/discover");
+      setDiscovered(res);
+    } catch (err) {
+      setDiscovered({ error: err.message || "Discovery failed", discovered: [] });
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  async function importModel(item) {
+    const k = `${item.containerName}::${item.modelId}`;
+    setImportingKey(k);
+    try {
+      await postJson("/api/warsat/import-discovered", {
+        modelId: item.modelId,
+        baseUrl: item.baseUrl,
+        containerName: item.containerName,
+        protocolHint: item.protocolHint,
+      });
+      setImportedKeys(prev => new Set([...prev, k]));
+      // Navigate to chat — give the user 400ms to see the success state
+      setTimeout(() => go?.("home"), 400);
+    } catch (err) {
+      alert(`Import failed: ${err.message}`);
+    } finally {
+      setImportingKey(null);
+    }
+  }
 
   return (
     <div className="w2-section" style={{ flex: 1 }}>
-      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-        <h2 style={{ margin: 0, fontSize: "1rem" }}>Managed Runtimes</h2>
+
+      {/* Discover panel */}
+      <div className="ws-discover-panel">
+        <div className="ws-discover-header">
+          <div className="ws-discover-title">
+            <Search size={14} />
+            <span>Model Discovery</span>
+            <span className="ws-discover-hint">Find AI models running in Docker on this machine</span>
+          </div>
+          <button
+            className={`w2-button primary ${discovering ? "is-loading" : ""}`}
+            type="button"
+            onClick={runDiscover}
+            disabled={discovering}
+          >
+            {discovering ? <RefreshCw size={13} className="ws-spin" /> : <Search size={13} />}
+            {discovering ? "Scanning..." : "Scan for Models"}
+          </button>
+        </div>
+
+        {discovered && (
+          <div className="ws-discover-results">
+            {discovered.error && (
+              <div className="ws-exec-warning"><AlertTriangle size={13} /> {discovered.error}</div>
+            )}
+            {!discovered.error && (discovered.discovered || []).length === 0 && (
+              <div className="ws-discover-empty">
+                No unregistered AI model endpoints found. If a model is running,
+                make sure Docker control is enabled and its port is exposed.
+              </div>
+            )}
+            {(discovered.discovered || []).map(item => {
+              const k = `${item.containerName}::${item.modelId}`;
+              const imported = importedKeys.has(k);
+              const loading = importingKey === k;
+              return (
+                <div key={k} className="ws-discover-card">
+                  <div className="ws-discover-card-left">
+                    <span className="ws-status-pulse is-running" />
+                    <div>
+                      <div className="ws-discover-model-id">{item.modelId}</div>
+                      <div className="ws-discover-meta">
+                        <span><Server size={10} /> {item.containerName}</span>
+                        <span><MonitorSpeaker size={10} /> {item.baseUrl}</span>
+                        <span className="ws-protocol-badge">{item.protocolHint}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    className={`ws-brief-btn ${imported ? "" : "is-deploy"}`}
+                    type="button"
+                    disabled={imported || loading}
+                    onClick={() => importModel(item)}
+                    style={{ fontSize: "0.8125rem", padding: "7px 14px" }}
+                  >
+                    {loading ? <RefreshCw size={12} className="ws-spin" /> : imported ? <CheckCircle2 size={12} /> : <Play size={12} />}
+                    {loading ? "Importing..." : imported ? "Added — Starting chat…" : "Add to Chat"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Summary banner */}
+      <div className="ws-runtime-banner">
+        <div className="ws-runtime-banner-stat">
+          <span className="ws-status-pulse is-running" />
+          <strong style={{ color: "var(--ras-safe)" }}>{running.length}</strong>
+          <span>Running</span>
+        </div>
+        <div className="ws-runtime-banner-stat">
+          <span className="ws-status-pulse is-stopped" />
+          <strong>{stopped.length}</strong>
+          <span>Stopped</span>
+        </div>
+        <div className="ws-runtime-banner-stat">
+          <Server size={13} color="var(--cc-muted)" />
+          <strong>{containers.length}</strong>
+          <span>Total</span>
+        </div>
         <div style={{ flex: 1 }} />
         <button className="w2-button" type="button" onClick={handleRefresh} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
           <RefreshCw size={12} /> Refresh
         </button>
       </div>
 
+      {/* Execution disabled warning */}
       {!runtimes?.executionEnabled && (
-        <div style={{ padding: "12px", fontSize: "0.75rem", color: "var(--ras-warn)", background: "color-mix(in srgb, var(--ras-warn) 8%, var(--cc-surface))", borderRadius: "6px" }}>
-          <AlertTriangle size={13} style={{ verticalAlign: "-2px", marginRight: "4px" }} />
-          {runtimes?.message || "Start Rasputin with Docker control and enable it in Safety settings to manage containers."}
+        <div className="ws-exec-warning">
+          <AlertTriangle size={13} />
+          {runtimes?.message || "Enable Docker control in Safety settings to manage containers."}
         </div>
       )}
 
-      {containers.map(container => (
-        <div key={container.name || container.id} className="w2-card" style={{ gap: "8px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <Server size={16} color={statusColor(container.status || container.state || "unknown")} />
-              <div>
-                <strong style={{ fontSize: "0.875rem" }}>{container.name || "Unnamed container"}</strong>
-                <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{container.image || "Unknown image"}</div>
+      {/* Container cards */}
+      {containers.map(container => {
+        const st = container.status || container.state || "unknown";
+        const isRunning = ["running", "healthy", "reachable"].includes(st);
+        const isLogOpen = activeLogContainer === container.name;
+        const logsForThis = logs?.containerName === container.name ? logs : null;
+
+        /* Parse port string into clickable links */
+        const portMatches = (container.ports || "").match(/(\d+\.\d+\.\d+\.\d+):(\d+)/g) || [];
+        const localPort = portMatches.map(p => p.split(":")[1]).find(Boolean);
+
+        return (
+          <div key={container.name || container.id} className={`ws-runtime-card ${isRunning ? "is-running" : "is-stopped"}`}>
+            {/* Card header */}
+            <div className="ws-runtime-card-head">
+              <div className="ws-runtime-status-wrap">
+                <span className={`ws-status-pulse ${isRunning ? "is-running" : "is-stopped"}`} />
+                <div>
+                  <div className="ws-runtime-name">{container.name || "Unnamed container"}</div>
+                  <div className="ws-runtime-image">{container.image || "Unknown image"}</div>
+                </div>
+              </div>
+              <div className="ws-runtime-badges">
+                {container.protocolId && (
+                  <span className="ws-protocol-badge">{container.protocolId}</span>
+                )}
+                <span className={`ws-status-badge is-${st}`}>{labelize(st)}</span>
               </div>
             </div>
-            <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: `color-mix(in srgb, ${statusColor(container.status || container.state || "unknown")} 15%, var(--cc-surface))`, color: statusColor(container.status || container.state || "unknown"), fontWeight: 600 }}>
-              {labelize(container.status || container.state || "unknown")}
-            </span>
-          </div>
 
-          <div style={{ display: "flex", gap: "16px", fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            <span>Runtime: {container.runtime || "unknown"}</span>
-            <span>Protocol: {container.protocolId || "unknown"}</span>
-            <span>Ports: {container.ports || "none"}</span>
-          </div>
+            {/* Meta row */}
+            <div className="ws-runtime-meta">
+              {container.runtime && <span><Cpu size={11} /> {container.runtime}</span>}
+              {localPort && (
+                <a
+                  href={`http://127.0.0.1:${localPort}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ws-runtime-endpoint"
+                >
+                  <MonitorSpeaker size={11} /> 127.0.0.1:{localPort}
+                </a>
+              )}
+              {!localPort && container.ports && (
+                <span><Package size={11} /> {container.ports}</span>
+              )}
+            </div>
 
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button className="w2-button" type="button" onClick={() => handleLoadLogs(container.name)} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-              <Eye size={12} /> Logs
-            </button>
-            <button className="w2-button" type="button" onClick={() => handleRuntimeAction("restart", container.name)} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-              <RefreshCw size={12} /> Restart
-            </button>
-            <button className="w2-button" type="button" onClick={() => handleRuntimeAction("stop", container.name)} style={{ fontSize: "0.75rem", padding: "4px 10px", color: "var(--ras-danger)" }}>
-              <Square size={12} /> Stop
-            </button>
-          </div>
-        </div>
-      ))}
+            {/* Actions */}
+            <div className="ws-runtime-actions">
+              <button
+                className={`ws-runtime-btn ${isLogOpen ? "is-active" : ""}`}
+                type="button"
+                onClick={() => toggleLogs(container.name)}
+              >
+                <Eye size={12} /> Logs
+              </button>
+              <button
+                className="ws-runtime-btn"
+                type="button"
+                onClick={() => handleRuntimeAction("restart", container.name)}
+              >
+                <RefreshCw size={12} /> Restart
+              </button>
+              <button
+                className="ws-runtime-btn is-danger"
+                type="button"
+                onClick={() => handleRuntimeAction("stop", container.name)}
+              >
+                <Power size={12} /> Stop
+              </button>
+            </div>
 
+            {/* Inline log panel */}
+            {isLogOpen && (
+              <div className="ws-log-panel">
+                <div className="ws-log-header">
+                  <span><Eye size={11} /> {container.name} — stdout / stderr</span>
+                  <button type="button" className="ws-log-close" onClick={() => setActiveLogContainer(null)}>✕</button>
+                </div>
+                <pre className="ws-log-body">
+                  {logsForThis ? (logsForThis.logs || "No log output.") : "Loading..."}
+                </pre>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Empty state */}
       {!containers.length && (
-        <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
-          No Warsat-managed containers visible. Deploy a model to get started.
-        </div>
-      )}
-
-      {/* Container logs */}
-      {logs && (
-        <div className="w2-card">
-          <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Logs: {logs.containerName}</h3>
-          <pre style={{ fontSize: "0.75rem", fontFamily: "monospace", whiteSpace: "pre-wrap", background: "var(--cc-bg)", border: "1px solid var(--cc-border)", borderRadius: "6px", padding: "12px", margin: 0, maxHeight: "300px", overflow: "auto" }}>
-            {logs.logs || "No logs returned."}
-          </pre>
+        <div className="ws-empty-state">
+          <Server size={32} color="var(--cc-border)" />
+          <strong>No managed containers</strong>
+          <span>Deploy a model from the Deploy tab to spin up a container here.</span>
         </div>
       )}
     </div>

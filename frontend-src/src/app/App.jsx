@@ -1598,6 +1598,7 @@ export function App() {
         cancelTask={cancelTask}
         pauseTask={pauseTask}
         resumeTask={resumeTask}
+        go={go}
       />
       <ArchiveView
         view={view}

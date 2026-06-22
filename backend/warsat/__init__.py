@@ -1262,6 +1262,183 @@ def containers():
     }
 
 
+def _probe_openai_endpoint(base_url: str, timeout: float = 2.0):
+    """Try GET /v1/models and return list of model IDs, or empty list if unreachable."""
+    try:
+        req = urllib.request.Request(
+            f"{base_url.rstrip('/')}/v1/models",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            models = data.get("data") or data.get("models") or []
+            return [m.get("id") or m.get("name") for m in models if m.get("id") or m.get("name")]
+    except Exception:
+        return None
+
+
+def _probe_ollama_endpoint(base_url: str, timeout: float = 2.0):
+    """Try GET /api/tags (Ollama native API) and return list of model names, or None."""
+    try:
+        req = urllib.request.Request(
+            f"{base_url.rstrip('/')}/api/tags",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            models = data.get("models") or []
+            return [m.get("name") for m in models if m.get("name")]
+    except Exception:
+        return None
+
+
+def _extract_host_port(ports_str: str):
+    """Parse Docker ports string like '0.0.0.0:8000->8000/tcp' → return host port int or None."""
+    if not ports_str:
+        return None
+    # Match patterns like 0.0.0.0:PORT->PORT/tcp or :::PORT->PORT/tcp or just PORT/tcp
+    matches = re.findall(r'(?:0\.0\.0\.0|:::|\[::\]):(\d+)->', ports_str)
+    if not matches:
+        # Maybe a simple mapping without host binding like 8000/tcp
+        simple = re.findall(r'(\d{4,5})/tcp', ports_str)
+        if simple:
+            return int(simple[0])
+        return None
+    return int(matches[0])
+
+
+def discover():
+    """
+    Scan ALL running Docker containers (not just Rasputin-managed ones)
+    for OpenAI-compatible or Ollama model endpoints.
+    Returns a list of discovered model candidates ready for one-click import.
+    """
+    execution = _docker_runtime_enabled()
+    if not execution["enabled"]:
+        return {
+            **execution,
+            "discovered": [],
+            "message": f"Docker discovery unavailable. {execution['message']}",
+        }
+
+    # Get all running containers regardless of labels
+    result = _run_command(
+        ["docker", "ps", "--format", "{{json .}}"],
+        timeout=20,
+        check=False,
+    )
+
+    # Get registered model base_urls to avoid suggesting already-registered endpoints
+    try:
+        existing_models = model_registry.all_models()
+        existing_urls = {
+            str(m.get("base_url") or "").rstrip("/").lower()
+            for m in existing_models
+            if m.get("base_url")
+        }
+    except Exception:
+        existing_urls = set()
+
+    discovered = []
+    for row in _parse_json_lines(result["stdout"]):
+        name = row.get("Names") or row.get("Name") or ""
+        ports_str = row.get("Ports") or ""
+        image = row.get("Image") or ""
+        container_id = row.get("ID") or row.get("IDShort") or ""
+
+        host_port = _extract_host_port(ports_str)
+        if not host_port:
+            continue
+
+        base_url = f"http://127.0.0.1:{host_port}"
+        if base_url.lower() in existing_urls:
+            # Already registered — skip
+            continue
+
+        # Probe the container for model APIs
+        model_ids = _probe_openai_endpoint(base_url)
+        protocol_hint = "openai-compatible"
+        is_ollama = False
+
+        if model_ids is None:
+            # Try Ollama native API
+            ollama_models = _probe_ollama_endpoint(base_url)
+            if ollama_models is not None:
+                model_ids = ollama_models
+                protocol_hint = "ollamaOpenaiServer"
+                is_ollama = True
+
+        if model_ids is None:
+            # Port open but not an AI model endpoint we recognise
+            continue
+
+        for model_id in model_ids:
+            if not model_id:
+                continue
+            discovered.append({
+                "containerName": name,
+                "containerId": container_id,
+                "image": image,
+                "port": host_port,
+                "baseUrl": base_url,
+                "modelId": model_id,
+                "protocolHint": protocol_hint,
+                "isOllama": is_ollama,
+                "alreadyRegistered": False,
+            })
+
+    audit.log("warsat_discover", {"found": len(discovered)})
+    return {
+        **execution,
+        "discovered": discovered,
+        "count": len(discovered),
+    }
+
+
+def import_discovered(model_id: str, base_url: str, container_name: str, protocol_hint: str = "openai-compatible"):
+    """
+    One-click import: register a discovered container's model endpoint into the
+    model registry as an enabled, external-local model ready for chat.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", model_id.lower()).strip("-")
+    key = f"discovered-{slug}"
+
+    # Determine a user-friendly name
+    name = model_id
+    if "/" in model_id:
+        name = model_id.split("/")[-1]
+
+    model_entry = {
+        "key": key,
+        "name": name,
+        "model": model_id,
+        "provider": "openai-compatible",
+        "runtime": "external-local",
+        "base_url": base_url,
+        "enabled": True,
+        "managed": False,
+        "role": "main",
+        "tags": ["discovered", "docker", protocol_hint],
+        "description": f"Auto-discovered from Docker container: {container_name}",
+    }
+
+    model_registry.upsert(model_entry)
+    audit.log("warsat_import_discovered", {
+        "key": key,
+        "modelId": model_id,
+        "baseUrl": base_url,
+        "containerName": container_name,
+    })
+    return {
+        "ok": True,
+        "key": key,
+        "name": name,
+        "modelId": model_id,
+        "baseUrl": base_url,
+        "message": f"'{name}' has been added to your model registry and is ready to chat.",
+    }
+
+
 def logs(container_name, limit=120):
     execution = _docker_runtime_enabled()
     if not execution["enabled"]:

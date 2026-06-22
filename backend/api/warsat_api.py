@@ -96,6 +96,27 @@ async def warsat_stop(req: WarsatContainerIn, _user=Depends(current_user)):
 async def warsat_restart(req: WarsatContainerIn, _user=Depends(current_user)):
     return ok(await asyncio.to_thread(warsat.restart, req.container_name, req.approval_id))
 
+@warsat_router.get("/discover")
+
+async def warsat_discover(_user=Depends(current_user)):
+    """Scan all running Docker containers for OpenAI/Ollama-compatible AI model endpoints."""
+    return ok(await asyncio.to_thread(warsat.discover))
+
+class WarsatImportDiscoveredIn(CamelModel):
+    model_id: str
+    base_url: str
+    container_name: str
+    protocol_hint: str = "openai-compatible"
+
+@warsat_router.post("/import-discovered")
+
+async def warsat_import_discovered(req: WarsatImportDiscoveredIn, _user=Depends(current_user)):
+    """Register a discovered container model endpoint into the model registry."""
+    return ok(await asyncio.to_thread(
+        warsat.import_discovered,
+        req.model_id, req.base_url, req.container_name, req.protocol_hint,
+    ))
+
 @warsat_router.get("/system-metrics")
 
 async def warsat_system_metrics(_user=Depends(current_user)):
