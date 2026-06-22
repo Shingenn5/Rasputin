@@ -583,6 +583,92 @@ svg {
   cursor: pointer;
 }
 
+/* ── Toast notifications (ras-toast: namespaced to avoid Bootstrap's .toast) ── */
+.ras-toast-viewport {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 1080;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: min(420px, calc(100vw - 2 * var(--sp-4)));
+  pointer-events: none;
+}
+
+.ras-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--ras-border);
+  border-left: 3px solid var(--ras-border-strong);
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  box-shadow: var(--elev-2);
+  font-size: var(--fs-base);
+  animation: ras-toast-in var(--dur) var(--ease);
+}
+
+.ras-toast__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.ras-toast__message {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.ras-toast__dismiss {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ras-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.ras-toast__dismiss:hover {
+  background: color-mix(in srgb, var(--ras-text) 8%, transparent);
+  color: var(--ras-text);
+}
+
+.ras-toast--success {
+  border-left-color: var(--ras-safe);
+}
+.ras-toast--success .ras-toast__icon { color: var(--ras-safe); }
+
+.ras-toast--error {
+  border-left-color: var(--ras-danger);
+}
+.ras-toast--error .ras-toast__icon { color: var(--ras-danger); }
+
+.ras-toast--info {
+  border-left-color: var(--ras-blue);
+}
+.ras-toast--info .ras-toast__icon { color: var(--ras-blue); }
+
+@keyframes ras-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ras-toast { animation: none; }
+}
+
 .brand-mark {
   display: grid;
   place-items: center;

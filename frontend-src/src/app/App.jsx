@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
+import { useToast } from "../components/Toast.jsx";
 import { api, postJson, postJsonStream } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
@@ -136,6 +137,7 @@ export function App() {
   const [trialsStatus, setTrialsStatus] = useState("");
   const [setup, setSetup] = useState(null);
   const [globalStatus, setGlobalStatus] = useState("");
+  const toast = useToast();
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
@@ -217,10 +219,16 @@ export function App() {
     updateThemeChrome(theme);
   }, [theme, sidebarCollapsed, mobileSidebarOpen, ready]);
 
+  // Bridge: route every legacy setGlobalStatus(...) call through the toast
+  // system so all existing call sites surface as stacked, non-clobbering
+  // toasts without per-site edits. Cleared immediately so the legacy status
+  // bar no longer renders (toast is now the channel).
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   useEffect(() => {
-    if (!globalStatus) return undefined;
-    const timer = window.setTimeout(() => setGlobalStatus(""), 5500);
-    return () => window.clearTimeout(timer);
+    if (!globalStatus) return;
+    toastRef.current.info(globalStatus);
+    setGlobalStatus("");
   }, [globalStatus]);
 
   useEffect(() => {
