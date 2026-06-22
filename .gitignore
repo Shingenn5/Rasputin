@@ -54,6 +54,8 @@ playwright-report/
 test-results/
 .playwright-mcp/
 .agents/
+.claude/
+.gemini/
 *.png
 *.webp
 *.webm
