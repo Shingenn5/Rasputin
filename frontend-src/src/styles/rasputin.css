@@ -47,6 +47,46 @@
   --bs-list-group-bg: var(--ras-panel);
   --bs-light-rgb: 238, 232, 220;
   --bs-body-font-family: "Inter", system-ui, sans-serif;
+
+  /* ── Systematic design scales (additive; theme-independent) ──
+     Consumed by shared components (Toast, Skeleton, Button, ...).
+     Existing ad-hoc values are intentionally left untouched. */
+
+  /* Spacing — 4px base unit */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Type scale */
+  --fs-xs: 0.75rem;    /* 12px */
+  --fs-sm: 0.8125rem;  /* 13px */
+  --fs-base: 0.875rem; /* 14px */
+  --fs-md: 1rem;       /* 16px */
+  --fs-lg: 1.125rem;   /* 18px */
+  --fs-xl: 1.25rem;    /* 20px */
+  --fs-2xl: 1.5rem;    /* 24px */
+
+  /* Elevation */
+  --elev-1: 0 1px 2px rgba(23, 20, 17, .08);
+  --elev-2: 0 6px 16px rgba(23, 20, 17, .12);
+  --elev-3: 0 14px 30px rgba(23, 20, 17, .16);
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 260ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
 }
 
 :root[data-theme="rasputin-dark"] {
