@@ -317,7 +317,7 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={`w2-card ${isFailed ? 'failed-run-border' : ''}`} style={{ padding: '16px', gap: '8px' }}>
+    <div className={`w2-card ras-list-item ${isFailed ? 'failed-run-border' : ''}`} style={{ padding: '16px', gap: '8px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

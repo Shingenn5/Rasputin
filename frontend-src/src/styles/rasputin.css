@@ -12167,3 +12167,91 @@ button.helper-row:hover {
   align-items: center;
   gap: 4px;
 }
+
+/* ═══════════════════════════════════════════
+   Phase 1 — Motion & view transitions (.ras- namespaced)
+   Uses the design tokens (--dur/--ease/--elev-*); reduced-motion honored
+   both by the global block and an explicit guard at the end.
+   ═══════════════════════════════════════════ */
+
+/* 1. View transition: each .app-view toggles display:none/flex via .active.
+   Attaching an enter animation to .app-view.active means it plays exactly
+   when a view becomes visible (no JSX change needed). */
+.app-view.active {
+  animation: ras-view-enter var(--dur) var(--ease) both;
+}
+
+@keyframes ras-view-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 2. List enter: opt-in fade/slide-in per item (enter only — pure CSS can't
+   animate removal without extra state). Apply .ras-list-item to row/card. */
+.ras-list-item {
+  animation: ras-list-item-enter var(--dur) var(--ease) both;
+}
+
+@keyframes ras-list-item-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 3. Interactive feedback: hover lift + press on card surfaces. w2-card gets
+   it directly; .ras-interactive is the opt-in hook for anything else. */
+.w2-card,
+.ras-interactive {
+  transition:
+    transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.w2-card:hover,
+.ras-interactive:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--elev-2);
+}
+
+.w2-card:active,
+.ras-interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--elev-1);
+}
+
+.ras-interactive:focus-visible {
+  outline: 2px solid var(--ras-focus);
+  outline-offset: 2px;
+}
+
+/* 4. Animated pipeline stepper: ease the WarSat deploy stepper's connector
+   fill and step state instead of an instant swap. */
+.ws-pipeline-connector,
+.ws-pipeline-step,
+.ws-pipeline-dot {
+  transition:
+    background-color var(--dur-slow) var(--ease),
+    border-color var(--dur-slow) var(--ease),
+    color var(--dur-slow) var(--ease);
+}
+
+/* Explicit reduced-motion safeguard for the rules above. */
+@media (prefers-reduced-motion: reduce) {
+  .app-view.active,
+  .ras-list-item {
+    animation: none !important;
+  }
+  .w2-card,
+  .ras-interactive,
+  .ws-pipeline-connector,
+  .ws-pipeline-step,
+  .ws-pipeline-dot {
+    transition: none !important;
+  }
+  .w2-card:hover,
+  .w2-card:active,
+  .ras-interactive:hover,
+  .ras-interactive:active {
+    transform: none !important;
+  }
+}

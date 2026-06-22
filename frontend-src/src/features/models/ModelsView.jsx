@@ -546,7 +546,7 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
   const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
   const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
   return (
-    <div className="w2-card" style={{ gap: "8px" }}>
+    <div className="w2-card ras-list-item" style={{ gap: "8px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <strong style={{ fontSize: "0.875rem" }}>{item.name}</strong>
@@ -614,7 +614,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const handleDiscover = () => runAction("discover", "Discover", "discover");
 
   return (
-    <div className="w2-card" style={{ gap: "8px" }}>
+    <div className="w2-card ras-list-item" style={{ gap: "8px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <Cpu size={18} color={statusColor(st)} />
