@@ -675,9 +675,9 @@ export function App() {
     }
   }
 
-  async function sendTask(event) {
-    event.preventDefault();
-    const message = objective.trim();
+  async function sendTask(event, customMessage = null) {
+    if (event) event.preventDefault();
+    const message = customMessage || objective.trim();
     if (!healthy) {
       setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
       return;
@@ -1497,6 +1497,9 @@ export function App() {
         previewWorkspaceFile={previewWorkspaceFile}
         approvePath={approvePath}
         selectWorkspace={selectWorkspace}
+        models={models}
+        modeModelOverrides={modeModelOverrides}
+        setModeModelOverride={setModeModelOverride}
         loadWorkspaceRoots={() => loadWorkspaceRoots(workspace.activePath)}
         previewMount={previewMount}
         requestMount={requestMount}
@@ -1660,6 +1663,8 @@ export function App() {
         section={settingsSection}
         setSection={(section) => go("settings", section)}
         models={models}
+        modeModelOverrides={modeModelOverrides}
+        setModeModelOverride={setModeModelOverride}
         selectedModelObject={selectedModelObject}
         selectedModel={selectedModel}
         testingMode={testingMode}

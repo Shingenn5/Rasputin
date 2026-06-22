@@ -35,8 +35,8 @@ The main Docker files are:
 ```text
 Dockerfile
 docker-compose.yml
-start-wrapper.ps1
-stop-wrapper.ps1
+scripts/start-wrapper.ps1
+scripts/stop-wrapper.ps1
 ```
 
 `docker-compose.yml` starts the `rasputin-wrapper` service.
@@ -1103,13 +1103,13 @@ python server.py
 Run wrapper in Docker:
 
 ```powershell
-.\start-wrapper.ps1
+.\scripts\start-wrapper.ps1
 ```
 
 Stop wrapper:
 
 ```powershell
-.\stop-wrapper.ps1
+.\scripts\stop-wrapper.ps1
 ```
 
 Run Docker Compose directly:

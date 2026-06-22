@@ -4,6 +4,8 @@ import {
   ChevronDown,
   Cpu,
   Folder,
+  FileText,
+  Paperclip,
   Pause,
   PanelLeftOpen,
   Play,
@@ -26,6 +28,8 @@ import {
   runtimeStatus,
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
+import { extractFileContent } from "../../lib/fileExtraction.js";
+import { CodeSandbox } from "../../components/CodeSandbox.jsx";
 
 const modeOptions = [
   {
@@ -129,12 +133,24 @@ export function HomeView(props) {
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
   const executeAction = useReliableAction("HomeView");
 
+  // Modernization: Drag and Drop Attachments
+  const [attachments, setAttachments] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
+
   const handleSendTask = async (e) => {
     e.preventDefault();
-    if (!objective.trim()) return;
+    if (!objective.trim() && attachments.length === 0) return;
+    
+    let combinedMessage = objective.trim();
+    if (attachments.length > 0) {
+      const attachStr = attachments.map(a => `<document name="${a.name}">\n${a.content}\n</document>`).join("\n\n");
+      combinedMessage = combinedMessage ? `${combinedMessage}\n\n${attachStr}` : attachStr;
+    }
+
     try {
       await executeAction("SendTask", taskMode, async () => {
-        await sendTask(e);
+        await sendTask(e, combinedMessage);
+        setAttachments([]);
       }, setUiState);
     } catch (error) {
       console.error(error);
@@ -254,6 +270,44 @@ function jumpToLatest() {
     setHasNewActivity(false);
   }
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    setUiState({ status: 'running', message: 'Extracting file content...' });
+    
+    const newAttachments = [];
+    for (const file of files) {
+      try {
+        const content = await extractFileContent(file);
+        newAttachments.push({ name: file.name, content });
+      } catch (err) {
+        console.error("Failed to parse file", file.name, err);
+      }
+    }
+    
+    if (newAttachments.length > 0) {
+      setAttachments(prev => [...prev, ...newAttachments]);
+      setUiState({ status: 'success', message: `Attached ${newAttachments.length} file(s)` });
+      setTimeout(() => setUiState({ status: 'idle', message: '' }), 3000);
+    } else {
+      setUiState({ status: 'failed', message: 'Failed to extract any text from files.' });
+    }
+  };
+
   return (
     <section className={`cc-layout app-view home-view ${view === "home" ? "active" : ""}`} id="homeView" data-app-view="home" tabIndex="-1">
       {/* Header */}
@@ -280,7 +334,17 @@ function jumpToLatest() {
         </div>
       </header>
 
-      <div className="cc-main-container">
+      <div className="cc-main-container" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        {isDragging && (
+          <div className="cc-drag-overlay" style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 196, 179, 0.1)', border: '2px dashed var(--ras-primary)',
+            zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.5rem', color: 'var(--ras-primary)', fontWeight: 'bold'
+          }}>
+            Drop files to attach to context
+          </div>
+        )}
         {/* Content Area */}
         <div className="cc-content-area">
           {/* Workspace Selector */}
@@ -296,6 +360,22 @@ function jumpToLatest() {
             <h1 className="cc-objective-title">What is our objective?</h1>
             
             <form id="taskForm" className="cc-input-container" onSubmit={handleSendTask}>
+              {attachments.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingBottom: '8px', borderBottom: '1px solid var(--cc-border)', marginBottom: '8px' }}>
+                  {attachments.map((att, idx) => (
+                    <div key={idx} style={{ 
+                      display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', 
+                      backgroundColor: 'var(--cc-surface)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--cc-border)' 
+                    }}>
+                      <FileText size={14} color="var(--ras-primary)" />
+                      <span style={{ maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{att.name}</span>
+                      <button type="button" aria-label="Remove attachment" style={{ background: 'none', border: 'none', color: 'var(--cc-muted)', cursor: 'pointer', padding: '0 2px' }} onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
               <textarea
                 id="objective"
@@ -754,7 +834,14 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           )}
         </div>
         <div className="markdown-body">
-          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{response}</ReactMarkdown>
+          <ReactMarkdown 
+            rehypePlugins={[rehypeSanitize]}
+            components={{
+              code: CodeSandbox
+            }}
+          >
+            {response}
+          </ReactMarkdown>
         </div>
         <details className="runtime-details" data-testid="runtime-details-toggle">
           <summary>Details</summary>

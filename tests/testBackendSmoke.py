@@ -1064,7 +1064,7 @@ class BackendSmokeTests(unittest.TestCase):
                 "strengthProfile": "cpu",
             }))
         self.assertEqual(ollama["runtime"], "ollama")
-        self.assertEqual(ollama["expectedModelRegistryEntry"]["baseUrl"], "http://127.0.0.1:11435/v1")
+        self.assertEqual(ollama["expectedModelRegistryEntry"]["baseUrl"], "http://host.docker.internal:11435/v1")
         self.assertIn("ollama/ollama:latest", " ".join(ollama["commandPreview"]["run"]))
 
         missing = self.client.post("/api/warsat/plan", json={"protocolId": "missingProtocol", "modelRef": "x"})

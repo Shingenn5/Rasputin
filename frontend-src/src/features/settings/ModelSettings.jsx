@@ -4,15 +4,15 @@ import { BrainCircuit, Download, Cpu, HardDrive } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 
-export function ModelSettings() {
-  const models = useSettingsStore(state => state.models);
+export function ModelSettings({ models: availableModels, modeModelOverrides, setModeModelOverride }) {
+  const modelSettings = useSettingsStore(state => state.models);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.models);
 
-  const [downloadPath, setDownloadPath] = useState(models?.downloadPath || "");
+  const [downloadPath, setDownloadPath] = useState(modelSettings?.downloadPath || "");
 
   const handleToggle = (key) => {
-    const newVal = !(models?.[key]);
+    const newVal = !(modelSettings?.[key]);
     updateSetting("models", key, newVal);
   };
 
@@ -57,7 +57,7 @@ export function ModelSettings() {
                       id="engine-llamacpp"
                       name="engine"
                       label={<><span className="fw-bold">Llama.cpp</span> <Badge bg="secondary" className="ms-1">GGUF</Badge></>}
-                      checked={models?.defaultEngine === "llamacpp" || !models?.defaultEngine}
+                      checked={modelSettings?.defaultEngine === "llamacpp" || !modelSettings?.defaultEngine}
                       onChange={() => handleChange("defaultEngine", "llamacpp")}
                     />
                     <Form.Check 
@@ -65,7 +65,7 @@ export function ModelSettings() {
                       id="engine-vllm"
                       name="engine"
                       label={<><span className="fw-bold">vLLM</span> <Badge bg="primary" className="ms-1">High Throughput</Badge></>}
-                      checked={models?.defaultEngine === "vllm"}
+                      checked={modelSettings?.defaultEngine === "vllm"}
                       onChange={() => handleChange("defaultEngine", "vllm")}
                     />
                     <Form.Check 
@@ -73,12 +73,51 @@ export function ModelSettings() {
                       id="engine-ollama"
                       name="engine"
                       label={<span className="fw-bold">Ollama</span>}
-                      checked={models?.defaultEngine === "ollama"}
+                      checked={modelSettings?.defaultEngine === "ollama"}
                       onChange={() => handleChange("defaultEngine", "ollama")}
                     />
                   </div>
                 </Col>
               </Form.Group>
+            </Card.Body>
+          </Card>
+        </Col>
+
+        {/* Global Capability Routing */}
+        <Col md={12}>
+          <Card className="shadow-sm border-0">
+            <Card.Header className="bg-body-tertiary fw-semibold pt-3 px-4 border-bottom-0">
+              <BrainCircuit size={18} className="me-2 text-muted" />
+              Default Capability Routing
+            </Card.Header>
+            <Card.Body className="px-4 border-top">
+              <div className="text-muted small mb-4">
+                Define the fallback AI models used for different types of autonomous tasks when a specific workspace doesn't have an override set.
+              </div>
+              <Row className="g-3">
+                {[
+                  { mode: 'chat', label: 'Main Chat Assistant', desc: 'Default model for conversational queries.' },
+                  { mode: 'code', label: 'Default Coder', desc: 'Handles code generation and refactoring.' },
+                  { mode: 'organize', label: 'Default Executor', desc: 'Runs CLI commands and manipulates files.' }
+                ].map((item) => (
+                  <Col md={4} key={item.mode}>
+                    <Form.Group>
+                      <Form.Label className="fw-medium text-body mb-1">{item.label}</Form.Label>
+                      <div className="text-muted small mb-2">{item.desc}</div>
+                      <Form.Select 
+                        value={modeModelOverrides?.[item.mode] || ""}
+                        onChange={(e) => setModeModelOverride(item.mode, e.target.value)}
+                        className="form-select-sm"
+                      >
+                        <option value="">(Auto Detect)</option>
+                        {(availableModels || []).map(m => (
+                          <option key={m.key} value={m.key}>{m.name || m.key}</option>
+                        ))}
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                ))}
+              </Row>
             </Card.Body>
           </Card>
         </Col>
@@ -117,7 +156,7 @@ export function ModelSettings() {
                   <Form.Check 
                     type="switch" 
                     id="auto-quant-switch"
-                    checked={models?.autoQuantization !== false}
+                    checked={modelSettings?.autoQuantization !== false}
                     onChange={() => handleToggle("autoQuantization")}
                   />
                 </div>
@@ -135,7 +174,7 @@ export function ModelSettings() {
                   <Form.Check 
                     type="switch" 
                     id="unverified-sources-switch"
-                    checked={!!models?.allowUnverifiedSources}
+                    checked={!!modelSettings?.allowUnverifiedSources}
                     onChange={() => handleToggle("allowUnverifiedSources")}
                   />
                 </div>

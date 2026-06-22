@@ -44,6 +44,9 @@ export function WorkspacesView({
   searchWorkspaceKnowledge,
   refreshKnowledgeStats,
   setPrompt,
+  models,
+  modeModelOverrides,
+  setModeModelOverride
 }) {
   const [filter, setFilter] = useState("");
   const [selectedEntry, setSelectedEntry] = useState(null);
@@ -524,6 +527,38 @@ export function WorkspacesView({
                       <button className="w2-button" onClick={() => launchTask('graph')}>Review Dependencies</button>
                       <button className="w2-button" onClick={() => launchTask('docs')}>Generate Documentation</button>
                       <button className="w2-button" onClick={() => launchTask('review')}>Code Review</button>
+                    </div>
+                  </div>
+
+                  <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px', gridColumn: '1 / -1' }}>
+                    <h2 className="w2-section-title">Agent Capability Routing</h2>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', margin: 0 }}>
+                      Assign specific tasks in this workspace to specific local models.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                      {[
+                        { mode: 'review', label: 'Code Reviewer' },
+                        { mode: 'research', label: 'Researcher' },
+                        { mode: 'write', label: 'Summarizer' },
+                        { mode: 'analyze', label: 'Analyzer' }
+                      ].map((item) => (
+                        <div key={item.mode} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <strong style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>{item.label}</strong>
+                          <select
+                            className="w2-input"
+                            style={{ fontSize: '0.875rem' }}
+                            value={modeModelOverrides?.[item.mode] || ""}
+                            onChange={(e) => setModeModelOverride(item.mode, e.target.value)}
+                          >
+                            <option value="">(Default Routing)</option>
+                            {(models || []).map((m) => (
+                              <option key={m.key} value={m.key}>
+                                {m.name || m.key}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
                     </div>
                   </div>
 

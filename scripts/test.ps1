@@ -60,6 +60,7 @@ try {
 
   Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "-m", "unittest", "tests.testBackendSmoke"))
   Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "/app/tests/liveSmoke.py"))
+  Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "/app/tests/warsatSmoke.py"))
 
   if ($Ui) {
     $env:RASPUTIN_TEST_BASE_URL = $baseUrl

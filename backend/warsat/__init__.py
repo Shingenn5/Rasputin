@@ -17,7 +17,7 @@ from backend.core import security
 from backend.core.response import AppError
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILTIN_PROTOCOL_DIR = ROOT / "warsat" / "protocols"
+BUILTIN_PROTOCOL_DIR = ROOT / "backend" / "warsat" / "protocols"
 DATA_DIR = ROOT / "data" / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
 MODELS_DIR = ROOT / "models"

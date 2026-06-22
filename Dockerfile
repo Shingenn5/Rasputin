@@ -26,7 +26,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY server.py /app/server.py
 COPY backend /app/backend
-COPY warsat /app/warsat
 COPY --from=frontend-builder /app/frontend /app/frontend
 
 RUN mkdir -p /app/data /app/workspace /app/models

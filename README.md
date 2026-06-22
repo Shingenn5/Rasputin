@@ -77,7 +77,7 @@ Then, launch the manager:
 - **Windows:** `.\rasputin.ps1 start`
 - **macOS/Linux:** `./rasputin.sh start`
 
-*Note: For the raw, unmanaged startup scripts, you can still use `.\start-wrapper.ps1` and `.\stop-wrapper.ps1`.*
+*Note: For the raw, unmanaged startup scripts, you can also use `scripts\start-wrapper.ps1` and `scripts\stop-wrapper.ps1` directly.*
 
 ### Interactive CLI Commands
 The `rasputin` manager supports the following commands:
