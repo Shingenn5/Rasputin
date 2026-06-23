@@ -684,7 +684,7 @@ export function App() {
       setSelectedSession(detail);
       setActiveChatSessionId(sessionId || null);
       setObjective("");
-      go("home");
+      go("chat");
       loadChatFolders().catch((error) => setGlobalStatus(error.message));
       setGlobalStatus("New chat created.");
       return detail;
@@ -1164,7 +1164,7 @@ export function App() {
         return Array.from(next.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
       });
       setObjective("");
-      go("home");
+      go("chat");
       setGlobalStatus("Chat restored.");
     } catch (error) {
       setGlobalStatus(error.message);

@@ -4,6 +4,7 @@ import {
   Archive,
   Brain,
   ChevronsLeft,
+  ChevronsRight,
   FlaskConical,
   LayoutDashboard,
   MessageSquare,
@@ -54,9 +55,14 @@ export function DashSidebar({
   runningCount = 0,
   newTask,
   locked,
+  recentSessions = [],
+  resumeSession,
+  activeSessionId,
 }) {
   const isActive = (item) =>
     view === item.view && (item.view !== "settings" || settingsSection === item.section);
+
+  const sessions = (recentSessions || []).slice(0, 8);
 
   return (
     <aside
@@ -66,7 +72,7 @@ export function DashSidebar({
       )}
     >
       {/* Brand */}
-      <div className={cn("flex items-center gap-2.5 px-2 pb-4", collapsed && "justify-center px-0")}>
+      <div className={cn("flex items-center gap-2.5 px-2 pb-4", collapsed && "flex-col gap-3 px-0")}>
         <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-emerald-700 font-extrabold text-primary-foreground shadow-[0_4px_16px_-4px_var(--primary)]">
           R
         </div>
@@ -76,16 +82,18 @@ export function DashSidebar({
             <span className="text-[0.66rem] text-muted-foreground">Local AI Operations</span>
           </div>
         )}
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            aria-label="Collapse sidebar"
-            className="ml-auto grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <ChevronsLeft size={16} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={cn(
+            "grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+            !collapsed && "ml-auto",
+          )}
+        >
+          {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+        </button>
       </div>
 
       {/* New chat */}
@@ -141,6 +149,46 @@ export function DashSidebar({
           })}
         </div>
       ))}
+
+      {/* Chat history */}
+      {!collapsed && sessions.length > 0 && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between px-3 pb-2">
+            <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+              Recent Chats
+            </span>
+            <button
+              type="button"
+              onClick={() => go("chat")}
+              className="text-[0.62rem] text-muted-foreground/70 transition-colors hover:text-foreground"
+            >
+              All
+            </button>
+          </div>
+          <div className="flex flex-col">
+            {sessions.map((s) => {
+              const active = s.id === activeSessionId;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  title={s.title || "Untitled chat"}
+                  onClick={() => resumeSession?.(s.id)}
+                  className={cn(
+                    "flex items-center gap-2.5 truncate rounded-lg px-3 py-2 text-left text-[0.8rem] transition-colors",
+                    active
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <MessageSquare size={14} className="shrink-0 opacity-70" />
+                  <span className="truncate">{s.title || "Untitled chat"}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1" />
 
