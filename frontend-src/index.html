@@ -40,6 +40,7 @@
           var cfg = themes[selected];
           var root = document.documentElement;
           root.dataset.theme = selected;
+          root.classList.add("dark");
           root.dataset.bsTheme = cfg.dark ? "dark" : "light";
           root.dataset.contrast = selected === "contrast" ? "true" : "false";
           root.style.background = cfg.bg;

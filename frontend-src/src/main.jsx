@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@fontsource/rajdhani/500.css";
 import "@fontsource/rajdhani/600.css";
 import "@fontsource/rajdhani/700.css";
+import "./styles/theme.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./styles/rasputin.css";
 import "./styles/dashboard.css";
