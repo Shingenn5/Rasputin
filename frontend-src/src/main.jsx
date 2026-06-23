@@ -5,6 +5,7 @@ import "@fontsource/rajdhani/600.css";
 import "@fontsource/rajdhani/700.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./styles/rasputin.css";
+import "./styles/dashboard.css";
 import { AppProviders } from "./app/AppProviders.jsx";
 import { App } from "./app/App.jsx";
 

@@ -1,5 +1,6 @@
 export const navItems = [
-  { view: "home", label: "Home", testId: "nav-home" },
+  { view: "home", label: "Dashboard", testId: "nav-home" },
+  { view: "chat", label: "Chat", testId: "nav-chat" },
   { view: "workspaces", label: "Workspaces", testId: "nav-workspaces" },
   { view: "activity", label: "Activity", testId: "nav-activity" },
   { view: "models", label: "Models", testId: "nav-models" },

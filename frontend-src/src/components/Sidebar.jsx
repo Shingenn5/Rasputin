@@ -20,6 +20,8 @@ import { displayWorkspaceName } from "../lib/display.js";
 
 const icons = {
   Home,
+  Dashboard: Home,
+  Chat: Sparkles,
   Workspaces: Folder,
   Activity,
   Knowledge: Brain,

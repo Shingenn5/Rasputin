@@ -230,7 +230,7 @@ export function HomeView(props) {
   }, [activeWorkspaceName, modelKeyForMode, modeModelOverrides, models, orderedHomeTasks, runningTasks, selectedModel, selectedModelObject]);
 
   useEffect(() => {
-    if (view !== "home" || !threadScrollRef.current) return;
+    if (view !== "chat" || !threadScrollRef.current) return;
     const target = threadScrollRef.current;
     if (autoScroll) {
       window.requestAnimationFrame(() => {
@@ -325,7 +325,7 @@ function jumpToLatest() {
   };
 
   return (
-    <section className={`cc-layout app-view home-view ${view === "home" ? "active" : ""}`} id="homeView" data-app-view="home" tabIndex="-1">
+    <section className={`cc-layout app-view home-view ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
       {/* Header */}
       <header className="cc-header">
         <div className="cc-header-left">

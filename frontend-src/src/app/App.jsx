@@ -6,6 +6,7 @@ import { Onboarding } from "../components/Onboarding.jsx";
 import { api, postJson, postJsonStream } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
+import { DashboardView } from "../features/dashboard/DashboardView.jsx";
 import { ModelsView } from "../features/models/ModelsView.jsx";
 import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
@@ -38,6 +39,7 @@ import {
 
 const routedViews = new Set([
   "home",
+  "chat",
   "workspaces",
   "activity",
   "models",
@@ -1466,6 +1468,17 @@ export function App() {
         assignSessionFolder,
       }}
     >
+      <DashboardView
+        view={view}
+        models={models}
+        homeTasks={homeTasks}
+        runningTasks={runningTasks}
+        approvalCount={approvalCount}
+        go={go}
+        openTaskDetails={openTaskDetails}
+        security={security}
+        selectedModelObject={selectedModelObject}
+      />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
         view={view}
