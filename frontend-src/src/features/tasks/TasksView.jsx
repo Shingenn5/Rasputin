@@ -6,6 +6,8 @@ import {
 } from "lucide-react";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
+import { Button as UIButton } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 
 const activityTabs = ["All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
 
@@ -70,61 +72,45 @@ export function ActivityView({
   const handleResume = (id) => executeAction("ResumeTask", id, async () => resumeTask?.(id), setUiState);
 
   return (
-    <section className={`w2-layout app-view activity-view ${view === "activity" ? "active" : ""}`} id="activityView" data-app-view="activity">
-      
-      {/* PHASE 1: Top Navigation & Header */}
-      <div className="w2-header-card" style={{ marginBottom: '16px' }}>
+    <section className={`w2-layout app-view activity-view tw ${view === "activity" ? "active" : ""}`} id="activityView" data-app-view="activity">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-5">
         <div>
-          <h1>Activities Center</h1>
-          <p>Mission Control for everything Rasputin has ever done.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Activity <span className="text-muted-foreground">Center</span></h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Mission control for everything Rasputin has ever done.</p>
         </div>
-        <div className="w2-header-stats">
-          <div className="w2-header-stat">
-            <strong>{tasks.length}</strong>
-            <small>Total Runs</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{color: 'var(--ras-safe)'}}>{completedTasks.length}</strong>
-            <small>Successes</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{color: 'var(--ras-warn)'}}>{activeTasks.length}</strong>
-            <small>Running Now</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{color: 'var(--ras-danger)'}}>{failedTasks.length}</strong>
-            <small>Failures</small>
-          </div>
+        <div className="flex gap-3">
+          {[
+            { v: tasks.length, l: "Total Runs", c: "text-foreground" },
+            { v: completedTasks.length, l: "Successes", c: "text-primary" },
+            { v: activeTasks.length, l: "Running", c: "text-amber-400" },
+            { v: failedTasks.length, l: "Failures", c: "text-rose-400" },
+          ].map((s) => (
+            <div key={s.l} className="rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+              <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
+              <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div style={{ padding: '0 24px', display: 'flex', gap: '12px', overflowX: 'auto', marginBottom: '16px' }}>
+      <div className="flex items-center gap-2 overflow-x-auto">
         {activityTabs.map(t => (
-          <button 
-            key={t}
-            className={`w2-button ${tab === t ? 'primary' : ''}`}
-            onClick={() => setTab(t)}
-          >
+          <UIButton key={t} variant={tab === t ? "default" : "outline"} size="sm" onClick={() => setTab(t)}>
             {t}
-          </button>
+          </UIButton>
         ))}
-        <div style={{ flex: 1 }} />
-        
-        {/* Button Reliability Status Readout */}
+        <div className="flex-1" />
         {uiState.status !== 'idle' && (
-          <div style={{ 
-            padding: '8px 16px', borderRadius: '4px', fontSize: '0.875rem',
-            backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                            uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
-            color: '#fff', display: 'flex', alignItems: 'center'
-          }}>
+          <Badge variant={uiState.status === 'failed' ? "down" : uiState.status === 'success' ? "up" : "muted"}>
             {uiState.message}
-          </div>
+          </Badge>
         )}
-
-        <button className="w2-button" onClick={handleRefresh}>
-          <RefreshCw size={16} /> Refresh
-        </button>
+        <UIButton variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw size={15} /> Refresh
+        </UIButton>
       </div>
 
       <div className="w2-main-grid" style={{ gridTemplateColumns: '1fr 350px' }}>
@@ -303,6 +289,7 @@ export function ActivityView({
 
         </div>
 
+      </div>
       </div>
     </section>
   );

@@ -301,9 +301,60 @@
 /* New-shell coexistence: the dashboard view scrolls inside dash-frame-main
    instead of forcing its own 100dvh/overflow:hidden box. */
 #homeView.app-view.active,
-#modelsView.app-view.active {
+#modelsView.app-view.active,
+#activityView.app-view.active {
   display: block;
   height: auto;
   min-height: 100%;
   overflow: visible;
+}
+
+/* ── Legacy view modernization ──────────────────────────────────────────
+   Remap the legacy --cc-* tokens (used by .w2-card/.w2-button/.w2-header-*
+   across not-yet-migrated views) onto the new dark/emerald palette, and
+   refine a few legacy components so every view reads as one modern system.
+   ──────────────────────────────────────────────────────────────────── */
+:root {
+  --cc-bg: #0a0d0f;
+  --cc-surface: #12171a;
+  --cc-border: rgba(255, 255, 255, 0.08);
+  --cc-text: #e8edf0;
+  --cc-muted: #7d8a92;
+  --cc-accent: #2fe3a0;
+  --cc-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
+}
+
+.w2-header-card {
+  background: #12171a;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+}
+.w2-header-card h1 { letter-spacing: -0.02em; }
+
+.w2-card {
+  background: #12171a;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.w2-button {
+  border-radius: 10px;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #161c20;
+}
+.w2-button:hover { background: #1a2126; }
+.w2-button.primary {
+  background: #2fe3a0;
+  color: #06120d;
+  border-color: #2fe3a0;
+  font-weight: 600;
+}
+.w2-button.primary:hover { background: #46e9ad; }
+
+.w2-list-item { border-radius: 12px; background: #0e1214; }
+.w2-input {
+  border-radius: 10px;
+  background: #0e1214;
+  border-color: rgba(255, 255, 255, 0.1);
 }
