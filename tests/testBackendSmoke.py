@@ -11,6 +11,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend import main
+from backend.api.core import current_user, hub
 from backend.core import approvals as approvals
 from backend.engine import agent as agent
 from backend.engine import context as context_governor
@@ -54,7 +55,7 @@ def minimal_pdf_bytes(text):
 
 class BackendSmokeTests(unittest.TestCase):
     def setUp(self):
-        main.app.dependency_overrides[main.current_user] = lambda: {"username": "test", "role": "admin"}
+        main.app.dependency_overrides[current_user] = lambda: {"username": "test", "role": "admin"}
         self.client = TestClient(main.app, raise_server_exceptions=False)
 
     def tearDown(self):
@@ -518,7 +519,7 @@ class BackendSmokeTests(unittest.TestCase):
                     "enabled": True,
                 })
                 self.assertTrue(classified["available"])
-                called = await main.hub.run_tool_test(tool_id, {
+                called = await hub.run_tool_test(tool_id, {
                     "message": "fixture e2e",
                 })
             self.assertEqual(called["task"]["status"], "done")
@@ -1064,7 +1065,14 @@ class BackendSmokeTests(unittest.TestCase):
                 "strengthProfile": "cpu",
             }))
         self.assertEqual(ollama["runtime"], "ollama")
-        self.assertEqual(ollama["expectedModelRegistryEntry"]["baseUrl"], "http://host.docker.internal:11435/v1")
+        # The visible host depends on runtime: containers reach the host via
+        # host.docker.internal (WRAPPER_RUNTIME=docker), in-process it's the
+        # localhost binding. Accept whichever the current environment yields.
+        expected_ollama_host = "host.docker.internal" if os.environ.get("WRAPPER_RUNTIME") == "docker" else "127.0.0.1"
+        self.assertEqual(
+            ollama["expectedModelRegistryEntry"]["baseUrl"],
+            f"http://{expected_ollama_host}:11435/v1",
+        )
         self.assertIn("ollama/ollama:latest", " ".join(ollama["commandPreview"]["run"]))
 
         missing = self.client.post("/api/warsat/plan", json={"protocolId": "missingProtocol", "modelRef": "x"})
