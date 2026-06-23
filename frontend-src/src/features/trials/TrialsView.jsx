@@ -186,39 +186,31 @@ export function TrialsView({
   const runningExperiments = experiments.filter(e => e.status === "running");
 
   return (
-    <section className="w2-layout app-view trials-view active" id="trialsView" data-app-view="trials">
+    <section className="w2-layout app-view trials-view tw active" id="trialsView" data-app-view="trials">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Header ── */}
-      <div className="w2-header-card">
+      <div className="flex items-start justify-between gap-5">
         <div>
-          <h1><Beaker size={22} style={{ verticalAlign: "-3px", marginRight: "8px" }} />Trials Lab</h1>
-          <p>Experimentation & evaluation center. Measure what works best.</p>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <Beaker size={26} className="text-primary" /> Trials <span className="text-muted-foreground">Lab</span>
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Experimentation &amp; evaluation center. Measure what works best.</p>
         </div>
-        <div className="w2-header-stats">
-          <div className="w2-header-stat">
-            <strong>{experiments.length}</strong>
-            <small>Experiments</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: runningExperiments.length > 0 ? "var(--ras-safe)" : "var(--cc-muted)" }}>{runningExperiments.length}</strong>
-            <small>Running</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-safe)" }}>{completedExperiments.length}</strong>
-            <small>Completed</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{datasets.length}</strong>
-            <small>Datasets</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{scorecards.length}</strong>
-            <small>Scorecards</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{reports.length}</strong>
-            <small>Reports</small>
-          </div>
+        <div className="flex flex-wrap justify-end gap-3">
+          {[
+            { v: experiments.length, l: "Experiments", c: "text-foreground" },
+            { v: runningExperiments.length, l: "Running", c: runningExperiments.length > 0 ? "text-primary" : "text-muted-foreground" },
+            { v: completedExperiments.length, l: "Completed", c: "text-primary" },
+            { v: datasets.length, l: "Datasets", c: "text-foreground" },
+            { v: scorecards.length, l: "Scorecards", c: "text-foreground" },
+            { v: reports.length, l: "Reports", c: "text-foreground" },
+          ].map((s) => (
+            <div key={s.l} className="rounded-xl border border-border bg-card px-3.5 py-2 text-center">
+              <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
+              <div className="text-[0.62rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -288,6 +280,7 @@ export function TrialsView({
         <div className="w2-column">
           <InspectorPanel selected={selected} scorecards={scorecards} experiments={experiments} refresh={refresh} setError={setError} />
         </div>
+      </div>
       </div>
     </section>
   );

@@ -87,22 +87,25 @@ export function ArchiveView({ view }) {
   };
 
   return (
-    <section className={`w2-layout app-view archive-view ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive">
-      
+    <section className={`w2-layout app-view archive-view tw ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+
       {/* ── Header ── */}
-      <div className="w2-header-card">
+      <div className="flex items-start justify-between gap-5">
         <div>
-          <h1><Archive size={22} style={{ verticalAlign: "-3px", marginRight: "8px" }} />Archive Center</h1>
-          <p>Long-term retention, snapshot recovery, and mission preservation.</p>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <Archive size={26} className="text-primary" /> Archive <span className="text-muted-foreground">Center</span>
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Long-term retention, snapshot recovery, and mission preservation.</p>
         </div>
-        <div className="w2-header-stats">
-          <div className="w2-header-stat">
-            <strong>{items.length}</strong>
-            <small>Total Items</small>
+        <div className="flex gap-3">
+          <div className="rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+            <div className="text-xl font-bold">{items.length}</div>
+            <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">Total Items</div>
           </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-safe)" }}>Online</strong>
-            <small>Vault Status</small>
+          <div className="rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+            <div className="text-xl font-bold text-primary">Online</div>
+            <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">Vault Status</div>
           </div>
         </div>
       </div>
@@ -231,6 +234,7 @@ export function ArchiveView({ view }) {
           </div>
         </div>
 
+      </div>
       </div>
     </section>
   );
