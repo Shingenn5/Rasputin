@@ -41,6 +41,9 @@ import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { api } from "../../api/client.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
+import { Button as UIButton } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
+import { Card } from "@/components/ui/card.jsx";
 
 /* ── Tab config ── */
 const modelsTabs = [
@@ -220,57 +223,49 @@ export function ModelsView({
   }, [models, selectedModel, setSelectedModel, setTestingMode]);
 
   return (
-    <section className={`w2-layout app-view models-view ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
+    <section className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Header ── */}
-      <div className="w2-header-card">
+      <div className="flex items-start justify-between gap-5">
         <div>
-          <h1>Models Center</h1>
-          <p>Discover, deploy, and manage AI models.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Models <span className="text-muted-foreground">Center</span></h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Discover, deploy, and manage AI models.</p>
         </div>
-        <div className="w2-header-stats">
-          <div className="w2-header-stat">
-            <strong>{totalModels}</strong>
-            <small>Registered</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-safe)" }}>{healthyCount}</strong>
-            <small>Healthy</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-warn)" }}>{runningModels.length}</strong>
-            <small>Running</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-blue)" }}>{catalogItems.length}</strong>
-            <small>In Catalog</small>
-          </div>
+        <div className="flex gap-3">
+          {[
+            { v: totalModels, l: "Registered", c: "text-foreground" },
+            { v: healthyCount, l: "Healthy", c: "text-primary" },
+            { v: runningModels.length, l: "Running", c: "text-amber-400" },
+            { v: catalogItems.length, l: "In Catalog", c: "text-sky-400" },
+          ].map((s) => (
+            <div key={s.l} className="rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+              <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
+              <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* ── Tab Bar ── */}
-      <div style={{ padding: "0 24px", display: "flex", gap: "12px", overflowX: "auto", marginBottom: "16px" }}>
+      <div className="flex items-center gap-2 overflow-x-auto">
         {modelsTabs.map(t => {
           const Icon = t.icon;
           return (
-            <button key={t.id} className={`w2-button ${activeTab === t.id ? "primary" : ""}`} type="button" onClick={() => setActiveTab(t.id)}>
-              <Icon size={16} /> {t.label}
-            </button>
+            <UIButton key={t.id} variant={activeTab === t.id ? "default" : "outline"} size="sm" type="button" onClick={() => setActiveTab(t.id)}>
+              <Icon size={15} /> {t.label}
+            </UIButton>
           );
         })}
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         {uiState.status !== "idle" && (
-          <div style={{
-            padding: "8px 16px", borderRadius: "4px", fontSize: "0.875rem",
-            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "var(--ras-safe)" : "var(--cc-surface)",
-            color: "#fff", display: "flex", alignItems: "center",
-          }}>
+          <Badge variant={uiState.status === "failed" ? "down" : uiState.status === "success" ? "up" : "muted"}>
             {uiState.message}
-          </div>
+          </Badge>
         )}
-        <button className="w2-button" type="button" onClick={handleRefresh}>
-          <RefreshCw size={16} /> Refresh
-        </button>
+        <UIButton variant="outline" size="sm" type="button" onClick={handleRefresh}>
+          <RefreshCw size={15} /> Refresh
+        </UIButton>
       </div>
 
       {/* ── Content ── */}
@@ -532,6 +527,7 @@ export function ModelsView({
             warsatHardware={warsatHardware}
           />
         </div>
+      </div>
       </div>
     </section>
   );
