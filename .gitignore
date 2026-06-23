@@ -47,6 +47,7 @@ scripts/hatch_wrapper_spark.py
 # local state, never commit
 data/
 workspace/*
+backend/workspace/
 models/*
 output/
 testdata/
