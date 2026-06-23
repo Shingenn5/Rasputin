@@ -8,6 +8,7 @@ import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { cn } from "@/lib/utils.js";
 
 const activityTabs = ["All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
 
@@ -120,24 +121,24 @@ export function ActivityView({
           
           {/* PHASE 6: Activity Search */}
           {["All Runs", "Active", "Completed", "Failed"].includes(tab) && (
-            <div className="w2-section" style={{ flex: 1 }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <Search size={16} color="var(--cc-muted)" />
-                <input 
-                  className="w2-input" 
-                  placeholder="Search by ID, agent, status, or error text..." 
+            <div className="flex flex-1 flex-col gap-4">
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2.5">
+                <Search size={16} className="text-muted-foreground" />
+                <input
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder="Search by ID, agent, status, or error text…"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                 />
               </div>
 
               {/* Run List */}
-              <div className="w2-card" style={{ flex: 1, overflowY: 'auto', gap: '8px', backgroundColor: 'transparent', border: 'none', padding: 0 }}>
+              <div className="flex flex-1 flex-col gap-2 overflow-y-auto">
                 {filteredTasks.map(task => (
-                  <RunCard 
-                    key={task.id} 
-                    task={task} 
-                    models={models} 
+                  <RunCard
+                    key={task.id}
+                    task={task}
+                    models={models}
                     onCancel={() => handleCancel(task.id)}
                     onPause={() => handlePause(task.id)}
                     onResume={() => handleResume(task.id)}
@@ -145,7 +146,7 @@ export function ActivityView({
                   />
                 ))}
                 {filteredTasks.length === 0 && (
-                  <div style={{ padding: '32px', textAlign: 'center', color: 'var(--cc-muted)', backgroundColor: 'var(--cc-surface)', borderRadius: '8px' }}>
+                  <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
                     No matching runs found.
                   </div>
                 )}
@@ -303,30 +304,34 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
   const isActive = ["queued", "running", "paused"].includes(task.status);
   const [expanded, setExpanded] = useState(false);
 
+  const statusVariant = isFailed ? "down" : isActive ? "muted" : "up";
   return (
-    <div className={`w2-card ras-list-item ${isFailed ? 'failed-run-border' : ''}`} style={{ padding: '16px', gap: '8px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className={`status-pill status-${task.status}`}>{task.status}</span>
-            <strong style={{ fontSize: '1rem' }}>{task.objective || "Untitled Run"}</strong>
+    <div className={cn(
+      "ras-list-item rounded-2xl border bg-card p-4 transition-colors hover:border-border/80",
+      isFailed ? "border-rose-500/40" : "border-border",
+    )}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex items-center gap-2.5">
+            <Badge variant={statusVariant} className="capitalize">{task.status}</Badge>
+            <strong className="truncate text-[0.95rem]">{task.objective || "Untitled Run"}</strong>
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>
-            {displayModelName(task.model, models)} • {displayWorkspaceName(task.workspace)} • ID: {task.id.slice(0,8)}
+          <div className="text-xs text-muted-foreground">
+            {displayModelName(task.model, models)} • {displayWorkspaceName(task.workspace)} • ID: {task.id.slice(0, 8)}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="w2-button" onClick={() => setExpanded(!expanded)}>
+        <div className="flex shrink-0 gap-2">
+          <UIButton variant="outline" size="sm" onClick={() => setExpanded(!expanded)}>
             {expanded ? "Collapse" : "Inspect"}
-          </button>
+          </UIButton>
           {isActive && (
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div className="flex gap-1.5">
               {task.status === 'paused' ? (
-                <button className="w2-button" style={{ padding: '8px' }} onClick={onResume} title="Resume"><Play size={14}/></button>
+                <UIButton variant="outline" size="icon" onClick={onResume} title="Resume"><Play size={14} /></UIButton>
               ) : (
-                <button className="w2-button" style={{ padding: '8px' }} onClick={onPause} title="Pause"><Pause size={14}/></button>
+                <UIButton variant="outline" size="icon" onClick={onPause} title="Pause"><Pause size={14} /></UIButton>
               )}
-              <button className="w2-button" style={{ padding: '8px', color: 'var(--ras-danger)' }} onClick={onCancel} title="Cancel"><Square size={14}/></button>
+              <UIButton variant="outline" size="icon" className="text-rose-400 hover:text-rose-300" onClick={onCancel} title="Cancel"><Square size={14} /></UIButton>
             </div>
           )}
         </div>
@@ -366,9 +371,9 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
             </div>
           </div>
           
-          <button className="w2-button primary" style={{ alignSelf: 'flex-start' }} onClick={onDetails}>
+          <UIButton className="self-start" onClick={onDetails}>
             Open Full Details View
-          </button>
+          </UIButton>
         </div>
       )}
     </div>
