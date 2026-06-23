@@ -30,6 +30,8 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
+import { Button as UIButton } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
 import {
   displayModelName,
   displayWorkspaceName,
@@ -225,71 +227,55 @@ export function WarsatView({
   function handleFormChange() { if (plan || error) clearPlan?.(); }
 
   return (
-    <section className={`w2-layout app-view warsat-view ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat">
+    <section className={`w2-layout app-view warsat-view tw ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Commander Dashboard ── */}
-      <div className="w2-header-card">
+      <div className="flex items-start justify-between gap-5">
         <div>
-          <h1><Satellite size={22} style={{ verticalAlign: "-3px", marginRight: "8px" }} />WarSat Command</h1>
-          <p>Mission control for local AI operations.</p>
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <Satellite size={26} className="text-primary" /> WarSat <span className="text-muted-foreground">Command</span>
+          </h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Mission control for local AI operations.</p>
         </div>
-        <div className="w2-header-stats">
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-safe)" }}>{runningTasks.length}</strong>
-            <small>Running</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: "var(--ras-warn)" }}>{pendingApprovals.length}</strong>
-            <small>Approvals</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{containers.length}</strong>
-            <small>Containers</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: healthyModels.length > 0 ? "var(--ras-safe)" : "var(--cc-muted)" }}>{healthyModels.length}</strong>
-            <small>Models OK</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: failedTasks.length > 0 ? "var(--ras-danger)" : "var(--cc-muted)" }}>{failedTasks.length}</strong>
-            <small>Failures</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong style={{ color: privacyLocked ? "var(--ras-safe)" : "var(--ras-warn)" }}>
-              {privacyLocked ? "Locked" : "Open"}
-            </strong>
-            <small>Privacy</small>
-          </div>
+        <div className="flex flex-wrap justify-end gap-3">
+          {[
+            { v: runningTasks.length, l: "Running", c: "text-primary" },
+            { v: pendingApprovals.length, l: "Approvals", c: "text-amber-400" },
+            { v: containers.length, l: "Containers", c: "text-foreground" },
+            { v: healthyModels.length, l: "Models OK", c: healthyModels.length > 0 ? "text-primary" : "text-muted-foreground" },
+            { v: failedTasks.length, l: "Failures", c: failedTasks.length > 0 ? "text-rose-400" : "text-muted-foreground" },
+            { v: privacyLocked ? "Locked" : "Open", l: "Privacy", c: privacyLocked ? "text-primary" : "text-amber-400" },
+          ].map((s) => (
+            <div key={s.l} className="rounded-xl border border-border bg-card px-3.5 py-2 text-center">
+              <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
+              <div className="text-[0.62rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* ── Tab Bar ── */}
-      <div style={{ padding: "0 24px", display: "flex", gap: "12px", overflowX: "auto", marginBottom: "16px" }}>
+      <div className="flex items-center gap-2 overflow-x-auto">
         {warsatTabs.map(t => {
           const Icon = t.icon;
           return (
-            <button key={t.id} className={`w2-button ${activeTab === t.id ? "primary" : ""}`} type="button" onClick={() => setActiveTab(t.id)}>
-              <Icon size={16} /> {t.label}
+            <UIButton key={t.id} variant={activeTab === t.id ? "default" : "outline"} size="sm" type="button" onClick={() => setActiveTab(t.id)}>
+              <Icon size={15} /> {t.label}
               {t.id === "queue" && activeTasks.length > 0 && (
-                <span style={{ fontSize: "0.6875rem", padding: "1px 6px", borderRadius: "999px", background: "var(--ras-safe)", color: "#fff", marginLeft: "4px" }}>{activeTasks.length}</span>
+                <span className="ml-1 rounded-full bg-primary px-1.5 text-[0.65rem] text-primary-foreground">{activeTasks.length}</span>
               )}
               {t.id === "safety" && pendingApprovals.length > 0 && (
-                <span style={{ fontSize: "0.6875rem", padding: "1px 6px", borderRadius: "999px", background: "var(--ras-warn)", color: "#fff", marginLeft: "4px" }}>{pendingApprovals.length}</span>
+                <span className="ml-1 rounded-full bg-amber-500 px-1.5 text-[0.65rem] text-white">{pendingApprovals.length}</span>
               )}
-            </button>
+            </UIButton>
           );
         })}
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
         {uiState.status !== "idle" && (
-          <div style={{
-            padding: "8px 16px", borderRadius: "4px", fontSize: "0.875rem",
-            backgroundColor: uiState.status === "failed" ? "var(--ras-danger)" : uiState.status === "success" ? "var(--ras-safe)" : "var(--cc-surface)",
-            color: "#fff", display: "flex", alignItems: "center",
-          }}>
-            {uiState.message}
-          </div>
+          <Badge variant={uiState.status === "failed" ? "down" : uiState.status === "success" ? "up" : "muted"}>{uiState.message}</Badge>
         )}
-        <button className="w2-button" type="button" onClick={handleRefresh}><RefreshCw size={16} /> Refresh</button>
+        <UIButton variant="outline" size="sm" type="button" onClick={handleRefresh}><RefreshCw size={15} /> Refresh</UIButton>
       </div>
 
       {/* ── Content ── */}
@@ -415,6 +401,7 @@ export function WarsatView({
           <SafetyLockPanel security={security} warsat={warsat} hardware={hardware} />
           <QuickActionsPanel activeTab={activeTab} handleRefresh={handleRefresh} clearPlan={clearPlan} plan={plan} />
         </div>
+      </div>
       </div>
     </section>
   );

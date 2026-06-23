@@ -302,7 +302,10 @@
    instead of forcing its own 100dvh/overflow:hidden box. */
 #homeView.app-view.active,
 #modelsView.app-view.active,
-#activityView.app-view.active {
+#activityView.app-view.active,
+#warsatView.app-view.active,
+#archiveView.app-view.active,
+#trialsView.app-view.active {
   display: block;
   height: auto;
   min-height: 100%;
