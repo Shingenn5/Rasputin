@@ -261,6 +261,35 @@
 .dash-donut-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--dash-muted); }
 .dash-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
 
+/* ── Embedded chat card ── */
+.dash-chat-card { display: flex; flex-direction: column; }
+.dash-chat-hint { font-size: 0.78rem; color: var(--dash-muted); margin: -6px 0 12px; }
+.dash-chat-form { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.dash-chat-input {
+  flex: 1; min-height: 96px; resize: none;
+  background: var(--dash-bg-2); border: 1px solid var(--dash-border);
+  border-radius: var(--dash-radius-sm); padding: 12px 14px;
+  color: var(--dash-text); font-size: 0.86rem; font-family: inherit;
+  outline: none; transition: border-color var(--dur, 0.18s) ease;
+}
+.dash-chat-input:focus { border-color: var(--dash-accent-dim); }
+.dash-chat-input::placeholder { color: var(--dash-faint); }
+.dash-chat-send {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 18px; border: none; border-radius: var(--dash-radius-pill);
+  background: var(--dash-accent); color: #06120d;
+  font-weight: 650; font-size: 0.86rem; cursor: pointer;
+  transition: opacity var(--dur, 0.18s) ease, transform var(--dur, 0.18s) ease;
+}
+.dash-chat-send:hover:not(:disabled) { transform: translateY(-1px); }
+.dash-chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Metric grid (full-width live status) ── */
+.dash-metric-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 18px;
+}
+@media (max-width: 900px) { .dash-metric-grid { grid-template-columns: 1fr; } }
+
 /* ── Empty / muted text ── */
 .dash-empty { padding: 28px; text-align: center; color: var(--dash-muted); font-size: 0.85rem; }
 

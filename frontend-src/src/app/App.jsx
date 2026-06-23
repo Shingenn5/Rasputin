@@ -1478,6 +1478,10 @@ export function App() {
         openTaskDetails={openTaskDetails}
         security={security}
         selectedModelObject={selectedModelObject}
+        objective={objective}
+        setObjective={setObjective}
+        sendTask={sendTask}
+        healthy={healthy}
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}

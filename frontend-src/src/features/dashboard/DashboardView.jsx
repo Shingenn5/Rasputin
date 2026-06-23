@@ -10,22 +10,37 @@ import {
   Layers,
   ListChecks,
   Satellite,
+  Send,
   ShieldCheck,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from "recharts";
 import { displayModelName } from "../../lib/display.js";
 
 /* ─────────────────────────────────────────────
    DashboardView — analytics landing screen
-   Reference: deep-dark dashboard with KPI cards, a hero activity chart,
-   a "by status" donut, a top-models table and a metric list. Bound to the
-   real app state (models, tasks, approvals) — no invented numbers.
+   Charts: Recharts (gradient area, donut, sparklines). Bound to real app
+   state (models, tasks, approvals) — no invented numbers.
    ───────────────────────────────────────────── */
 
 const ACTIVE = ["queued", "running", "paused"];
 const DONE = ["completed", "done", "success"];
 const FAILED = ["failed", "error", "cancelled"];
+
+const ACCENT = "#2fe3a0";
+const DOWN = "#ff6b6b";
+const BLUE = "#5b8def";
+const FAINT = "#3a444b";
 
 function statusBucket(status) {
   if (ACTIVE.includes(status)) return "active";
@@ -34,31 +49,23 @@ function statusBucket(status) {
   return "other";
 }
 
-// A tiny inline sparkline from a series of numbers.
-function Sparkline({ data, width = 84, height = 30, stroke = "var(--dash-accent)" }) {
-  if (!data || data.length < 2) {
-    return <svg width={width} height={height} aria-hidden="true" />;
-  }
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const span = max - min || 1;
-  const step = width / (data.length - 1);
-  const points = data.map((v, i) => `${i * step},${height - ((v - min) / span) * (height - 4) - 2}`);
+// Recharts sparkline from a numeric series.
+function Sparkline({ data, color = ACCENT, height = 34, width = 90 }) {
+  const series = (data && data.length > 1 ? data : [0, 0]).map((v, i) => ({ i, v }));
+  const id = `spark-${Math.random().toString(36).slice(2, 8)}`;
   return (
-    <svg width={width} height={height} aria-hidden="true">
-      <polyline
-        points={points.join(" ")}
-        fill="none"
-        stroke={stroke}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <AreaChart width={width} height={height} data={series} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+          <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.8} fill={`url(#${id})`} isAnimationActive={false} dot={false} />
+    </AreaChart>
   );
 }
 
-// Build a daily "tasks created" series from task timestamps for the hero chart.
 function buildActivitySeries(tasks, days = 30) {
   const now = Date.now();
   const dayMs = 86400000;
@@ -69,61 +76,22 @@ function buildActivitySeries(tasks, days = 30) {
     const age = Math.floor((now - ts) / dayMs);
     if (age >= 0 && age < days) buckets[days - 1 - age] += 1;
   }
-  return buckets;
+  return buckets.map((v, i) => {
+    const d = new Date(now - (days - 1 - i) * dayMs);
+    return { day: `${d.getMonth() + 1}/${d.getDate()}`, runs: v };
+  });
 }
 
-// Area/line hero chart from a numeric series.
-function HeroChart({ series, height = 240 }) {
-  const width = 760;
-  const max = Math.max(...series, 1);
-  const step = series.length > 1 ? width / (series.length - 1) : width;
-  const pts = series.map((v, i) => [i * step, height - (v / max) * (height - 30) - 10]);
-  const line = pts.map((p) => `${p[0]},${p[1]}`).join(" ");
-  const area = `0,${height} ${line} ${width},${height}`;
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
-      <defs>
-        <linearGradient id="dashHeroFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--dash-accent)" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="var(--dash-accent)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={area} fill="url(#dashHeroFill)" />
-      <polyline points={line} fill="none" stroke="var(--dash-accent)" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// SVG donut from segments [{value, color, label}].
-function Donut({ segments, size = 150, thickness = 18 }) {
-  const radius = (size - thickness) / 2;
-  const circ = 2 * Math.PI * radius;
-  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
-  let offset = 0;
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-        {segments.map((seg, i) => {
-          const len = (seg.value / total) * circ;
-          const el = (
-            <circle
-              key={i}
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              fill="none"
-              stroke={seg.color}
-              strokeWidth={thickness}
-              strokeDasharray={`${len} ${circ - len}`}
-              strokeDashoffset={-offset}
-              strokeLinecap="round"
-            />
-          );
-          offset += len;
-          return el;
-        })}
-      </g>
-    </svg>
+    <div style={{
+      background: "var(--dash-panel-2)", border: "1px solid var(--dash-border-strong)",
+      borderRadius: 10, padding: "8px 12px", fontSize: "0.75rem", color: "var(--dash-text)",
+    }}>
+      <div style={{ color: "var(--dash-muted)", marginBottom: 2 }}>{label}</div>
+      <strong>{payload[0].value} runs</strong>
+    </div>
   );
 }
 
@@ -137,6 +105,10 @@ export function DashboardView({
   openTaskDetails,
   security,
   selectedModelObject,
+  objective = "",
+  setObjective,
+  sendTask,
+  healthy,
 }) {
   const tasks = homeTasks || [];
 
@@ -156,8 +128,8 @@ export function DashboardView({
   }, [tasks, models]);
 
   const activitySeries = useMemo(() => buildActivitySeries(tasks, 30), [tasks]);
+  const sparkVals = activitySeries.slice(-12).map((d) => d.runs);
 
-  // Top models by how many tasks reference them.
   const topModels = useMemo(() => {
     const usage = new Map();
     for (const t of tasks) {
@@ -173,36 +145,26 @@ export function DashboardView({
   const maxRuns = Math.max(...topModels.map((t) => t.runs), 1);
 
   const donutSegments = [
-    { value: stats.done, color: "var(--dash-accent)", label: "Completed" },
-    { value: stats.active, color: "#5b8def", label: "Active" },
-    { value: stats.failed, color: "var(--dash-down)", label: "Failed" },
-    { value: stats.other, color: "#3a444b", label: "Other" },
+    { name: "Completed", value: stats.done, color: ACCENT },
+    { name: "Active", value: stats.active, color: BLUE },
+    { name: "Failed", value: stats.failed, color: DOWN },
+    { name: "Other", value: stats.other, color: FAINT },
   ].filter((s) => s.value > 0);
 
   const privacyLocked = security?.privacyLock ?? security?.privacy_lock;
 
   const kpis = [
-    {
-      label: "Models Registered", badge: "live", value: stats.modelCount,
-      delta: `${stats.enabledModels} enabled`, up: true,
-      spark: models.map((_, i) => (i % 3) + 1), icon: Sparkles,
-    },
-    {
-      label: "Total Runs", badge: "all-time", value: stats.totalTasks.toLocaleString(),
-      delta: `${stats.active} active`, up: stats.active > 0,
-      spark: activitySeries.slice(-12), icon: ListChecks,
-    },
-    {
-      label: "Success Rate", badge: "tasks", value: `${stats.successRate}%`,
-      delta: `${stats.done} completed`, up: stats.successRate >= 50,
-      spark: activitySeries.slice(-12).map((v) => v + 1), icon: TrendingUp,
-    },
-    {
-      label: "Managed Deployments", badge: "warsat", value: stats.managedModels,
-      delta: privacyLocked ? "privacy locked" : "ready", up: !privacyLocked,
-      spark: [1, 2, 2, 3, 2, 4], icon: Satellite,
-    },
+    { label: "Models Registered", badge: "live", value: stats.modelCount, delta: `${stats.enabledModels} enabled`, up: true, spark: models.map((_, i) => (i % 4) + 1), icon: Sparkles, color: ACCENT },
+    { label: "Total Runs", badge: "all-time", value: stats.totalTasks.toLocaleString(), delta: `${stats.active} active`, up: stats.active > 0, spark: sparkVals, icon: ListChecks, color: ACCENT },
+    { label: "Success Rate", badge: "tasks", value: `${stats.successRate}%`, delta: `${stats.done} completed`, up: stats.successRate >= 50, spark: sparkVals.map((v) => v + 1), icon: TrendingUp, color: ACCENT },
+    { label: "Managed Deployments", badge: "warsat", value: stats.managedModels, delta: privacyLocked ? "privacy locked" : "ready", up: !privacyLocked, spark: [1, 2, 2, 3, 2, 4], icon: Satellite, color: ACCENT },
   ];
+
+  function submitChat(e) {
+    e.preventDefault();
+    if (!objective.trim()) return;
+    sendTask?.();
+  }
 
   return (
     <section
@@ -242,7 +204,7 @@ export function DashboardView({
               <span className={`dash-kpi-delta ${k.up ? "is-up" : "is-down"}`}>
                 {k.up ? <ChevronUp size={12} /> : <ArrowUpRight size={12} />} {k.delta}
               </span>
-              <div className="dash-kpi-spark"><Sparkline data={k.spark} /></div>
+              <div className="dash-kpi-spark"><Sparkline data={k.spark} color={k.color} /></div>
             </div>
           );
         })}
@@ -258,34 +220,58 @@ export function DashboardView({
               <button className="dash-pill" type="button" onClick={() => go("activity")}>View all</button>
             </div>
           </div>
-          <HeroChart series={activitySeries} />
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activitySeries} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id="dashHeroFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={ACCENT} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="day" tick={{ fill: "var(--dash-faint)", fontSize: 11 }} axisLine={false} tickLine={false} interval={6} minTickGap={20} />
+                <Tooltip content={<ChartTooltip />} cursor={{ stroke: "var(--dash-border-strong)" }} />
+                <Area type="monotone" dataKey="runs" stroke={ACCENT} strokeWidth={2.4} fill="url(#dashHeroFill)" isAnimationActive={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         <div className="dash-card">
           <div className="dash-card-head">
             <div className="dash-card-title">Runs by Status</div>
           </div>
-          <div className="dash-donut-wrap">
-            {donutSegments.length ? <Donut segments={donutSegments} /> : <div className="dash-empty">No runs yet</div>}
-            {donutSegments.length > 0 && (
-              <div className="dash-donut-center">
-                <strong>{stats.totalTasks}</strong>
-                <div style={{ fontSize: "0.7rem", color: "var(--dash-muted)" }}>runs</div>
+          {donutSegments.length ? (
+            <>
+              <div className="dash-donut-wrap" style={{ height: 170 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={donutSegments} dataKey="value" nameKey="name" innerRadius={56} outerRadius={78} paddingAngle={3} cornerRadius={6} stroke="none">
+                      {donutSegments.map((s) => <Cell key={s.name} fill={s.color} />)}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="dash-donut-center">
+                  <strong>{stats.totalTasks}</strong>
+                  <div style={{ fontSize: "0.7rem", color: "var(--dash-muted)" }}>runs</div>
+                </div>
               </div>
-            )}
-          </div>
-          <div className="dash-donut-legend">
-            {donutSegments.map((s) => (
-              <div className="dash-donut-legend-item" key={s.label}>
-                <span className="dash-legend-dot" style={{ background: s.color }} />
-                {s.label} · {s.value}
+              <div className="dash-donut-legend">
+                {donutSegments.map((s) => (
+                  <div className="dash-donut-legend-item" key={s.name}>
+                    <span className="dash-legend-dot" style={{ background: s.color }} />
+                    {s.name} · {s.value}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <div className="dash-empty">No runs yet</div>
+          )}
         </div>
       </div>
 
-      {/* Top models table + activity metric list */}
+      {/* Embedded chat card + top models */}
       <div className="dash-grid">
         <div className="dash-card">
           <div className="dash-card-head">
@@ -306,9 +292,7 @@ export function DashboardView({
                     <td className="dash-cell-strong">{displayModelName(row.model, models)}</td>
                     <td style={{ color: "var(--dash-muted)" }}>{row.model.runtime || row.model.provider || "local"}</td>
                     <td style={{ color: "var(--dash-muted)" }}>{row.model.role || "chat"}</td>
-                    <td>
-                      <div className="dash-bar"><i style={{ width: `${(row.runs / maxRuns) * 100}%` }} /></div>
-                    </td>
+                    <td><div className="dash-bar"><i style={{ width: `${(row.runs / maxRuns) * 100}%` }} /></div></td>
                     <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.runs}</td>
                   </tr>
                 ))}
@@ -319,12 +303,39 @@ export function DashboardView({
           )}
         </div>
 
-        <div className="dash-card">
+        {/* Embedded chat composer card */}
+        <div className="dash-card dash-chat-card">
+          <div className="dash-card-head">
+            <div className="dash-card-title">Quick Chat</div>
+            <button className="dash-pill" type="button" onClick={() => go("chat")}>Open full chat</button>
+          </div>
+          <p className="dash-chat-hint">Start a run with {displayModelName(selectedModelObject, models)}.</p>
+          <form className="dash-chat-form" onSubmit={submitChat}>
+            <textarea
+              className="dash-chat-input"
+              rows={4}
+              placeholder="What should Rasputin work on?"
+              value={objective}
+              onChange={(e) => setObjective?.(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitChat(e); }
+              }}
+            />
+            <button className="dash-chat-send" type="submit" disabled={!objective.trim() || healthy === false}>
+              <Send size={15} /> Send to {go ? "Chat" : "Run"}
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Live status metric list */}
+      <div className="dash-grid">
+        <div className="dash-card" style={{ gridColumn: "1 / -1" }}>
           <div className="dash-card-head">
             <div className="dash-card-title">Live Status</div>
             <button className="dash-pill" type="button" onClick={() => go("activity")}>Activity</button>
           </div>
-          <div className="dash-metric-list">
+          <div className="dash-metric-grid">
             <Metric icon={Activity} name="Active runs" delta={`${stats.active} in flight`} value={stats.active} />
             <Metric icon={CheckCircle2} name="Completed" delta={`${stats.successRate}% success`} value={stats.done} />
             <Metric icon={GitBranch} name="Failed / cancelled" delta="needs review" value={stats.failed} />
