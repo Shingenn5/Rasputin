@@ -3,13 +3,15 @@ import {
   Activity,
   ArrowUpRight,
   Boxes,
+  Bell,
   CheckCircle2,
   ChevronUp,
   Cpu,
   GitBranch,
   Layers,
   ListChecks,
-  Satellite,
+  Rocket,
+  Search,
   Send,
   ShieldCheck,
   Sparkles,
@@ -26,38 +28,40 @@ import {
   XAxis,
 } from "recharts";
 import { displayModelName } from "../../lib/display.js";
+import { Card } from "@/components/ui/card.jsx";
+import { Button } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
+import { cn } from "@/lib/utils.js";
 
 /* ─────────────────────────────────────────────
-   DashboardView — analytics landing screen
-   Charts: Recharts (gradient area, donut, sparklines). Bound to real app
-   state (models, tasks, approvals) — no invented numbers.
+   DashboardView — modern analytics landing (Tailwind + shadcn + Recharts).
+   Bound to real app state (models, tasks, approvals) — no invented numbers.
    ───────────────────────────────────────────── */
 
 const ACTIVE = ["queued", "running", "paused"];
 const DONE = ["completed", "done", "success"];
 const FAILED = ["failed", "error", "cancelled"];
 
-const ACCENT = "#2fe3a0";
-const DOWN = "#ff6b6b";
-const BLUE = "#5b8def";
-const FAINT = "#3a444b";
+const ACCENT = "var(--primary)";
+const DOWN = "var(--destructive)";
+const BLUE = "var(--chart-2)";
+const FAINT = "var(--muted)";
 
-function statusBucket(status) {
-  if (ACTIVE.includes(status)) return "active";
-  if (DONE.includes(status)) return "done";
-  if (FAILED.includes(status)) return "failed";
+function statusBucket(s) {
+  if (ACTIVE.includes(s)) return "active";
+  if (DONE.includes(s)) return "done";
+  if (FAILED.includes(s)) return "failed";
   return "other";
 }
 
-// Recharts sparkline from a numeric series.
-function Sparkline({ data, color = ACCENT, height = 34, width = 90 }) {
+function Sparkline({ data, color = ACCENT, height = 36, width = 96 }) {
   const series = (data && data.length > 1 ? data : [0, 0]).map((v, i) => ({ i, v }));
-  const id = `spark-${Math.random().toString(36).slice(2, 8)}`;
+  const id = `spk-${Math.random().toString(36).slice(2, 8)}`;
   return (
     <AreaChart width={width} height={height} data={series} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+          <stop offset="0%" stopColor={color} stopOpacity={0.45} />
           <stop offset="100%" stopColor={color} stopOpacity={0} />
         </linearGradient>
       </defs>
@@ -70,8 +74,8 @@ function buildActivitySeries(tasks, days = 30) {
   const now = Date.now();
   const dayMs = 86400000;
   const buckets = new Array(days).fill(0);
-  for (const task of tasks) {
-    const ts = Date.parse(task.createdAt || task.created_at || task.updatedAt || "") || 0;
+  for (const t of tasks) {
+    const ts = Date.parse(t.createdAt || t.created_at || t.updatedAt || "") || 0;
     if (!ts) continue;
     const age = Math.floor((now - ts) / dayMs);
     if (age >= 0 && age < days) buckets[days - 1 - age] += 1;
@@ -83,13 +87,10 @@ function buildActivitySeries(tasks, days = 30) {
 }
 
 function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload || !payload.length) return null;
+  if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: "var(--dash-panel-2)", border: "1px solid var(--dash-border-strong)",
-      borderRadius: 10, padding: "8px 12px", fontSize: "0.75rem", color: "var(--dash-text)",
-    }}>
-      <div style={{ color: "var(--dash-muted)", marginBottom: 2 }}>{label}</div>
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
+      <div className="text-muted-foreground">{label}</div>
       <strong>{payload[0].value} runs</strong>
     </div>
   );
@@ -99,10 +100,8 @@ export function DashboardView({
   view,
   models = [],
   homeTasks = [],
-  runningTasks = [],
   approvalCount = 0,
   go,
-  openTaskDetails,
   security,
   selectedModelObject,
   objective = "",
@@ -115,14 +114,11 @@ export function DashboardView({
   const stats = useMemo(() => {
     const counts = { active: 0, done: 0, failed: 0, other: 0 };
     for (const t of tasks) counts[statusBucket(t.status)] += 1;
-    const enabledModels = models.filter((m) => m.enabled !== false);
+    const enabled = models.filter((m) => m.enabled !== false);
     const managed = models.filter((m) => m.managed);
     return {
-      totalTasks: tasks.length,
-      ...counts,
-      modelCount: models.length,
-      enabledModels: enabledModels.length,
-      managedModels: managed.length,
+      totalTasks: tasks.length, ...counts,
+      modelCount: models.length, enabledModels: enabled.length, managedModels: managed.length,
       successRate: tasks.length ? Math.round((counts.done / tasks.length) * 100) : 0,
     };
   }, [tasks, models]);
@@ -132,32 +128,28 @@ export function DashboardView({
 
   const topModels = useMemo(() => {
     const usage = new Map();
-    for (const t of tasks) {
-      const key = t.model || "—";
-      usage.set(key, (usage.get(key) || 0) + 1);
-    }
+    for (const t of tasks) usage.set(t.model || "—", (usage.get(t.model || "—") || 0) + 1);
     return models
       .map((m) => ({ model: m, runs: usage.get(m.key) || usage.get(m.model) || 0 }))
       .sort((a, b) => b.runs - a.runs)
       .slice(0, 5);
   }, [models, tasks]);
-
   const maxRuns = Math.max(...topModels.map((t) => t.runs), 1);
 
-  const donutSegments = [
-    { name: "Completed", value: stats.done, color: ACCENT },
-    { name: "Active", value: stats.active, color: BLUE },
-    { name: "Failed", value: stats.failed, color: DOWN },
-    { name: "Other", value: stats.other, color: FAINT },
+  const donut = [
+    { name: "Completed", value: stats.done, color: "var(--chart-1)" },
+    { name: "Active", value: stats.active, color: "var(--chart-2)" },
+    { name: "Failed", value: stats.failed, color: "var(--chart-3)" },
+    { name: "Other", value: stats.other, color: "var(--muted)" },
   ].filter((s) => s.value > 0);
 
   const privacyLocked = security?.privacyLock ?? security?.privacy_lock;
 
   const kpis = [
-    { label: "Models Registered", badge: "live", value: stats.modelCount, delta: `${stats.enabledModels} enabled`, up: true, spark: models.map((_, i) => (i % 4) + 1), icon: Sparkles, color: ACCENT },
-    { label: "Total Runs", badge: "all-time", value: stats.totalTasks.toLocaleString(), delta: `${stats.active} active`, up: stats.active > 0, spark: sparkVals, icon: ListChecks, color: ACCENT },
-    { label: "Success Rate", badge: "tasks", value: `${stats.successRate}%`, delta: `${stats.done} completed`, up: stats.successRate >= 50, spark: sparkVals.map((v) => v + 1), icon: TrendingUp, color: ACCENT },
-    { label: "Managed Deployments", badge: "warsat", value: stats.managedModels, delta: privacyLocked ? "privacy locked" : "ready", up: !privacyLocked, spark: [1, 2, 2, 3, 2, 4], icon: Satellite, color: ACCENT },
+    { label: "Models Registered", badge: "live", value: stats.modelCount, delta: `${stats.enabledModels} enabled`, up: true, spark: models.map((_, i) => (i % 4) + 1), icon: Sparkles },
+    { label: "Total Runs", badge: "all-time", value: stats.totalTasks.toLocaleString(), delta: `${stats.active} active`, up: stats.active > 0, spark: sparkVals, icon: ListChecks },
+    { label: "Success Rate", badge: "tasks", value: `${stats.successRate}%`, delta: `${stats.done} completed`, up: stats.successRate >= 50, spark: sparkVals.map((v) => v + 1), icon: TrendingUp },
+    { label: "Deployments", badge: "warsat", value: stats.managedModels, delta: privacyLocked ? "privacy locked" : "ready", up: !privacyLocked, spark: [1, 2, 2, 3, 2, 4], icon: Rocket },
   ];
 
   function submitChat(e) {
@@ -168,174 +160,195 @@ export function DashboardView({
 
   return (
     <section
-      className={`app-view dash-main ${view === "home" ? "active" : ""}`}
+      className={cn("app-view tw", view === "home" ? "active" : "")}
       id="homeView"
       data-app-view="home"
       tabIndex="-1"
     >
-      {/* Topbar */}
-      <div className="dash-topbar">
-        <div>
-          <h1 className="dash-title">Operations <span className="dim">Overview</span></h1>
-          <p className="dash-subtitle">Live snapshot of your local AI fleet, runs, and deployments.</p>
-        </div>
-        <div className="dash-topbar-actions">
-          <button className="dash-user-chip" type="button" onClick={() => go("models")}>
-            <span className="dash-user-avatar"><Cpu size={14} /></span>
-            <span style={{ fontSize: "0.8rem" }}>{displayModelName(selectedModelObject, models)}</span>
-          </button>
-          <button className="dash-icon-btn" type="button" aria-label="Approvals" onClick={() => go("activity")}>
-            <ShieldCheck size={17} />
-          </button>
-        </div>
-      </div>
-
-      {/* KPI row */}
-      <div className="dash-kpi-row">
-        {kpis.map((k) => {
-          const Icon = k.icon;
-          return (
-            <div className="dash-kpi" key={k.label}>
-              <div className="dash-kpi-label">
-                <Icon size={14} /> <span>{k.label}</span>
-                <span className="dash-kpi-badge">{k.badge}</span>
-              </div>
-              <div className="dash-kpi-value">{k.value}</div>
-              <span className={`dash-kpi-delta ${k.up ? "is-up" : "is-down"}`}>
-                {k.up ? <ChevronUp size={12} /> : <ArrowUpRight size={12} />} {k.delta}
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+        {/* Topbar */}
+        <div className="flex items-start justify-between gap-5">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Operations <span className="text-muted-foreground">Overview</span>
+            </h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Live snapshot of your local AI fleet, runs, and deployments.
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground sm:flex">
+              <Search size={15} /> <span>Search…</span>
+            </div>
+            <Button variant="outline" size="icon" className="rounded-full" onClick={() => go("activity")} aria-label="Activity">
+              <Bell size={16} />
+            </Button>
+            <button
+              type="button"
+              onClick={() => go("models")}
+              className="flex items-center gap-2 rounded-full border border-border bg-card py-1.5 pl-2 pr-3.5 text-sm transition-colors hover:border-border/80"
+            >
+              <span className="grid size-7 place-items-center rounded-full bg-gradient-to-br from-primary to-emerald-700 text-primary-foreground">
+                <Cpu size={14} />
               </span>
-              <div className="dash-kpi-spark"><Sparkline data={k.spark} color={k.color} /></div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Hero chart + donut */}
-      <div className="dash-grid">
-        <div className="dash-card">
-          <div className="dash-card-head">
-            <div className="dash-card-title">Run Activity <span className="dim">· 30d</span></div>
-            <div className="dash-pill-tabs">
-              <button className="dash-pill is-active" type="button">Daily</button>
-              <button className="dash-pill" type="button" onClick={() => go("activity")}>View all</button>
-            </div>
-          </div>
-          <div style={{ height: 240 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={activitySeries} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="dashHeroFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={ACCENT} stopOpacity={0.3} />
-                    <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="day" tick={{ fill: "var(--dash-faint)", fontSize: 11 }} axisLine={false} tickLine={false} interval={6} minTickGap={20} />
-                <Tooltip content={<ChartTooltip />} cursor={{ stroke: "var(--dash-border-strong)" }} />
-                <Area type="monotone" dataKey="runs" stroke={ACCENT} strokeWidth={2.4} fill="url(#dashHeroFill)" isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="dash-card">
-          <div className="dash-card-head">
-            <div className="dash-card-title">Runs by Status</div>
-          </div>
-          {donutSegments.length ? (
-            <>
-              <div className="dash-donut-wrap" style={{ height: 170 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={donutSegments} dataKey="value" nameKey="name" innerRadius={56} outerRadius={78} paddingAngle={3} cornerRadius={6} stroke="none">
-                      {donutSegments.map((s) => <Cell key={s.name} fill={s.color} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="dash-donut-center">
-                  <strong>{stats.totalTasks}</strong>
-                  <div style={{ fontSize: "0.7rem", color: "var(--dash-muted)" }}>runs</div>
-                </div>
-              </div>
-              <div className="dash-donut-legend">
-                {donutSegments.map((s) => (
-                  <div className="dash-donut-legend-item" key={s.name}>
-                    <span className="dash-legend-dot" style={{ background: s.color }} />
-                    {s.name} · {s.value}
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="dash-empty">No runs yet</div>
-          )}
-        </div>
-      </div>
-
-      {/* Embedded chat card + top models */}
-      <div className="dash-grid">
-        <div className="dash-card">
-          <div className="dash-card-head">
-            <div className="dash-card-title">Top Models <span className="dim">· by runs</span></div>
-            <button className="dash-pill" type="button" onClick={() => go("models")}>Manage</button>
-          </div>
-          {topModels.length ? (
-            <table className="dash-table">
-              <thead>
-                <tr>
-                  <th>#</th><th>Model</th><th>Runtime</th><th>Role</th><th>Usage</th><th style={{ textAlign: "right" }}>Runs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topModels.map((row, i) => (
-                  <tr key={row.model.key || i}>
-                    <td className="dash-rank">{i + 1}</td>
-                    <td className="dash-cell-strong">{displayModelName(row.model, models)}</td>
-                    <td style={{ color: "var(--dash-muted)" }}>{row.model.runtime || row.model.provider || "local"}</td>
-                    <td style={{ color: "var(--dash-muted)" }}>{row.model.role || "chat"}</td>
-                    <td><div className="dash-bar"><i style={{ width: `${(row.runs / maxRuns) * 100}%` }} /></div></td>
-                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.runs}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="dash-empty">No models registered yet. Open Models to add one.</div>
-          )}
-        </div>
-
-        {/* Embedded chat composer card */}
-        <div className="dash-card dash-chat-card">
-          <div className="dash-card-head">
-            <div className="dash-card-title">Quick Chat</div>
-            <button className="dash-pill" type="button" onClick={() => go("chat")}>Open full chat</button>
-          </div>
-          <p className="dash-chat-hint">Start a run with {displayModelName(selectedModelObject, models)}.</p>
-          <form className="dash-chat-form" onSubmit={submitChat}>
-            <textarea
-              className="dash-chat-input"
-              rows={4}
-              placeholder="What should Rasputin work on?"
-              value={objective}
-              onChange={(e) => setObjective?.(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitChat(e); }
-              }}
-            />
-            <button className="dash-chat-send" type="submit" disabled={!objective.trim() || healthy === false}>
-              <Send size={15} /> Send to {go ? "Chat" : "Run"}
+              {displayModelName(selectedModelObject, models)}
             </button>
-          </form>
-        </div>
-      </div>
-
-      {/* Live status metric list */}
-      <div className="dash-grid">
-        <div className="dash-card" style={{ gridColumn: "1 / -1" }}>
-          <div className="dash-card-head">
-            <div className="dash-card-title">Live Status</div>
-            <button className="dash-pill" type="button" onClick={() => go("activity")}>Activity</button>
           </div>
-          <div className="dash-metric-grid">
+        </div>
+
+        {/* KPI row */}
+        <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+          {kpis.map((k) => {
+            const Icon = k.icon;
+            return (
+              <Card key={k.label} className="relative overflow-hidden p-5">
+                <div className="mb-2.5 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon size={14} /> <span>{k.label}</span>
+                  <Badge variant="muted" className="ml-auto">{k.badge}</Badge>
+                </div>
+                <div className="text-3xl font-bold tracking-tight">{k.value}</div>
+                <Badge variant={k.up ? "up" : "down"} className="mt-2.5">
+                  {k.up ? <ChevronUp size={12} /> : <ArrowUpRight size={12} />} {k.delta}
+                </Badge>
+                <div className="pointer-events-none absolute bottom-3.5 right-3.5 opacity-90">
+                  <Sparkline data={k.spark} />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Hero chart + donut */}
+        <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-base font-semibold">Run Activity <span className="text-muted-foreground">· 30d</span></div>
+              <div className="flex gap-1 rounded-full border border-border bg-background p-1">
+                <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium">Daily</span>
+                <button className="rounded-full px-3 py-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => go("activity")}>View all</button>
+              </div>
+            </div>
+            <div className="h-[240px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={activitySeries} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="day" tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} interval={6} minTickGap={20} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: "var(--border)" }} />
+                  <Area type="monotone" dataKey="runs" stroke="var(--primary)" strokeWidth={2.4} fill="url(#heroFill)" isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <div className="mb-4 text-base font-semibold">Runs by Status</div>
+            {donut.length ? (
+              <>
+                <div className="relative grid h-[170px] place-items-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={donut} dataKey="value" nameKey="name" innerRadius={56} outerRadius={78} paddingAngle={3} cornerRadius={6} stroke="none">
+                        {donut.map((s) => <Cell key={s.name} fill={s.color} />)}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute text-center">
+                    <strong className="text-2xl">{stats.totalTasks}</strong>
+                    <div className="text-xs text-muted-foreground">runs</div>
+                  </div>
+                </div>
+                <div className="mt-3.5 flex flex-col gap-2">
+                  {donut.map((s) => (
+                    <div key={s.name} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span className="size-2.5 rounded-full" style={{ background: s.color }} />
+                      {s.name} · {s.value}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="py-7 text-center text-sm text-muted-foreground">No runs yet</div>
+            )}
+          </Card>
+        </div>
+
+        {/* Top models + quick chat */}
+        <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+          <Card className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-base font-semibold">Top Models <span className="text-muted-foreground">· by runs</span></div>
+              <Button variant="ghost" size="pill" onClick={() => go("models")}>Manage</Button>
+            </div>
+            {topModels.length ? (
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-[0.66rem] uppercase tracking-wider text-muted-foreground/70">
+                    <th className="px-2.5 py-2 font-semibold">#</th>
+                    <th className="px-2.5 py-2 font-semibold">Model</th>
+                    <th className="px-2.5 py-2 font-semibold">Runtime</th>
+                    <th className="px-2.5 py-2 font-semibold">Role</th>
+                    <th className="px-2.5 py-2 font-semibold">Usage</th>
+                    <th className="px-2.5 py-2 text-right font-semibold">Runs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topModels.map((row, i) => (
+                    <tr key={row.model.key || i} className="border-t border-border transition-colors hover:bg-secondary/50">
+                      <td className="px-2.5 py-3 text-sm tabular-nums text-muted-foreground/70">{i + 1}</td>
+                      <td className="px-2.5 py-3 text-sm font-semibold">{displayModelName(row.model, models)}</td>
+                      <td className="px-2.5 py-3 text-sm text-muted-foreground">{row.model.runtime || row.model.provider || "local"}</td>
+                      <td className="px-2.5 py-3 text-sm text-muted-foreground">{row.model.role || "chat"}</td>
+                      <td className="px-2.5 py-3">
+                        <div className="h-1 min-w-[60px] overflow-hidden rounded bg-secondary">
+                          <div className="h-full rounded bg-primary" style={{ width: `${(row.runs / maxRuns) * 100}%` }} />
+                        </div>
+                      </td>
+                      <td className="px-2.5 py-3 text-right text-sm tabular-nums">{row.runs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="py-7 text-center text-sm text-muted-foreground">No models registered yet.</div>
+            )}
+          </Card>
+
+          <Card className="flex flex-col p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-base font-semibold">Quick Chat</div>
+              <Button variant="ghost" size="pill" onClick={() => go("chat")}>Open full chat</Button>
+            </div>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Start a run with {displayModelName(selectedModelObject, models)}.
+            </p>
+            <form className="flex flex-1 flex-col gap-3" onSubmit={submitChat}>
+              <textarea
+                className="min-h-[96px] flex-1 resize-none rounded-lg border border-input bg-background px-3.5 py-3 text-sm outline-none transition-colors focus:border-primary/50"
+                rows={4}
+                placeholder="What should Rasputin work on?"
+                value={objective}
+                onChange={(e) => setObjective?.(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitChat(e); } }}
+              />
+              <Button type="submit" disabled={!objective.trim() || healthy === false} className="rounded-full">
+                <Send size={15} /> Send to Chat
+              </Button>
+            </form>
+          </Card>
+        </div>
+
+        {/* Live status */}
+        <Card className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="text-base font-semibold">Live Status</div>
+            <Button variant="ghost" size="pill" onClick={() => go("activity")}>Activity</Button>
+          </div>
+          <div className="grid gap-x-5 gap-y-1 md:grid-cols-3">
             <Metric icon={Activity} name="Active runs" delta={`${stats.active} in flight`} value={stats.active} />
             <Metric icon={CheckCircle2} name="Completed" delta={`${stats.successRate}% success`} value={stats.done} />
             <Metric icon={GitBranch} name="Failed / cancelled" delta="needs review" value={stats.failed} />
@@ -343,7 +356,7 @@ export function DashboardView({
             <Metric icon={Boxes} name="Enabled models" delta={`${stats.modelCount} total`} value={stats.enabledModels} />
             <Metric icon={Layers} name="Managed deployments" delta="warsat" value={stats.managedModels} />
           </div>
-        </div>
+        </Card>
       </div>
     </section>
   );
@@ -351,13 +364,15 @@ export function DashboardView({
 
 function Metric({ icon: Icon, name, delta, value }) {
   return (
-    <div className="dash-metric">
-      <span className="dash-metric-icon"><Icon size={16} /></span>
-      <div className="dash-metric-body">
-        <div className="dash-metric-name">{name}</div>
-        <div className="dash-metric-delta">{delta}</div>
+    <div className="flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-secondary/50">
+      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-secondary text-muted-foreground">
+        <Icon size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">{name}</div>
+        <div className="text-xs text-primary">{delta}</div>
       </div>
-      <div className="dash-metric-value">{value}</div>
+      <div className="font-bold tabular-nums">{value}</div>
     </div>
   );
 }

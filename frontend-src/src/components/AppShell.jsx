@@ -1,6 +1,6 @@
 import React from "react";
 import { PanelLeftOpen, X } from "lucide-react";
-import { Sidebar } from "./Sidebar.jsx";
+import { DashSidebar } from "./shell/DashSidebar.jsx";
 
 export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps }) {
   return (
@@ -16,8 +16,8 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
           )}
         </div>
       )}
-      <div className="app-frame" id="appFrame">
-        <Sidebar {...sidebarProps} />
+      <div className="dash-frame flex h-dvh overflow-hidden bg-background text-foreground" id="appFrame">
+        <DashSidebar {...sidebarProps} />
         <button
           className="mobile-shell-toggle icon-button"
           data-testid="mobile-sidebar-toggle"
@@ -27,7 +27,7 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
         >
           <PanelLeftOpen size={19} />
         </button>
-        <main className="app-main" id="mainContent" tabIndex="-1">{children}</main>
+        <main className="dash-frame-main min-w-0 flex-1 overflow-y-auto" id="mainContent" tabIndex="-1">{children}</main>
       </div>
     </>
   );
