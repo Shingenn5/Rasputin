@@ -46,12 +46,12 @@ export function SettingsView(props) {
   }, [view]);
 
   return (
-    <section className={`app-view settings-view ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
+    <section className={`app-view settings-view tw ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
       {/* ── Settings Header ── */}
       <header className="page-header border-bottom bg-body d-flex justify-content-between align-items-center">
         <div>
-          <h1 className="mb-0">Settings</h1>
-          <p className="text-body-secondary mb-0">Platform configuration, governance, and deployment control plane.</p>
+          <h1 className="mb-0 text-3xl font-bold tracking-tight">Settings</h1>
+          <p className="mt-1 mb-0 text-sm text-muted-foreground">Platform configuration, governance, and deployment control plane.</p>
         </div>
         <div className="d-flex gap-2 align-items-center">
           <div className="input-group input-group-sm">

@@ -325,7 +325,7 @@ function jumpToLatest() {
   };
 
   return (
-    <section className={`cc-layout app-view home-view ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
+    <section className={`cc-layout app-view home-view tw ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
       {/* Header */}
       <header className="cc-header">
         <div className="cc-header-left">
