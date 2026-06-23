@@ -74,7 +74,7 @@ export function ActivityView({
 
   return (
     <section className={`w2-layout app-view activity-view tw ${view === "activity" ? "active" : ""}`} id="activityView" data-app-view="activity">
-      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-5">
@@ -89,7 +89,7 @@ export function ActivityView({
             { v: activeTasks.length, l: "Running", c: "text-amber-400" },
             { v: failedTasks.length, l: "Failures", c: "text-rose-400" },
           ].map((s) => (
-            <div key={s.l} className="rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+            <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
               <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
             </div>
@@ -307,7 +307,7 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
   const statusVariant = isFailed ? "down" : isActive ? "muted" : "up";
   return (
     <div className={cn(
-      "ras-list-item rounded-2xl border bg-card p-4 transition-colors hover:border-border/80",
+      "ras-list-item glow-card rounded-2xl border bg-card p-4",
       isFailed ? "border-rose-500/40" : "border-border",
     )}>
       <div className="flex items-start justify-between gap-3">

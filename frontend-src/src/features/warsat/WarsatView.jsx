@@ -228,7 +228,7 @@ export function WarsatView({
 
   return (
     <section className={`w2-layout app-view warsat-view tw ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat">
-      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Commander Dashboard ── */}
       <div className="flex items-start justify-between gap-5">
@@ -247,7 +247,7 @@ export function WarsatView({
             { v: failedTasks.length, l: "Failures", c: failedTasks.length > 0 ? "text-rose-400" : "text-muted-foreground" },
             { v: privacyLocked ? "Locked" : "Open", l: "Privacy", c: privacyLocked ? "text-primary" : "text-amber-400" },
           ].map((s) => (
-            <div key={s.l} className="rounded-xl border border-border bg-card px-3.5 py-2 text-center">
+            <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-3.5 py-2 text-center">
               <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
               <div className="text-[0.62rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
             </div>

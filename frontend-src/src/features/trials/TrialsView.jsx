@@ -187,7 +187,7 @@ export function TrialsView({
 
   return (
     <section className="w2-layout app-view trials-view tw active" id="trialsView" data-app-view="trials">
-      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-5">
@@ -206,7 +206,7 @@ export function TrialsView({
             { v: scorecards.length, l: "Scorecards", c: "text-foreground" },
             { v: reports.length, l: "Reports", c: "text-foreground" },
           ].map((s) => (
-            <div key={s.l} className="rounded-xl border border-border bg-card px-3.5 py-2 text-center">
+            <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-3.5 py-2 text-center">
               <div className={`text-lg font-bold ${s.c}`}>{s.v}</div>
               <div className="text-[0.62rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
             </div>

@@ -224,7 +224,7 @@ export function ModelsView({
 
   return (
     <section className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
-      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-5">
@@ -239,7 +239,7 @@ export function ModelsView({
             { v: runningModels.length, l: "Running", c: "text-amber-400" },
             { v: catalogItems.length, l: "In Catalog", c: "text-sky-400" },
           ].map((s) => (
-            <div key={s.l} className="rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+            <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
               <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
             </div>
@@ -543,7 +543,7 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
   const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
   const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n;
   return (
-    <div className="ras-list-item flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border/80">
+    <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <strong className="text-sm">{item.name}</strong>
@@ -613,7 +613,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const handleDiscover = () => runAction("discover", "Discover", "discover");
 
   return (
-    <div className="ras-list-item flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border/80">
+    <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <Cpu size={18} style={{ color: statusColor(st) }} />
