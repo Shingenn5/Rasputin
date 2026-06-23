@@ -27,11 +27,22 @@ import {
   Tooltip,
   XAxis,
 } from "recharts";
+import { motion } from "framer-motion";
 import { displayModelName } from "../../lib/display.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { CountUp } from "@/components/fx/CountUp.jsx";
 import { cn } from "@/lib/utils.js";
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.2, 0.8, 0.2, 1] } },
+};
+const stagger = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.07 } },
+};
 
 /* ─────────────────────────────────────────────
    DashboardView — modern analytics landing (Tailwind + shadcn + Recharts).
@@ -165,19 +176,24 @@ export function DashboardView({
       data-app-view="home"
       tabIndex="-1"
     >
-      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <motion.div
+        className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7"
+        variants={stagger}
+        initial="hidden"
+        animate="show"
+      >
         {/* Topbar */}
-        <div className="flex items-start justify-between gap-5">
+        <motion.div variants={fadeUp} className="flex items-start justify-between gap-5">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              Operations <span className="text-muted-foreground">Overview</span>
+              <span className="sheen-text">Operations</span> <span className="text-muted-foreground">Overview</span>
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
               Live snapshot of your local AI fleet, runs, and deployments.
             </p>
           </div>
           <div className="flex items-center gap-2.5">
-            <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground sm:flex">
+            <div className="glass hidden items-center gap-2 rounded-full px-4 py-2 text-sm text-muted-foreground sm:flex">
               <Search size={15} /> <span>Search…</span>
             </div>
             <Button variant="outline" size="icon" className="rounded-full" onClick={() => go("activity")} aria-label="Activity">
@@ -186,7 +202,7 @@ export function DashboardView({
             <button
               type="button"
               onClick={() => go("models")}
-              className="flex items-center gap-2 rounded-full border border-border bg-card py-1.5 pl-2 pr-3.5 text-sm transition-colors hover:border-border/80"
+              className="glass flex items-center gap-2 rounded-full py-1.5 pl-2 pr-3.5 text-sm transition-colors hover:border-primary/30"
             >
               <span className="grid size-7 place-items-center rounded-full bg-gradient-to-br from-primary to-emerald-700 text-primary-foreground">
                 <Cpu size={14} />
@@ -194,33 +210,37 @@ export function DashboardView({
               {displayModelName(selectedModelObject, models)}
             </button>
           </div>
-        </div>
+        </motion.div>
 
         {/* KPI row */}
         <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
           {kpis.map((k) => {
             const Icon = k.icon;
             return (
-              <Card key={k.label} className="relative overflow-hidden p-5">
-                <div className="mb-2.5 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Icon size={14} /> <span>{k.label}</span>
-                  <Badge variant="muted" className="ml-auto">{k.badge}</Badge>
-                </div>
-                <div className="text-3xl font-bold tracking-tight">{k.value}</div>
-                <Badge variant={k.up ? "up" : "down"} className="mt-2.5">
-                  {k.up ? <ChevronUp size={12} /> : <ArrowUpRight size={12} />} {k.delta}
-                </Badge>
-                <div className="pointer-events-none absolute bottom-3.5 right-3.5 opacity-90">
-                  <Sparkline data={k.spark} />
-                </div>
-              </Card>
+              <motion.div key={k.label} variants={fadeUp}>
+                <Card className="glow-card relative overflow-hidden p-5">
+                  <div className="mb-2.5 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Icon size={14} /> <span>{k.label}</span>
+                    <Badge variant="muted" className="ml-auto">{k.badge}</Badge>
+                  </div>
+                  <div className="text-3xl font-bold tracking-tight">
+                    <CountUp value={k.value} />
+                  </div>
+                  <Badge variant={k.up ? "up" : "down"} className="mt-2.5">
+                    {k.up ? <ChevronUp size={12} /> : <ArrowUpRight size={12} />} {k.delta}
+                  </Badge>
+                  <div className="pointer-events-none absolute bottom-3.5 right-3.5 opacity-90">
+                    <Sparkline data={k.spark} />
+                  </div>
+                </Card>
+              </motion.div>
             );
           })}
         </div>
 
         {/* Hero chart + donut */}
-        <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
-          <Card className="p-5">
+        <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+          <Card className="glow-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-base font-semibold">Run Activity <span className="text-muted-foreground">· 30d</span></div>
               <div className="flex gap-1 rounded-full border border-border bg-background p-1">
@@ -245,7 +265,7 @@ export function DashboardView({
             </div>
           </Card>
 
-          <Card className="p-5">
+          <Card className="glow-card p-5">
             <div className="mb-4 text-base font-semibold">Runs by Status</div>
             {donut.length ? (
               <>
@@ -275,11 +295,11 @@ export function DashboardView({
               <div className="py-7 text-center text-sm text-muted-foreground">No runs yet</div>
             )}
           </Card>
-        </div>
+        </motion.div>
 
         {/* Top models + quick chat */}
-        <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
-          <Card className="p-5">
+        <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+          <Card className="glow-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-base font-semibold">Top Models <span className="text-muted-foreground">· by runs</span></div>
               <Button variant="ghost" size="pill" onClick={() => go("models")}>Manage</Button>
@@ -318,7 +338,7 @@ export function DashboardView({
             )}
           </Card>
 
-          <Card className="flex flex-col p-5">
+          <Card className="glow-card flex flex-col p-5">
             <div className="mb-3 flex items-center justify-between">
               <div className="text-base font-semibold">Quick Chat</div>
               <Button variant="ghost" size="pill" onClick={() => go("chat")}>Open full chat</Button>
@@ -340,10 +360,11 @@ export function DashboardView({
               </Button>
             </form>
           </Card>
-        </div>
+        </motion.div>
 
         {/* Live status */}
-        <Card className="p-5">
+        <motion.div variants={fadeUp}>
+        <Card className="glow-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="text-base font-semibold">Live Status</div>
             <Button variant="ghost" size="pill" onClick={() => go("activity")}>Activity</Button>
@@ -357,7 +378,8 @@ export function DashboardView({
             <Metric icon={Layers} name="Managed deployments" delta="warsat" value={stats.managedModels} />
           </div>
         </Card>
-      </div>
+        </motion.div>
+      </motion.div>
     </section>
   );
 }

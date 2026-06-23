@@ -361,3 +361,121 @@
   background: #0e1214;
   border-color: rgba(255, 255, 255, 0.1);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WOW LAYER — atmosphere, glass, glow, count-up, micro-interactions
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Animated aurora / gradient-mesh backdrop behind the app canvas. */
+.dash-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.dash-aurora::before,
+.dash-aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+  will-change: transform;
+}
+.dash-aurora::before {
+  width: 52vw; height: 52vw;
+  left: -8vw; top: -14vw;
+  background: radial-gradient(circle at 30% 30%, rgba(47, 227, 160, 0.22), transparent 60%);
+  animation: dash-aurora-1 22s ease-in-out infinite;
+}
+.dash-aurora::after {
+  width: 46vw; height: 46vw;
+  right: -6vw; top: 8vw;
+  background: radial-gradient(circle at 60% 40%, rgba(56, 130, 246, 0.18), transparent 60%);
+  animation: dash-aurora-2 28s ease-in-out infinite;
+}
+.dash-aurora i {
+  position: absolute;
+  width: 40vw; height: 40vw;
+  left: 30vw; bottom: -20vw;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.4;
+  background: radial-gradient(circle at 50% 50%, rgba(120, 90, 255, 0.16), transparent 60%);
+  animation: dash-aurora-3 32s ease-in-out infinite;
+}
+@keyframes dash-aurora-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(8vw, 6vw) scale(1.12); }
+}
+@keyframes dash-aurora-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-7vw, 4vw) scale(1.08); }
+}
+@keyframes dash-aurora-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-5vw, -8vw) scale(1.15); }
+}
+
+/* Glass panel: translucent + backdrop blur + top sheen. */
+.glass {
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+  position: relative;
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  pointer-events: none;
+}
+
+/* Hover lift + accent glow for interactive cards. */
+.glow-card {
+  transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s cubic-bezier(.2,.8,.2,1), border-color 0.25s ease;
+}
+.glow-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(47, 227, 160, 0.35);
+  box-shadow: 0 14px 40px -18px rgba(0,0,0,0.8), 0 0 0 1px rgba(47,227,160,0.18), 0 0 30px -10px rgba(47,227,160,0.25);
+}
+
+/* Pulsing live-status dot. */
+.pulse-dot { position: relative; }
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(47, 227, 160, 0.5);
+  animation: dash-pulse 2s ease-out infinite;
+}
+@keyframes dash-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 227, 160, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(47, 227, 160, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 227, 160, 0); }
+}
+
+/* Gradient sheen sweep for the page title. */
+.sheen-text {
+  background: linear-gradient(120deg, #e8edf0 30%, #2fe3a0 50%, #e8edf0 70%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: dash-sheen 6s linear infinite;
+}
+@keyframes dash-sheen {
+  to { background-position: 200% center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-aurora::before, .dash-aurora::after, .dash-aurora i,
+  .pulse-dot::after, .sheen-text { animation: none !important; }
+  .glow-card { transition: none !important; }
+}

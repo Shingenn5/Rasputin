@@ -16,7 +16,8 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
           )}
         </div>
       )}
-      <div className="dash-frame flex h-dvh overflow-hidden bg-background text-foreground" id="appFrame">
+      <div className="dash-aurora" aria-hidden="true"><i /></div>
+      <div className="dash-frame relative z-[1] flex h-dvh overflow-hidden bg-transparent text-foreground" id="appFrame">
         <DashSidebar {...sidebarProps} />
         <button
           className="mobile-shell-toggle icon-button"
