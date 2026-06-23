@@ -541,42 +541,45 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
   const modelId = item.modelId || item.id;
   const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
   const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
+  const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n;
   return (
-    <div className="w2-card ras-list-item" style={{ gap: "8px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <strong style={{ fontSize: "0.875rem" }}>{item.name}</strong>
-          <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{item.modelId || item.id}</div>
+    <div className="ras-list-item flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border/80">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <strong className="text-sm">{item.name}</strong>
+          <div className="truncate text-[0.7rem] text-muted-foreground">{item.modelId || item.id}</div>
         </div>
-        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-          {item.deployable && <Zap size={13} color="var(--ras-safe)" title="Deployable" />}
-          <span style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{labelize(item.purpose || "chat")}</span>
+        <div className="flex shrink-0 items-center gap-2">
+          {item.deployable && <Zap size={13} className="text-primary" />}
+          <span className="text-[0.7rem] text-muted-foreground">{labelize(item.purpose || "chat")}</span>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", fontSize: "0.6875rem" }}>
-        {item.vramEstimateGb && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>{item.vramEstimateGb} GB VRAM</span>}
-        {item.downloads > 0 && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>↓ {item.downloads >= 1e6 ? `${(item.downloads/1e6).toFixed(1)}M` : item.downloads >= 1e3 ? `${(item.downloads/1e3).toFixed(1)}K` : item.downloads}</span>}
-        {item.likes > 0 && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>♥ {item.likes >= 1e3 ? `${(item.likes/1e3).toFixed(1)}K` : item.likes}</span>}
-        {item.license && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: "var(--cc-muted)" }}>{item.license}</span>}
-        {item.fitLabel && searchMode === "catalog" && <span style={{ padding: "1px 8px", borderRadius: "999px", border: "1px solid var(--cc-border)", color: item.fitLabel === "Strong fit" ? "var(--ras-safe)" : item.fitLabel === "Blocked" ? "var(--ras-danger)" : "var(--cc-muted)" }}>{item.fitLabel}</span>}
+      <div className="flex flex-wrap gap-1.5">
+        {item.vramEstimateGb && <Badge variant="muted">{item.vramEstimateGb} GB VRAM</Badge>}
+        {item.downloads > 0 && <Badge variant="muted">↓ {fmt(item.downloads)}</Badge>}
+        {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
+        {item.license && <Badge variant="muted">{item.license}</Badge>}
+        {item.fitLabel && searchMode === "catalog" && (
+          <Badge variant={item.fitLabel === "Strong fit" ? "up" : item.fitLabel === "Blocked" ? "down" : "muted"}>{item.fitLabel}</Badge>
+        )}
       </div>
 
-      {item.summary && <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>{item.summary.slice(0, 120)}</p>}
+      {item.summary && <p className="text-xs text-muted-foreground">{item.summary.slice(0, 120)}</p>}
 
-      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+      <div className="flex items-center gap-2">
         {item.deployable && (
-          <button className="w2-button primary" type="button" onClick={() => prepareCatalogModelForWarsat?.(item)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
+          <UIButton size="sm" type="button" onClick={() => prepareCatalogModelForWarsat?.(item)}>
             <Play size={12} /> Deploy via Warsat
-          </button>
+          </UIButton>
         )}
         {(searchMode === "huggingface" || item.source === "huggingface") && (
-          <button className={`w2-button ${isDownloading ? "primary" : ""}`} type="button" disabled={isDownloading} onClick={() => startDownload(modelId)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
-            <Download size={12} /> {isDownloading ? "Downloading..." : "Download Weights"}
-          </button>
+          <UIButton variant={isDownloading ? "default" : "outline"} size="sm" type="button" disabled={isDownloading} onClick={() => startDownload(modelId)}>
+            <Download size={12} /> {isDownloading ? "Downloading…" : "Download Weights"}
+          </UIButton>
         )}
         {item.sourceUrl && item.source === "huggingface" && (
-          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.6875rem", color: "var(--ras-blue)", display: "flex", alignItems: "center", gap: "4px", textDecoration: "none" }}>
+          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[0.7rem] text-sky-400 no-underline">
             <ExternalLink size={11} /> HF Page
           </a>
         )}
@@ -610,21 +613,19 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const handleDiscover = () => runAction("discover", "Discover", "discover");
 
   return (
-    <div className="w2-card ras-list-item" style={{ gap: "8px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <Cpu size={18} color={statusColor(st)} />
+    <div className="ras-list-item flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border/80">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <Cpu size={18} style={{ color: statusColor(st) }} />
           <div>
-            <strong style={{ fontSize: "0.875rem" }}>{name}</strong>
-            {secondary && <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{secondary}</div>}
+            <strong className="text-sm">{name}</strong>
+            {secondary && <div className="text-[0.7rem] text-muted-foreground">{secondary}</div>}
           </div>
         </div>
-        <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: isHealthy ? "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))", color: isHealthy ? "var(--ras-safe)" : "var(--ras-danger)", fontWeight: 600 }}>
-          {isHealthy ? "Healthy" : labelize(st)}
-        </span>
+        <Badge variant={isHealthy ? "up" : "down"}>{isHealthy ? "Healthy" : labelize(st)}</Badge>
       </div>
 
-      <div style={{ display: "flex", gap: "16px", fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>Model: {model.model || "—"}</span>
         <span>Runtime: {model.runtime || model.provider || "local"}</span>
         <span>Role: {labelize(model.role || "chat")}</span>
@@ -632,12 +633,12 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
       </div>
 
       {mismatch && (
-        <div style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "0.75rem", color: "var(--ras-warn)", padding: "6px 8px", background: "color-mix(in srgb, var(--ras-warn) 8%, var(--cc-surface))", borderRadius: "6px" }}>
+        <div className="flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-400">
           <AlertTriangle size={13} /> {mismatch}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "8px" }}>
+      <div className="flex gap-2">
         <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Test</Button>
         <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Discover</Button>
       </div>
