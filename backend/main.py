@@ -114,13 +114,19 @@ app.include_router(warsat_router)
 app.include_router(mcp_api_router)
 app.include_router(settings_api.router)
 
+# index.html must never be cached by the browser: it points at content-hashed
+# JS/CSS, so caching it means the browser keeps loading stale bundles after a
+# rebuild. The hashed assets under /static can (and do) cache forever.
+_INDEX_NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
+
 @app.get("/")
 async def index():
-    return FileResponse(FRONTEND / "index.html")
+    return FileResponse(FRONTEND / "index.html", headers=_INDEX_NO_CACHE)
 
 @app.get("/preview")
 @app.get("/preview/{path:path}")
 async def preview_index(path: str = ""):
     if not _ui_preview_enabled():
         raise HTTPException(status_code=404, detail="Preview UI is disabled.")
-    return FileResponse(FRONTEND / "index.html")
+    return FileResponse(FRONTEND / "index.html", headers=_INDEX_NO_CACHE)
