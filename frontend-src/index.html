@@ -8,23 +8,23 @@
     <script>
       (function () {
         var themes = {
-          "rasputin-light": { bg: "#d9d3c8", accent: "#bd4a28", dark: false },
-          "rasputin-dark": { bg: "#090b0f", accent: "#d85b32", dark: true },
-          "contrast": { bg: "#ffffff", accent: "#005fcc", dark: false },
-          "bootswatch-slate": { bg: "#272b30", accent: "#d85b32", dark: true },
-          "bootswatch-cyborg": { bg: "#060606", accent: "#ff5b45", dark: true },
-          "bootswatch-darkly": { bg: "#222222", accent: "#00bc8c", dark: true },
-          "bootswatch-lux": { bg: "#f7f7f7", accent: "#1a1a1a", dark: false },
-          "bootswatch-solar": { bg: "#002b36", accent: "#b58900", dark: true },
-          "bootswatch-superhero": { bg: "#2b3e50", accent: "#df691a", dark: true },
-          "cyberpunk-neon": { bg: "#09031c", accent: "#ff0099", dark: true },
-          "ocean-abyss": { bg: "#010b14", accent: "#00ccff", dark: true },
-          "hacker-matrix": { bg: "#000000", accent: "#00ff00", dark: true },
-          "crimson-forge": { bg: "#0f0a0a", accent: "#ff3333", dark: true },
-          "nord-frost": { bg: "#2e3440", accent: "#88c0d0", dark: true }
+          "rasputin-light": { bg: "#d9d3c8", text: "#17191d", accent: "#bd4a28", a1: "rgba(189, 74, 40, 0.5)", a2: "rgba(49, 94, 132, 0.42)", a3: "rgba(220, 100, 50, 0.4)", dark: false },
+          "rasputin-dark": { bg: "#0a0d0f", text: "#e8edf0", accent: "#2fe3a0", a1: "rgba(47, 227, 160, 0.5)", a2: "rgba(56, 130, 246, 0.42)", a3: "rgba(130, 90, 255, 0.4)", dark: true },
+          "contrast": { bg: "#ffffff", text: "#000000", accent: "#005fcc", a1: "rgba(0, 95, 204, 0.2)", a2: "rgba(0, 0, 0, 0.1)", a3: "rgba(0, 95, 204, 0.1)", dark: false },
+          "bootswatch-slate": { bg: "#272b30", text: "#e8edf0", accent: "#d85b32", a1: "rgba(216, 91, 50, 0.5)", a2: "rgba(56, 130, 246, 0.42)", a3: "rgba(130, 90, 255, 0.4)", dark: true },
+          "bootswatch-cyborg": { bg: "#060606", text: "#e8edf0", accent: "#ff5b45", a1: "rgba(255, 91, 69, 0.5)", a2: "rgba(40, 40, 40, 0.6)", a3: "rgba(255, 0, 0, 0.4)", dark: true },
+          "bootswatch-darkly": { bg: "#222222", text: "#e8edf0", accent: "#00bc8c", a1: "rgba(0, 188, 140, 0.5)", a2: "rgba(52, 152, 219, 0.4)", a3: "rgba(155, 89, 182, 0.4)", dark: true },
+          "bootswatch-lux": { bg: "#f7f7f7", text: "#1a1a1a", accent: "#1a1a1a", a1: "rgba(0, 0, 0, 0.1)", a2: "rgba(100, 100, 100, 0.1)", a3: "rgba(0, 0, 0, 0.05)", dark: false },
+          "bootswatch-solar": { bg: "#002b36", text: "#93a1a1", accent: "#b58900", a1: "rgba(181, 137, 0, 0.5)", a2: "rgba(42, 161, 152, 0.4)", a3: "rgba(203, 75, 22, 0.4)", dark: true },
+          "bootswatch-superhero": { bg: "#2b3e50", text: "#ebebeb", accent: "#df691a", a1: "rgba(223, 105, 26, 0.5)", a2: "rgba(91, 192, 222, 0.4)", a3: "rgba(240, 173, 78, 0.4)", dark: true },
+          "cyberpunk-neon": { bg: "#09031c", text: "#e0e0e0", accent: "#ff0099", a1: "rgba(255, 0, 153, 0.5)", a2: "rgba(0, 255, 255, 0.42)", a3: "rgba(204, 0, 255, 0.4)", dark: true },
+          "ocean-abyss": { bg: "#010b14", text: "#e0f2f1", accent: "#00ccff", a1: "rgba(0, 204, 255, 0.5)", a2: "rgba(0, 153, 204, 0.42)", a3: "rgba(0, 102, 255, 0.4)", dark: true },
+          "hacker-matrix": { bg: "#000000", text: "#00ff00", accent: "#00ff00", a1: "rgba(0, 255, 0, 0.4)", a2: "rgba(0, 200, 0, 0.3)", a3: "rgba(0, 100, 0, 0.5)", dark: true },
+          "crimson-forge": { bg: "#0f0a0a", text: "#f0e6e6", accent: "#ff3333", a1: "rgba(255, 51, 51, 0.5)", a2: "rgba(204, 0, 0, 0.4)", a3: "rgba(255, 102, 0, 0.4)", dark: true },
+          "nord-frost": { bg: "#2e3440", text: "#eceff4", accent: "#88c0d0", a1: "rgba(136, 192, 208, 0.5)", a2: "rgba(129, 161, 193, 0.4)", a3: "rgba(180, 142, 173, 0.4)", dark: true }
         };
         function normalize(theme) {
-          return themes[theme] ? theme : "rasputin-light";
+          return themes[theme] ? theme : "rasputin-dark";
         }
         function ensure(selector, tag, attrs) {
           var node = document.querySelector(selector);
@@ -40,10 +40,19 @@
           var cfg = themes[selected];
           var root = document.documentElement;
           root.dataset.theme = selected;
-          root.classList.add("dark");
+          if (cfg.dark) root.classList.add("dark");
+          else root.classList.remove("dark");
           root.dataset.bsTheme = cfg.dark ? "dark" : "light";
           root.dataset.contrast = selected === "contrast" ? "true" : "false";
           root.style.background = cfg.bg;
+          
+          root.style.setProperty("--base-bg", cfg.bg);
+          root.style.setProperty("--base-text", cfg.text);
+          root.style.setProperty("--base-accent", cfg.accent);
+          root.style.setProperty("--aurora-1", cfg.a1);
+          root.style.setProperty("--aurora-2", cfg.a2);
+          root.style.setProperty("--aurora-3", cfg.a3);
+
           ensure("meta[name='theme-color']", "meta", { name: "theme-color" }).setAttribute("content", cfg.bg);
           var icon = ensure("link[rel='icon']", "link", { rel: "icon" });
           var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="' + cfg.bg + '"/><path d="M14 32h36M32 14v36M20 20l24 24M44 20 20 44" stroke="' + cfg.accent + '" stroke-width="3" stroke-linecap="round" opacity=".72"/><circle cx="32" cy="32" r="11" fill="none" stroke="' + cfg.accent + '" stroke-width="4"/><text x="32" y="37" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="' + cfg.accent + '">R</text></svg>';

@@ -4,21 +4,28 @@
    accent, grouped sidebar, KPI stat cards, chart/table panels.
    ═══════════════════════════════════════════════════════════════════════ */
 :root {
-  --dash-bg: #0a0d0f;
-  --dash-bg-2: #0e1214;
-  --dash-panel: #12171a;
-  --dash-panel-2: #161c20;
-  --dash-panel-hover: #1a2126;
-  --dash-border: rgba(255, 255, 255, 0.06);
-  --dash-border-strong: rgba(255, 255, 255, 0.12);
-  --dash-text: #e8edf0;
-  --dash-muted: #7d8a92;
-  --dash-faint: #4d585f;
-  --dash-accent: #2fe3a0;
-  --dash-accent-soft: rgba(47, 227, 160, 0.14);
-  --dash-accent-dim: rgba(47, 227, 160, 0.5);
-  --dash-up: #2fe3a0;
+  /* Dynamic themes derived from html[data-theme] injected variables */
+  --dash-bg: var(--base-bg, #0a0d0f);
+  --dash-text: var(--base-text, #e8edf0);
+  --dash-accent: var(--base-accent, #2fe3a0);
+
+  --dash-bg-2: color-mix(in srgb, var(--dash-bg) 96%, var(--dash-text));
+  --dash-panel: color-mix(in srgb, var(--dash-bg) 92%, var(--dash-text));
+  --dash-panel-2: color-mix(in srgb, var(--dash-bg) 87%, var(--dash-text));
+  --dash-panel-hover: color-mix(in srgb, var(--dash-bg) 82%, var(--dash-text));
+  
+  --dash-border: color-mix(in srgb, var(--dash-text) 8%, transparent);
+  --dash-border-strong: color-mix(in srgb, var(--dash-text) 16%, transparent);
+  
+  --dash-muted: color-mix(in srgb, var(--dash-text) 65%, transparent);
+  --dash-faint: color-mix(in srgb, var(--dash-text) 45%, transparent);
+
+  --dash-accent-soft: color-mix(in srgb, var(--dash-accent) 14%, transparent);
+  --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 50%, transparent);
+
+  --dash-up: var(--dash-accent);
   --dash-down: #ff6b6b;
+  
   --dash-radius: 18px;
   --dash-radius-sm: 12px;
   --dash-radius-pill: 999px;
@@ -31,7 +38,7 @@
   grid-template-columns: 248px 1fr;
   height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(47, 227, 160, 0.05), transparent 60%),
+    radial-gradient(1200px 600px at 80% -10%, color-mix(in srgb, var(--dash-accent) 5%, transparent), transparent 60%),
     var(--dash-bg);
   color: var(--dash-text);
   overflow: hidden;
@@ -62,8 +69,8 @@
   width: 32px; height: 32px;
   display: grid; place-items: center;
   border-radius: 9px;
-  background: linear-gradient(135deg, var(--dash-accent), #1ba577);
-  color: #06120d; font-weight: 800;
+  background: linear-gradient(135deg, var(--dash-accent), color-mix(in srgb, var(--dash-accent) 70%, var(--dash-bg)));
+  color: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text)); font-weight: 800;
   box-shadow: 0 4px 14px -4px var(--dash-accent-dim);
   flex: 0 0 auto;
 }
@@ -85,7 +92,7 @@
 }
 .dash-nav-item:hover { background: var(--dash-panel); color: var(--dash-text); }
 .dash-nav-item.is-active {
-  background: linear-gradient(135deg, var(--dash-accent-soft), rgba(47, 227, 160, 0.04));
+  background: linear-gradient(135deg, var(--dash-accent-soft), color-mix(in srgb, var(--dash-accent) 4%, transparent));
   color: var(--dash-text);
   box-shadow: inset 0 0 0 1px var(--dash-border-strong);
 }
@@ -139,7 +146,8 @@
 .dash-user-avatar {
   width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
   display: grid; place-items: center; font-size: 0.7rem; font-weight: 700;
-  background: linear-gradient(135deg, var(--dash-accent), #1ba577); color: #06120d;
+  background: linear-gradient(135deg, var(--dash-accent), color-mix(in srgb, var(--dash-accent) 70%, var(--dash-bg)));
+  color: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
 }
 .dash-icon-btn {
   width: 38px; height: 38px; display: grid; place-items: center;
@@ -197,7 +205,7 @@
   padding: 2px 8px; border-radius: var(--dash-radius-pill);
 }
 .dash-kpi-delta.is-up { color: var(--dash-up); background: var(--dash-accent-soft); }
-.dash-kpi-delta.is-down { color: var(--dash-down); background: rgba(255, 107, 107, 0.12); }
+.dash-kpi-delta.is-down { color: var(--dash-down); background: color-mix(in srgb, var(--dash-down) 12%, transparent); }
 .dash-kpi-spark { position: absolute; right: 16px; bottom: 14px; opacity: 0.9; pointer-events: none; }
 
 /* ── Dashboard grid regions ── */
@@ -277,7 +285,7 @@
 .dash-chat-send {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 11px 18px; border: none; border-radius: var(--dash-radius-pill);
-  background: var(--dash-accent); color: #06120d;
+  background: var(--dash-accent); color: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
   font-weight: 650; font-size: 0.86rem; cursor: pointer;
   transition: opacity var(--dur, 0.18s) ease, transform var(--dur, 0.18s) ease;
 }
@@ -318,48 +326,48 @@
    refine a few legacy components so every view reads as one modern system.
    ──────────────────────────────────────────────────────────────────── */
 :root {
-  --cc-bg: #0a0d0f;
-  --cc-surface: #12171a;
-  --cc-border: rgba(255, 255, 255, 0.08);
-  --cc-text: #e8edf0;
-  --cc-muted: #7d8a92;
-  --cc-accent: #2fe3a0;
+  --cc-bg: var(--dash-bg);
+  --cc-surface: var(--dash-panel);
+  --cc-border: var(--dash-border);
+  --cc-text: var(--dash-text);
+  --cc-muted: var(--dash-muted);
+  --cc-accent: var(--dash-accent);
   --cc-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
 }
 
 .w2-header-card {
-  background: #12171a;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border);
   border-radius: 18px;
 }
 .w2-header-card h1 { letter-spacing: -0.02em; }
 
 .w2-card {
-  background: #12171a;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border);
   border-radius: 16px;
   padding: 18px;
 }
 
 .w2-button {
   border-radius: 10px;
-  border-color: rgba(255, 255, 255, 0.1);
-  background: #161c20;
+  border-color: var(--dash-border);
+  background: var(--dash-panel-2);
 }
-.w2-button:hover { background: #1a2126; }
+.w2-button:hover { background: var(--dash-panel-hover); }
 .w2-button.primary {
-  background: #2fe3a0;
-  color: #06120d;
-  border-color: #2fe3a0;
+  background: var(--cc-accent);
+  color: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
+  border-color: var(--cc-accent);
   font-weight: 600;
 }
-.w2-button.primary:hover { background: #46e9ad; }
+.w2-button.primary:hover { background: color-mix(in srgb, var(--cc-accent) 85%, var(--dash-text)); }
 
-.w2-list-item { border-radius: 12px; background: #0e1214; }
+.w2-list-item { border-radius: 12px; background: var(--dash-panel-2); }
 .w2-input {
   border-radius: 10px;
-  background: #0e1214;
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--dash-panel-2);
+  border-color: var(--dash-border);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -374,11 +382,11 @@
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  background: #0a0d0f;
+  background: var(--dash-bg);
 }
 /* Let the aurora show through: app frame, main, and view canvases stay
    transparent so the glow reads behind the floating cards. */
-:root.dark body { background: #0a0d0f; }
+:root.dark body, body { background: var(--dash-bg); }
 #appFrame.dash-frame,
 .dash-frame-main,
 .app-view,
@@ -399,13 +407,13 @@
 .dash-aurora::before {
   width: 58vw; height: 58vw;
   left: -6vw; top: -16vw;
-  background: radial-gradient(circle at 30% 30%, rgba(47, 227, 160, 0.5), transparent 62%);
+  background: radial-gradient(circle at 30% 30%, var(--aurora-1, rgba(47, 227, 160, 0.5)), transparent 62%);
   animation: dash-aurora-1 22s ease-in-out infinite;
 }
 .dash-aurora::after {
   width: 50vw; height: 50vw;
   right: -4vw; top: 4vw;
-  background: radial-gradient(circle at 60% 40%, rgba(56, 130, 246, 0.42), transparent 62%);
+  background: radial-gradient(circle at 60% 40%, var(--aurora-2, rgba(56, 130, 246, 0.42)), transparent 62%);
   animation: dash-aurora-2 28s ease-in-out infinite;
 }
 .dash-aurora i {
@@ -414,7 +422,7 @@
   left: 26vw; bottom: -22vw;
   border-radius: 50%;
   filter: blur(90px);
-  background: radial-gradient(circle at 50% 50%, rgba(130, 90, 255, 0.4), transparent 62%);
+  background: radial-gradient(circle at 50% 50%, var(--aurora-3, rgba(130, 90, 255, 0.4)), transparent 62%);
   animation: dash-aurora-3 32s ease-in-out infinite;
 }
 @keyframes dash-aurora-1 {
@@ -453,8 +461,10 @@
 }
 .glow-card:hover {
   transform: translateY(-3px);
-  border-color: rgba(47, 227, 160, 0.35);
-  box-shadow: 0 14px 40px -18px rgba(0,0,0,0.8), 0 0 0 1px rgba(47,227,160,0.18), 0 0 30px -10px rgba(47,227,160,0.25);
+  border-color: color-mix(in srgb, var(--dash-accent) 35%, transparent);
+  box-shadow: 0 14px 40px -18px rgba(0,0,0,0.8), 
+              0 0 0 1px color-mix(in srgb, var(--dash-accent) 18%, transparent), 
+              0 0 30px -10px color-mix(in srgb, var(--dash-accent) 25%, transparent);
 }
 
 /* Pulsing live-status dot. */
@@ -464,18 +474,18 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  box-shadow: 0 0 0 0 rgba(47, 227, 160, 0.5);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--dash-accent) 50%, transparent);
   animation: dash-pulse 2s ease-out infinite;
 }
 @keyframes dash-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(47, 227, 160, 0.5); }
-  70% { box-shadow: 0 0 0 8px rgba(47, 227, 160, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(47, 227, 160, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dash-accent) 50%, transparent); }
+  70% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--dash-accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dash-accent) 0%, transparent); }
 }
 
 /* Gradient sheen sweep for the page title. */
 .sheen-text {
-  background: linear-gradient(120deg, #e8edf0 30%, #2fe3a0 50%, #e8edf0 70%);
+  background: linear-gradient(120deg, var(--dash-text) 30%, var(--dash-accent) 50%, var(--dash-text) 70%);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;

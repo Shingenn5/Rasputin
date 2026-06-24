@@ -11,48 +11,48 @@
 :root {
   --radius: 0.85rem;
 
-  --background: oklch(0.16 0.012 200);
-  --foreground: oklch(0.96 0.005 200);
+  --background: var(--dash-bg);
+  --foreground: var(--dash-text);
 
-  --card: oklch(0.19 0.014 200);
-  --card-foreground: oklch(0.96 0.005 200);
+  --card: var(--dash-panel);
+  --card-foreground: var(--dash-text);
 
-  --popover: oklch(0.2 0.015 200);
-  --popover-foreground: oklch(0.96 0.005 200);
+  --popover: var(--dash-panel-2);
+  --popover-foreground: var(--dash-text);
 
-  --primary: oklch(0.82 0.17 162);
-  --primary-foreground: oklch(0.2 0.04 162);
+  --primary: var(--dash-accent);
+  --primary-foreground: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
 
-  --secondary: oklch(0.24 0.015 200);
-  --secondary-foreground: oklch(0.96 0.005 200);
+  --secondary: var(--dash-panel-2);
+  --secondary-foreground: var(--dash-text);
 
-  --muted: oklch(0.24 0.012 200);
-  --muted-foreground: oklch(0.66 0.015 200);
+  --muted: var(--dash-panel-hover);
+  --muted-foreground: var(--dash-muted);
 
-  --accent: oklch(0.26 0.02 200);
-  --accent-foreground: oklch(0.96 0.005 200);
+  --accent: var(--dash-panel-hover);
+  --accent-foreground: var(--dash-text);
 
-  --destructive: oklch(0.65 0.2 22);
-  --destructive-foreground: oklch(0.98 0 0);
+  --destructive: var(--dash-down);
+  --destructive-foreground: #fff;
 
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.82 0.17 162);
+  --border: var(--dash-border);
+  --input: var(--dash-border-strong);
+  --ring: var(--dash-accent);
 
-  --chart-1: oklch(0.82 0.17 162);
-  --chart-2: oklch(0.7 0.13 240);
-  --chart-3: oklch(0.7 0.18 25);
-  --chart-4: oklch(0.75 0.15 90);
-  --chart-5: oklch(0.6 0.1 300);
+  --chart-1: var(--dash-accent);
+  --chart-2: color-mix(in srgb, var(--dash-accent) 70%, #00f);
+  --chart-3: color-mix(in srgb, var(--dash-accent) 70%, #f00);
+  --chart-4: color-mix(in srgb, var(--dash-accent) 70%, #ff0);
+  --chart-5: color-mix(in srgb, var(--dash-accent) 70%, #f0f);
 
-  --sidebar: oklch(0.17 0.013 200);
-  --sidebar-foreground: oklch(0.92 0.005 200);
-  --sidebar-primary: oklch(0.82 0.17 162);
-  --sidebar-primary-foreground: oklch(0.2 0.04 162);
-  --sidebar-accent: oklch(0.24 0.015 200);
-  --sidebar-accent-foreground: oklch(0.96 0.005 200);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.82 0.17 162);
+  --sidebar: var(--dash-bg-2);
+  --sidebar-foreground: var(--dash-text);
+  --sidebar-primary: var(--dash-accent);
+  --sidebar-primary-foreground: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
+  --sidebar-accent: var(--dash-panel);
+  --sidebar-accent-foreground: var(--dash-text);
+  --sidebar-border: var(--dash-border);
+  --sidebar-ring: var(--dash-accent);
 }
 
 /* Map tokens into Tailwind's theme so utilities like bg-card, text-muted-foreground work. */
