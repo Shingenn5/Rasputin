@@ -111,14 +111,14 @@ export function DashSidebar({
     >
       <aside
         className={cn(
-          "absolute inset-y-0 left-0 z-30 flex flex-col border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width] duration-200 ease-out",
+          "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width] duration-200 ease-out",
           expanded ? "w-[248px]" : "w-[76px]",
           // When hovering open from rail mode, float a shadow so it reads as an overlay.
           collapsed && hovered && "shadow-2xl shadow-black/50",
         )}
       >
         {/* Brand */}
-        <div className={cn("flex items-center gap-2.5 px-2 pb-4", !expanded && "justify-center px-0")}>
+        <div className={cn("flex shrink-0 items-center gap-2.5 px-2 pb-4", !expanded && "justify-center px-0")}>
           <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-emerald-700 font-extrabold text-primary-foreground shadow-[0_4px_16px_-4px_var(--primary)]">
             R
           </div>
@@ -148,7 +148,7 @@ export function DashSidebar({
           onClick={newTask}
           title={!expanded ? "New Chat" : undefined}
           className={cn(
-            "mb-2 flex items-center gap-2.5 rounded-xl bg-primary/12 px-3 py-2.5 text-sm font-medium text-primary ring-1 ring-inset ring-primary/20 transition-colors hover:bg-primary/20",
+            "mb-2 flex shrink-0 items-center gap-2.5 rounded-xl bg-primary/12 px-3 py-2.5 text-sm font-medium text-primary ring-1 ring-inset ring-primary/20 transition-colors hover:bg-primary/20",
             !expanded && "justify-center px-0",
           )}
         >
@@ -157,7 +157,7 @@ export function DashSidebar({
         </button>
 
         {/* Primary nav (does not scroll) */}
-        <nav className="flex flex-col gap-0.5">
+        <nav className="flex shrink-0 flex-col gap-0.5">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mt-3">
               {expanded && (

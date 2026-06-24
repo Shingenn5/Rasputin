@@ -366,14 +366,28 @@
    WOW LAYER — atmosphere, glass, glow, count-up, micro-interactions
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* Animated aurora / gradient-mesh backdrop behind the app canvas. */
+/* Animated aurora / gradient-mesh backdrop behind the app canvas.
+   Paints its own dark base so it reads as the canvas regardless of body bg. */
 .dash-aurora {
   position: fixed;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
+  background: #0a0d0f;
 }
+/* Let the aurora show through: app frame, main, and view canvases stay
+   transparent so the glow reads behind the floating cards. */
+:root.dark body { background: #0a0d0f; }
+#appFrame.dash-frame,
+.dash-frame-main,
+.app-view,
+.app-view.active,
+.w2-layout,
+.cc-layout,
+.w2-main-grid,
+.w2-column,
+.w2-section { background: transparent !important; background-color: transparent !important; }
 .dash-aurora::before,
 .dash-aurora::after {
   content: "";
