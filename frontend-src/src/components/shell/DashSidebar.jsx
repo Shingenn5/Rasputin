@@ -190,10 +190,11 @@ export function DashSidebar({
           </div>
         </nav>
 
-        {/* Recent chats — the only scrollable region, below settings */}
-        {expanded && sessions.length > 0 && (
+        {/* Recent chats — the flexible, scrollable region between the pinned
+            nav (with Settings) above and the pinned privacy chip below. */}
+        {expanded && sessions.length > 0 ? (
           <div className="mt-4 flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between px-3 pb-2">
+            <div className="flex shrink-0 items-center justify-between px-3 pb-2">
               <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                 Recent Chats
               </span>
@@ -205,7 +206,7 @@ export function DashSidebar({
                 All
               </button>
             </div>
-            <div className="-mr-1 flex flex-col gap-0.5 overflow-y-auto pr-1">
+            <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-1">
               {sessions.map((s) => {
                 const active = s.id === activeSessionId;
                 return (
@@ -215,7 +216,7 @@ export function DashSidebar({
                     title={s.title || "Untitled chat"}
                     onClick={() => resumeSession?.(s.id)}
                     className={cn(
-                      "flex items-center gap-2.5 truncate rounded-lg px-3 py-2 text-left text-[0.8rem] transition-colors",
+                      "flex shrink-0 items-center gap-2.5 truncate rounded-lg px-3 py-2 text-left text-[0.8rem] transition-colors",
                       active
                         ? "bg-accent text-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -228,21 +229,15 @@ export function DashSidebar({
               })}
             </div>
           </div>
+        ) : (
+          <div className="flex-1" />
         )}
 
-        {/* spacer keeps the privacy chip at the bottom when no chats */}
-        {(!expanded || sessions.length === 0) && <div className="flex-1" />}
-
-        {/* Privacy chip */}
+        {/* Privacy chip — pinned at the very bottom */}
         {expanded && (
-          <div className="mt-3 shrink-0 rounded-xl border border-border bg-gradient-to-br from-secondary to-card p-3.5">
-            <div className="flex items-center gap-2">
-              <LifeBuoy size={15} className="text-primary" />
-              <span className="text-sm font-semibold">{locked ? "Privacy locked" : "Review mode"}</span>
-            </div>
-            <p className="mt-1 text-[0.68rem] text-muted-foreground">
-              All operations run locally on your hardware.
-            </p>
+          <div className="mt-3 flex shrink-0 items-center gap-2 rounded-xl border border-border bg-gradient-to-br from-secondary to-card px-3.5 py-2.5">
+            <LifeBuoy size={15} className="shrink-0 text-primary" />
+            <span className="text-[0.8rem] font-semibold">{locked ? "Privacy locked" : "Review mode"}</span>
           </div>
         )}
       </aside>

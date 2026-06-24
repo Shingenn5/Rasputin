@@ -157,10 +157,10 @@ export function DashboardView({
   const privacyLocked = security?.privacyLock ?? security?.privacy_lock;
 
   const kpis = [
-    { label: "Models Registered", badge: "live", value: stats.modelCount, delta: `${stats.enabledModels} enabled`, up: true, spark: models.map((_, i) => (i % 4) + 1), icon: Sparkles },
-    { label: "Total Runs", badge: "all-time", value: stats.totalTasks.toLocaleString(), delta: `${stats.active} active`, up: stats.active > 0, spark: sparkVals, icon: ListChecks },
-    { label: "Success Rate", badge: "tasks", value: `${stats.successRate}%`, delta: `${stats.done} completed`, up: stats.successRate >= 50, spark: sparkVals.map((v) => v + 1), icon: TrendingUp },
-    { label: "Deployments", badge: "warsat", value: stats.managedModels, delta: privacyLocked ? "privacy locked" : "ready", up: !privacyLocked, spark: [1, 2, 2, 3, 2, 4], icon: Rocket },
+    { label: "Models Registered", badge: "live", value: stats.modelCount, delta: `${stats.enabledModels} enabled`, tone: "up", spark: models.map((_, i) => (i % 4) + 1), icon: Sparkles },
+    { label: "Total Runs", badge: "all-time", value: stats.totalTasks.toLocaleString(), delta: `${stats.active} active`, tone: stats.active > 0 ? "up" : "neutral", spark: sparkVals, icon: ListChecks },
+    { label: "Success Rate", badge: "tasks", value: `${stats.successRate}%`, delta: `${stats.done} completed`, tone: stats.totalTasks === 0 ? "neutral" : stats.successRate >= 50 ? "up" : "down", spark: sparkVals.map((v) => v + 1), icon: TrendingUp },
+    { label: "Deployments", badge: "warsat", value: stats.managedModels, delta: privacyLocked ? "privacy locked" : "ready", tone: "neutral", spark: [1, 2, 2, 3, 2, 4], icon: Rocket },
   ];
 
   function submitChat(e) {
@@ -226,8 +226,10 @@ export function DashboardView({
                   <div className="text-3xl font-bold tracking-tight">
                     <CountUp value={k.value} />
                   </div>
-                  <Badge variant={k.up ? "up" : "down"} className="mt-2.5">
-                    {k.up ? <ChevronUp size={12} /> : <ArrowUpRight size={12} />} {k.delta}
+                  <Badge variant={k.tone === "up" ? "up" : k.tone === "down" ? "down" : "muted"} className="mt-2.5">
+                    {k.tone === "up" && <ChevronUp size={12} />}
+                    {k.tone === "down" && <ArrowUpRight size={12} />}
+                    {k.delta}
                   </Badge>
                   <div className="pointer-events-none absolute bottom-3.5 right-3.5 opacity-90">
                     <Sparkline data={k.spark} />

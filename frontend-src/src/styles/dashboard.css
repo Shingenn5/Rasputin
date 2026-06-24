@@ -393,30 +393,28 @@
   content: "";
   position: absolute;
   border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.5;
+  filter: blur(80px);
   will-change: transform;
 }
 .dash-aurora::before {
-  width: 52vw; height: 52vw;
-  left: -8vw; top: -14vw;
-  background: radial-gradient(circle at 30% 30%, rgba(47, 227, 160, 0.22), transparent 60%);
+  width: 58vw; height: 58vw;
+  left: -6vw; top: -16vw;
+  background: radial-gradient(circle at 30% 30%, rgba(47, 227, 160, 0.5), transparent 62%);
   animation: dash-aurora-1 22s ease-in-out infinite;
 }
 .dash-aurora::after {
-  width: 46vw; height: 46vw;
-  right: -6vw; top: 8vw;
-  background: radial-gradient(circle at 60% 40%, rgba(56, 130, 246, 0.18), transparent 60%);
+  width: 50vw; height: 50vw;
+  right: -4vw; top: 4vw;
+  background: radial-gradient(circle at 60% 40%, rgba(56, 130, 246, 0.42), transparent 62%);
   animation: dash-aurora-2 28s ease-in-out infinite;
 }
 .dash-aurora i {
   position: absolute;
-  width: 40vw; height: 40vw;
-  left: 30vw; bottom: -20vw;
+  width: 46vw; height: 46vw;
+  left: 26vw; bottom: -22vw;
   border-radius: 50%;
-  filter: blur(100px);
-  opacity: 0.4;
-  background: radial-gradient(circle at 50% 50%, rgba(120, 90, 255, 0.16), transparent 60%);
+  filter: blur(90px);
+  background: radial-gradient(circle at 50% 50%, rgba(130, 90, 255, 0.4), transparent 62%);
   animation: dash-aurora-3 32s ease-in-out infinite;
 }
 @keyframes dash-aurora-1 {
