@@ -15,6 +15,8 @@ import {
   PlusCircle,
   RefreshCw,
   Shield,
+  ShieldAlert,
+  ShieldCheck,
   Activity,
   AlertTriangle,
   ArrowLeft
@@ -33,6 +35,7 @@ export function WorkspacesView({
   previewWorkspaceFile,
   approvePath,
   selectWorkspace,
+  setWorkspaceTrust,
   loadWorkspaceRoots,
   previewMount,
   requestMount,
@@ -75,12 +78,17 @@ export function WorkspacesView({
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
   const executeAction = useReliableAction("WorkspacesView");
 
+  // Trusted Dev Mode State
+  const [showTrustModal, setShowTrustModal] = useState(false);
+  const [trustBusy, setTrustBusy] = useState(false);
+
   const activeName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const activePath = workspace.absolutePath || workspace.activePath || ".";
   const activeId = workspace.activeId || workspace.active_id;
   const activeWorkspaceInfo = workspace.workspaces?.find((item) => item.id === activeId || item.root === workspace.activePath) || {};
   const activeReadOnly = activeWorkspaceInfo.readOnly ?? activeWorkspaceInfo.read_only;
   const activeIndexed = activeWorkspaceInfo.indexed;
+  const activeTrusted = Boolean(activeWorkspaceInfo.trusted);
   
   const entries = workspaceBrowse?.entries || [];
   const currentRoot = workspaceBrowse?.root || {};
@@ -259,6 +267,37 @@ export function WorkspacesView({
     }
   }, [mountPlan, mountSuccess, showAddModal, requestMount]);
 
+  // --- Trusted Dev Mode ---
+  function handleTrustToggleClick() {
+    if (!activeId) return;
+    if (activeTrusted) {
+      revokeTrust();
+    } else {
+      setShowTrustModal(true);
+    }
+  }
+
+  async function confirmEnableTrust() {
+    if (!setWorkspaceTrust || !activeId) return;
+    setTrustBusy(true);
+    try {
+      await setWorkspaceTrust(activeId, true);
+      setShowTrustModal(false);
+    } finally {
+      setTrustBusy(false);
+    }
+  }
+
+  async function revokeTrust() {
+    if (!setWorkspaceTrust || !activeId) return;
+    setTrustBusy(true);
+    try {
+      await setWorkspaceTrust(activeId, false);
+    } finally {
+      setTrustBusy(false);
+    }
+  }
+
   async function copyMountVolume() {
     if (!mountPlan?.composeVolume) return;
     try {
@@ -309,6 +348,26 @@ export function WorkspacesView({
             <strong>{ragStats?.docs || 0}</strong>
             <small>Files Indexed</small>
           </div>
+          <button
+            type="button"
+            className="w2-header-stat"
+            style={{
+              cursor: activeId ? "pointer" : "default",
+              border: activeTrusted ? "1px solid var(--ras-warn, #d97706)" : "1px solid transparent",
+              background: "transparent",
+            }}
+            onClick={handleTrustToggleClick}
+            disabled={!activeId || trustBusy}
+            aria-pressed={activeTrusted}
+            aria-label={activeTrusted ? "Trusted Dev Mode is on for this workspace. Click to revoke." : "Trusted Dev Mode is off for this workspace. Click to enable."}
+            title={activeTrusted ? "Shell, file writes, and git run without per-action approval here. Click to revoke." : "Enable to let the agent run shell, write files, and use git here without per-action approval."}
+          >
+            <strong style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              {activeTrusted ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
+              {activeTrusted ? "On" : "Off"}
+            </strong>
+            <small>Trusted Dev Mode</small>
+          </button>
         </div>
       </div>
 
@@ -334,6 +393,9 @@ export function WorkspacesView({
                   <div key={rootId} className={`w2-tree-item ${active ? 'is-active' : ''}`} onClick={() => browseWorkspace(rootId)} style={{ fontWeight: active ? 600 : 400 }}>
                     <FolderOpen size={16} className="w2-tree-icon" />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
+                    {root.trusted && (
+                      <ShieldAlert size={13} aria-label="Trusted Dev Mode is on for this folder" title="Trusted Dev Mode is on for this folder" style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--ras-warn, #d97706)' }} />
+                    )}
                   </div>
                 );
               })}
@@ -667,6 +729,35 @@ export function WorkspacesView({
               </Button>
             </div>
           )}
+        </Modal.Body>
+      </Modal>
+
+      {/* Trusted Dev Mode confirm modal */}
+      <Modal show={showTrustModal} onHide={() => setShowTrustModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title className="d-flex align-items-center">
+            <ShieldAlert className="me-2 text-warning" size={22} />
+            Enable Trusted Dev Mode
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>
+            This grants Rasputin unattended shell execution, file writes, and local git
+            operations inside <strong>{activeName || "this workspace"}</strong> — no approval
+            click per action, the same way you'd use your own terminal in this folder.
+          </p>
+          <ul className="text-muted small" style={{ listStyle: "disc", paddingLeft: "1.25rem" }}>
+            <li>Every action is still fully logged in the audit trail.</li>
+            <li>Actions that leave this machine (like <code>git push</code>) still require approval.</li>
+            <li>Privacy Lock and remote model routing are unaffected.</li>
+            <li>You can revoke this in one click at any time.</li>
+          </ul>
+          <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+            <Button variant="light" onClick={() => setShowTrustModal(false)} disabled={trustBusy}>Cancel</Button>
+            <Button variant="warning" onClick={confirmEnableTrust} disabled={trustBusy}>
+              {trustBusy ? <Spinner size="sm" /> : "Enable Trusted Dev Mode"}
+            </Button>
+          </div>
         </Modal.Body>
       </Modal>
 

@@ -141,12 +141,13 @@ class McpLayer:
     async def fs_write(self, path, content, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_write")
         target = self._safe(path, workspace_path)
-        workspace.require_path_permission(target, "write")
+        item = workspace.require_path_permission(target, "write")
+        trusted = bool(item.get("trusted"))
         cfg = security.load()
-        if cfg.get("approval_required_file_write", True) and approval_id:
+        if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
             approvals.require_approved(approval_id, "fs_write")
             approved = True
-        if cfg.get("approval_required_file_write", True) and not approved:
+        if cfg.get("approval_required_file_write", True) and not trusted and not approved:
             preview = approvals.mutation_preview("fs_write", {
                 "path": str(target),
                 "bytes": len(str(content).encode("utf-8")),
@@ -157,7 +158,7 @@ class McpLayer:
                 return preview
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        audit.log("fs_write", {"path": str(target), "bytes": len(content.encode("utf-8"))})
+        audit.log("fs_write", {"path": str(target), "bytes": len(content.encode("utf-8")), "trusted": trusted})
         return {"path": str(target), "bytes": len(content.encode("utf-8"))}
 
     async def fs_list(self, path=".", workspace_path=None, _task_id=None, _tool_call_id=None):
@@ -243,12 +244,13 @@ class McpLayer:
     async def fs_mkdir(self, path, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_reorganize")
         target = self._safe(path, workspace_path)
-        workspace.require_path_permission(target, "reorganize")
+        item = workspace.require_path_permission(target, "reorganize")
+        trusted = bool(item.get("trusted"))
         cfg = security.load()
-        if cfg.get("approval_required_file_move", True) and approval_id:
+        if cfg.get("approval_required_file_move", True) and not trusted and approval_id:
             approvals.require_approved(approval_id, "fs_mkdir")
             approved = True
-        if cfg.get("approval_required_file_move", True) and not approved:
+        if cfg.get("approval_required_file_move", True) and not trusted and not approved:
             preview = approvals.mutation_preview("fs_mkdir", {
                 "path": str(target),
                 "workspace": workspace_path or workspace.get_active()["active_path"],
@@ -257,24 +259,25 @@ class McpLayer:
             if not approved:
                 return preview
         target.mkdir(parents=True, exist_ok=True)
-        audit.log("fs_mkdir", {"path": str(target)})
+        audit.log("fs_mkdir", {"path": str(target), "trusted": trusted})
         return {"path": str(target)}
 
     async def fs_move(self, source, target, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_reorganize")
         src = self._safe(source, workspace_path)
         dst = self._safe(target, workspace_path)
-        workspace.require_path_permission(src, "reorganize")
-        workspace.require_path_permission(dst, "reorganize")
+        src_item = workspace.require_path_permission(src, "reorganize")
+        dst_item = workspace.require_path_permission(dst, "reorganize")
+        trusted = bool(src_item.get("trusted")) and bool(dst_item.get("trusted"))
         if not src.exists():
             raise ValueError("source missing")
         if dst.exists():
             raise ValueError("target already exists")
         cfg = security.load()
-        if cfg.get("approval_required_file_move", True) and approval_id:
+        if cfg.get("approval_required_file_move", True) and not trusted and approval_id:
             approvals.require_approved(approval_id, "fs_move")
             approved = True
-        if cfg.get("approval_required_file_move", True) and not approved:
+        if cfg.get("approval_required_file_move", True) and not trusted and not approved:
             preview = approvals.mutation_preview("fs_move", {
                 "source": str(src),
                 "target": str(dst),
@@ -286,7 +289,7 @@ class McpLayer:
                 return preview
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
-        audit.log("fs_move", {"source": str(src), "target": str(dst)})
+        audit.log("fs_move", {"source": str(src), "target": str(dst), "trusted": trusted})
         return {"source": str(src), "target": str(dst)}
 
     async def web_search(self, query, max_results=5, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):

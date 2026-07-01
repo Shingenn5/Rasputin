@@ -1469,6 +1469,58 @@ class BackendSmokeTests(unittest.TestCase):
             reply = telegram.handle_command("/status", "999")
             self.assertIn("not authorized", reply)
 
+    def testTrustedWorkspaceBypassesFileWriteApproval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+                "path": tmp,
+                "name": "Trust Smoke Workspace",
+                "readOnly": False,
+            }))
+            workspace_id = approved["id"]
+            self.assertFalse(approved["trusted"])
+            try:
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    preview = asyncio.run(McpLayer().call_tool("fs_write", {
+                        "path": "untrusted.txt",
+                        "content": "should require approval",
+                        "workspace_path": tmp,
+                    }))
+                self.assertTrue(preview["preview"])
+                self.assertIn("approval_id", preview)
+                self.assertFalse((Path(tmp) / "untrusted.txt").exists())
+
+                trusted = self.assertOk(self.client.post("/api/workspace/trust", json={
+                    "workspaceId": workspace_id,
+                    "trusted": True,
+                }))
+                self.assertTrue(trusted["trusted"])
+
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    result = asyncio.run(McpLayer().call_tool("fs_write", {
+                        "path": "trusted.txt",
+                        "content": "no approval needed",
+                        "workspace_path": tmp,
+                    }))
+                self.assertNotIn("approval_id", result)
+                self.assertEqual((Path(tmp) / "trusted.txt").read_text(encoding="utf-8"), "no approval needed")
+
+                revoked = self.assertOk(self.client.post("/api/workspace/trust", json={
+                    "workspaceId": workspace_id,
+                    "trusted": False,
+                }))
+                self.assertFalse(revoked["trusted"])
+
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    preview_again = asyncio.run(McpLayer().call_tool("fs_write", {
+                        "path": "post-revoke.txt",
+                        "content": "should require approval again",
+                        "workspace_path": tmp,
+                    }))
+                self.assertIn("approval_id", preview_again)
+                self.assertFalse((Path(tmp) / "post-revoke.txt").exists())
+            finally:
+                self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
+
     def testSensitiveRoutesRespectDisabledPermissions(self):
         def deny_file_read(flag):
             if flag == "allow_file_read":

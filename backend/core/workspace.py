@@ -35,6 +35,7 @@ def _blank():
                 "permission_profile": {"read": True, "write": True, "reorganize": False},
                 "indexed": False,
                 "last_used": None,
+                "trusted": False,
             }
         ],
     }
@@ -121,6 +122,7 @@ def _public_item(item):
         "requires_restart": bool(item.get("requires_restart", False)),
         "indexed": bool(item.get("indexed", False)),
         "last_used": item.get("last_used"),
+        "trusted": bool(item.get("trusted", False)),
     }
 
 
@@ -196,6 +198,7 @@ def _root_entry(root_id, name, path, mounted=True):
         "read_only": False,
         "requires_restart": False,
         "indexed": False,
+        "trusted": False,
     }
 
 
@@ -219,6 +222,7 @@ def approved_roots():
             "read_only": public["read_only"],
             "requires_restart": public["requires_restart"],
             "indexed": public["indexed"],
+            "trusted": public["trusted"],
         })
     workspace_dir = _workspace_dir()
     if workspace_dir.exists() and workspace_dir not in seen:
@@ -723,6 +727,7 @@ def add(path=".", name=None, permission_profile=None):
         "permission_profile": permission_profile or _read_only_profile(),
         "indexed": False,
         "last_used": None,
+        "trusted": False,
     }
     data.setdefault("workspaces", []).append(item)
     _save(data)
@@ -762,6 +767,18 @@ def mark_indexed(workspace_ref=None, indexed=True):
     item["indexed"] = bool(indexed)
     _save(data)
     return _public_item(item)
+
+
+def set_trusted(workspace_ref, trusted=True):
+    data, item = _find(workspace_ref)
+    item["trusted"] = bool(trusted)
+    _save(data)
+    return _public_item(item)
+
+
+def is_trusted(path):
+    item = workspace_for_path(_root_from_value(path))
+    return bool(item and item.get("trusted"))
 
 
 def _safe_child(target):

@@ -171,6 +171,12 @@ export function App() {
   }, [models, selectedModel, testingMode]);
 
   const activeWorkspaceName = workspace.activeName || displayWorkspaceName(workspace.activePath);
+  const activeWorkspaceEntry = (workspace.workspaces || []).find(
+    (item) => item.id === (workspace.activeId || workspace.active_id)
+  );
+  const trustedWorkspace = activeWorkspaceEntry?.trusted
+    ? { active: true, id: activeWorkspaceEntry.id, name: activeWorkspaceEntry.displayName || activeWorkspaceEntry.name || activeWorkspaceName }
+    : null;
   const healthy = isModelHealthy(selectedModelObject);
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
@@ -956,6 +962,21 @@ export function App() {
     }
   }
 
+  async function setWorkspaceTrust(workspaceId, trusted) {
+    try {
+      await postJson("/api/workspace/trust", { workspaceId, trusted });
+      setWorkspace(await api("/api/workspace"));
+      await loadWorkspaceRoots(workspace.activePath);
+      setGlobalStatus(
+        trusted
+          ? "Trusted Dev Mode enabled. Shell, file writes, and git run without per-action approval in this workspace."
+          : "Trusted Dev Mode revoked for this workspace."
+      );
+    } catch (error) {
+      setGlobalStatus(error.message);
+    }
+  }
+
   async function previewMount(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1446,6 +1467,8 @@ export function App() {
     <AppShell
       globalStatus={globalStatus}
       clearGlobalStatus={() => setGlobalStatus("")}
+      trustedWorkspace={trustedWorkspace}
+      onRevokeTrust={() => trustedWorkspace && setWorkspaceTrust(trustedWorkspace.id, false)}
       sidebarProps={{
         collapsed: sidebarCollapsed,
         toggleSidebar,
@@ -1532,6 +1555,7 @@ export function App() {
         previewWorkspaceFile={previewWorkspaceFile}
         approvePath={approvePath}
         selectWorkspace={selectWorkspace}
+        setWorkspaceTrust={setWorkspaceTrust}
         models={models}
         modeModelOverrides={modeModelOverrides}
         setModeModelOverride={setModeModelOverride}

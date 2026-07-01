@@ -400,6 +400,10 @@ class WorkspaceIn(CamelModel):
 class WorkspaceRemoveIn(CamelModel):
     workspace_id: str
 
+class WorkspaceTrustIn(CamelModel):
+    workspace_id: str
+    trusted: bool
+
 class WorkspaceBrowseIn(CamelModel):
     root_id: str | None = None
     path: str | None = None
@@ -514,6 +518,14 @@ async def workspace_add(req: WorkspaceIn, _user=Depends(current_user)):
 
 async def workspace_remove(req: WorkspaceRemoveIn, _user=Depends(current_user)):
     return ok(workspace.remove(req.workspace_id))
+
+@workspace_router.post("/workspace/trust")
+
+async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(current_user)):
+    security.require("allow_file_write")
+    item = workspace.set_trusted(req.workspace_id, req.trusted)
+    audit.log("workspace_trust_changed", {"workspace_id": req.workspace_id, "trusted": req.trusted})
+    return ok(item)
 
 @workspace_router.post("/workspace/select")
 
