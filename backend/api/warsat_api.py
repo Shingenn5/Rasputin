@@ -185,6 +185,17 @@ class TrialRoutingIn(CamelModel):
     output_id: str
     mode: str
 
+class CodingTrialIn(CamelModel):
+    objective: str
+    code: str | None = ""
+    tests: str | None = ""
+    expect: list[str] | None = None
+    model_keys: list[str] | None = None
+
+class TrialPinRoleIn(CamelModel):
+    output_id: str
+    role: str = "coder"
+
 class ExperimentIn(CamelModel):
     name: str
     type: str = "model"
@@ -226,6 +237,13 @@ async def trials_get(_user=Depends(current_user)):
 async def trials_compare(req: TrialCompareIn, _user=Depends(current_user)):
     return ok(await trials.compare(req.prompt, req.model_keys or []))
 
+@trials_router.post("/coding-compare")
+
+async def trials_coding_compare(req: CodingTrialIn, _user=Depends(current_user)):
+    return ok(await trials.coding_compare(
+        req.objective, req.code or "", req.tests or "", req.expect, req.model_keys or [],
+    ))
+
 @trials_router.post("/{run_id}/reveal")
 
 async def trials_reveal(run_id: str, _user=Depends(current_user)):
@@ -237,6 +255,11 @@ async def trials_routing(run_id: str, req: TrialRoutingIn, _user=Depends(current
     result = trials.save_routing(run_id, req.output_id, req.mode)
     audit.log("trial_route_saved", result["route"])
     return ok(result)
+
+@trials_router.post("/{run_id}/pin-role")
+
+async def trials_pin_role(run_id: str, req: TrialPinRoleIn, _user=Depends(current_user)):
+    return ok(trials.pin_role(run_id, req.output_id, req.role))
 
 
 # ── Trials V3: Experiments ──

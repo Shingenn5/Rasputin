@@ -30,7 +30,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [ ] Parse pass/fail from test command output (Stage 6)
 - [ ] Bounded retry count distinct from tool-call ceiling (Stage 6)
 - [ ] Confirm zero-cost/offline path once local model routed (Stage 8)
-- [ ] Confirm role-pin takes effect immediately (Stage 9)
+- [x] Confirm role-pin takes effect immediately (Stage 9) — done 2026-07-01
 
 ### Medium
 - [ ] Consolidate Recent Chats into the sidebar's single scroll region instead of its own nested scrollbar (UI Bug Fix 2)
@@ -48,8 +48,8 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [ ] Feed test failures back into next iteration (Stage 6)
 - [x] Expose dedicated code-structure query tool to `code` mode with citations (Stage 7) — done 2026-07-01
 - [x] One-click route `code` mode to local model (Stage 8) — done 2026-07-01 (zero clicks: coder-role auto-suggestion + existing role routing)
-- [ ] Specialize Trials for coding subtasks (Stage 9)
-- [ ] Let operator pin trial winner to `coder` role (Stage 9)
+- [x] Specialize Trials for coding subtasks (Stage 9) — done 2026-07-01
+- [x] Let operator pin trial winner to `coder` role (Stage 9) — done 2026-07-01
 
 ### Hard
 - [ ] Thread streamed deltas through `_chat()`/`governed_chat()` without breaking tool-loop accumulation (Stage 4b)
@@ -58,7 +58,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Add dedicated relation-query verbs ("what calls X" / "where used" / "what imports") (Stage 7) — done 2026-07-01
 - [x] Extend Warsat fit-scoring to flag coding-capable local models for `coder` role (Stage 8) — done 2026-07-01
 - [ ] Test: local-routed `code` mode completes a real task **(env-blocked — needs a deployed local model)** (Stage 8)
-- [ ] Blind-compare models on a real coding subtask (Stage 9)
+- [x] Blind-compare models on a real coding subtask (Stage 9) — done 2026-07-01
 
 ### Very Hard
 - [ ] Add real provider-level token streaming to `backend/models/providers.py` for OpenAI/Anthropic/Gemini/local-OpenAI-compatible adapters — **currently hardcoded `"stream": False`, zero streaming exists at the provider layer today** (Stage 4b)
@@ -281,12 +281,12 @@ Branch: extends existing Trials feature (`docs/STAGED_IMPLEMENTATION_BACKLOG.md`
 
 **Verification note:** `backend/trials/models.py` already defines a `"model"` experiment type and includes `"code"` in `ROUTABLE_MODES` (`:50`) — the general Trials scaffold this stage extends already exists and already knows about `code` mode. No coding-subtask-specific blind-comparison or pin-to-`coder`-role flow exists yet.
 
-- [ ] Specialize existing Trials feature for coding subtasks specifically (not just chat) — **(Medium)**
-- [ ] Blind-compare models on an actual coding subtask — **(Hard)**
-- [ ] Let operator pin the winning model to the `coder` role (role plumbing already exists per Stage 8 note) — **(Medium)**
-- [ ] Confirm role change takes effect immediately for subsequent `code` mode tasks — **(Easy)**
-- [ ] Test: trial results are reproducible and pinning takes effect without restart — **(Medium)**
-- [ ] Validation: backend smoke suite passes, frontend build, repo safety check — **(Easy)**
+- [x] Specialize Trials for coding subtasks — done 2026-07-01: `backend/trials/coding.py` `coding_compare()` builds a code-oriented prompt (objective + optional starting code), extracts the fenced candidate from each response, and scores objectively: syntax check (`ast.parse`), expected-content hits, and real test execution (operator asserts run against each candidate in an isolated `python -I` subprocess, gated behind the existing `allow_shell_execution` permission — static scoring otherwise)
+- [x] Blind-compare on an actual coding subtask — done: model identity hidden behind A-D labels until reveal (reuses the legacy blind-run store, so existing reveal flow applies); per-label objective scores are visible while blind, plus a `suggestedLabel` for the top score. `POST /api/trials/coding-compare` + a new "Coding Trial" tab in TrialsView (form → blind scored outputs → reveal → pin)
+- [x] Pin winner to `coder` role — done: `POST /api/trials/{run_id}/pin-role` → new `registry.set_role()` (registry-level, unlike the preference-only `save_routing`); requires reveal first, records previous role, audited
+- [x] Role change takes effect immediately — verified in test: after pin, `key_for_role("coder")` resolves to the pinned model with no restart, which is exactly what code mode's execution phase calls
+- [x] Test: `testCodingTrialBlindCompareScoresAndPinsCoderRole` — scripted two-model trial (good vs syntactically-broken candidate): correct scoring, blind-until-reveal, reproducible scores across reruns, pin-before-reveal rejected, immediate role routing
+- [x] Validation: backend smoke 57/57, frontend build, repo safety check passed (2026-07-01)
 
 **Definition of done:** operator can, from inside Rasputin, decide "which model is actually best at fixing bugs in this codebase" with evidence, and have that decision take effect immediately.
 

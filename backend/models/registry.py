@@ -393,6 +393,25 @@ def models_url(model):
     return base + "/models"
 
 
+def set_role(key, role):
+    """Reassign an existing model's registry role in place. Unlike upsert()
+    this touches nothing else, so it can't disturb secrets/base_url/runtime
+    normalization on a model that's already registered and healthy."""
+    security.require("allow_model_registry_edit")
+    role = str(role or "").strip().lower()
+    if role not in MODEL_ROLES:
+        raise AppError("model_role_invalid", f"Role must be one of: {', '.join(MODEL_ROLES)}.", 400)
+    data = _load()
+    for model in data["models"]:
+        if model.get("key") == key:
+            previous = model.get("role")
+            model["role"] = role
+            _save(data)
+            audit.log("model_role_set", {"key": key, "role": role, "previous": previous})
+            return {**model, "previous_role": previous}
+    raise AppError("model_missing", f"Model '{key}' is not registered.", 404)
+
+
 def upsert(model):
     security.require("allow_model_registry_edit")
     model = _normalize_model_payload(model)

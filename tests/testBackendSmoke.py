@@ -1185,6 +1185,94 @@ class BackendSmokeTests(unittest.TestCase):
             }))
         self.assertEqual(explicit["role"], "helper")
 
+    def testCodingTrialBlindCompareScoresAndPinsCoderRole(self):
+        from backend.models import registry as model_registry
+
+        flags = {"allow_shell_execution": True, "allow_model_registry_edit": True}
+
+        async def scripted_chat(model_key, messages, temperature=0.2, tools=None):
+            prompt = messages[-1]["content"]
+            self.assertIn("blind coding trial", prompt)
+            if model_key == "trial-coder-good":
+                return "Here you go:\n```python\ndef add(a, b):\n    return a + b\n```"
+            return "```python\ndef add(a, b:\n    return a - b\n```"
+
+        with patch("backend.core.security.load", return_value=flags):
+            # Clear coder-role residue left in the persistent registry by other
+            # smoke tests, so key_for_role("coder") resolution is deterministic.
+            for model in list(model_registry.enabled_models()):
+                if model.get("role") == "coder" and model.get("key", "").startswith("smoke-"):
+                    model_registry.delete_model(model["key"])
+            for key, name in [("trial-coder-good", "Trial Good"), ("trial-coder-bad", "Trial Bad")]:
+                model_registry.upsert({
+                    "key": key,
+                    "name": name,
+                    "provider": "openai-compatible",
+                    "base_url": "http://127.0.0.1:9991/v1",
+                    "model": key,
+                    "role": "helper",
+                })
+        try:
+            payload = {
+                "objective": "Implement add(a, b) returning the sum.",
+                "tests": "assert add(2, 3) == 5\nassert add(-1, 1) == 0",
+                "modelKeys": ["trial-coder-good", "trial-coder-bad"],
+            }
+            with patch("backend.trials.coding._chat", side_effect=scripted_chat), \
+                 patch("backend.core.security.load", return_value=flags):
+                run = self.assertOk(self.client.post("/api/trials/coding-compare", json=payload))
+                rerun = self.assertOk(self.client.post("/api/trials/coding-compare", json=payload))
+
+            # Blind until reveal: labels + scores visible, model identity hidden.
+            self.assertEqual(run["kind"], "coding")
+            self.assertTrue(run["testsExecuted"])
+            self.assertEqual(len(run["outputs"]), 2)
+            for output in run["outputs"]:
+                self.assertNotIn("modelKey", output)
+            good = next(o for o in run["outputs"] if o["label"] == "A")
+            bad = next(o for o in run["outputs"] if o["label"] == "B")
+            self.assertTrue(good["scoring"]["syntaxOk"])
+            self.assertTrue(good["scoring"]["testsRan"])
+            self.assertTrue(good["scoring"]["testsPassed"])
+            self.assertFalse(bad["scoring"]["syntaxOk"])
+            self.assertFalse(bad["scoring"]["testsPassed"])
+            self.assertEqual(run["suggestedLabel"], "A")
+
+            # Reproducible: identical scripted outputs produce identical scoring.
+            self.assertEqual(rerun["suggestedLabel"], "A")
+            for first, second in zip(run["outputs"], rerun["outputs"]):
+                self.assertEqual(first["scoring"]["score"], second["scoring"]["score"])
+
+            # Pinning before reveal is rejected.
+            early = self.client.post(f"/api/trials/{run['id']}/pin-role", json={"outputId": "A"})
+            self.assertEqual(early.status_code, 400)
+
+            revealed = self.assertOk(self.client.post(f"/api/trials/{run['id']}/reveal"))
+            self.assertEqual(
+                next(o for o in revealed["outputs"] if o["label"] == "A")["modelKey"],
+                "trial-coder-good",
+            )
+
+            with patch("backend.core.security.load", return_value=flags):
+                pinned = self.assertOk(self.client.post(
+                    f"/api/trials/{run['id']}/pin-role", json={"outputId": "A", "role": "coder"},
+                ))
+            self.assertEqual(pinned["route"]["role"], "coder")
+            self.assertEqual(pinned["route"]["modelKey"], "trial-coder-good")
+            self.assertEqual(pinned["route"]["previousRole"], "helper")
+
+            # Effective immediately, no restart: the registry role changed and
+            # code mode's role lookup now resolves to the pinned model.
+            self.assertEqual(model_registry.get_model("trial-coder-good")["role"], "coder")
+            self.assertEqual(model_registry.key_for_role("coder"), "trial-coder-good")
+            self.assertEqual(agent.AgentHub().execution_role(
+                agent.AgentTask("fix bug", "dry-run", "general", workspace_path=".", mode="code")
+            ), "coder")
+        finally:
+            with patch("backend.core.security.load", return_value=flags):
+                model_registry.delete_model("trial-coder-good")
+                model_registry.delete_model("trial-coder-bad")
+
     def testWarsatHardwareProbeReportsReadinessWithoutMutatingDocker(self):
         docker_outputs = {
             ("docker", "version", "--format", "{{json .}}"): {

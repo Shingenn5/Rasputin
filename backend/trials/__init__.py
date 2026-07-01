@@ -41,5 +41,8 @@ from .reports import generate_report
 # Legacy compat re-exports
 from .legacy import runs, compare, reveal, save_routing
 
+# Coding-subtask trials (blind compare with objective scoring + role pinning)
+from .coding import coding_compare, pin_role
+
 # Initialize database on import
 init_db()
