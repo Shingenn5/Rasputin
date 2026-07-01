@@ -1,4 +1,4 @@
-# Welcome to Rasputin 🧠
+# Welcome to Rasputin
 
 Welcome to the team! This document is designed to get you up to speed on the **Rasputin** architecture, the **WarSat** deployment layer, and how to start shipping code during your first week.
 
