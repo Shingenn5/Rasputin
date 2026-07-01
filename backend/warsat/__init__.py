@@ -891,7 +891,13 @@ def make_plan(payload):
     protocol = get_protocol(payload.get("protocolId") or payload.get("protocol_id"))
     model_ref = str(payload.get("modelRef") or payload.get("model_ref") or "").strip()
     model_path = str(payload.get("modelPath") or payload.get("model_path") or "").strip()
-    role = str(payload.get("role") or protocol.get("defaultRole") or "helper")
+    role = str(payload.get("role") or "").strip()
+    if not role:
+        suggested = model_registry.suggest_role(
+            payload.get("modelRef") or payload.get("model_ref"),
+            payload.get("modelPath") or payload.get("model_path"),
+        )
+        role = suggested if suggested != "helper" else str(protocol.get("defaultRole") or "helper")
     strength = _safe_strength(payload.get("strengthProfile") or payload.get("strength_profile"))
     host_port = int(payload.get("hostPort") or payload.get("host_port") or protocol["defaultHostPort"])
     container_name = _slug(payload.get("containerName") or f"rasputin-{protocol['id']}-{host_port}")

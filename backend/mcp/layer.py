@@ -118,6 +118,7 @@ class McpLayer:
             "web_search": self.web_search,
             "rag_search": self.rag_search,
             "graph_search": self.graph_search,
+            "graph_relations": self.graph_relations,
             "workspace_browse": self.workspace_browse,
             "file_preview": self.file_preview,
             "workspace_mutation_preview": self.workspace_mutation_preview,
@@ -456,6 +457,12 @@ class McpLayer:
         if not security.load().get("allow_file_read", False):
             return {"query": query, "nodes": [], "edges": [], "blocked": True}
         return await asyncio.to_thread(graphify.search, query, limit)
+
+    async def graph_relations(self, entity, relation=None, direction="both", limit=25, _task_id=None, _tool_call_id=None):
+        if not security.load().get("allow_file_read", False):
+            return {"entity": entity, "relation": relation or "any", "direction": direction,
+                    "matched_nodes": [], "edges": [], "count": 0, "blocked": True}
+        return await asyncio.to_thread(graphify.query_relations, entity, relation, direction, limit)
 
     async def archive_expand(self, archive_id, _task_id=None, _tool_call_id=None):
         with store._lock, store.connect() as conn:

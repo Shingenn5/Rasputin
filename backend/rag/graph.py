@@ -365,6 +365,83 @@ def search(query, limit=12):
     return {"query": query, "nodes": nodes[:limit], "edges": edges[:limit]}
 
 
+RELATION_TYPES = {"calls", "imports", "defines", "references", "mentions", "related_to", "located_in"}
+
+
+def query_relations(entity, relation=None, direction="both", limit=25):
+    """Answer structural queries ("what calls X", "what does Y import") by
+    traversing typed edges, instead of the keyword-overlap scoring search()
+    uses. direction is relative to the entity: "out" = entity is the edge
+    source, "in" = entity is the edge target."""
+    graph = _load()
+    needle = str(entity or "").strip().lower()
+    if needle.endswith("()"):
+        needle = needle[:-2]
+    rel = str(relation or "").strip().lower()
+    if rel in {"", "any", "all"}:
+        rel = None
+    if direction not in {"in", "out", "both"}:
+        direction = "both"
+    empty = {"entity": entity, "relation": rel or "any", "direction": direction,
+             "matched_nodes": [], "edges": [], "count": 0}
+    if not needle:
+        return empty
+
+    def matches(name, kind):
+        raw = str(name or "").lower()
+        base = raw[:-2] if raw.endswith("()") else raw
+        if base == needle:
+            return True
+        # Paths also match on basename so "engine.py" finds "src/engine.py".
+        if kind in {"file", "folder", "document"}:
+            return base.split("/")[-1] == needle or base.endswith("/" + needle)
+        return False
+
+    matched = [n for n in graph.get("nodes", []) if matches(n.get("name"), n.get("kind"))]
+    out_edges = []
+    for edge in graph.get("edges", []):
+        e_rel = edge.get("relation") or edge.get("type")
+        if rel and e_rel != rel:
+            continue
+        src_hit = matches(edge.get("source"), edge.get("source_kind"))
+        tgt_hit = matches(edge.get("target"), edge.get("target_kind"))
+        if direction == "out" and not src_hit:
+            continue
+        if direction == "in" and not tgt_hit:
+            continue
+        if not (src_hit or tgt_hit):
+            continue
+        out_edges.append({
+            "source": edge.get("source"),
+            "source_kind": edge.get("source_kind"),
+            "relation": e_rel,
+            "target": edge.get("target"),
+            "target_kind": edge.get("target_kind"),
+            "direction": "out" if src_hit else "in",
+            "weight": edge.get("weight", 1),
+            "confidence": edge.get("confidence"),
+            "why": edge.get("why"),
+            "evidence": (edge.get("evidence") or [])[:3],
+        })
+    out_edges.sort(key=lambda e: e.get("weight", 0), reverse=True)
+    try:
+        cap = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        cap = 25
+    out_edges = out_edges[:cap]
+    return {
+        "entity": entity,
+        "relation": rel or "any",
+        "direction": direction,
+        "matched_nodes": [
+            {"id": n["id"], "name": n["name"], "kind": n["kind"], "weight": n.get("weight", 1)}
+            for n in matched[:10]
+        ],
+        "edges": out_edges,
+        "count": len(out_edges),
+    }
+
+
 def reset():
     _save(_blank())
     return stats()

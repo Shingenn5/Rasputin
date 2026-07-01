@@ -259,7 +259,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("groups", catalog)
         self.assertIn("tools", catalog)
         ids = {item["id"] for item in catalog["tools"]}
-        for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "fs_search", "workspace_mutation_preview", "memory_search", "model_health", "fs_write", "web_search"]:
+        for tool_id in ["rag_search", "graph_search", "graph_relations", "workspace_browse", "file_preview", "fs_search", "workspace_mutation_preview", "memory_search", "model_health", "fs_write", "web_search"]:
             self.assertIn(tool_id, ids)
         shell = next(item for item in catalog["tools"] if item["id"] == "shell_exec")
         self.assertTrue(shell["implemented"])
@@ -753,6 +753,62 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(compact[0]["evidence"][0]["path"])
         self.assertLessEqual(len(compact[0]["evidence"][0].get("snippet", "")), 260)
 
+    def testGraphRelationsAnswersStructuralQueries(self):
+        target_dir = main.ROOT / "workspace" / f"graph-rel-{runtime_store.new_id('graph')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "engine.py").write_text(
+            "\n".join([
+                "import json",
+                "class WarmindNode:",
+                "    def transmit_signal(self):",
+                "        return parse_signal('warsat')",
+                "def parse_signal(value):",
+                "    return value",
+            ]),
+            encoding="utf-8",
+        )
+        rel_path = str(target_dir.relative_to(main.ROOT)).replace("\\", "/")
+
+        self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": rel_path,
+            "name": "Graph Relations Smoke",
+            "readOnly": True,
+        }))
+        self.assertOk(self.client.post("/api/workspace/select", json={"path": rel_path}))
+        self.assertOk(self.client.post("/api/rag/ingest", json={"path": rel_path, "label": "Graph Relations Smoke"}))
+        self.assertOk(self.client.post("/api/graph/build", json={"path": rel_path}))
+
+        # "What calls parse_signal?" — traversal along calls edges into the function.
+        calls = self.assertOk(self.client.post("/api/graph/relations", json={
+            "entity": "parse_signal", "relation": "calls", "direction": "in",
+        }))
+        self.assertGreater(calls["count"], 0)
+        self.assertTrue(all(edge["relation"] == "calls" for edge in calls["edges"]))
+        self.assertTrue(any(edge["source"].endswith("engine.py") for edge in calls["edges"]))
+        evidence = calls["edges"][0]["evidence"][0]
+        self.assertTrue(evidence["citation"].get("path"))
+
+        # "What does engine.py import?" — outgoing imports edges, basename match.
+        imports = self.assertOk(self.client.post("/api/graph/relations", json={
+            "entity": "engine.py", "relation": "imports", "direction": "out",
+        }))
+        self.assertTrue(any(edge["target"] == "json" for edge in imports["edges"]))
+        self.assertTrue(all(edge["direction"] == "out" for edge in imports["edges"]))
+
+        # "Where is WarmindNode used?" — any relation pointing at the class.
+        used = self.assertOk(self.client.post("/api/graph/relations", json={
+            "entity": "WarmindNode", "direction": "in",
+        }))
+        self.assertTrue(any(edge["relation"] == "defines" for edge in used["edges"]))
+        self.assertTrue(used["matchedNodes"])
+
+        # Unknown entity returns an empty result, not an error.
+        missing = self.assertOk(self.client.post("/api/graph/relations", json={
+            "entity": "does_not_exist_anywhere_zz",
+        }))
+        self.assertEqual(missing["count"], 0)
+        self.assertEqual(missing["edges"], [])
+
     def testArchiveSessionsSaveAndExportWithPermission(self):
         title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"
         saved = self.assertOk(self.client.post("/api/archive/sessions", json={
@@ -1082,6 +1138,52 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 404)
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "warsatProtocolMissing")
+
+    def testCodingModelsSuggestCoderRole(self):
+        from backend.models import registry as model_registry
+
+        # Coding-tuned model families flag for the coder role...
+        for name in [
+            "Qwen2.5-Coder-7B-Instruct-Q5_K_M",
+            "deepseek-coder-6.7b-instruct",
+            "CodeLlama-13B-Instruct",
+            "starcoder2-15b",
+            "codestral-22b-v0.1",
+            "granite-code-8b",
+        ]:
+            self.assertEqual(model_registry.suggest_role(name), "coder", name)
+
+        # ...general chat models stay on the conservative helper default,
+        # including names where "code" only appears inside another word.
+        for name in [
+            "Llama-3.1-8B-Instruct",
+            "mistral-7b-instruct-v0.3",
+            "nomic-embed-text-v1.5",
+            "encoder-decoder-base",
+        ]:
+            self.assertEqual(model_registry.suggest_role(name), "helper", name)
+
+        # A Warsat plan for a coding model suggests coder when no role is given.
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/qwen2.5-coder-7b-q5.gguf",
+                "hostPort": 8093,
+                "strengthProfile": "small",
+            }))
+        self.assertEqual(plan["role"], "coder")
+        self.assertEqual(plan["expectedModelRegistryEntry"]["role"], "coder")
+
+        # An explicit role still wins over the suggestion.
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
+            explicit = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/qwen2.5-coder-7b-q5.gguf",
+                "hostPort": 8094,
+                "role": "helper",
+                "strengthProfile": "small",
+            }))
+        self.assertEqual(explicit["role"], "helper")
 
     def testWarsatHardwareProbeReportsReadinessWithoutMutatingDocker(self):
         docker_outputs = {

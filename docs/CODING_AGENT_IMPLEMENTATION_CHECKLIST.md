@@ -46,8 +46,8 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [ ] Per-workspace test/build/lint command settings (Stage 6)
 - [ ] Run configured test command after an edit (Stage 6)
 - [ ] Feed test failures back into next iteration (Stage 6)
-- [ ] Expose dedicated code-structure query tool to `code` mode with citations (Stage 7)
-- [ ] One-click route `code` mode to local model (Stage 8)
+- [x] Expose dedicated code-structure query tool to `code` mode with citations (Stage 7) — done 2026-07-01
+- [x] One-click route `code` mode to local model (Stage 8) — done 2026-07-01 (zero clicks: coder-role auto-suggestion + existing role routing)
 - [ ] Specialize Trials for coding subtasks (Stage 9)
 - [ ] Let operator pin trial winner to `coder` role (Stage 9)
 
@@ -55,8 +55,8 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [ ] Thread streamed deltas through `_chat()`/`governed_chat()` without breaking tool-loop accumulation (Stage 4b)
 - [ ] Stream model output tokens to UI end-to-end (Stage 4b, depends on provider streaming below)
 - [ ] Test: reconnect/resume mid-stream doesn't duplicate/drop events (Stage 4b)
-- [ ] Add dedicated relation-query verbs ("what calls X" / "where used" / "what imports") (Stage 7)
-- [ ] Extend Warsat fit-scoring to flag coding-capable local models for `coder` role (Stage 8) — no scoring logic exists at all today
+- [x] Add dedicated relation-query verbs ("what calls X" / "where used" / "what imports") (Stage 7) — done 2026-07-01
+- [x] Extend Warsat fit-scoring to flag coding-capable local models for `coder` role (Stage 8) — done 2026-07-01
 - [ ] Test: local-routed `code` mode completes a real task **(env-blocked — needs a deployed local model)** (Stage 8)
 - [ ] Blind-compare models on a real coding subtask (Stage 9)
 
@@ -249,11 +249,11 @@ What's actually still missing (the real remaining gap):
 - [x] ~~Extend graph ingestion with typed function/class/module nodes~~ — already exists
 - [x] ~~Extend graph ingestion with typed imports/calls/defines edges~~ — already exists
 - [ ] Replace regex-based entity/call extraction with AST-based parsing — **(Very Hard)**. Current `_call_edges` (`graph.py:209-217`) treats *any* `identifier(` as a "calls" edge, including Python keywords/builtins that happen to precede `(` in unrelated contexts — this makes the call graph noisy/low-precision, not the accurate structural graph Stage 7 is meant to deliver.
-- [ ] Add dedicated relation-query verbs ("what calls X", "where is X used", "what does this file import") distinct from the current generic fuzzy `search()` (`graph.py:340-365`, which scores by keyword overlap, not by graph traversal along a specific edge type) — **(Hard)**
-- [ ] Expose a dedicated code-structure query tool (not just generic `graph_search`) to `code` mode with citations, backed by the relation-query verbs above — **(Medium)**
-- [ ] Keep workspace-scoped and local-only (already true — no change needed, confirmed via `rag.chunks_for_path(path)` scoping)
-- [ ] Test: structural queries ("what calls X") return correct results without a full re-scan — **(Medium)**
-- [ ] Validation: backend smoke suite passes, repo safety check — **(Easy)**
+- [x] Add dedicated relation-query verbs — done 2026-07-01: `graph.query_relations(entity, relation, direction)` traverses typed edges (direction-aware, basename matching for paths) instead of keyword scoring; "what calls X" = `relation=calls, direction=in`, "what does Y import" = `relation=imports, direction=out`
+- [x] Expose a dedicated code-structure query tool — done 2026-07-01: `graph_relations` tool (in `TOOL_DEFINITIONS`, so offered to the model in every tool-loop phase) + `POST /api/graph/relations`, evidence/citations on every edge
+- [x] Keep workspace-scoped and local-only (already true — confirmed via `rag.chunks_for_path(path)` scoping)
+- [x] Test: structural queries return correct results — `testGraphRelationsAnswersStructuralQueries` covers what-calls/what-imports/where-used/unknown-entity against a built fixture graph
+- [x] Validation: backend smoke 56/56, repo safety check passed (2026-07-01)
 
 **Definition of done:** the agent (and operator, via chat) can answer structural codebase questions instantly and *accurately* from the graph instead of paying tool-call round trips to re-search every time.
 
@@ -265,11 +265,11 @@ Branch: extends existing Warsat fit-scoring work
 
 **Verification note:** `backend/models/registry.py:23` already lists `"coder"` as a first-class entry in `MODEL_ROLES`, and `key_for_role()` (`:334`) already does role-based model lookup with fallback — so the routing plumbing Stage 8 needs already exists. What's missing is the actual capability-flagging logic: no `fit`/`score`/`coder`-detection logic exists anywhere in `backend/warsat/` today (checked `__init__.py`, `protocols/`, `providers/`).
 
-- [ ] Extend Warsat model fit scoring to flag coding-capable local models (e.g. Qwen2.5-Coder-class, DeepSeek-Coder-class) for the `coder` role — **(Hard** — no scoring logic exists at all yet, needs new heuristics/probe**)**
-- [ ] One-click route `code` mode to a local model once Warsat reports it deployed and healthy — **(Medium** — role-based routing already exists in registry, mostly wiring**)**
-- [ ] Confirm zero API cost / fully offline path when local model is selected — **(Easy)**
+- [x] Extend Warsat model fit scoring to flag coding-capable local models for the `coder` role — done 2026-07-01: `registry.suggest_role()` (token + collapsed-name matching for Qwen-Coder/DeepSeek-Coder/CodeLlama/StarCoder/Codestral/granite-code-class names, conservative `helper` otherwise) wired into `scan_gguf` suggestions, `import_gguf` default role, and Warsat `make_plan` (explicit role still wins; falls back to protocol default)
+- [x] Route `code` mode to a local model once deployed — done via existing plumbing: `execution_role("code") → "coder"` → `key_for_role("coder")` picks the first reachable coder-role model, and Warsat-deployed coding models now register with role `coder` automatically. No extra click needed at all.
+- [ ] Confirm zero API cost / fully offline path when local model is selected — **(Easy, env-blocked** — needs a deployed local model**)**
 - [ ] Test: `code` mode routed to local model completes a real coding task end to end — **(Hard, env-blocked** — needs an actual deployed local coding model to verify**)**
-- [ ] Validation: backend smoke suite passes, repo safety check — **(Easy)**
+- [x] Validation: backend smoke 56/56 (incl. `testCodingModelsSuggestCoderRole`), repo safety check passed (2026-07-01)
 
 **Definition of done:** a real coding task can run entirely against a local model with zero tokens spent and zero data leaving the machine, end to end through the Stage 0-6 pipeline.
 

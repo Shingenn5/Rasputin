@@ -234,6 +234,12 @@ class GraphSearchIn(CamelModel):
 class GraphBuildIn(CamelModel):
     path: str | None = None
 
+class GraphRelationsIn(CamelModel):
+    entity: str
+    relation: str | None = None
+    direction: str = "both"
+    limit: int = 25
+
 
 @rag_router.get("/rag/stats")
 
@@ -268,6 +274,12 @@ async def graph_build(req: GraphBuildIn, _user=Depends(current_user)):
 async def graph_search(req: GraphSearchIn, _user=Depends(current_user)):
     security.require("allow_file_read")
     return ok(graphify.search(req.query, req.limit))
+
+@rag_router.post("/graph/relations")
+
+async def graph_relations(req: GraphRelationsIn, _user=Depends(current_user)):
+    security.require("allow_file_read")
+    return ok(graphify.query_relations(req.entity, req.relation, req.direction, req.limit))
 
 router.include_router(sessions_router)
 router.include_router(tasks_router)

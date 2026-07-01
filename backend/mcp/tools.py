@@ -66,6 +66,29 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "id": "graph_relations",
+        "display_name": "Graphify Relations",
+        "description": "Answers structural code questions by traversing typed graph edges instead of keyword search. Ask 'what calls X' (relation=calls, direction=in), 'where is X used' (relation=any, direction=in), or 'what does file Y import' (relation=imports, direction=out). Returns evidence-backed edges with citations.",
+        "category": "Knowledge",
+        "risk": "safe",
+        "permission_flag": "allow_file_read",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "not_required",
+        "timeout_seconds": 20,
+        "output_summary_policy": "relationship_metadata_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "entity": {"type": "string"},
+                "relation": {"type": "string", "enum": ["calls", "imports", "defines", "references", "mentions", "related_to", "located_in", "any"]},
+                "direction": {"type": "string", "enum": ["in", "out", "both"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+            "required": ["entity"],
+        },
+    },
+    {
         "id": "workspace_browse",
         "display_name": "Workspace Browse",
         "description": "Lists safe file and folder metadata inside an approved workspace root.",
@@ -712,6 +735,16 @@ def summarize_result(tool_id, result):
             "node_count": len(result.get("nodes") or []),
             "edge_count": len(result.get("edges") or []),
             "nodes": _safe_value("nodes", result.get("nodes", [])[:10], tool_id),
+            "edges": _safe_value("edges", result.get("edges", [])[:10], tool_id),
+            "blocked": result.get("blocked", False),
+        }
+    if tool_id == "graph_relations":
+        return {
+            "entity": _safe_value("entity", result.get("entity"), tool_id),
+            "relation": result.get("relation"),
+            "direction": result.get("direction"),
+            "matched_node_count": len(result.get("matched_nodes") or []),
+            "edge_count": len(result.get("edges") or []),
             "edges": _safe_value("edges", result.get("edges", [])[:10], tool_id),
             "blocked": result.get("blocked", False),
         }

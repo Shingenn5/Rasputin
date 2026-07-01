@@ -22,6 +22,29 @@ DATA_DIR = ROOT / "data"
 REGISTRY_FILE = DATA_DIR / "models.json"
 MODEL_ROLES = ["main", "planner", "executor", "coder", "researcher", "summarizer", "memory", "embeddings", "helper", "test"]
 
+# Compound coding-model family names matched with separators stripped, so
+# "CodeLlama-13B", "code_llama", and "codellama" all hit the same hint.
+_CODING_MODEL_HINTS = (
+    "codellama", "starcoder", "codestral", "codegemma", "codeqwen",
+    "opencoder", "devstral", "wizardcoder", "stablecode", "granitecode",
+    "deepseekcoder", "qwencoder", "phindcodellama", "replitcode",
+)
+
+
+def suggest_role(*name_parts):
+    """Suggest a registry role from a model's name/id. Flags coding-tuned
+    local models (Qwen2.5-Coder-class, DeepSeek-Coder-class, ...) for the
+    `coder` role so code mode can route to them; everything else stays the
+    conservative `helper` default."""
+    blob = " ".join(str(part or "") for part in name_parts).lower()
+    tokens = set(re.split(r"[^a-z0-9]+", blob))
+    if tokens & {"code", "coder", "coding"}:
+        return "coder"
+    collapsed = re.sub(r"[^a-z0-9]+", "", blob)
+    if any(hint in collapsed for hint in _CODING_MODEL_HINTS):
+        return "coder"
+    return "helper"
+
 _lock = Lock()
 
 
@@ -608,7 +631,7 @@ def import_gguf(req):
         "key": key,
         "name": name,
         "provider": "llamacpp",
-        "role": req.get("role") or "helper",
+        "role": req.get("role") or suggest_role(name, file_path.stem),
         "base_url": f"http://127.0.0.1:{port}/v1",
         "model": file_path.name,
         "enabled": True,
@@ -660,7 +683,7 @@ def scan_gguf(root=None):
                 "imported": bool(imported),
                 "imported_key": imported.get("key") if imported else "",
                 "suggested_key": imported.get("key") if imported else _slug(file_path.stem),
-                "suggested_role": "helper",
+                "suggested_role": suggest_role(file_path.stem),
             })
     audit.log("model_scan_gguf", {"roots": [str(root) for root in roots], "count": len(found)})
     return {"roots": [str(root) for root in roots], "models": found, "count": len(found)}
