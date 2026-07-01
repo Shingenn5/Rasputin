@@ -132,6 +132,10 @@ Definition of done: the agent can inspect, stage, and commit its own changes loc
 
 ## Stage 3: Patch-Based File Edits
 
+Status: **complete** (2026-07-01, commit `bed3281`, branch `codex/fs-patch-v1`)
+
+Validation: backend smoke 51/51 (native and Docker), frontend build, repo safety check.
+
 Branch: `codex/fs-patch-v1`
 
 Goal: replace "resend the whole file" with anchored find/replace or unified-diff patch application, mirroring how Claude Code/Codex actually edit files.
