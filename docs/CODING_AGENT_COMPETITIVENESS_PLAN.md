@@ -156,23 +156,34 @@ Definition of done: multi-file edits touch only the changed lines, not full-file
 
 ## Stage 4: Agentic Coding Loop (iteration cap, streaming, plan tracking)
 
-Branch: `codex/agentic-coding-loop-v1`
+Split into 4a (backend loop mechanics) and 4b (UI streaming) after review: raising the iteration cap without bounding in-loop message accumulation is a latent context-window bug given how much content Stage 1-3's tools return per call, and UI streaming is a large enough architectural change (touches the SSE pipeline everything else rides on) that it shouldn't be bundled with a control-flow fix.
 
-Goal: make the tool loop actually able to run a real edit → test → fix cycle, and make progress visible while it's happening.
+### Stage 4a: Mode-Aware Iteration Ceiling + In-Loop Context Bounding
+
+Status: **complete** (2026-07-01, commit `5000e0d`, branch `codex/agentic-coding-loop-v1`)
+
+Scope actually implemented:
+- Replaced the hardcoded `for attempt in range(15)` with a mode-aware budget: `code` mode gets 80 iterations / 900s wall-clock, other modes keep 15/180s. A genuinely runaway loop still terminates, just later, on whichever limit hits first.
+- Added `_bound_tool_loop_messages`: every iteration, checks the running message list against the model's real context budget (`context_governor.needs_compaction`) and, only when over budget, archives older large tool-result messages into `eviction_log` (same pattern `reflect()` already uses for oversized work products) and replaces them with a short `archive_expand`-retrievable pointer. The archive step is defensive — a DB failure there logs and skips rather than aborting an otherwise-working loop.
+
+Validation: backend smoke 54/54 (native and Docker), frontend build, repo safety check, plus three tests built around a scripted mock of `_chat` (dry-run/mock models never emit `tool_calls`, so a real model or a scripted one is the only way to exercise the loop) confirming: `code` mode runs past 15 iterations while other modes still stop at 15; archiving actually fires under simulated context pressure with messages replaced by retrievable pointers; the wall-clock budget stops the loop under a mocked clock instead of hanging.
+
+**Open gap, stated plainly:** no real model endpoint is configured in this environment (no local vLLM running, no API keys present). Stage 4a is verified at the mechanics level with scripted tool-call sequences, not behaviorally verified end-to-end with a live model actually orchestrating shell/git/patch toward a real fix. That is the actual test of this whole plan's premise and remains open. Do not treat later stages' "definition of done" language (e.g. Stage 6: "a real multi-file bug fix... autonomously") as met until this has been run against a real model.
+
+### Stage 4b: Stream Model Output and Tool Events to the UI
+
+Status: **pending**
+
+Branch: `codex/agentic-coding-ux-streaming-v1` (not yet started)
 
 Scope:
-- Replace the hardcoded `for attempt in range(15)` (`backend/engine/agent.py:754`) with a much higher, mode-aware ceiling for `code` mode (e.g. 60-100), governed by wall-clock/cost budget rather than a flat count, so it doesn't run away silently.
 - Stream model output tokens and tool-call events to the UI as they happen instead of only at phase completion — the frontend already has an SSE/event subscription path (`AgentHub.subscribe`/`listeners`) to extend.
 - Surface a lightweight step/plan list in the task view (what the agent intends to do, updated as steps complete) so a long-running coding task doesn't look frozen.
 
-Security requirements: none beyond existing trust/audit — this is a UX and control-flow change.
-
 Tests required:
-- A task requiring >15 tool calls in `code` mode completes instead of hitting the old cap.
-- Runaway loop still terminates on the new budget ceiling with a clear message.
 - Streamed events arrive incrementally in a live task view (not just at completion).
 
-Definition of done: a real multi-file bug fix (edit, run tests, see failure, fix, re-run, pass) completes in one task without hitting an artificial ceiling, and the operator can watch it happen.
+Definition of done (for Stage 4 overall, once 4b lands): a real multi-file bug fix (edit, run tests, see failure, fix, re-run, pass) completes in one task without hitting an artificial ceiling, and the operator can watch it happen live.
 
 ## Stage 5: Coding-Oriented Task UX
 
