@@ -739,6 +739,50 @@ class AgentHub:
             task.log(f"error: {exc}")
         await self.emit(task)
 
+    def _tool_loop_budget(self, task):
+        if task.mode == "code":
+            return {"max_attempts": 80, "max_seconds": 900}
+        return {"max_attempts": 15, "max_seconds": 180}
+
+    def _bound_tool_loop_messages(self, task, model_key, messages, keep_recent=6, min_archive_chars=500):
+        total_tokens = sum(context_governor.estimate_tokens(m.get("content")) for m in messages)
+        if not context_governor.needs_compaction(model_key, total_tokens):
+            return messages
+        archived = 0
+        boundary = max(0, len(messages) - keep_recent)
+        for i in range(boundary):
+            message = messages[i]
+            if message.get("role") != "tool":
+                continue
+            content_str = str(message.get("content") or "")
+            if len(content_str) < min_archive_chars:
+                continue
+            archive_id = store.new_id("arc")
+            try:
+                with store._lock, store.connect() as conn:
+                    conn.execute(
+                        "INSERT INTO eviction_log(id, session_id, kind, content, created_at) VALUES(?, ?, ?, ?, ?)",
+                        (archive_id, task.session_id, "tool_result_archive", content_str, store.now()),
+                    )
+                    conn.commit()
+            except Exception as exc:
+                # Compaction is a token-budget optimization, not a correctness requirement -
+                # skip this message rather than aborting an otherwise-working tool loop.
+                task.log(f"context: could not archive tool result: {exc}")
+                continue
+            messages[i] = {
+                **message,
+                "content": (
+                    f"[Tool result from '{message.get('name')}' archived to save context "
+                    f"({len(content_str)} chars). Use archive_expand with archive_id '{archive_id}' "
+                    "if the full output is needed again.]"
+                ),
+            }
+            archived += 1
+        if archived:
+            task.log(f"context: archived {archived} older tool result(s) to stay within budget")
+        return messages
+
     async def governed_chat(self, task, phase, role, sections, tools=None):
         model_key = self.phase_model(task, role)
         bundle = context_governor.compose_prompt(model_key, phase, sections)
@@ -748,22 +792,32 @@ class AgentHub:
             task.log(f"context trimmed: {', '.join(trace['trimmed'])}")
         if trace.get("omitted"):
             task.log(f"context omitted: {', '.join(trace['omitted'])}")
-            
+
         messages = [{"role": "user", "content": bundle["prompt"]}]
-        
-        for attempt in range(15): # Max 15 tool execution loops
+
+        budget = self._tool_loop_budget(task)
+        max_attempts = budget["max_attempts"]
+        max_seconds = budget["max_seconds"]
+        started_at = time.time()
+
+        for attempt in range(max_attempts):
+            if time.time() - started_at > max_seconds:
+                task.log(f"tool loop stopped: {max_seconds}s time budget exceeded after {attempt} iteration(s)")
+                return f"Error: Tool loop time budget ({max_seconds}s) exceeded after {attempt} iteration(s)."
+
+            messages = self._bound_tool_loop_messages(task, model_key, messages)
             text, tool_calls = await _chat(model_key, messages, tools=tools)
-            
+
             if text or tool_calls:
                 messages.append({
-                    "role": "assistant", 
-                    "content": text, 
+                    "role": "assistant",
+                    "content": text,
                     "tool_calls": tool_calls
                 })
-                
+
             if not tool_calls:
                 return text
-                
+
             for tc in tool_calls:
                 task.log(f"tool: {tc['name']}")
                 try:
@@ -784,8 +838,8 @@ class AgentHub:
                         "name": tc["name"],
                         "content": f"Error executing {tc['name']}: {exc}"
                     })
-                    
-        return "Error: Maximum tool loop iterations exceeded."
+
+        return f"Error: Maximum tool loop iterations ({max_attempts}) exceeded."
 
     async def chat_reply(self, task):
         try:

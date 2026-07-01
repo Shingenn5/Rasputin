@@ -1716,6 +1716,91 @@ class BackendSmokeTests(unittest.TestCase):
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 
+    def testGovernedChatUsesModeAwareIterationCeiling(self):
+        hub = agent.AgentHub()
+        call_count = {"n": 0}
+
+        async def scripted_chat(model_key, messages, tools=None):
+            call_count["n"] += 1
+            if call_count["n"] <= 20:
+                return "", [{"id": f"call-{call_count['n']}", "name": "shell_exec", "args": {"command": "echo hi"}}]
+            return "final answer", []
+
+        async def fake_call_tool(name, args, on_log=None):
+            return {"output": "ok"}
+
+        hub.mcp.call_tool = fake_call_tool
+        sections = [context_governor.section("task", "Task", "do the thing", required=True, priority=0)]
+
+        with patch("backend.engine.agent._chat", scripted_chat):
+            code_task = agent.AgentTask("fix the bug", "dry-run", "general", mode="code", workspace_path=".")
+            hub._persist_session(code_task)
+            call_count["n"] = 0
+            result = asyncio.run(hub.governed_chat(code_task, "execution", "coder", sections))
+            self.assertEqual(result, "final answer")
+            self.assertGreater(call_count["n"], 15)
+
+            chat_task = agent.AgentTask("just chatting", "dry-run", "general", mode="chat", workspace_path=".")
+            hub._persist_session(chat_task)
+            call_count["n"] = 0
+            result2 = asyncio.run(hub.governed_chat(chat_task, "chat", "main", sections))
+            self.assertEqual(result2, "Error: Maximum tool loop iterations (15) exceeded.")
+            self.assertEqual(call_count["n"], 15)
+
+    def testGovernedChatArchivesOldToolResultsUnderContextPressure(self):
+        hub = agent.AgentHub()
+        call_count = {"n": 0}
+
+        async def scripted_chat(model_key, messages, tools=None):
+            call_count["n"] += 1
+            if call_count["n"] <= 5:
+                return "", [{"id": f"call-{call_count['n']}", "name": "shell_exec", "args": {"command": "echo hi"}}]
+            return "final answer", []
+
+        async def fake_call_tool(name, args, on_log=None):
+            return {"output": "x" * 4000}
+
+        hub.mcp.call_tool = fake_call_tool
+        sections = [context_governor.section("task", "Task", "do the thing", required=True, priority=0)]
+        task = agent.AgentTask("fix the bug", "dry-run", "general", mode="code", workspace_path=".")
+        hub._persist_session(task)
+
+        with patch("backend.engine.agent._chat", scripted_chat):
+            result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
+        self.assertEqual(result, "final answer")
+        self.assertTrue(any("context: archived" in line for line in task.logs))
+        with runtime_store._lock, runtime_store.connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM eviction_log WHERE session_id=? AND kind='tool_result_archive'",
+                (task.session_id,),
+            ).fetchone()
+        self.assertGreater(row["n"], 0)
+
+    def testGovernedChatStopsOnTimeBudgetWithoutHanging(self):
+        hub = agent.AgentHub()
+
+        async def scripted_chat(model_key, messages, tools=None):
+            return "", [{"id": "call-1", "name": "shell_exec", "args": {"command": "echo hi"}}]
+
+        async def fake_call_tool(name, args, on_log=None):
+            return {"output": "ok"}
+
+        hub.mcp.call_tool = fake_call_tool
+        sections = [context_governor.section("task", "Task", "do the thing", required=True, priority=0)]
+        task = agent.AgentTask("fix the bug", "dry-run", "general", mode="code", workspace_path=".")
+        hub._persist_session(task)
+
+        clock = {"t": 1000.0}
+
+        def fake_time():
+            clock["t"] += 500.0
+            return clock["t"]
+
+        with patch("backend.engine.agent._chat", scripted_chat), patch("backend.engine.agent.time.time", fake_time):
+            result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
+        self.assertIn("time budget", result)
+        self.assertTrue(any("time budget exceeded" in line for line in task.logs))
+
     def testSensitiveRoutesRespectDisabledPermissions(self):
         def deny_file_read(flag):
             if flag == "allow_file_read":
