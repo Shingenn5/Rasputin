@@ -15,6 +15,11 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  server: {
+    proxy: {
+      "/api": "http://127.0.0.1:8787",
+    },
+  },
   build: {
     outDir: "../frontend",
     emptyOutDir: true,

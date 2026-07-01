@@ -306,14 +306,25 @@
   .dash-grid { grid-template-columns: 1fr; }
 }
 
-/* New-shell coexistence: the dashboard view scrolls inside dash-frame-main
-   instead of forcing its own 100dvh/overflow:hidden box. */
+/* New-shell coexistence: views scroll inside dash-frame-main instead of
+   forcing their own 100dvh/overflow:hidden box. Chat (#chatView) is
+   intentionally excluded — it owns its own internal scroll. */
 #homeView.app-view.active,
 #modelsView.app-view.active,
 #activityView.app-view.active,
 #warsatView.app-view.active,
 #archiveView.app-view.active,
-#trialsView.app-view.active {
+#trialsView.app-view.active,
+#workspacesView.app-view.active,
+#settingsShell.app-view.active,
+#auditView.app-view.active,
+#agentsView.app-view.active,
+#sessionsView.app-view.active,
+#approvalsView.app-view.active,
+#memoryView.app-view.active,
+#skillsView.app-view.active,
+#telegramView.app-view.active,
+#schedulesView.app-view.active {
   display: block;
   height: auto;
   min-height: 100%;
@@ -520,4 +531,19 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .fx-rise > * { animation: none !important; }
+}
+
+/* ── Mobile overrides (< sm / 640px) ──────────────────────────────────── */
+@media (max-width: 639px) {
+  /* Tighter main padding so content isn't cramped on narrow screens */
+  .dash-main { padding: 16px 16px 32px; }
+
+  /* Topbar title scales down one step */
+  .dash-title { font-size: 1.5rem; }
+
+  /* KPI cards: 2-col is fine but reduce padding */
+  .dash-kpi { padding: 14px 16px; }
+  .dash-kpi-value { font-size: 1.5rem; }
+
+  /* Search bar already hidden at < sm via sm:flex — no override needed */
 }

@@ -636,7 +636,8 @@ export function App() {
   }
 
   function toggleSidebar() {
-    if (window.matchMedia("(max-width: 760px)").matches) {
+    // < sm breakpoint (639px) → overlay mode; sm+ → collapse/expand rail
+    if (window.matchMedia("(max-width: 639px)").matches) {
       setMobileSidebarOpen((current) => !current);
       return;
     }

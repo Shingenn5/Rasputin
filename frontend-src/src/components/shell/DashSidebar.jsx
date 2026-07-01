@@ -56,13 +56,15 @@ export function DashSidebar({
   runningCount = 0,
   newTask,
   locked,
+  mobileOpen = false,
   recentSessions = [],
   resumeSession,
   activeSessionId,
 }) {
-  // `collapsed` is the persisted rail mode; hovering temporarily expands.
+  // `collapsed` is the persisted rail mode; hovering temporarily expands on sm+.
+  // `mobileOpen` drives the slide-in overlay on mobile (< sm breakpoint).
   const [hovered, setHovered] = useState(false);
-  const expanded = !collapsed || hovered;
+  const expanded = !collapsed || hovered || mobileOpen;
 
   const isActive = (item) =>
     view === item.view && (item.view !== "settings" || settingsSection === item.section);
@@ -105,16 +107,29 @@ export function DashSidebar({
 
   return (
     <div
-      className={cn("relative h-dvh shrink-0", collapsed ? "w-[76px]" : "w-[248px]")}
+      className={cn(
+        "relative h-dvh shrink-0 w-0",
+        collapsed ? "sm:w-[76px]" : "sm:w-[248px]",
+      )}
       onMouseEnter={() => collapsed && setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      {/* Mobile scrim — covers content behind the open sidebar overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/50 sm:hidden"
+          onClick={toggleSidebar}
+          aria-hidden="true"
+        />
+      )}
       <aside
         className={cn(
-          "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width] duration-200 ease-out",
+          "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
           expanded ? "w-[248px]" : "w-[76px]",
-          // When hovering open from rail mode, float a shadow so it reads as an overlay.
-          collapsed && hovered && "shadow-2xl shadow-black/50",
+          // Mobile: slide off-screen when closed; sm+ always visible in flow.
+          !mobileOpen && "-translate-x-full sm:translate-x-0",
+          // Shadow: hover-expand on desktop, or slide-in overlay on mobile.
+          (collapsed && hovered) || mobileOpen ? "shadow-2xl shadow-black/50" : "",
         )}
       >
         {/* Brand */}

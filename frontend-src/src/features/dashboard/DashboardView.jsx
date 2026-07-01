@@ -231,7 +231,7 @@ export function DashboardView({
                     {k.tone === "down" && <ArrowUpRight size={12} />}
                     {k.delta}
                   </Badge>
-                  <div className="pointer-events-none absolute bottom-3.5 right-3.5 opacity-90">
+                  <div className="pointer-events-none absolute bottom-3.5 right-3.5 hidden opacity-90 sm:block">
                     <Sparkline data={k.spark} />
                   </div>
                 </Card>
@@ -307,34 +307,36 @@ export function DashboardView({
               <Button variant="ghost" size="pill" onClick={() => go("models")}>Manage</Button>
             </div>
             {topModels.length ? (
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="text-left text-[0.66rem] uppercase tracking-wider text-muted-foreground/70">
-                    <th className="px-2.5 py-2 font-semibold">#</th>
-                    <th className="px-2.5 py-2 font-semibold">Model</th>
-                    <th className="px-2.5 py-2 font-semibold">Runtime</th>
-                    <th className="px-2.5 py-2 font-semibold">Role</th>
-                    <th className="px-2.5 py-2 font-semibold">Usage</th>
-                    <th className="px-2.5 py-2 text-right font-semibold">Runs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topModels.map((row, i) => (
-                    <tr key={row.model.key || i} className="border-t border-border transition-colors hover:bg-secondary/50">
-                      <td className="px-2.5 py-3 text-sm tabular-nums text-muted-foreground/70">{i + 1}</td>
-                      <td className="px-2.5 py-3 text-sm font-semibold">{displayModelName(row.model, models)}</td>
-                      <td className="px-2.5 py-3 text-sm text-muted-foreground">{row.model.runtime || row.model.provider || "local"}</td>
-                      <td className="px-2.5 py-3 text-sm text-muted-foreground">{row.model.role || "chat"}</td>
-                      <td className="px-2.5 py-3">
-                        <div className="h-1 min-w-[60px] overflow-hidden rounded bg-secondary">
-                          <div className="h-full rounded bg-primary" style={{ width: `${(row.runs / maxRuns) * 100}%` }} />
-                        </div>
-                      </td>
-                      <td className="px-2.5 py-3 text-right text-sm tabular-nums">{row.runs}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[440px] border-collapse">
+                  <thead>
+                    <tr className="text-left text-[0.66rem] uppercase tracking-wider text-muted-foreground/70">
+                      <th className="px-2.5 py-2 font-semibold">#</th>
+                      <th className="px-2.5 py-2 font-semibold">Model</th>
+                      <th className="hidden px-2.5 py-2 font-semibold sm:table-cell">Runtime</th>
+                      <th className="hidden px-2.5 py-2 font-semibold sm:table-cell">Role</th>
+                      <th className="px-2.5 py-2 font-semibold">Usage</th>
+                      <th className="px-2.5 py-2 text-right font-semibold">Runs</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {topModels.map((row, i) => (
+                      <tr key={row.model.key || i} className="border-t border-border transition-colors hover:bg-secondary/50">
+                        <td className="px-2.5 py-3 text-sm tabular-nums text-muted-foreground/70">{i + 1}</td>
+                        <td className="px-2.5 py-3 text-sm font-semibold">{displayModelName(row.model, models)}</td>
+                        <td className="hidden px-2.5 py-3 text-sm text-muted-foreground sm:table-cell">{row.model.runtime || row.model.provider || "local"}</td>
+                        <td className="hidden px-2.5 py-3 text-sm text-muted-foreground sm:table-cell">{row.model.role || "chat"}</td>
+                        <td className="px-2.5 py-3">
+                          <div className="h-1 min-w-[60px] overflow-hidden rounded bg-secondary">
+                            <div className="h-full rounded bg-primary" style={{ width: `${(row.runs / maxRuns) * 100}%` }} />
+                          </div>
+                        </td>
+                        <td className="px-2.5 py-3 text-right text-sm tabular-nums">{row.runs}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <div className="py-7 text-center text-sm text-muted-foreground">No models registered yet.</div>
             )}
