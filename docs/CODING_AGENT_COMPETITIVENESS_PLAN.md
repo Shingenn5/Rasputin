@@ -77,6 +77,10 @@ Definition of done: a designated local repo can have files written/moved without
 
 ## Stage 1: Real Shell Execution
 
+Status: **complete** (2026-07-01, commit `9a6d796`, branch `codex/shell-exec-v1`)
+
+Validation: backend smoke 49/49 (native and Docker), frontend build, repo safety check, and a direct `on_log` wiring check confirming streamed stdout/stderr lines reach the task log as the command runs.
+
 Branch: `codex/shell-exec-v1`
 
 Goal: turn `shell_exec` from a disabled stub into a working tool, scoped to trusted workspaces.
