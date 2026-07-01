@@ -109,6 +109,7 @@ class McpLayer:
         self.tools = {
             "fs_read": self.fs_read,
             "fs_write": self.fs_write,
+            "fs_patch": self.fs_patch,
             "fs_list": self.fs_list,
             "fs_tree": self.fs_tree,
             "fs_search": self.fs_search,
@@ -245,6 +246,47 @@ class McpLayer:
         target.write_text(content, encoding="utf-8")
         audit.log("fs_write", {"path": str(target), "bytes": len(content.encode("utf-8")), "trusted": trusted})
         return {"path": str(target), "bytes": len(content.encode("utf-8"))}
+
+    async def fs_patch(self, path, old_string, new_string, workspace_path=None, replace_all=False, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_write")
+        target = self._safe(path, workspace_path)
+        item = workspace.require_path_permission(target, "write")
+        trusted = bool(item.get("trusted"))
+        if not target.exists() or not target.is_file():
+            raise ValueError("file does not exist; use fs_write to create a new file")
+        old_string = str(old_string or "")
+        new_string = str(new_string or "")
+        if not old_string:
+            raise ValueError("old_string is required and cannot be empty")
+        if old_string == new_string:
+            raise ValueError("old_string and new_string are identical; nothing to patch")
+        original = target.read_text(encoding="utf-8")
+        match_count = original.count(old_string)
+        if match_count == 0:
+            raise ValueError("old_string was not found in the file")
+        if match_count > 1 and not replace_all:
+            raise ValueError(f"old_string matches {match_count} locations; add more surrounding context to make it unique, or set replace_all=true")
+        cfg = security.load()
+        if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
+            approvals.require_approved(approval_id, "fs_patch")
+            approved = True
+        if cfg.get("approval_required_file_write", True) and not trusted and not approved:
+            preview = approvals.mutation_preview("fs_patch", {
+                "path": str(target),
+                "matches": match_count,
+                "replace_all": bool(replace_all),
+                "old_string": old_string[:200],
+                "new_string": new_string[:200],
+                "workspace": workspace_path or workspace.get_active()["active_path"],
+            }, task_id=_task_id, tool_call_id=_tool_call_id)
+            approved = await self._wait_for_approval(preview, "fs_patch", _task_id)
+            if not approved:
+                return preview
+        replacements = match_count if replace_all else 1
+        updated = original.replace(old_string, new_string, -1 if replace_all else 1)
+        target.write_text(updated, encoding="utf-8")
+        audit.log("fs_patch", {"path": str(target), "replacements": replacements, "trusted": trusted})
+        return {"path": str(target), "replacements": replacements, "bytes": len(updated.encode("utf-8"))}
 
     async def fs_list(self, path=".", workspace_path=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_read")

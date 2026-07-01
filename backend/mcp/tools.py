@@ -16,6 +16,8 @@ SENSITIVE_KEYS = {
     "token",
     "api_key",
     "apiKey",
+    "old_string",
+    "new_string",
 }
 
 
@@ -283,7 +285,7 @@ TOOL_DEFINITIONS = [
     {
         "id": "fs_write",
         "display_name": "File Write",
-        "description": "Previews a local workspace write and requires approval before mutation.",
+        "description": "Creates a new file or replaces the entire content of an existing one. Prefer fs_patch when editing part of an existing file. Requires approval before mutation, bypassed only when the workspace has Trusted Dev Mode enabled.",
         "category": "Workspace",
         "risk": "approval_required",
         "permission_flag": "allow_file_write",
@@ -301,6 +303,31 @@ TOOL_DEFINITIONS = [
                 "approval_id": {"type": "string"},
             },
             "required": ["path", "content"],
+        },
+    },
+    {
+        "id": "fs_patch",
+        "display_name": "File Patch",
+        "description": "Replaces an exact, uniquely-matching span of text in an existing file, instead of rewriting the whole file. Fails loudly if old_string is not found or is not unique. Requires approval before mutation, bypassed only when the workspace has Trusted Dev Mode enabled.",
+        "category": "Workspace",
+        "risk": "approval_required",
+        "permission_flag": "allow_file_write",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "one_time_approval_or_trusted_workspace",
+        "timeout_seconds": 30,
+        "output_summary_policy": "paths_and_replacement_counts_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_string": {"type": "string"},
+                "new_string": {"type": "string"},
+                "replace_all": {"type": "boolean"},
+                "workspace_path": {"type": "string"},
+                "approval_id": {"type": "string"},
+            },
+            "required": ["path", "old_string", "new_string"],
         },
     },
     {

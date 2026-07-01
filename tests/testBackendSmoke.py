@@ -1643,6 +1643,79 @@ class BackendSmokeTests(unittest.TestCase):
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 
+    def testFsPatchRequiresUniqueMatchAndRespectsTrust(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "sample.py"
+            sample.write_text("def foo():\n    return 1\n\n\ndef bar():\n    return 1\n", encoding="utf-8")
+
+            approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+                "path": tmp,
+                "name": "Patch Smoke Workspace",
+                "readOnly": False,
+            }))
+            workspace_id = approved["id"]
+            try:
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    # Non-unique anchor without replace_all is rejected loudly, not silently applied once.
+                    with self.assertRaises(ValueError):
+                        asyncio.run(McpLayer().call_tool("fs_patch", {
+                            "path": "sample.py",
+                            "old_string": "return 1",
+                            "new_string": "return 2",
+                            "workspace_path": tmp,
+                        }))
+                    self.assertEqual(sample.read_text(encoding="utf-8").count("return 1"), 2)
+
+                    # Missing anchor is rejected loudly.
+                    with self.assertRaises(ValueError):
+                        asyncio.run(McpLayer().call_tool("fs_patch", {
+                            "path": "sample.py",
+                            "old_string": "does not exist anywhere",
+                            "new_string": "x",
+                            "workspace_path": tmp,
+                        }))
+
+                    # Untrusted workspace: a unique, valid patch returns an approval preview instead of applying.
+                    preview = asyncio.run(McpLayer().call_tool("fs_patch", {
+                        "path": "sample.py",
+                        "old_string": "def foo():",
+                        "new_string": "def foo_renamed():",
+                        "workspace_path": tmp,
+                    }))
+                self.assertTrue(preview["preview"])
+                self.assertIn("approval_id", preview)
+                self.assertNotIn("foo_renamed", sample.read_text(encoding="utf-8"))
+
+                self.assertOk(self.client.post("/api/workspace/trust", json={
+                    "workspaceId": workspace_id,
+                    "trusted": True,
+                }))
+
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    result = asyncio.run(McpLayer().call_tool("fs_patch", {
+                        "path": "sample.py",
+                        "old_string": "def foo():",
+                        "new_string": "def foo_renamed():",
+                        "workspace_path": tmp,
+                    }))
+                    self.assertEqual(result["replacements"], 1)
+
+                    replace_all_result = asyncio.run(McpLayer().call_tool("fs_patch", {
+                        "path": "sample.py",
+                        "old_string": "return 1",
+                        "new_string": "return 2",
+                        "workspace_path": tmp,
+                        "replace_all": True,
+                    }))
+                    self.assertEqual(replace_all_result["replacements"], 2)
+
+                final_content = sample.read_text(encoding="utf-8")
+                self.assertIn("def foo_renamed():", final_content)
+                self.assertEqual(final_content.count("return 2"), 2)
+                self.assertEqual(final_content.count("return 1"), 0)
+            finally:
+                self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
+
     def testSensitiveRoutesRespectDisabledPermissions(self):
         def deny_file_read(flag):
             if flag == "allow_file_read":
