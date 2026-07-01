@@ -171,7 +171,10 @@ export function DashSidebar({
           {expanded && <span>New Chat</span>}
         </button>
 
-        {/* Primary nav (does not scroll) */}
+        {/* Single scroll region: nav (with Settings) and Recent Chats scroll
+            together as one column, between the pinned header above and the
+            pinned privacy chip below. */}
+        <div className="-mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
         <nav className="flex shrink-0 flex-col gap-0.5">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mt-3">
@@ -205,10 +208,9 @@ export function DashSidebar({
           </div>
         </nav>
 
-        {/* Recent chats — the flexible, scrollable region between the pinned
-            nav (with Settings) above and the pinned privacy chip below. */}
-        {expanded && sessions.length > 0 ? (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col">
+        {/* Recent chats — reached by scrolling the shared region above */}
+        {expanded && sessions.length > 0 && (
+          <div className="mt-4 flex shrink-0 flex-col">
             <div className="flex shrink-0 items-center justify-between px-3 pb-2">
               <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                 Recent Chats
@@ -221,7 +223,7 @@ export function DashSidebar({
                 All
               </button>
             </div>
-            <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-0.5">
               {sessions.map((s) => {
                 const active = s.id === activeSessionId;
                 return (
@@ -244,9 +246,8 @@ export function DashSidebar({
               })}
             </div>
           </div>
-        ) : (
-          <div className="flex-1" />
         )}
+        </div>
 
         {/* Privacy chip — pinned at the very bottom */}
         {expanded && (

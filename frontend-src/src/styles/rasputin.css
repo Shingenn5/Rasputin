@@ -40,7 +40,7 @@
   --bs-body-color: var(--ras-text);
   --bs-border-color: var(--ras-border);
   --bs-primary: var(--ras-accent);
-  --bs-primary-rgb: 189, 74, 40;
+  --bs-primary-rgb: 189, 74, 40; /* fallback only — overridden per-theme by index.html's apply() */
   --bs-secondary-color: var(--ras-muted);
   --bs-tertiary-bg: var(--ras-panel-2);
   --bs-card-bg: var(--ras-panel);

@@ -26,6 +26,10 @@
         function normalize(theme) {
           return themes[theme] ? theme : "rasputin-dark";
         }
+        function hexToRgb(hex) {
+          var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+          return m ? parseInt(m[1], 16) + ", " + parseInt(m[2], 16) + ", " + parseInt(m[3], 16) : "189, 74, 40";
+        }
         function ensure(selector, tag, attrs) {
           var node = document.querySelector(selector);
           if (!node) {
@@ -49,6 +53,7 @@
           root.style.setProperty("--base-bg", cfg.bg);
           root.style.setProperty("--base-text", cfg.text);
           root.style.setProperty("--base-accent", cfg.accent);
+          root.style.setProperty("--bs-primary-rgb", hexToRgb(cfg.accent));
           root.style.setProperty("--aurora-1", cfg.a1);
           root.style.setProperty("--aurora-2", cfg.a2);
           root.style.setProperty("--aurora-3", cfg.a3);

@@ -176,8 +176,11 @@ Status: **pending**
 
 Branch: `codex/agentic-coding-ux-streaming-v1` (not yet started)
 
+**Verified 2026-07-01: this stage is larger than it looks.** `backend/models/providers.py:289` hardcodes `"stream": False` in the OpenAI-format request builder (used for OpenAI + local OpenAI-compatible endpoints), and there is no chunked/SSE response parsing anywhere in the provider layer for any provider. Provider-level token streaming does not exist today and is a prerequisite for this stage, not a detail within it. See `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` Stage 4b for the expanded task breakdown.
+
 Scope:
-- Stream model output tokens and tool-call events to the UI as they happen instead of only at phase completion — the frontend already has an SSE/event subscription path (`AgentHub.subscribe`/`listeners`) to extend.
+- Add real provider-level token streaming to `backend/models/providers.py` (OpenAI, Anthropic, Gemini, local OpenAI-compatible) — new work, not present today.
+- Stream model output tokens and tool-call events to the UI as they happen instead of only at phase completion — the frontend already has a working SSE channel (`new EventSource("/api/events")`, `frontend-src/src/app/App.jsx:589`) to extend for delivery once provider streaming exists.
 - Surface a lightweight step/plan list in the task view (what the agent intends to do, updated as steps complete) so a long-running coding task doesn't look frozen.
 
 Tests required:
@@ -223,14 +226,18 @@ Definition of done: "fix this bug" can mean edit → test → see it fail → fi
 
 ## Stage 7 (Differentiator): Code-Structure-Aware Graph
 
+Status: **partially implemented** (verified 2026-07-01)
+
 Branch: `codex/code-aware-rag-v1`
 
 Goal: turn Graphify into a real code-navigation advantage a hosted CLI doesn't have out of the box — persistent, queryable structure of the operator's own codebase instead of re-grepping fresh every session.
 
+**Verified 2026-07-01:** `backend/rag/graph.py` already extracts typed nodes (`function`, `class`, `file`, `folder`, `concept`) and typed edges (`imports`, `defines`, `calls`, `references`) and is exposed as a `graph_search` MCP tool with citations. This is ahead of "not started." What's missing: the extraction is regex-based, not AST-based (`_call_edges` treats any `identifier(` as a call, including keywords/builtins — noisy), and there's no dedicated relation-traversal query ("what calls X") distinct from the current generic fuzzy keyword `search()`. See `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` Stage 7 for the full breakdown.
+
 Scope:
-- Extend graph ingestion (builds on the already-planned Graphify Evidence V2 work in `docs/STAGED_IMPLEMENTATION_BACKLOG.md`) with code-specific typed nodes (function, class, module) and edges (imports, calls, defines).
-- Support direct "what calls X" / "where is X used" / "what does this file import" queries answered from the graph with citations, without a full re-scan.
-- Keep it workspace-scoped and local-only, consistent with existing RAG/Graphify privacy posture.
+- Replace regex-based entity/call extraction with AST-based parsing for precision.
+- Support direct "what calls X" / "where is X used" / "what does this file import" queries answered from the graph via relation traversal (not keyword scoring) with citations, without a full re-scan.
+- Keep it workspace-scoped and local-only, consistent with existing RAG/Graphify privacy posture (already true today).
 
 Definition of done: the agent (and the operator, via chat) can answer structural codebase questions instantly from the graph instead of paying tool-call round trips to re-search every time.
 
@@ -239,6 +246,8 @@ Definition of done: the agent (and the operator, via chat) can answer structural
 Branch: extends existing Warsat fit-scoring work.
 
 Goal: make free/offline agentic coding on the operator's own hardware a real option, not just a chat fallback — something a hosted CLI structurally cannot offer.
+
+**Verified 2026-07-01:** `backend/models/registry.py` already lists `coder` as a first-class `MODEL_ROLES` entry with working role-based lookup (`key_for_role`) — the routing plumbing this stage needs already exists. No fit-scoring/coding-capability-detection logic exists anywhere in `backend/warsat/` yet; that part is genuinely unstarted.
 
 Scope:
 - Extend Warsat model fit scoring to flag coding-capable local models (e.g. Qwen2.5-Coder-class, DeepSeek-Coder-class) explicitly for the `coder` role.
@@ -251,6 +260,8 @@ Definition of done: a real coding task can run entirely against a local model wi
 Branch: extends existing Trials feature (`docs/STAGED_IMPLEMENTATION_BACKLOG.md`, already `existing`/`missing` per harvest matrix — this specializes it).
 
 Goal: let the operator blind-compare models on an actual coding subtask (not just chat) and pin the winner to the `coder` role — a capability neither Codex CLI nor Gemini CLI expose, since each is locked to its own backend model.
+
+**Verified 2026-07-01:** `backend/trials/models.py` already defines a `model` experiment type and includes `code` in `ROUTABLE_MODES` — the general Trials scaffold exists and already knows about `code` mode. No coding-subtask-specific blind comparison or pin-to-`coder` flow exists yet.
 
 Definition of done: operator can, from inside Rasputin, decide "which model is actually best at fixing bugs in this codebase" with evidence, and have that decision take effect immediately.
 
