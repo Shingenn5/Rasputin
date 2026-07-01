@@ -106,6 +106,10 @@ Definition of done: the agent can run `npm test`, `pytest`, `git status`, a lint
 
 ## Stage 2: Git-Aware Tools
 
+Status: **complete** (2026-07-01, commit `ba85940`, branch `codex/git-tools-v1`)
+
+Validation: backend smoke 50/50 (native and Docker), repo safety check. Also discovered and fixed a real deployment gap along the way: the Docker runtime image had no `git` binary at all, so none of this would have worked outside native dev. Added `git` plus a system-wide `safe.directory '*'` config (bind-mounted host workspaces run under a different UID than the container user, which trips git's dubious-ownership guard otherwise).
+
 Branch: `codex/git-tools-v1`
 
 Goal: give the agent and the UI first-class git visibility, not just raw shell access.
