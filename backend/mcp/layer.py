@@ -48,6 +48,61 @@ def _safe_shell_env():
     return {key: os.environ[key] for key in SAFE_SHELL_ENV_KEYS if key in os.environ}
 
 
+def _parse_git_status_porcelain(text):
+    entries = []
+    for line in (text or "").splitlines():
+        if not line or line.startswith("##") or len(line) < 4:
+            continue
+        entries.append({"status": line[:2].strip(), "path": line[3:]})
+    return entries
+
+
+_LOG_FIELD_SEP = "\x1f"
+
+
+def _parse_git_log(text):
+    commits = []
+    for line in (text or "").splitlines():
+        parts = line.split(_LOG_FIELD_SEP)
+        if len(parts) != 4:
+            continue
+        commits.append({"hash": parts[0], "author": parts[1], "date": parts[2], "subject": parts[3]})
+    return commits
+
+
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def _parse_unified_diff(text):
+    files = []
+    current_file = None
+    current_hunk = None
+    for line in (text or "").splitlines():
+        if line.startswith("diff --git"):
+            current_file = {"header": line, "old_path": None, "new_path": None, "hunks": []}
+            files.append(current_file)
+            current_hunk = None
+        elif line.startswith("--- ") and current_file is not None:
+            current_file["old_path"] = line[4:].strip()
+        elif line.startswith("+++ ") and current_file is not None:
+            current_file["new_path"] = line[4:].strip()
+        elif line.startswith("@@"):
+            match = _HUNK_HEADER_RE.match(line)
+            current_hunk = {
+                "header": line,
+                "old_start": int(match.group(1)) if match else None,
+                "old_lines": int(match.group(2) or 1) if match else None,
+                "new_start": int(match.group(3)) if match else None,
+                "new_lines": int(match.group(4) or 1) if match else None,
+                "lines": [],
+            }
+            if current_file is not None:
+                current_file["hunks"].append(current_hunk)
+        elif current_hunk is not None and line[:1] in ("+", "-", " "):
+            current_hunk["lines"].append(line)
+    return files
+
+
 class McpLayer:
     def __init__(self, safe_root=SAFE_ROOT):
         self.safe_root = Path(safe_root).resolve()
@@ -69,6 +124,11 @@ class McpLayer:
             "archive_expand": self.archive_expand,
             "model_health": self.model_health,
             "shell_exec": self.shell_exec,
+            "git_status": self.git_status,
+            "git_diff": self.git_diff,
+            "git_log": self.git_log,
+            "git_add": self.git_add,
+            "git_commit": self.git_commit,
         }
 
     def _safe(self, path, workspace_path=None):
@@ -458,6 +518,121 @@ class McpLayer:
             "output": output,
             "truncated": truncated,
         }
+
+    async def _run_git(self, base, args, timeout=20):
+        proc = await asyncio.create_subprocess_exec(
+            "git", *args,
+            cwd=str(base),
+            env=_safe_shell_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            raw_stdout, raw_stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            return {
+                "exit_code": proc.returncode,
+                "timed_out": False,
+                "stdout": raw_stdout.decode("utf-8", errors="replace")[:MAX_SHELL_OUTPUT_CHARS],
+                "stderr": raw_stderr.decode("utf-8", errors="replace")[:2000],
+            }
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return {"exit_code": None, "timed_out": True, "stdout": "", "stderr": "git command timed out"}
+
+    async def git_status(self, workspace_path=None, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        workspace.require_path_permission(base, "read")
+        result = await self._run_git(base, ["status", "--porcelain=v1", "-b"])
+        audit.log("git_status", {"cwd": str(base)})
+        return {"cwd": str(base), **result, "entries": _parse_git_status_porcelain(result.get("stdout", ""))}
+
+    async def git_diff(self, workspace_path=None, path=None, staged=False, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        workspace.require_path_permission(base, "read")
+        args = ["diff"]
+        if staged:
+            args.append("--staged")
+        if path:
+            target = self._safe(path, workspace_path)
+            args += ["--", str(target.relative_to(base)) if target != base else "."]
+        result = await self._run_git(base, args)
+        audit.log("git_diff", {"cwd": str(base), "path": path, "staged": bool(staged)})
+        return {
+            "cwd": str(base),
+            "path": path,
+            "staged": bool(staged),
+            **result,
+            "hunks": _parse_unified_diff(result.get("stdout", "")),
+        }
+
+    async def git_log(self, workspace_path=None, limit=20, path=None, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_read")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        workspace.require_path_permission(base, "read")
+        limit = max(1, min(int(limit or 20), 100))
+        args = ["log", f"-{limit}", f"--pretty=format:%H{_LOG_FIELD_SEP}%an{_LOG_FIELD_SEP}%ad{_LOG_FIELD_SEP}%s", "--date=iso-strict"]
+        if path:
+            target = self._safe(path, workspace_path)
+            args += ["--", str(target.relative_to(base)) if target != base else "."]
+        result = await self._run_git(base, args)
+        audit.log("git_log", {"cwd": str(base), "limit": limit, "path": path})
+        return {"cwd": str(base), **result, "commits": _parse_git_log(result.get("stdout", ""))}
+
+    async def git_add(self, paths, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_write")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        item = workspace.require_path_permission(base, "write")
+        trusted = bool(item.get("trusted"))
+        raw_paths = paths if isinstance(paths, list) else [paths]
+        raw_paths = [str(p).strip() for p in raw_paths if str(p or "").strip()]
+        if not raw_paths:
+            raise ValueError("at least one path is required")
+        rel_paths = []
+        for p in raw_paths:
+            target = self._safe(p, workspace_path)
+            rel_paths.append(str(target.relative_to(base)) if target != base else ".")
+        cfg = security.load()
+        if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
+            approvals.require_approved(approval_id, "git_add")
+            approved = True
+        if cfg.get("approval_required_file_write", True) and not trusted and not approved:
+            preview = approvals.mutation_preview("git_add", {
+                "paths": rel_paths,
+                "workspace": workspace_path or workspace.get_active()["active_path"],
+            }, task_id=_task_id, tool_call_id=_tool_call_id)
+            approved = await self._wait_for_approval(preview, "git_add", _task_id)
+            if not approved:
+                return preview
+        result = await self._run_git(base, ["add", "--"] + rel_paths)
+        audit.log("git_add", {"cwd": str(base), "paths": rel_paths, "trusted": trusted})
+        return {"cwd": str(base), "paths": rel_paths, **result}
+
+    async def git_commit(self, message, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
+        security.require("allow_file_write")
+        message = str(message or "").strip()
+        if not message:
+            raise ValueError("commit message is required")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        item = workspace.require_path_permission(base, "write")
+        trusted = bool(item.get("trusted"))
+        cfg = security.load()
+        if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
+            approvals.require_approved(approval_id, "git_commit")
+            approved = True
+        if cfg.get("approval_required_file_write", True) and not trusted and not approved:
+            preview = approvals.mutation_preview("git_commit", {
+                "message": message,
+                "workspace": workspace_path or workspace.get_active()["active_path"],
+            }, task_id=_task_id, tool_call_id=_tool_call_id)
+            approved = await self._wait_for_approval(preview, "git_commit", _task_id)
+            if not approved:
+                return preview
+        result = await self._run_git(base, ["commit", "-m", message])
+        audit.log("git_commit", {"cwd": str(base), "message_length": len(message), "trusted": trusted})
+        return {"cwd": str(base), "message": message, **result}
 
 
 async def demo_tool_call():

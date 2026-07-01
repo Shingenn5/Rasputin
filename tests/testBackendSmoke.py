@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import urllib.parse
@@ -1579,6 +1580,66 @@ class BackendSmokeTests(unittest.TestCase):
                     }))
                 self.assertTrue(timeout_result["timed_out"])
                 self.assertIsNone(timeout_result["exit_code"])
+            finally:
+                self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
+
+    def testGitToolsRespectTrustAndParseStructuredOutput(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+            subprocess.run(["git", "config", "user.email", "smoke@example.com"], cwd=tmp, check=True)
+            subprocess.run(["git", "config", "user.name", "Smoke Test"], cwd=tmp, check=True)
+            (Path(tmp) / "README.md").write_text("hello\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=tmp, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "initial commit"], cwd=tmp, check=True)
+            with open(Path(tmp) / "README.md", "a", encoding="utf-8") as handle:
+                handle.write("world\n")
+
+            approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+                "path": tmp,
+                "name": "Git Smoke Workspace",
+                "readOnly": False,
+            }))
+            workspace_id = approved["id"]
+            try:
+                status = asyncio.run(McpLayer().call_tool("git_status", {"workspace_path": tmp}))
+                self.assertEqual(status["entries"], [{"status": "M", "path": "README.md"}])
+
+                diff = asyncio.run(McpLayer().call_tool("git_diff", {"workspace_path": tmp}))
+                self.assertEqual(len(diff["hunks"]), 1)
+                self.assertIn("+world", diff["hunks"][0]["hunks"][0]["lines"])
+
+                log = asyncio.run(McpLayer().call_tool("git_log", {"workspace_path": tmp, "limit": 5}))
+                self.assertEqual(len(log["commits"]), 1)
+                self.assertEqual(log["commits"][0]["subject"], "initial commit")
+
+                # Untrusted workspace: git_add returns an approval preview instead of staging.
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    add_preview = asyncio.run(McpLayer().call_tool("git_add", {
+                        "paths": ["README.md"],
+                        "workspace_path": tmp,
+                    }))
+                self.assertTrue(add_preview["preview"])
+                self.assertIn("approval_id", add_preview)
+
+                self.assertOk(self.client.post("/api/workspace/trust", json={
+                    "workspaceId": workspace_id,
+                    "trusted": True,
+                }))
+
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    add_result = asyncio.run(McpLayer().call_tool("git_add", {
+                        "paths": ["README.md"],
+                        "workspace_path": tmp,
+                    }))
+                    self.assertEqual(add_result["exit_code"], 0)
+                    commit_result = asyncio.run(McpLayer().call_tool("git_commit", {
+                        "message": "update readme",
+                        "workspace_path": tmp,
+                    }))
+                    self.assertEqual(commit_result["exit_code"], 0)
+
+                log_after = asyncio.run(McpLayer().call_tool("git_log", {"workspace_path": tmp, "limit": 5}))
+                self.assertEqual([c["subject"] for c in log_after["commits"]], ["update readme", "initial commit"])
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 

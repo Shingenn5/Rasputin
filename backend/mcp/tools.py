@@ -393,6 +393,111 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "id": "git_status",
+        "display_name": "Git Status",
+        "description": "Reports the working tree status (porcelain) for the resolved workspace's git repo.",
+        "category": "Git",
+        "risk": "safe",
+        "permission_flag": "allow_file_read",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "not_required",
+        "timeout_seconds": 20,
+        "output_summary_policy": "paths_and_status_codes_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "workspace_path": {"type": "string"},
+            },
+        },
+    },
+    {
+        "id": "git_diff",
+        "display_name": "Git Diff",
+        "description": "Shows unstaged or staged changes for the resolved workspace's git repo, parsed into structured hunks.",
+        "category": "Git",
+        "risk": "safe",
+        "permission_flag": "allow_file_read",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "not_required",
+        "timeout_seconds": 20,
+        "output_summary_policy": "diff_content_redacted_metadata_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "workspace_path": {"type": "string"},
+                "path": {"type": "string"},
+                "staged": {"type": "boolean"},
+            },
+        },
+    },
+    {
+        "id": "git_log",
+        "display_name": "Git Log",
+        "description": "Lists recent commits for the resolved workspace's git repo.",
+        "category": "Git",
+        "risk": "safe",
+        "permission_flag": "allow_file_read",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "not_required",
+        "timeout_seconds": 20,
+        "output_summary_policy": "commit_metadata_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "workspace_path": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                "path": {"type": "string"},
+            },
+        },
+    },
+    {
+        "id": "git_add",
+        "display_name": "Git Add",
+        "description": "Stages local paths in the resolved workspace's git repo. Bypasses per-call approval only when the workspace has Trusted Dev Mode enabled.",
+        "category": "Git",
+        "risk": "approval_required",
+        "permission_flag": "allow_file_write",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "one_time_approval_or_trusted_workspace",
+        "timeout_seconds": 20,
+        "output_summary_policy": "paths_and_exit_code_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "paths": {"type": "array", "items": {"type": "string"}},
+                "workspace_path": {"type": "string"},
+                "approval_id": {"type": "string"},
+            },
+            "required": ["paths"],
+        },
+    },
+    {
+        "id": "git_commit",
+        "display_name": "Git Commit",
+        "description": "Creates a local commit in the resolved workspace's git repo. Bypasses per-call approval only when the workspace has Trusted Dev Mode enabled. git push and other remote-touching operations are never exposed as a tool.",
+        "category": "Git",
+        "risk": "approval_required",
+        "permission_flag": "allow_file_write",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "one_time_approval_or_trusted_workspace",
+        "timeout_seconds": 20,
+        "output_summary_policy": "message_length_and_exit_code_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string"},
+                "workspace_path": {"type": "string"},
+                "approval_id": {"type": "string"},
+            },
+            "required": ["message"],
+        },
+    },
+    {
         "id": "docker_control",
         "display_name": "Docker Control",
         "description": "Policy stub for future Docker actions. Warsat keeps its existing approval path.",
@@ -635,6 +740,39 @@ def summarize_result(tool_id, result):
             "timed_out": result.get("timed_out", False),
             "truncated": result.get("truncated", False),
             "output": _redacted_blob(result.get("output")),
+        }
+    if tool_id == "git_status":
+        entries = result.get("entries") or []
+        return {
+            "cwd": result.get("cwd"),
+            "exit_code": result.get("exit_code"),
+            "entry_count": len(entries),
+            "entries": _safe_value("entries", entries[:50], tool_id),
+        }
+    if tool_id == "git_diff":
+        return {
+            "cwd": result.get("cwd"),
+            "path": result.get("path"),
+            "staged": result.get("staged", False),
+            "exit_code": result.get("exit_code"),
+            "file_count": len(result.get("hunks") or []),
+            "diff": _redacted_blob(result.get("stdout")),
+        }
+    if tool_id == "git_log":
+        commits = result.get("commits") or []
+        return {
+            "cwd": result.get("cwd"),
+            "exit_code": result.get("exit_code"),
+            "commit_count": len(commits),
+            "commits": _safe_value("commits", commits[:50], tool_id),
+        }
+    if tool_id in {"git_add", "git_commit"}:
+        return {
+            "cwd": result.get("cwd"),
+            "exit_code": result.get("exit_code"),
+            "paths": result.get("paths"),
+            "message_length": len(str(result.get("message") or "")) if "message" in result else None,
+            "stdout": _redacted_blob(result.get("stdout")),
         }
     if tool_id == "workspace_mutation_preview":
         return {
