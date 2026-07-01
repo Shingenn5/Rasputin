@@ -373,16 +373,24 @@ TOOL_DEFINITIONS = [
     {
         "id": "shell_exec",
         "display_name": "Shell Execution",
-        "description": "Policy stub for future shell execution. Execution is not implemented in Tool Relay V1.",
+        "description": "Runs a shell command with cwd pinned to the workspace root. Only executes when the resolved workspace has Trusted Dev Mode enabled; otherwise the call is rejected outright.",
         "category": "System",
         "risk": "approval_required",
         "permission_flag": "allow_shell_execution",
-        "enabled": False,
-        "implemented": False,
-        "approval_behavior": "disabled_in_v1",
-        "timeout_seconds": 0,
-        "output_summary_policy": "not_available",
-        "input_schema": {"type": "object", "properties": {}},
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "trusted_workspace_required",
+        "timeout_seconds": 120,
+        "output_summary_policy": "command_and_exit_code_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "workspace_path": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 600},
+            },
+            "required": ["command"],
+        },
     },
     {
         "id": "docker_control",
@@ -618,6 +626,15 @@ def summarize_result(tool_id, result):
                 }
                 for item in matches[:30]
             ],
+        }
+    if tool_id == "shell_exec":
+        return {
+            "command": result.get("command"),
+            "cwd": result.get("cwd"),
+            "exit_code": result.get("exit_code"),
+            "timed_out": result.get("timed_out", False),
+            "truncated": result.get("truncated", False),
+            "output": _redacted_blob(result.get("output")),
         }
     if tool_id == "workspace_mutation_preview":
         return {

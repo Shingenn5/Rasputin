@@ -769,7 +769,7 @@ class AgentHub:
                 try:
                     args = tc.get("args", {})
                     args["_task_id"] = task.id
-                    result = await self.mcp.call_tool(tc["name"], args)
+                    result = await self.mcp.call_tool(tc["name"], args, on_log=task.log)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],

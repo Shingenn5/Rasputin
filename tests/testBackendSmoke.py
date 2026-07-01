@@ -261,8 +261,9 @@ class BackendSmokeTests(unittest.TestCase):
         for tool_id in ["rag_search", "graph_search", "workspace_browse", "file_preview", "fs_search", "workspace_mutation_preview", "memory_search", "model_health", "fs_write", "web_search"]:
             self.assertIn(tool_id, ids)
         shell = next(item for item in catalog["tools"] if item["id"] == "shell_exec")
+        self.assertTrue(shell["implemented"])
         self.assertFalse(shell["available"])
-        self.assertIn("Tool Relay V1", shell["disabledReason"])
+        self.assertIn("allow_shell_execution", shell["disabledReason"])
 
         task_id = runtime_store.new_id("toolsmoke")
         result = asyncio.run(McpLayer().call_tool("fs_read", {
@@ -1518,6 +1519,66 @@ class BackendSmokeTests(unittest.TestCase):
                     }))
                 self.assertIn("approval_id", preview_again)
                 self.assertFalse((Path(tmp) / "post-revoke.txt").exists())
+            finally:
+                self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
+
+    def testShellExecRequiresPermissionFlagAndTrustedWorkspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+                "path": tmp,
+                "name": "Shell Smoke Workspace",
+                "readOnly": False,
+            }))
+            workspace_id = approved["id"]
+            try:
+                # Global permission flag off -> blocked even though nothing else is checked yet.
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": False}):
+                    with self.assertRaises(PermissionError):
+                        asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": "echo should-not-run",
+                            "workspace_path": tmp,
+                        }))
+
+                # Flag on but workspace not trusted -> still blocked.
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                    with self.assertRaises(PermissionError):
+                        asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": "echo should-not-run",
+                            "workspace_path": tmp,
+                        }))
+
+                self.assertOk(self.client.post("/api/workspace/trust", json={
+                    "workspaceId": workspace_id,
+                    "trusted": True,
+                }))
+
+                marker = "rasputin-shell-smoke-ok"
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                    result = asyncio.run(McpLayer().call_tool("shell_exec", {
+                        "command": f"echo {marker}",
+                        "workspace_path": tmp,
+                    }))
+                self.assertEqual(result["exit_code"], 0)
+                self.assertIn(marker, result["output"])
+                self.assertFalse(result["timed_out"])
+
+                # A soft-guardrail-blocked command is rejected even when trusted.
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                    with self.assertRaises(PermissionError):
+                        asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": "rm -rf /",
+                            "workspace_path": tmp,
+                        }))
+
+                # A command that outlives its timeout is killed and reported, not left hanging.
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                    timeout_result = asyncio.run(McpLayer().call_tool("shell_exec", {
+                        "command": "python -c \"import time; time.sleep(30)\"",
+                        "workspace_path": tmp,
+                        "timeout_seconds": 5,
+                    }))
+                self.assertTrue(timeout_result["timed_out"])
+                self.assertIsNone(timeout_result["exit_code"])
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 

@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -25,6 +27,26 @@ EXCLUDED_TREE_DIRS = {".git", ".pytest_cache", "__pycache__", "node_modules", ".
 
 TOOL_SPECS = tool_relay.TOOL_SPECS
 
+MAX_SHELL_OUTPUT_CHARS = 20000
+SAFE_SHELL_ENV_KEYS = {
+    "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP",
+    "HOME", "USERPROFILE", "COMSPEC", "LANG", "LC_ALL", "PYTHONIOENCODING", "NODE_ENV",
+}
+# Soft backstop against obviously catastrophic commands. Trusted Dev Mode grants
+# full local user-level shell execution by design; this is not a security boundary.
+SHELL_DENY_PATTERNS = [
+    re.compile(r"rm\s+-rf\s+(/|~|\$HOME)(\s|$)", re.IGNORECASE),
+    re.compile(r"rm\s+-rf\s+(\.|\./|\*)\s*$", re.IGNORECASE),
+    re.compile(r"format\s+[a-z]:", re.IGNORECASE),
+    re.compile(r"rd\s+/s\s+/q\s+[a-z]:\\?\s*$", re.IGNORECASE),
+    re.compile(r"remove-item\b.*-recurse\b.*-force\b.*[a-z]:\\?\s*$", re.IGNORECASE),
+    re.compile(r":\(\)\s*\{\s*:\|\s*:\s*&\s*\}\s*;\s*:", re.IGNORECASE),
+]
+
+
+def _safe_shell_env():
+    return {key: os.environ[key] for key in SAFE_SHELL_ENV_KEYS if key in os.environ}
+
 
 class McpLayer:
     def __init__(self, safe_root=SAFE_ROOT):
@@ -46,6 +68,7 @@ class McpLayer:
             "memory_search": self.memory_search,
             "archive_expand": self.archive_expand,
             "model_health": self.model_health,
+            "shell_exec": self.shell_exec,
         }
 
     def _safe(self, path, workspace_path=None):
@@ -55,7 +78,7 @@ class McpLayer:
             raise ValueError("path outside safe root")
         return target
 
-    async def call_tool(self, name, args):
+    async def call_tool(self, name, args, on_log=None):
         definition = tool_relay.require_definition(name)
         external = mcp_relay.is_external_tool(name)
         if name not in self.tools and not external:
@@ -70,6 +93,8 @@ class McpLayer:
                 raise PermissionError(f"{flag} is disabled")
             if external:
                 result = await mcp_relay.call_tool(name, args, task_id=task_id, tool_call_id=tool_call_id)
+            elif name == "shell_exec":
+                result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id, _on_log=on_log)
             else:
                 result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id)
             status = "pending_approval" if isinstance(result, dict) and result.get("approval_id") else "done"
@@ -362,6 +387,77 @@ class McpLayer:
 
     async def model_health(self, key="dry-run", _task_id=None, _tool_call_id=None):
         return await asyncio.to_thread(model_registry.test_model, key)
+
+    async def shell_exec(self, command, workspace_path=None, timeout_seconds=120, _task_id=None, _tool_call_id=None, _on_log=None):
+        security.require("allow_shell_execution")
+        command = str(command or "").strip()
+        if not command:
+            raise ValueError("command is required")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        item = workspace.workspace_for_path(base)
+        if not item or not item.get("trusted"):
+            raise PermissionError("shell execution requires Trusted Dev Mode to be enabled for this workspace")
+        for pattern in SHELL_DENY_PATTERNS:
+            if pattern.search(command):
+                raise PermissionError("command blocked by shell safety guardrail")
+        timeout = max(5, min(int(timeout_seconds or 120), 600))
+        audit.log("shell_exec", {"command": command, "cwd": str(base), "timeout": timeout})
+
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=str(base),
+            env=_safe_shell_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        lines = []
+        total_chars = 0
+        truncated = False
+
+        async def pump(stream, label):
+            nonlocal total_chars, truncated
+            while True:
+                raw_line = await stream.readline()
+                if not raw_line:
+                    break
+                text = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                if not truncated:
+                    if total_chars + len(text) > MAX_SHELL_OUTPUT_CHARS:
+                        truncated = True
+                        lines.append(f"[output truncated at {MAX_SHELL_OUTPUT_CHARS} chars]")
+                    else:
+                        lines.append(text)
+                        total_chars += len(text)
+                if _on_log:
+                    try:
+                        _on_log(f"shell {label}: {text}"[:400])
+                    except Exception:
+                        pass
+
+        timed_out = False
+        exit_code = None
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(pump(proc.stdout, "out"), pump(proc.stderr, "err")),
+                timeout=timeout,
+            )
+            exit_code = await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            timed_out = True
+            proc.kill()
+            await proc.wait()
+
+        output = "\n".join(lines)
+        audit.log("shell_exec_done", {"command": command, "exit_code": exit_code, "timed_out": timed_out, "truncated": truncated})
+        return {
+            "command": command,
+            "cwd": str(base),
+            "exit_code": exit_code,
+            "timed_out": timed_out,
+            "output": output,
+            "truncated": truncated,
+        }
 
 
 async def demo_tool_call():
