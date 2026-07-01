@@ -47,6 +47,10 @@ This decision gates every stage below — none of Stages 1-6 are worth building 
 
 ## Stage 0: Trusted Dev Workspace Foundation
 
+Status: **complete** (2026-07-01, commit `1122020`, branch `codex/trusted-dev-workspace-v1`)
+
+Validation: backend smoke 48/48 (native and Docker), frontend build, repo safety check, and a live Playwright-driven browser pass through toggle → confirm modal → persistent banner across views → revoke → toggle reset, with zero console errors.
+
 Branch: `codex/trusted-dev-workspace-v1`
 
 Goal: implement the trust model decision above as the substrate everything else builds on.
