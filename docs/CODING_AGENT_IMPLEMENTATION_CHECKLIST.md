@@ -22,7 +22,7 @@ Scope note: this checklist stays scoped to the coding-agent competitiveness trac
 Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, though not as strictly as Stage 0 gated 1-3) — this table is a difficulty-sorted index into the detailed, dependency-ordered task lists below, not a replacement execution order.
 
 ### Easy
-- [ ] Fix hardcoded `--bs-primary-rgb` so Bootstrap components follow the selected theme's accent (UI Bug Fix 1)
+- [x] Fix hardcoded `--bs-primary-rgb` so Bootstrap components follow the selected theme's accent (UI Bug Fix 1) — done 2026-07-01
 - [ ] Configure a real model endpoint for verification (Stage 4a follow-up)
 - [x] Identify/confirm SSE extension point at `frontend-src/src/app/App.jsx:589` (Stage 4b) — done 2026-07-02
 - [ ] Quick action: view diff for a file (Stage 5)
@@ -33,7 +33,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Confirm role-pin takes effect immediately (Stage 9) — done 2026-07-01
 
 ### Medium
-- [ ] Consolidate Recent Chats into the sidebar's single scroll region instead of its own nested scrollbar (UI Bug Fix 2)
+- [x] Consolidate Recent Chats into the sidebar's single scroll region instead of its own nested scrollbar (UI Bug Fix 2) — done 2026-07-01
 - [ ] Run one real multi-file bug-fix task end-to-end (Stage 4a follow-up)
 - [x] Stream tool-call events to UI (Stage 4b) — done 2026-07-02
 - [x] Add lightweight step/plan list to task view (Stage 4b) — done 2026-07-02
