@@ -217,7 +217,7 @@ export function DashSidebar({
               </span>
               <button
                 type="button"
-                onClick={() => go("chat")}
+                onClick={() => go("sessions")}
                 className="text-[0.62rem] text-muted-foreground/70 transition-colors hover:text-foreground"
               >
                 All
