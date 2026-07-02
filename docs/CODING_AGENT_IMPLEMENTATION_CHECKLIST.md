@@ -61,7 +61,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Blind-compare models on a real coding subtask (Stage 9) — done 2026-07-01
 
 ### Very Hard
-- [ ] Add real provider-level token streaming to `backend/models/providers.py` for OpenAI/Anthropic/Gemini/local-OpenAI-compatible adapters — **currently hardcoded `"stream": False`, zero streaming exists at the provider layer today** (Stage 4b)
+- [x] Add real provider-level token streaming to `backend/models/providers.py` for OpenAI/Anthropic/Gemini/local-OpenAI-compatible adapters (Stage 4b) — done 2026-07-02, incl. fixing a pre-existing break where local providers (vllm/llamacpp) couldn't chat at all
 - [ ] Replace regex-based entity/call extraction in `backend/rag/graph.py` with AST-based parsing — current regex matches any `identifier(` as a "calls" edge, including keywords/builtins, so call-graph edges are noisy (Stage 7)
 
 ---
@@ -178,8 +178,9 @@ Branch: `codex/agentic-coding-ux-streaming-v1` (not yet started)
 
 **Verification note — plan doc understates this stage's true size.** The plan's Grounding section says "No streaming, no prompt caching" but Stage 4b's scope reads like a UI-only task. It isn't: `backend/models/providers.py:289` hardcodes `"stream": False` in the OpenAI-format request builder used for OpenAI and local OpenAI-compatible endpoints, and there is no chunked/SSE response parsing anywhere in the provider layer. There *is* an existing generic SSE channel (`new EventSource("/api/events")` at `frontend-src/src/app/App.jsx:589`) that Stage 4b can extend for delivery, but token-level streaming has to be built into the provider layer first — that's the Very Hard item below, and it's a prerequisite, not a parallel task.
 
-- [ ] Add real provider-level token streaming to `backend/models/providers.py` for OpenAI, Anthropic, Gemini, and local OpenAI-compatible adapters — **(Very Hard** — new architecture per-provider, must not break existing tool-calling flow**)**
-- [ ] Thread streamed deltas through `_chat()` / `governed_chat()` (`backend/engine/agent.py`) without breaking the existing tool-loop message accumulation from Stage 4a — **(Hard)**
+- [x] Add real provider-level token streaming — done 2026-07-02: `chat(model, ..., on_delta=None)` — `None` keeps the exact previous non-streaming behavior; a callback opts into SSE streaming with `{"type":"text"}` / `{"type":"tool_call"}` events, and the `(text, tool_calls)` return contract is identical either way (tool-call fragments assembled across chunks, crashing consumers can't abort the request). Implemented for OpenAI-format (API + all local runtimes), Anthropic (content_block events incl. `input_json_delta`), and Gemini (`:streamGenerateContent?alt=sse`).
+- [x] **Pre-existing break found and fixed while in there:** `chat_sync` raised "Provider vllm is not supported" for every local provider — the default `main-vllm` model could never chat at all (masked by the no-live-model env-block). All non-Anthropic/Gemini providers now route through the OpenAI-format path, with auth optional for local runtimes (API providers still require a key). Regression test added.
+- [ ] Thread streamed deltas through `_chat()` / `governed_chat()` (`backend/engine/agent.py`) without breaking the existing tool-loop message accumulation from Stage 4a — **(Hard** — note: `on_delta` is invoked from a worker thread; marshal to the event loop before touching asyncio state**)**
 - [ ] Identify/confirm the existing SSE extension point (`/api/events`, `App.jsx:589`) as the delivery channel — **(Easy)**
 - [ ] Stream model output tokens to the UI as generated (depends on the two items above) — **(Hard)**
 - [ ] Stream tool-call events (tool name, args, start/end, result summary) to the UI as they happen — **(Medium** — tool calls are already logged server-side, this is mostly plumbing over the existing channel**)**

@@ -1185,6 +1185,140 @@ class BackendSmokeTests(unittest.TestCase):
             }))
         self.assertEqual(explicit["role"], "helper")
 
+    def testProviderChatRoutesLocalRuntimesThroughOpenAiFormat(self):
+        from backend.models import providers as model_providers
+
+        captured = {}
+
+        class FakeJsonResponse:
+            def read(self):
+                return json.dumps({
+                    "choices": [{"message": {"content": "local says hi", "tool_calls": []}}],
+                }).encode("utf-8")
+
+        def fake_urlopen(req, timeout=None):
+            captured["url"] = req.full_url
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            captured["headers"] = dict(req.headers)
+            return FakeJsonResponse()
+
+        model = {"provider": "vllm", "base_url": "http://127.0.0.1:8000/v1", "model": "local-main"}
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            text, tool_calls = model_providers.chat_sync(model, [{"role": "user", "content": "hi"}], 64, 0)
+        self.assertEqual(text, "local says hi")
+        self.assertEqual(tool_calls, [])
+        self.assertTrue(captured["url"].endswith("/chat/completions"))
+        self.assertFalse(captured["body"]["stream"])
+        # Local runtimes run without auth — no Authorization header demanded.
+        self.assertNotIn("Authorization", captured["headers"])
+
+    def testProviderStreamingAssemblesTextAndToolCalls(self):
+        from backend.models import providers as model_providers
+
+        class FakeSseResponse:
+            def __init__(self, lines):
+                self._lines = [line.encode("utf-8") for line in lines]
+
+            def __iter__(self):
+                return iter(self._lines)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        # ── OpenAI-format (also the local vLLM/llama.cpp path) ──
+        openai_lines = [
+            'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+            'data: {"choices":[{"delta":{"content":"lo"}}]}',
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"fs_read","arguments":"{\\"pa"}}]}}]}',
+            'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\\": \\"a.py\\"}"}}]}}]}',
+            "data: [DONE]",
+        ]
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["url"] = req.full_url
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return FakeSseResponse(openai_lines)
+
+        events = []
+        model = {"provider": "vllm", "base_url": "http://127.0.0.1:8000/v1", "model": "local-main"}
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            text, tool_calls = model_providers.chat_sync(
+                model, [{"role": "user", "content": "hi"}], 64, 0, on_delta=events.append,
+            )
+        self.assertEqual(text, "Hello")
+        self.assertEqual(tool_calls, [{"id": "call_1", "name": "fs_read", "args": {"path": "a.py"}}])
+        self.assertTrue(captured["body"]["stream"])
+        self.assertEqual(
+            [e for e in events if e["type"] == "text"],
+            [{"type": "text", "text": "Hel"}, {"type": "text", "text": "lo"}],
+        )
+        self.assertEqual(
+            [e for e in events if e["type"] == "tool_call"],
+            [{"type": "tool_call", "id": "call_1", "name": "fs_read"}],
+        )
+
+        # ── Anthropic SSE ──
+        anthropic_lines = [
+            'data: {"type":"message_start"}',
+            'data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}',
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi "}}',
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"there"}}',
+            'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_1","name":"git_status"}}',
+            'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"works"}}',
+            'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"pace\\": \\".\\"}"}}',
+            'data: {"type":"message_stop"}',
+        ]
+        events = []
+        model = {"provider": "anthropic", "model": "claude-3-5-sonnet-20241022"}
+        with patch("urllib.request.urlopen", return_value=FakeSseResponse(anthropic_lines)), \
+             patch("backend.models.secrets.api_key_for", return_value=("test-key", "env")), \
+             patch("backend.core.security.require_local_url", return_value=True):
+            text, tool_calls = model_providers.chat_sync(
+                model, [{"role": "user", "content": "hi"}], 64, 0, on_delta=events.append,
+            )
+        self.assertEqual(text, "Hi there")
+        self.assertEqual(tool_calls, [{"id": "tu_1", "name": "git_status", "args": {"workspace": "."}}])
+        self.assertIn({"type": "tool_call", "id": "tu_1", "name": "git_status"}, events)
+
+        # ── Gemini SSE ──
+        gemini_lines = [
+            'data: {"candidates":[{"content":{"parts":[{"text":"Sum"}]}}]}',
+            'data: {"candidates":[{"content":{"parts":[{"text":"med"},{"functionCall":{"name":"fs_search","args":{"query":"add"}}}]}}]}',
+        ]
+        events = []
+        captured = {}
+
+        def fake_gemini_urlopen(req, timeout=None):
+            captured["url"] = req.full_url
+            return FakeSseResponse(gemini_lines)
+
+        model = {"provider": "gemini", "model": "gemini-2.5-flash"}
+        with patch("urllib.request.urlopen", side_effect=fake_gemini_urlopen), \
+             patch("backend.models.secrets.api_key_for", return_value=("test-key", "env")), \
+             patch("backend.core.security.require_local_url", return_value=True):
+            text, tool_calls = model_providers.chat_sync(
+                model, [{"role": "user", "content": "hi"}], 64, 0, on_delta=events.append,
+            )
+        self.assertEqual(text, "Summed")
+        self.assertEqual(tool_calls, [{"id": "call_fs_search", "name": "fs_search", "args": {"query": "add"}}])
+        self.assertIn(":streamGenerateContent?alt=sse", captured["url"])
+
+        # A crashing delta consumer must not break the request.
+        def bad_consumer(event):
+            raise RuntimeError("consumer bug")
+
+        with patch("urllib.request.urlopen", return_value=FakeSseResponse(openai_lines)):
+            text, tool_calls = model_providers.chat_sync(
+                {"provider": "vllm", "base_url": "http://127.0.0.1:8000/v1", "model": "m"},
+                [{"role": "user", "content": "hi"}], 64, 0, on_delta=bad_consumer,
+            )
+        self.assertEqual(text, "Hello")
+        self.assertEqual(len(tool_calls), 1)
+
     def testCodingTrialBlindCompareScoresAndPinsCoderRole(self):
         from backend.models import registry as model_registry
 

@@ -108,8 +108,14 @@ def _request_json(url, method="GET", payload=None, headers=None, timeout=45):
 
 
 def _openai_headers(model):
-    api_key, _source = _key(model)
-    return {"Authorization": f"Bearer {api_key}"}
+    # Remote API providers must have a key; local OpenAI-compatible runtimes
+    # (vLLM, llama.cpp server, Ollama) usually run without auth, so a missing
+    # key is only an error when the provider is a remote API.
+    if is_api_provider(model):
+        api_key, _source = _key(model)
+        return {"Authorization": f"Bearer {api_key}"}
+    api_key, _source = model_secrets.api_key_for(model)
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
 def _anthropic_headers(model):
@@ -125,17 +131,22 @@ def _gemini_headers(model):
     return {"x-goog-api-key": api_key}
 
 
-def chat_url(model):
+def chat_url(model, stream=False):
     provider = provider_key(model.get("provider"))
     base = _base(model)
-    if provider in OPENAI_COMPATIBLE_API_PROVIDERS:
-        return base.rstrip("/") + "/chat/completions"
     if provider == "anthropic":
         return base.rstrip("/") + "/messages"
     if provider == "gemini":
         model_id = str(model.get("model") or default_model("gemini")).removeprefix("models/")
-        return base.rstrip("/") + f"/models/{urllib.parse.quote(model_id, safe='.-_')}:generateContent"
-    return ""
+        verb = "streamGenerateContent" if stream else "generateContent"
+        suffix = "?alt=sse" if stream else ""
+        return base.rstrip("/") + f"/models/{urllib.parse.quote(model_id, safe='.-_')}:{verb}{suffix}"
+    if not base:
+        return ""
+    # Everything else — the OpenAI API itself, remote OpenAI-compatible APIs,
+    # and every local runtime this stack deploys (vLLM, llama.cpp server,
+    # Ollama's OpenAI endpoint) — speaks the /chat/completions dialect.
+    return base.rstrip("/") + "/chat/completions"
 
 
 def models_url(model):
@@ -286,7 +297,6 @@ def _openai_payload(model, messages, max_tokens, temperature, tools=None):
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "stream": False,
     }
     if tools:
         openai_tools = []
@@ -366,34 +376,191 @@ def _parse_openai_response(data):
     return text.strip(), tool_calls
 
 
-def chat_sync(model, messages, max_tokens, temperature, tools=None):
+def _emit(on_delta, event):
+    if not on_delta:
+        return
+    try:
+        on_delta(event)
+    except Exception:
+        # A misbehaving delta consumer must never abort the model request —
+        # the assembled (text, tool_calls) result is the source of truth.
+        pass
+
+
+def _open_sse(url, payload, headers, timeout=120):
+    data = json.dumps(payload).encode("utf-8")
+    req_headers = {"Accept": "text/event-stream", "Content-Type": "application/json", **(headers or {})}
+    req = urllib.request.Request(url, data=data, headers=req_headers, method="POST")
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _iter_sse(response):
+    """Yield the payload of each `data:` line. Stops on [DONE]."""
+    for raw in response:
+        line = raw.decode("utf-8", "replace").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if data == "[DONE]":
+            return
+        if data:
+            yield data
+
+
+def _finalize_tool_calls(slots):
+    tool_calls = []
+    for slot in slots:
+        if not slot.get("name"):
+            continue
+        try:
+            args = json.loads(slot.get("arguments") or "{}")
+        except Exception:
+            args = {}
+        tool_calls.append({
+            "id": slot.get("id") or f"call_{slot['name']}",
+            "name": slot["name"],
+            "args": args,
+        })
+    return tool_calls
+
+
+def _stream_openai(url, payload, headers, on_delta):
+    text_parts = []
+    slots = {}
+    with _open_sse(url, payload, headers) as response:
+        for data in _iter_sse(response):
+            try:
+                chunk = json.loads(data)
+            except Exception:
+                continue
+            for choice in chunk.get("choices") or []:
+                delta = choice.get("delta") or {}
+                piece = delta.get("content")
+                if piece:
+                    text_parts.append(piece)
+                    _emit(on_delta, {"type": "text", "text": piece})
+                for tc in delta.get("tool_calls") or []:
+                    index = tc.get("index", 0)
+                    slot = slots.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name") and not slot["name"]:
+                        slot["name"] = fn["name"]
+                        _emit(on_delta, {"type": "tool_call", "id": slot["id"], "name": slot["name"]})
+                    if fn.get("arguments"):
+                        slot["arguments"] += fn["arguments"]
+    ordered = [slots[key] for key in sorted(slots)]
+    return "".join(text_parts).strip(), _finalize_tool_calls(ordered)
+
+
+def _stream_anthropic(url, payload, headers, on_delta):
+    blocks = {}
+    with _open_sse(url, payload, headers) as response:
+        for data in _iter_sse(response):
+            try:
+                event = json.loads(data)
+            except Exception:
+                continue
+            kind = event.get("type")
+            if kind == "content_block_start":
+                index = event.get("index", 0)
+                block = event.get("content_block") or {}
+                blocks[index] = {
+                    "type": block.get("type"),
+                    "text": "",
+                    "id": block.get("id", ""),
+                    "name": block.get("name", ""),
+                    "arguments": "",
+                }
+                if block.get("type") == "tool_use":
+                    _emit(on_delta, {"type": "tool_call", "id": block.get("id", ""), "name": block.get("name", "")})
+            elif kind == "content_block_delta":
+                index = event.get("index", 0)
+                block = blocks.setdefault(index, {"type": "text", "text": "", "id": "", "name": "", "arguments": ""})
+                delta = event.get("delta") or {}
+                if delta.get("type") == "text_delta" and delta.get("text"):
+                    block["text"] += delta["text"]
+                    _emit(on_delta, {"type": "text", "text": delta["text"]})
+                elif delta.get("type") == "input_json_delta" and delta.get("partial_json"):
+                    block["arguments"] += delta["partial_json"]
+            elif kind == "message_stop":
+                break
+    ordered = [blocks[key] for key in sorted(blocks)]
+    text = "\n".join(block["text"] for block in ordered if block["type"] == "text" and block["text"]).strip()
+    tool_slots = [block for block in ordered if block["type"] == "tool_use"]
+    return text, _finalize_tool_calls(tool_slots)
+
+
+def _stream_gemini(url, payload, headers, on_delta):
+    text_parts = []
+    tool_calls = []
+    with _open_sse(url, payload, headers) as response:
+        for data in _iter_sse(response):
+            try:
+                chunk = json.loads(data)
+            except Exception:
+                continue
+            candidates = chunk.get("candidates") or []
+            if not candidates:
+                continue
+            for part in (candidates[0].get("content") or {}).get("parts") or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("text"):
+                    text_parts.append(str(part["text"]))
+                    _emit(on_delta, {"type": "text", "text": str(part["text"])})
+                elif part.get("functionCall"):
+                    fc = part["functionCall"]
+                    call = {"id": f"call_{fc.get('name')}", "name": fc.get("name"), "args": fc.get("args", {})}
+                    tool_calls.append(call)
+                    _emit(on_delta, {"type": "tool_call", "id": call["id"], "name": call["name"]})
+    return "".join(text_parts).strip(), tool_calls
+
+
+def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=None):
     provider = provider_key(model.get("provider"))
-    url = chat_url(model)
+    stream = on_delta is not None
+    url = chat_url(model, stream=stream)
+    if not url:
+        raise AppError("model_base_url_missing", "Model has no base URL to send chat requests to.", 400)
     security.require_local_url(url)
-    if provider in OPENAI_COMPATIBLE_API_PROVIDERS:
-        payload = _openai_payload(model, messages, max_tokens, temperature, tools)
-        headers = _openai_headers(model)
-        parser = _parse_openai_response
-    elif provider == "anthropic":
+    if provider == "anthropic":
         payload = _anthropic_payload(model, messages, max_tokens, temperature, tools)
         headers = _anthropic_headers(model)
         parser = _parse_anthropic_response
+        streamer = _stream_anthropic
+        if stream:
+            payload["stream"] = True
     elif provider == "gemini":
         payload = _gemini_payload(model, messages, max_tokens, temperature, tools)
         headers = _gemini_headers(model)
         parser = _parse_gemini_response
+        streamer = _stream_gemini
     else:
-        raise AppError("model_provider_unsupported", f"Provider {provider or 'unknown'} is not supported.", 400)
+        # OpenAI API, remote OpenAI-compatible APIs, and all local runtimes.
+        payload = _openai_payload(model, messages, max_tokens, temperature, tools)
+        headers = _openai_headers(model)
+        parser = _parse_openai_response
+        streamer = _stream_openai
+        payload["stream"] = stream
 
-    data = _request_json(url, "POST", payload, headers, 60)
-    text, tool_calls = parser(data)
+    if stream:
+        text, tool_calls = streamer(url, payload, headers, on_delta)
+    else:
+        data = _request_json(url, "POST", payload, headers, 60)
+        text, tool_calls = parser(data)
     if not text and not tool_calls:
         raise AppError("model_response_empty", "Provider returned no text or tool response.", 502)
     return text, tool_calls
 
 
-async def chat(model, messages, max_tokens=1024, temperature=0.2, tools=None):
-    return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature, tools)
+async def chat(model, messages, max_tokens=1024, temperature=0.2, tools=None, on_delta=None):
+    """on_delta, when given, switches to a streaming request. It is invoked
+    from a worker thread with {"type": "text", "text": ...} and
+    {"type": "tool_call", "id": ..., "name": ...} events as they arrive;
+    the returned (text, tool_calls) is identical either way."""
+    return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature, tools, on_delta)
 
 
 def _parse_model_ids(payload, provider):
