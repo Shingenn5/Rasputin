@@ -9,17 +9,23 @@ from pathlib import Path
 from backend.mcp.layer import McpLayer
 from backend.models import providers as model_providers
 
-async def _chat(model_key, messages, tools=None):
+async def _chat(model_key, messages, tools=None, on_delta=None):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
     if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
         user_msg = messages[-1]["content"] if messages else ""
-        return f"This is a dry-run response to: {user_msg}", []
-        
+        reply = f"This is a dry-run response to: {user_msg}"
+        if on_delta:
+            try:
+                on_delta({"type": "text", "text": reply})
+            except Exception:
+                pass
+        return reply, []
+
     cfg_for_limits = dict(cfg or {})
     max_tokens = context_governor.normalize_limits(cfg_for_limits)["maxTokens"]
-    
+
     try:
-        return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools)
+        return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools, on_delta=on_delta)
     except Exception as exc:
         security.audit.log("model_chat_failed", {
             "key": model_key,
@@ -69,6 +75,11 @@ class AgentTask:
         self.graph = []
         self.outputs = []
         self.trace = []
+        # Live-streaming state: current phase's partial model output and the
+        # running step list (phases + tool calls). Written from the provider
+        # worker thread; plain field assignment keeps it GIL-safe.
+        self.stream_text = ""
+        self.steps = []
         self.cancel_requested = False
         self.paused_requested = False
         self.workspace = workspace_path or workspace.get_active()["active_path"]
@@ -117,8 +128,10 @@ class AgentHub:
         task = self.tasks.get(task_id)
         if not task:
             return
-        data = self.snapshot_task(task)
-        
+        # Wrapped as {"task": ...} — the frontend event handler dispatches on
+        # that key; a bare snapshot is silently ignored on the client.
+        data = {"task": self.snapshot_task(task)}
+
         def push_to_queues():
             dead = []
             for q in list(self.listeners):
@@ -266,7 +279,7 @@ class AgentHub:
 
     async def emit(self, task):
         self._persist_task(task)
-        data = self.snapshot_task(task)
+        data = {"task": self.snapshot_task(task)}
         dead = []
         for q in self.listeners:
             try:
@@ -292,6 +305,8 @@ class AgentHub:
             "graph": task.graph,
             "outputs": task.outputs,
             "trace": task.trace[-80:],
+            "streamText": task.stream_text[-4000:],
+            "steps": task.steps[-40:],
             "permissionSnapshot": task.permission_snapshot,
             "workspace": task.workspace,
             "parentId": task.parent_id,
@@ -316,6 +331,8 @@ class AgentHub:
             "graph": [],
             "outputs": [],
             "trace": [],
+            "streamText": "",
+            "steps": [],
             "permissionSnapshot": store._loads(task["permission_snapshot"], {}),
             "workspace": task["workspace"],
             "parentId": task["parent_id"],
@@ -783,6 +800,36 @@ class AgentHub:
             task.log(f"context: archived {archived} older tool result(s) to stay within budget")
         return messages
 
+    def _add_step(self, task, kind, name, status="running"):
+        step = {"kind": kind, "name": name, "status": status, "at": time.time()}
+        task.steps.append(step)
+        task.steps = task.steps[-60:]
+        self._trigger_broadcast(task.id)
+        return step
+
+    def _finish_step(self, task, step, status):
+        step["status"] = status
+        self._trigger_broadcast(task.id)
+
+    def _stream_delta_handler(self, task):
+        """Delta consumer handed to the provider layer. Invoked from the
+        provider's worker thread — it only does GIL-safe field appends and
+        _trigger_broadcast (which already marshals onto the event loop via
+        call_soon_threadsafe). Broadcasts are throttled so token spray
+        doesn't flood the SSE listeners with a snapshot per token."""
+        state = {"last": 0.0}
+
+        def on_delta(event):
+            kind = event.get("type")
+            if kind == "text":
+                task.stream_text += event.get("text") or ""
+            now = time.time()
+            if kind == "tool_call" or now - state["last"] >= 0.15:
+                state["last"] = now
+                self._trigger_broadcast(task.id)
+
+        return on_delta
+
     async def governed_chat(self, task, phase, role, sections, tools=None):
         model_key = self.phase_model(task, role)
         bundle = context_governor.compose_prompt(model_key, phase, sections)
@@ -800,46 +847,59 @@ class AgentHub:
         max_seconds = budget["max_seconds"]
         started_at = time.time()
 
-        for attempt in range(max_attempts):
-            if time.time() - started_at > max_seconds:
-                task.log(f"tool loop stopped: {max_seconds}s time budget exceeded after {attempt} iteration(s)")
-                return f"Error: Tool loop time budget ({max_seconds}s) exceeded after {attempt} iteration(s)."
+        on_delta = self._stream_delta_handler(task)
+        phase_step = self._add_step(task, "phase", phase)
 
-            messages = self._bound_tool_loop_messages(task, model_key, messages)
-            text, tool_calls = await _chat(model_key, messages, tools=tools)
+        try:
+            for attempt in range(max_attempts):
+                if time.time() - started_at > max_seconds:
+                    task.log(f"tool loop stopped: {max_seconds}s time budget exceeded after {attempt} iteration(s)")
+                    self._finish_step(task, phase_step, "error")
+                    return f"Error: Tool loop time budget ({max_seconds}s) exceeded after {attempt} iteration(s)."
 
-            if text or tool_calls:
-                messages.append({
-                    "role": "assistant",
-                    "content": text,
-                    "tool_calls": tool_calls
-                })
+                messages = self._bound_tool_loop_messages(task, model_key, messages)
+                task.stream_text = ""
+                text, tool_calls = await _chat(model_key, messages, tools=tools, on_delta=on_delta)
 
-            if not tool_calls:
-                return text
-
-            for tc in tool_calls:
-                task.log(f"tool: {tc['name']}")
-                try:
-                    args = tc.get("args", {})
-                    args["_task_id"] = task.id
-                    result = await self.mcp.call_tool(tc["name"], args, on_log=task.log)
+                if text or tool_calls:
                     messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "name": tc["name"],
-                        "content": json.dumps(result, ensure_ascii=False)
-                    })
-                except Exception as exc:
-                    task.log(f"tool error: {exc}")
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "name": tc["name"],
-                        "content": f"Error executing {tc['name']}: {exc}"
+                        "role": "assistant",
+                        "content": text,
+                        "tool_calls": tool_calls
                     })
 
-        return f"Error: Maximum tool loop iterations ({max_attempts}) exceeded."
+                if not tool_calls:
+                    self._finish_step(task, phase_step, "done")
+                    return text
+
+                for tc in tool_calls:
+                    task.log(f"tool: {tc['name']}")
+                    step = self._add_step(task, "tool", tc["name"])
+                    try:
+                        args = tc.get("args", {})
+                        args["_task_id"] = task.id
+                        result = await self.mcp.call_tool(tc["name"], args, on_log=task.log)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": tc["name"],
+                            "content": json.dumps(result, ensure_ascii=False)
+                        })
+                        self._finish_step(task, step, "done")
+                    except Exception as exc:
+                        task.log(f"tool error: {exc}")
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": tc["name"],
+                            "content": f"Error executing {tc['name']}: {exc}"
+                        })
+                        self._finish_step(task, step, "error")
+
+            self._finish_step(task, phase_step, "error")
+            return f"Error: Maximum tool loop iterations ({max_attempts}) exceeded."
+        finally:
+            task.stream_text = ""
 
     async def chat_reply(self, task):
         try:

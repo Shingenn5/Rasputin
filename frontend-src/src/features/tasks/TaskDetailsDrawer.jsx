@@ -152,6 +152,29 @@ export function TaskDetailsDrawer({
                       </button>
                     </div>
                   )}
+                  {(active || (task.steps || []).length > 0) && (
+                    <article className="drawer-result-block" data-testid="task-live-activity">
+                      <h2>Live Activity</h2>
+                      {(task.steps || []).length ? (
+                        <ul className="live-step-list">
+                          {(task.steps || []).map((step, index) => (
+                            <li key={`${step.name}-${step.at}-${index}`} className={`live-step live-step-${step.status}`}>
+                              <span className="live-step-status" aria-hidden="true">
+                                {step.status === "running" ? "●" : step.status === "done" ? "✓" : "✕"}
+                              </span>
+                              <span className="live-step-kind">{step.kind}</span>
+                              <span className="live-step-name">{step.name}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="empty-inline">No steps recorded yet.</p>
+                      )}
+                      {active && task.streamText ? (
+                        <pre className="log-box live-stream-text" data-testid="task-stream-text">{task.streamText}</pre>
+                      ) : null}
+                    </article>
+                  )}
                   <article className="drawer-result-block">
                     <h2>Result</h2>
                     <div className="markdown-body">

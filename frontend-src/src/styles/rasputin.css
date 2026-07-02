@@ -6158,6 +6158,38 @@ button.runtime-chip {
   padding: .875rem;
 }
 
+/* ── Live task activity (streamed steps + partial model output) ── */
+.live-step-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.live-step {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: .8rem;
+  color: var(--ras-muted);
+}
+.live-step-status { width: 14px; text-align: center; }
+.live-step-running .live-step-status { color: var(--ras-warn); }
+.live-step-done .live-step-status { color: var(--ras-safe); }
+.live-step-error .live-step-status { color: var(--ras-danger); }
+.live-step-kind {
+  text-transform: uppercase;
+  font-size: .62rem;
+  letter-spacing: .08em;
+  opacity: .7;
+}
+.live-step-name { color: var(--ras-text); }
+.live-stream-text {
+  min-height: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .audit-log {
   flex: 1;
   margin: 1.125rem;

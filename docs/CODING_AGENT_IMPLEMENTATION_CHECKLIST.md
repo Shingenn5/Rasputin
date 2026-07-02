@@ -24,7 +24,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 ### Easy
 - [ ] Fix hardcoded `--bs-primary-rgb` so Bootstrap components follow the selected theme's accent (UI Bug Fix 1)
 - [ ] Configure a real model endpoint for verification (Stage 4a follow-up)
-- [ ] Identify/confirm SSE extension point at `frontend-src/src/app/App.jsx:589` (Stage 4b)
+- [x] Identify/confirm SSE extension point at `frontend-src/src/app/App.jsx:589` (Stage 4b) — done 2026-07-02
 - [ ] Quick action: view diff for a file (Stage 5)
 - [ ] Reuse existing `TaskDetailsDrawer.jsx` structure (Stage 5)
 - [ ] Parse pass/fail from test command output (Stage 6)
@@ -35,10 +35,10 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 ### Medium
 - [ ] Consolidate Recent Chats into the sidebar's single scroll region instead of its own nested scrollbar (UI Bug Fix 2)
 - [ ] Run one real multi-file bug-fix task end-to-end (Stage 4a follow-up)
-- [ ] Stream tool-call events to UI (Stage 4b)
-- [ ] Add lightweight step/plan list to task view (Stage 4b)
-- [ ] Update step/plan list in real time (Stage 4b)
-- [ ] Wire frontend task view to consume incremental events (Stage 4b)
+- [x] Stream tool-call events to UI (Stage 4b) — done 2026-07-02
+- [x] Add lightweight step/plan list to task view (Stage 4b) — done 2026-07-02
+- [x] Update step/plan list in real time (Stage 4b) — done 2026-07-02
+- [x] Wire frontend task view to consume incremental events (Stage 4b) — done 2026-07-02
 - [ ] Touched-files list in task detail view (Stage 5)
 - [ ] Per-file syntax-highlighted diff viewer (Stage 5)
 - [ ] Live terminal/log pane for shell output (Stage 5)
@@ -52,9 +52,9 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Let operator pin trial winner to `coder` role (Stage 9) — done 2026-07-01
 
 ### Hard
-- [ ] Thread streamed deltas through `_chat()`/`governed_chat()` without breaking tool-loop accumulation (Stage 4b)
-- [ ] Stream model output tokens to UI end-to-end (Stage 4b, depends on provider streaming below)
-- [ ] Test: reconnect/resume mid-stream doesn't duplicate/drop events (Stage 4b)
+- [x] Thread streamed deltas through `_chat()`/`governed_chat()` without breaking tool-loop accumulation (Stage 4b) — done 2026-07-02
+- [x] Stream model output tokens to UI end-to-end (Stage 4b) — done 2026-07-02
+- [x] Test: reconnect/resume mid-stream doesn't duplicate/drop events (Stage 4b) — done 2026-07-02 (full-snapshot design makes this structural)
 - [x] Add dedicated relation-query verbs ("what calls X" / "where used" / "what imports") (Stage 7) — done 2026-07-01
 - [x] Extend Warsat fit-scoring to flag coding-capable local models for `coder` role (Stage 8) — done 2026-07-01
 - [ ] Test: local-routed `code` mode completes a real task **(env-blocked — needs a deployed local model)** (Stage 8)
@@ -172,7 +172,7 @@ Branch: `codex/agentic-coding-loop-v1` · Commit: `5000e0d`
 
 ---
 
-## Stage 4b: Stream Model Output and Tool Events to the UI — ☐ PENDING (next up)
+## Stage 4b: Stream Model Output and Tool Events to the UI — ✅ COMPLETE (2026-07-02)
 
 Branch: `codex/agentic-coding-ux-streaming-v1` (not yet started)
 
@@ -180,17 +180,17 @@ Branch: `codex/agentic-coding-ux-streaming-v1` (not yet started)
 
 - [x] Add real provider-level token streaming — done 2026-07-02: `chat(model, ..., on_delta=None)` — `None` keeps the exact previous non-streaming behavior; a callback opts into SSE streaming with `{"type":"text"}` / `{"type":"tool_call"}` events, and the `(text, tool_calls)` return contract is identical either way (tool-call fragments assembled across chunks, crashing consumers can't abort the request). Implemented for OpenAI-format (API + all local runtimes), Anthropic (content_block events incl. `input_json_delta`), and Gemini (`:streamGenerateContent?alt=sse`).
 - [x] **Pre-existing break found and fixed while in there:** `chat_sync` raised "Provider vllm is not supported" for every local provider — the default `main-vllm` model could never chat at all (masked by the no-live-model env-block). All non-Anthropic/Gemini providers now route through the OpenAI-format path, with auth optional for local runtimes (API providers still require a key). Regression test added.
-- [ ] Thread streamed deltas through `_chat()` / `governed_chat()` (`backend/engine/agent.py`) without breaking the existing tool-loop message accumulation from Stage 4a — **(Hard** — note: `on_delta` is invoked from a worker thread; marshal to the event loop before touching asyncio state**)**
-- [ ] Identify/confirm the existing SSE extension point (`/api/events`, `App.jsx:589`) as the delivery channel — **(Easy)**
-- [ ] Stream model output tokens to the UI as generated (depends on the two items above) — **(Hard)**
-- [ ] Stream tool-call events (tool name, args, start/end, result summary) to the UI as they happen — **(Medium** — tool calls are already logged server-side, this is mostly plumbing over the existing channel**)**
-- [ ] Add a lightweight step/plan list to the task view — **(Medium)**
-- [ ] Update step/plan list as steps complete, in real time — **(Medium)**
-- [ ] Wire frontend task view to consume the new incremental events — **(Medium)**
-- [ ] Test: streamed events arrive incrementally in a live task view (not just at completion) — **(Medium)**
-- [ ] Test: reconnect/resume mid-stream doesn't duplicate or drop events — **(Hard)**
-- [ ] Validation: backend smoke suite passes, frontend build, repo safety check — **(Easy)**
-- [ ] Validation: live browser pass watching a real/scripted task stream tokens + tool events + step list update in real time — **(Medium)**
+- [x] Thread streamed deltas through `_chat()` / `governed_chat()` — done 2026-07-02: `_stream_delta_handler` appends to `task.stream_text` (GIL-safe field writes from the provider worker thread) and triggers throttled broadcasts (150ms, immediate on tool_call) via the already-thread-safe `_trigger_broadcast`; Stage 4a's message accumulation untouched (all three existing scripted `_chat` mocks updated for the new kwarg)
+- [x] SSE delivery channel — done: existing `/api/events` + full-task-snapshot push reused. **Pre-existing break found and fixed:** producers pushed *raw* snapshots but the frontend event handler only dispatches on wrapped keys (`data.task`), so live task updates were silently dead on the client; payloads are now wrapped `{"task": snapshot}`
+- [x] Stream model output tokens to the UI as generated — done: `task.streamText` (capped 4k) rides every snapshot; drawer paints it live
+- [x] Stream tool-call events to the UI — done: phase + tool steps with running/done/error status
+- [x] Lightweight step/plan list in the task view — done: "Live Activity" block in `TaskDetailsDrawer` overview (step list + live text pane)
+- [x] Update step list in real time — done: broadcasts on step add/finish
+- [x] Wire frontend to consume incremental events — done: `App.jsx` merges live snapshots straight into the open drawer (full detail refetch only on terminal status, instead of a REST refetch per event)
+- [x] Test: streamed events arrive incrementally — `testGovernedChatStreamsTokensAndStepsToListeners`: partial text observable mid-stream, step list advances live, listener queue receives wrapped snapshots
+- [x] Test: reconnect/resume — every SSE message is a self-contained full snapshot, so a reconnecting client rebuilds state from any single message; asserted in the same test (no incremental deltas exist to duplicate/drop)
+- [x] Validation: backend smoke 60/60, frontend build, repo safety check (2026-07-02)
+- [x] Validation: live browser pass — dry-run task streamed status/steps into the open drawer purely via SSE (5/5 checks, zero console errors); screenshots in session scratchpad
 
 **Definition of done (Stage 4 overall, once 4b lands):** a real multi-file bug fix completes in one task without an artificial ceiling, and the operator can watch it happen live.
 

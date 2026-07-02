@@ -160,24 +160,6 @@ export function GeneralSettings({ setTheme }) {
           </Card>
         </Col>
 
-        {/* Full Width Footer Area */}
-        <Col md={12}>
-          <Card className="shadow-sm border-0 bg-primary bg-opacity-10 text-primary">
-            <Card.Body className="d-flex justify-content-between align-items-center py-3">
-              <div>
-                <h6 className="mb-1 fw-bold">Telemetry & Analytics</h6>
-                <p className="mb-0 small opacity-75">Help us improve Rasputin by sharing anonymous usage data.</p>
-              </div>
-              <Form.Check 
-                type="switch" 
-                id="telemetry-switch"
-                className="fs-4"
-                checked={!!formData?.telemetryEnabled}
-                onChange={() => handleToggle("telemetryEnabled")}
-              />
-            </Card.Body>
-          </Card>
-        </Col>
       </Row>
     </section>
   );

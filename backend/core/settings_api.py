@@ -17,8 +17,7 @@ DEFAULT_SETTINGS = {
         "language": "en",
         "workspacePath": "/app/workspace",
         "markdownOutput": True,
-        "testingMode": False,
-        "telemetryEnabled": False
+        "testingMode": False
     },
     "runtime": {
         "autoRestart": True,

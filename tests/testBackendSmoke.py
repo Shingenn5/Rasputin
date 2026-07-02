@@ -2044,7 +2044,7 @@ class BackendSmokeTests(unittest.TestCase):
         hub = agent.AgentHub()
         call_count = {"n": 0}
 
-        async def scripted_chat(model_key, messages, tools=None):
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None):
             call_count["n"] += 1
             if call_count["n"] <= 20:
                 return "", [{"id": f"call-{call_count['n']}", "name": "shell_exec", "args": {"command": "echo hi"}}]
@@ -2075,7 +2075,7 @@ class BackendSmokeTests(unittest.TestCase):
         hub = agent.AgentHub()
         call_count = {"n": 0}
 
-        async def scripted_chat(model_key, messages, tools=None):
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None):
             call_count["n"] += 1
             if call_count["n"] <= 5:
                 return "", [{"id": f"call-{call_count['n']}", "name": "shell_exec", "args": {"command": "echo hi"}}]
@@ -2100,10 +2100,93 @@ class BackendSmokeTests(unittest.TestCase):
             ).fetchone()
         self.assertGreater(row["n"], 0)
 
+    def testGovernedChatStreamsTokensAndStepsToListeners(self):
+        hub = agent.AgentHub()
+        call_count = {"n": 0}
+
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                if on_delta:
+                    on_delta({"type": "text", "text": "Thinking "})
+                    on_delta({"type": "text", "text": "about it"})
+                    on_delta({"type": "tool_call", "id": "call-1", "name": "git_status"})
+                return "", [{"id": "call-1", "name": "git_status", "args": {}}]
+            if on_delta:
+                on_delta({"type": "text", "text": "All done"})
+            return "final answer", []
+
+        async def fake_call_tool(name, args, on_log=None):
+            return {"ok": True}
+
+        hub.mcp.call_tool = fake_call_tool
+        sections = [context_governor.section("task", "Task", "do the thing", required=True, priority=0)]
+        task = agent.AgentTask("stream please", "dry-run", "general", mode="code", workspace_path=".")
+        hub.tasks[task.id] = task
+        hub._persist_session(task)
+
+        # Capture what a broadcast would snapshot at each trigger point.
+        snapshots = []
+        original_trigger = hub._trigger_broadcast
+
+        def capture_trigger(task_id):
+            snapshots.append({
+                "streamText": task.stream_text,
+                "steps": [dict(step) for step in task.steps],
+            })
+            original_trigger(task_id)
+
+        hub._trigger_broadcast = capture_trigger
+
+        async def run():
+            queue = await hub.subscribe()
+            result = await hub.governed_chat(task, "execution", "coder", sections, tools=[{"id": "git_status"}])
+            # Let call_soon_threadsafe callbacks scheduled by broadcasts drain.
+            await asyncio.sleep(0)
+            return queue, result
+
+        with patch("backend.engine.agent._chat", scripted_chat):
+            queue, result = asyncio.run(run())
+
+        self.assertEqual(result, "final answer")
+
+        # Partial model output was observable mid-stream, before completion.
+        partials = [item["streamText"] for item in snapshots]
+        self.assertIn("Thinking ", partials)
+        self.assertIn("Thinking about it", partials)
+
+        # The step list advanced live: phase running -> tool running -> done.
+        step_states = [
+            [(step["kind"], step["name"], step["status"]) for step in item["steps"]]
+            for item in snapshots
+        ]
+        self.assertIn([("phase", "execution", "running")], step_states)
+        self.assertTrue(any(("tool", "git_status", "running") in states for states in step_states))
+        self.assertEqual(
+            [(step["kind"], step["name"], step["status"]) for step in task.steps],
+            [("phase", "execution", "done"), ("tool", "git_status", "done")],
+        )
+        # Live buffer is cleared once the phase completes; the assembled text
+        # lives in the result, not the stream buffer.
+        self.assertEqual(task.stream_text, "")
+
+        # Listener queue got wrapped, self-contained snapshots — a client that
+        # reconnects can rebuild full state from any single message, so
+        # reconnect/resume cannot duplicate or lose incremental deltas.
+        received = []
+        while not queue.empty():
+            received.append(queue.get_nowait())
+        self.assertTrue(received)
+        for item in received:
+            self.assertIn("task", item)
+            self.assertEqual(item["task"]["id"], task.id)
+            self.assertIn("streamText", item["task"])
+            self.assertIn("steps", item["task"])
+
     def testGovernedChatStopsOnTimeBudgetWithoutHanging(self):
         hub = agent.AgentHub()
 
-        async def scripted_chat(model_key, messages, tools=None):
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None):
             return "", [{"id": "call-1", "name": "shell_exec", "args": {"command": "echo hi"}}]
 
         async def fake_call_tool(name, args, on_log=None):

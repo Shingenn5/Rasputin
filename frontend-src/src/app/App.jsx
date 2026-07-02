@@ -598,7 +598,17 @@ export function App() {
         if (data.task) {
           setTasks((current) => [data.task, ...current.filter((task) => task.id !== data.task.id)]);
           queryClient.setQueryData(["tasks"], (current = []) => [data.task, ...current.filter((task) => task.id !== data.task.id)]);
-          if (selectedTaskIdRef.current) {
+          if (selectedTaskIdRef.current === data.task.id) {
+            // Merge the streamed snapshot straight into the open drawer so
+            // tokens/steps paint live; only refetch the full detail (events,
+            // approvals, children) once the task leaves the running state.
+            setTaskDetails((current) =>
+              current?.task?.id === data.task.id ? { ...current, task: { ...current.task, ...data.task } } : current,
+            );
+            if (!["running", "queued"].includes(data.task.status)) {
+              loadTaskDetails(selectedTaskIdRef.current, { silent: true });
+            }
+          } else if (selectedTaskIdRef.current) {
             loadTaskDetails(selectedTaskIdRef.current, { silent: true });
           }
         }
