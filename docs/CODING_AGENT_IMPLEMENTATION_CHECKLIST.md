@@ -62,7 +62,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 
 ### Very Hard
 - [x] Add real provider-level token streaming to `backend/models/providers.py` for OpenAI/Anthropic/Gemini/local-OpenAI-compatible adapters (Stage 4b) — done 2026-07-02, incl. fixing a pre-existing break where local providers (vllm/llamacpp) couldn't chat at all
-- [ ] Replace regex-based entity/call extraction in `backend/rag/graph.py` with AST-based parsing — current regex matches any `identifier(` as a "calls" edge, including keywords/builtins, so call-graph edges are noisy (Stage 7)
+- [x] Replace regex-based entity/call extraction in `backend/rag/graph.py` with AST-based parsing (Stage 7) — done 2026-07-03: whole-file `ast.parse` from disk (mtime-guarded against stale indexes), call edges only from real `ast.Call` nodes with builtins filtered; regex kept solely as fallback for non-Python scripts/unparseable files, and docs/CSS/HTML no longer emit structural edges
 
 ---
 
@@ -237,7 +237,7 @@ Branch: `codex/test-loop-v1`
 
 ---
 
-## Stage 7 (Differentiator): Code-Structure-Aware Graph — ☐ PARTIALLY IMPLEMENTED (revised after verification)
+## Stage 7 (Differentiator): Code-Structure-Aware Graph — ✅ COMPLETE (2026-07-03)
 
 Branch: `codex/code-aware-rag-v1`
 
@@ -249,12 +249,13 @@ Branch: `codex/code-aware-rag-v1`
 What's actually still missing (the real remaining gap):
 - [x] ~~Extend graph ingestion with typed function/class/module nodes~~ — already exists
 - [x] ~~Extend graph ingestion with typed imports/calls/defines edges~~ — already exists
-- [ ] Replace regex-based entity/call extraction with AST-based parsing — **(Very Hard)**. Current `_call_edges` (`graph.py:209-217`) treats *any* `identifier(` as a "calls" edge, including Python keywords/builtins that happen to precede `(` in unrelated contexts — this makes the call graph noisy/low-precision, not the accurate structural graph Stage 7 is meant to deliver.
+- [x] Replace regex-based entity/call extraction with AST-based parsing — done 2026-07-03. Design: chunks are 80-line overlapping/stripped/truncated fragments (not parseable alone), so `build()` parses the **full file from disk** per source (`_workspace_file_text` → `_python_ast_facts`), guarded by the chunk's indexed `mtime` so AST line numbers still match chunk line ranges; each fact (import/define/call, with lineno) is attached to the first chunk covering its line, so evidence cites the chunk actually containing the statement (overlap deduped via an emitted-fact set). Calls come only from real `ast.Call` nodes (`Name`/`Attribute` targets), with Python builtins filtered — docstring/comment/string `identifier(` text no longer produces edges. Fallbacks: unparseable/changed/missing Python and non-Python scripts (.js/.jsx/.ts/.tsx) keep the regex path, now with a control-flow-keyword deny-list; prose/markup (.md/.html/.css/docs) no longer emit calls/defines/imports edges at all (mentions/references only — `rgba(...)` in CSS is no longer a "call"). Test: `testGraphBuildUsesAstNotRegexForPythonCallEdges`.
 - [x] Add dedicated relation-query verbs — done 2026-07-01: `graph.query_relations(entity, relation, direction)` traverses typed edges (direction-aware, basename matching for paths) instead of keyword scoring; "what calls X" = `relation=calls, direction=in`, "what does Y import" = `relation=imports, direction=out`
 - [x] Expose a dedicated code-structure query tool — done 2026-07-01: `graph_relations` tool (in `TOOL_DEFINITIONS`, so offered to the model in every tool-loop phase) + `POST /api/graph/relations`, evidence/citations on every edge
 - [x] Keep workspace-scoped and local-only (already true — confirmed via `rag.chunks_for_path(path)` scoping)
 - [x] Test: structural queries return correct results — `testGraphRelationsAnswersStructuralQueries` covers what-calls/what-imports/where-used/unknown-entity against a built fixture graph
-- [x] Validation: backend smoke 56/56, repo safety check passed (2026-07-01)
+- [x] Test: AST precision — `testGraphBuildUsesAstNotRegexForPythonCallEdges` asserts phantom calls in docstrings/comments/strings and builtins produce zero edges while the real call, imports, and defines still resolve with citations
+- [x] Validation: backend smoke 61/61 (2026-07-03); earlier relation-verb pass validated at 56/56 (2026-07-01)
 
 **Definition of done:** the agent (and operator, via chat) can answer structural codebase questions instantly and *accurately* from the graph instead of paying tool-call round trips to re-search every time.
 

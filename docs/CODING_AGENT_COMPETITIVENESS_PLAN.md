@@ -226,7 +226,7 @@ Definition of done: "fix this bug" can mean edit → test → see it fail → fi
 
 ## Stage 7 (Differentiator): Code-Structure-Aware Graph
 
-Status: **partially implemented** (verified 2026-07-01)
+Status: **complete** (2026-07-03 — AST-based extraction landed; relation queries landed 2026-07-01)
 
 Branch: `codex/code-aware-rag-v1`
 
@@ -235,7 +235,7 @@ Goal: turn Graphify into a real code-navigation advantage a hosted CLI doesn't h
 **Verified 2026-07-01:** `backend/rag/graph.py` already extracts typed nodes (`function`, `class`, `file`, `folder`, `concept`) and typed edges (`imports`, `defines`, `calls`, `references`) and is exposed as a `graph_search` MCP tool with citations. This is ahead of "not started." What's missing: the extraction is regex-based, not AST-based (`_call_edges` treats any `identifier(` as a call, including keywords/builtins — noisy), and there's no dedicated relation-traversal query ("what calls X") distinct from the current generic fuzzy keyword `search()`. See `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` Stage 7 for the full breakdown.
 
 Scope:
-- Replace regex-based entity/call extraction with AST-based parsing for precision.
+- ~~Replace regex-based entity/call extraction with AST-based parsing for precision.~~ Done 2026-07-03: Python files are parsed whole-file from disk with `ast` (guarded by the indexed `mtime` so chunk line-ranges still line up); a call edge now means an actual `ast.Call`, with builtins filtered. Regex remains only as a fallback for non-Python scripts and unparseable/changed files (now with a keyword deny-list), and prose/markup files no longer emit calls/defines/imports edges at all.
 - Support direct "what calls X" / "where is X used" / "what does this file import" queries answered from the graph via relation traversal (not keyword scoring) with citations, without a full re-scan.
 - Keep it workspace-scoped and local-only, consistent with existing RAG/Graphify privacy posture (already true today).
 

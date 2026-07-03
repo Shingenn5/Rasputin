@@ -1,3 +1,5 @@
+import ast
+import builtins
 import json
 import re
 import time
@@ -5,6 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from threading import Lock
 
+from backend.core import workspace
 from backend.rag import vector as rag
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +23,18 @@ STOP_ENTITIES = {
 }
 DOCUMENT_EXTS = {".pdf", ".docx", ".xlsx"}
 CODE_EXTS = {".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css"}
+# Only these produce structural (imports/defines/calls) edges; prose/markup
+# still gets mentions/references edges but not fake call edges.
+SCRIPT_EXTS = {".py", ".js", ".jsx", ".ts", ".tsx"}
+MAX_AST_BYTES = 1_500_000
+_PY_BUILTINS = frozenset(dir(builtins))
+# Regex fallback (non-Python scripts, unparseable Python) deny-list: control-flow
+# keywords the `identifier(` pattern would otherwise report as function calls.
+_REGEX_CALL_KEYWORDS = {
+    "assert", "async", "await", "catch", "constructor", "del", "elif", "except",
+    "export", "import", "lambda", "new", "raise", "require", "super", "switch",
+    "typeof", "yield",
+}
 
 
 def _blank():
@@ -131,7 +146,10 @@ def _evidence(chunk):
     }
 
 
-def _entities(text, source):
+def _entities(text, source, code_refs=None):
+    """code_refs: pre-extracted (AST-accurate) class/function node refs for this
+    chunk. When given, the regex class/def scan is skipped for them; the
+    concept and file-path scans are text-level and always apply."""
     found = []
     seen = set()
 
@@ -142,12 +160,19 @@ def _entities(text, source):
             seen.add(key)
             found.append(_node_ref(kind, name))
 
-    for item in re.findall(r"\bclass\s+([A-Z][A-Za-z0-9_]+)", text):
-        add("class", item)
-    for item in re.findall(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
-        add("function", f"{item}()")
-    for item in re.findall(r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
-        add("function", f"{item}()")
+    if code_refs is None:
+        for item in re.findall(r"\bclass\s+([A-Z][A-Za-z0-9_]+)", text):
+            add("class", item)
+        for item in re.findall(r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
+            add("function", f"{item}()")
+        for item in re.findall(r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
+            add("function", f"{item}()")
+    else:
+        for ref in code_refs:
+            key = (ref["kind"], ref["name"])
+            if ref["name"] and key not in seen:
+                seen.add(key)
+                found.append(ref)
     for item in re.findall(r"\b[A-Z][A-Za-z0-9_]*(?:\s+[A-Z][A-Za-z0-9_]*){0,3}\b", text):
         ent = _clean(item)
         if ent:
@@ -208,13 +233,127 @@ def _definition_edges(text, source, evidence, edges, nodes):
 
 def _call_edges(text, source, evidence, edges, nodes):
     for item in re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", text):
-        if item.lower() in STOP_ENTITIES:
+        low = item.lower()
+        if low in STOP_ENTITIES or low in _REGEX_CALL_KEYWORDS:
             continue
         if item in {"def", "class", "function"}:
             continue
         target_ref = _node_ref("function", f"{item}()")
         _node(nodes, target_ref, evidence)
         _edge(edges, source, "calls", target_ref, evidence)
+
+
+def _workspace_file_text(chunk):
+    """Full on-disk text for a chunk's file, or None when the file can't be
+    read safely or changed since indexing (AST line numbers would no longer
+    line up with the chunk's line ranges — fall back to regex on chunk text)."""
+    rel = str(chunk.get("path") or "")
+    if not rel:
+        return None
+    try:
+        root = Path(workspace.resolve_path(chunk.get("workspace_id"))).resolve()
+        file_path = (root / rel).resolve()
+        if file_path != root and root not in file_path.parents:
+            return None
+        stat = file_path.stat()
+        if stat.st_size > MAX_AST_BYTES:
+            return None
+        if chunk.get("mtime") is not None and stat.st_mtime != chunk.get("mtime"):
+            return None
+        return file_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return None
+
+
+def _python_ast_facts(text):
+    """Structural facts (with line numbers) from real AST parsing, so a call
+    edge means an actual ast.Call — not any `identifier(` in a comment,
+    string, or keyword position. Returns None when unparseable."""
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError, MemoryError, RecursionError):
+        return None
+    imports, defines, calls = [], [], []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append((alias.name, node.lineno))
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or (node.names[0].name if node.names else "")
+            if module:
+                imports.append((module, node.lineno))
+        elif isinstance(node, ast.ClassDef):
+            defines.append(("class", node.name, node.lineno))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            defines.append(("function", f"{node.name}()", node.lineno))
+        elif isinstance(node, ast.Call):
+            name = None
+            if isinstance(node.func, ast.Name):
+                name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                name = node.func.attr
+            if name and name not in _PY_BUILTINS and name.lower() not in STOP_ENTITIES:
+                calls.append((f"{name}()", node.lineno))
+    return {"imports": imports, "defines": defines, "calls": calls}
+
+
+def _ast_facts_for(chunk, cache):
+    source = chunk.get("source") or chunk.get("path") or ""
+    if source not in cache:
+        facts = None
+        if Path(str(chunk.get("path") or "")).suffix.lower() == ".py":
+            text = _workspace_file_text(chunk)
+            if text is not None:
+                facts = _python_ast_facts(text)
+        cache[source] = facts
+    return cache[source]
+
+
+def _ast_fact_edges(facts, chunk, source_ref, evidence, edges, nodes, emitted):
+    """Emit imports/defines/calls edges for AST facts inside this chunk's line
+    range, so evidence cites the chunk that actually contains the statement.
+    `emitted` dedupes facts that fall in the 12-line overlap between chunks.
+    Returns the defined class/function refs for the mentions/related_to pass."""
+    start = chunk.get("line_start") or 1
+    end = chunk.get("line_end")
+
+    def covered(lineno):
+        return lineno >= start and (end is None or lineno <= end)
+
+    chunk_defines = []
+    for module, lineno in facts["imports"]:
+        key = ("imports", module, lineno)
+        if key in emitted or not covered(lineno):
+            continue
+        emitted.add(key)
+        target_ref = _node_ref("concept", module)
+        if not target_ref["name"]:
+            continue
+        _node(nodes, target_ref, evidence)
+        _edge(edges, source_ref, "imports", target_ref, evidence, 3)
+    for kind, name, lineno in facts["defines"]:
+        key = ("defines", kind, name, lineno)
+        if key in emitted or not covered(lineno):
+            continue
+        emitted.add(key)
+        target_ref = _node_ref(kind, name)
+        if not target_ref["name"]:
+            continue
+        weight = 3 if kind == "class" else 2
+        _node(nodes, target_ref, evidence, weight)
+        _edge(edges, source_ref, "defines", target_ref, evidence, weight)
+        chunk_defines.append(target_ref)
+    for name, lineno in facts["calls"]:
+        key = ("calls", name, lineno)
+        if key in emitted or not covered(lineno):
+            continue
+        emitted.add(key)
+        target_ref = _node_ref("function", name)
+        if not target_ref["name"]:
+            continue
+        _node(nodes, target_ref, evidence)
+        _edge(edges, source_ref, "calls", target_ref, evidence)
+    return chunk_defines
 
 
 def _reference_edges(text, source, evidence, edges, nodes):
@@ -244,6 +383,8 @@ def build(path=None):
     edges = defaultdict(lambda: {"weight": 0, "evidence": []})
 
     scoped_chunks = rag.chunks_for_path(path)
+    ast_cache = {}
+    ast_emitted = defaultdict(set)
 
     for chunk in scoped_chunks:
         path_name = chunk.get("path") or chunk.get("source", "")
@@ -255,15 +396,25 @@ def build(path=None):
         _node(nodes, folder_ref, evidence)
         _edge(edges, file_ref, "located_in", folder_ref, evidence, 2)
 
-        ents = _entities(text, path_name)
+        suffix = Path(str(path_name)).suffix.lower()
+        facts = _ast_facts_for(chunk, ast_cache)
+        if facts is not None:
+            code_refs = _ast_fact_edges(
+                facts, chunk, file_ref, evidence, edges, nodes,
+                ast_emitted[chunk.get("source") or path_name],
+            )
+            ents = _entities(text, path_name, code_refs=code_refs)
+        else:
+            ents = _entities(text, path_name)
+            if suffix in SCRIPT_EXTS:
+                _import_edges(text, file_ref, evidence, edges, nodes)
+                _definition_edges(text, file_ref, evidence, edges, nodes)
+                _call_edges(text, file_ref, evidence, edges, nodes)
+        _reference_edges(text, file_ref, evidence, edges, nodes)
+
         for ent in ents:
             _node(nodes, ent, evidence)
             _edge(edges, file_ref, "mentions", ent, evidence)
-
-        _import_edges(text, file_ref, evidence, edges, nodes)
-        _definition_edges(text, file_ref, evidence, edges, nodes)
-        _call_edges(text, file_ref, evidence, edges, nodes)
-        _reference_edges(text, file_ref, evidence, edges, nodes)
 
         for i, left in enumerate(ents[:12]):
             for right in ents[i + 1:i + 4]:
