@@ -331,6 +331,18 @@
   overflow: visible;
 }
 
+/* Workspaces is a VS Code-style explorer: on desktop it should be a fixed
+   full-height pane whose file list / preview scroll internally, not a page
+   that grows with the file list. Mobile keeps the stacked page-scroll flow. */
+@media (min-width: 801px) {
+  #workspacesView.app-view.active {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
 /* ── Legacy view modernization ──────────────────────────────────────────
    Remap the legacy --cc-* tokens (used by .w2-card/.w2-button/.w2-header-*
    across not-yet-migrated views) onto the new dark/emerald palette, and

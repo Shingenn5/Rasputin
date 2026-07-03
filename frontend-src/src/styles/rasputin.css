@@ -11028,6 +11028,21 @@ button.helper-row:hover {
 .workspaces-view .w2-main-grid {
   grid-template-columns: minmax(250px, 320px) 1fr;
 }
+
+/* Desktop: pin the grid to the remaining viewport height so the explorer
+   file list and the dashboard scroll inside their own columns instead of
+   growing the whole page. */
+@media (min-width: 801px) {
+  .workspaces-view .w2-main-grid {
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .workspaces-view .w2-main-grid > .w2-column {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
 @media (max-width: 800px) {
   .workspaces-view .w2-main-grid {
     grid-template-columns: minmax(0, 1fr);

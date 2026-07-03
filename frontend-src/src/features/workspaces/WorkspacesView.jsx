@@ -383,7 +383,8 @@ export function WorkspacesView({
                 <RefreshCw size={14} />
               </button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* Bounded scroll so a long roots list can't grow the whole page. */}
+            <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '40vh', overflowY: 'auto' }}>
               {workspaceRoots.map((root) => {
                 const rootPath = root.path || root.root;
                 const rootId = root.id;
@@ -500,8 +501,10 @@ export function WorkspacesView({
               </div>
             </div>
           ) : (
-            // Empty State / Dashboard Mode
-            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            // Empty State / Dashboard Mode. Top-aligned: centering vertically
+            // put the dashboard halfway down the page whenever the explorer
+            // column was taller than the viewport.
+            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: '24px', overflowY: 'auto' }}>
               
               <div style={{ maxWidth: '600px', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 

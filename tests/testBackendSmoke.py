@@ -9,6 +9,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+# Isolate all runtime storage BEFORE any backend module is imported —
+# backend.core.runtime_store resolves DATA_DIR at import time. Without this,
+# every smoke run permanently pollutes the live dev database with fixture
+# workspaces ("Graph Smoke" x46...), "Smoke Chats" sessions, and tasks.
+os.environ.setdefault("RASPUTIN_DATA_DIR", tempfile.mkdtemp(prefix="rasputin-test-data-"))
+
 from fastapi.testclient import TestClient
 
 from backend import main
