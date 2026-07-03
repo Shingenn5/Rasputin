@@ -48,10 +48,13 @@ export function SessionsView({
 }) {
   const folders = chatFolders?.folders || [];
   const sessionItems = sessions?.sessions || [];
+  const [sessionSearch, setSessionSearch] = useState("");
+  const selectedId = selectedSession?.session?.id;
+  const needle = sessionSearch.trim().toLowerCase();
   const filteredSessions = sessionItems.filter((session) => {
-    if (activeChatFolder === "all") return true;
-    if (activeChatFolder === "unfiled") return !session.folder;
-    return session.folder === activeChatFolder;
+    if (activeChatFolder === "unfiled" && session.folder) return false;
+    if (!["all", "unfiled"].includes(activeChatFolder) && session.folder !== activeChatFolder) return false;
+    return !needle || String(session.title || "").toLowerCase().includes(needle);
   });
   return (
     <section className={`app-view ${view === "sessions" ? "active" : ""}`} id="sessionsView" data-app-view="sessions">
@@ -60,41 +63,38 @@ export function SessionsView({
         <Row className="g-3">
           <Col lg={4}>
             <Card className="settings-card shadow-sm h-100">
-              <Card.Body>
+              <Card.Body className="d-flex flex-column">
                 <div className="section-row">
                   <div>
-                    <h2>Chat Folders</h2>
-                    <p className="text-body-secondary mb-0">Organize conversations without moving message data.</p>
+                    <h2>Chats</h2>
+                    <p className="text-body-secondary mb-0">{sessionItems.length} stored conversation{sessionItems.length === 1 ? "" : "s"}.</p>
                   </div>
                 </div>
-                <form className="chat-folder-create" data-testid="chat-folder-create" onSubmit={createChatFolder}>
-                  <Form.Label htmlFor="chatFolderName">New folder</Form.Label>
-                  <div>
-                    <Form.Control id="chatFolderName" name="name" placeholder="Writing, Coding, Research" />
-                    <Button type="submit">Create</Button>
-                  </div>
-                </form>
-                <div className="chat-folder-list" data-testid="chat-folder-list" aria-label="Chat folders">
+                <Form.Control
+                  type="search"
+                  className="mt-2"
+                  placeholder="Search chats..."
+                  aria-label="Search chats"
+                  data-testid="session-search"
+                  value={sessionSearch}
+                  onChange={(event) => setSessionSearch(event.target.value)}
+                />
+                <div className="chat-filter-chips mt-2" data-testid="chat-folder-list" aria-label="Chat folders">
                   <button type="button" className={activeChatFolder === "all" ? "is-active" : ""} onClick={() => setActiveChatFolder?.("all")}>
-                    <span>All chats</span>
-                    <small>{sessionItems.length}</small>
+                    All <small>{sessionItems.length}</small>
                   </button>
                   <button type="button" className={activeChatFolder === "unfiled" ? "is-active" : ""} onClick={() => setActiveChatFolder?.("unfiled")}>
-                    <span>Unfiled</span>
-                    <small>{chatFolders?.unfiledCount || 0}</small>
+                    Unfiled <small>{chatFolders?.unfiledCount || 0}</small>
                   </button>
                   {folders.map((folder) => (
                     <button key={folder.id} type="button" className={activeChatFolder === folder.name ? "is-active" : ""} onClick={() => setActiveChatFolder?.(folder.name)}>
-                      <span>{folder.name}</span>
-                      <small>{folder.sessionCount || 0}</small>
+                      {folder.name} <small>{folder.sessionCount || 0}</small>
                     </button>
                   ))}
                 </div>
-
-                <h2 className="mt-4">Chats</h2>
-                <ListGroup className="runtime-list">
+                <ListGroup className="runtime-list session-scroll-list mt-2">
                   {filteredSessions.map((session) => (
-                    <ListGroup.Item key={session.id} className="session-list-item">
+                    <ListGroup.Item key={session.id} className={`session-list-item${session.id === selectedId ? " is-active" : ""}`}>
                       <button type="button" className="session-open-button" onClick={() => loadSession(session.id)}>
                         <strong>{session.title}</strong>
                         <small>{session.status} / {session.mode} / {displayWorkspaceName(session.workspace)}</small>
@@ -111,9 +111,18 @@ export function SessionsView({
                     </ListGroup.Item>
                   ))}
                   {!filteredSessions.length && (
-                    <ListGroup.Item className="text-body-secondary">No chats in this folder.</ListGroup.Item>
+                    <ListGroup.Item className="text-body-secondary">
+                      {needle ? "No chats match your search." : "No chats in this folder."}
+                    </ListGroup.Item>
                   )}
                 </ListGroup>
+                <form className="chat-folder-create mt-auto" data-testid="chat-folder-create" onSubmit={createChatFolder}>
+                  <Form.Label htmlFor="chatFolderName">New folder</Form.Label>
+                  <div>
+                    <Form.Control id="chatFolderName" name="name" placeholder="Writing, Coding, Research" />
+                    <Button type="submit">Create</Button>
+                  </div>
+                </form>
               </Card.Body>
             </Card>
           </Col>

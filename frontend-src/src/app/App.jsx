@@ -1153,7 +1153,10 @@ export function App() {
 
   async function createChatFolder(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    // currentTarget is nulled once the handler's synchronous phase ends, so
+    // grab the form element before any await.
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const name = String(form.get("name") || "").trim();
     if (!name) {
       setGlobalStatus("Enter a folder name.");
@@ -1161,7 +1164,7 @@ export function App() {
     }
     const nextFolders = await postJson("/api/chat-folders", { name });
     setChatFolders(nextFolders);
-    event.currentTarget.reset();
+    formElement.reset();
     setGlobalStatus("Chat folder created.");
     return nextFolders;
   }

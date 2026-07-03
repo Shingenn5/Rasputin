@@ -6095,11 +6095,51 @@ button.runtime-chip {
   font-weight: 900;
 }
 
+/* ── Sessions view: folder filter chips + scrollable chat list ── */
+.chat-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.chat-filter-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-panel-2) 38%, transparent);
+  color: var(--ras-text);
+  cursor: pointer;
+  padding: .2rem .65rem;
+  font-size: .8rem;
+}
+
+.chat-filter-chips button:hover,
+.chat-filter-chips button.is-active {
+  border-color: color-mix(in srgb, var(--ras-accent) 46%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 9%, var(--ras-panel));
+}
+
+.chat-filter-chips small {
+  color: var(--ras-muted);
+  font-weight: 900;
+}
+
+.session-scroll-list {
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
 .session-list-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(120px, 170px);
   gap: .6rem;
   align-items: center;
+}
+
+.session-list-item.is-active {
+  border-left: 3px solid var(--ras-accent);
 }
 
 .session-open-button {
