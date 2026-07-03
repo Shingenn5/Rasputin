@@ -74,15 +74,15 @@ export function ActivityView({
 
   return (
     <section className={`w2-layout app-view activity-view tw ${view === "activity" ? "active" : ""}`} id="activityView" data-app-view="activity">
-      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Activity <span className="text-muted-foreground">Center</span></h1>
           <p className="mt-1.5 text-sm text-muted-foreground">Mission control for everything Rasputin has ever done.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {[
             { v: tasks.length, l: "Total Runs", c: "text-foreground" },
             { v: completedTasks.length, l: "Successes", c: "text-primary" },
@@ -114,7 +114,7 @@ export function ActivityView({
         </UIButton>
       </div>
 
-      <div className="w2-main-grid" style={{ gridTemplateColumns: '1fr 350px' }}>
+      <div className="w2-main-grid">
         
         {/* MAIN COLUMN */}
         <div className="w2-column">

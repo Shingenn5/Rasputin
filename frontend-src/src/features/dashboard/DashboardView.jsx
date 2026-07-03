@@ -177,7 +177,7 @@ export function DashboardView({
       tabIndex="-1"
     >
       <motion.div
-        className="mx-auto flex max-w-[1500px] flex-col gap-5 p-7"
+        className="mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7"
         variants={stagger}
         initial="hidden"
         animate="show"
@@ -213,7 +213,7 @@ export function DashboardView({
         </motion.div>
 
         {/* KPI row */}
-        <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {kpis.map((k) => {
             const Icon = k.icon;
             return (
@@ -241,7 +241,7 @@ export function DashboardView({
         </div>
 
         {/* Hero chart + donut */}
-        <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+        <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
           <Card className="glow-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-base font-semibold">Run Activity <span className="text-muted-foreground">· 30d</span></div>
@@ -300,7 +300,7 @@ export function DashboardView({
         </motion.div>
 
         {/* Top models + quick chat */}
-        <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+        <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
           <Card className="glow-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-base font-semibold">Top Models <span className="text-muted-foreground">· by runs</span></div>
@@ -373,7 +373,7 @@ export function DashboardView({
             <div className="text-base font-semibold">Live Status</div>
             <Button variant="ghost" size="pill" onClick={() => go("activity")}>Activity</Button>
           </div>
-          <div className="grid gap-x-5 gap-y-1 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-x-5 gap-y-1 md:grid-cols-3">
             <Metric icon={Activity} name="Active runs" delta={`${stats.active} in flight`} value={stats.active} />
             <Metric icon={CheckCircle2} name="Completed" delta={`${stats.successRate}% success`} value={stats.done} />
             <Metric icon={GitBranch} name="Failed / cancelled" delta="needs review" value={stats.failed} />

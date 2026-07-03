@@ -451,7 +451,8 @@ class AgentHub:
     def sessions(self, limit=100):
         with store._lock, store.connect() as conn:
             rows = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?", (max(1, min(int(limit), 500)),)).fetchall()
-        return {"sessions": [dict(row) for row in rows]}
+            total = conn.execute("SELECT COUNT(*) AS count FROM sessions").fetchone()
+        return {"sessions": [dict(row) for row in rows], "total": int(total["count"] if total else len(rows))}
 
     def session(self, session_id):
         with store._lock, store.connect() as conn:

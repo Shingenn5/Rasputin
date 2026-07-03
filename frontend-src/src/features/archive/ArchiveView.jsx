@@ -88,7 +88,7 @@ export function ArchiveView({ view }) {
 
   return (
     <section className={`w2-layout app-view archive-view tw ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive">
-      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-5">
@@ -110,7 +110,7 @@ export function ArchiveView({ view }) {
         </div>
       </div>
 
-      <div className="w2-main-grid" style={{ gridTemplateColumns: "240px 1fr 320px", marginTop: "16px" }}>
+      <div className="w2-main-grid" style={{ marginTop: "16px" }}>
         
         {/* ── Left Navigation ── */}
         <div className="w2-column">

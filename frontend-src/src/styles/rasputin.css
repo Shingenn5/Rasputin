@@ -8920,6 +8920,11 @@ button.helper-row:hover {
     overflow: hidden;
   }
 
+  .cc-status-area {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   .app-frame,
   body.sidebar-collapsed .app-frame {
     grid-template-columns: 1fr;
@@ -8943,13 +8948,9 @@ button.helper-row:hover {
     pointer-events: auto;
   }
 
-  body.mobile-sidebar-open::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 1050;
-    background: rgba(0, 0, 0, .38);
-  }
+  /* NOTE: no body-level ::before backdrop here — DashSidebar renders its own
+     scrim with a close handler. A fixed z-1050 pseudo-element sits above the
+     drawer (z-30) and eats every tap, locking mobile nav entirely. */
 
   body.sidebar-collapsed .app-sidebar {
     padding: .8rem;
@@ -10795,6 +10796,37 @@ button.helper-row:hover {
 
 @media (max-width: 800px) {
   .w2-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Per-view w2-main-grid column layouts. These were inline styles on the JSX,
+   which override media queries and kept every one of these views pinned to a
+   multi-column desktop grid on mobile. Keep them here so the 800px collapse
+   above still wins. */
+.activity-view .w2-main-grid {
+  grid-template-columns: 1fr 350px;
+}
+
+.models-view .w2-main-grid {
+  grid-template-columns: 1fr 340px;
+}
+
+.warsat-view .w2-main-grid,
+.trials-view .w2-main-grid {
+  grid-template-columns: 1fr 320px;
+}
+
+.archive-view .w2-main-grid {
+  grid-template-columns: 240px 1fr 320px;
+}
+
+@media (max-width: 800px) {
+  .activity-view .w2-main-grid,
+  .models-view .w2-main-grid,
+  .warsat-view .w2-main-grid,
+  .trials-view .w2-main-grid,
+  .archive-view .w2-main-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

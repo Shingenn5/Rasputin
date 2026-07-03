@@ -320,9 +320,18 @@ Reported: the sidebar's "Recent Chats" section scrolls independently in its own 
 
 - [x] Decide pinned vs. scrolling regions — Brand + New Chat pinned at top, privacy chip pinned at bottom, nav + Settings + Recent Chats scroll as one region
 - [x] Restructure `DashSidebar.jsx` so nav + Recent Chats share a single `overflow-y-auto` region — done 2026-07-01
-- [ ] Re-verify collapsed/hover-expand sidebar states still look correct after the scroll-region change — desktop expanded state verified; collapsed-rail hover-expand and mobile overlay not yet exercised
+- [ ] Re-verify collapsed/hover-expand sidebar states still look correct after the scroll-region change — desktop expanded state verified; mobile overlay exercised 2026-07-03 (see UI regression pass below); collapsed-rail hover-expand still not explicitly exercised
 - [x] Test: sidebar scrolls as one region — verified live via Playwright with 14 seeded sessions: exactly one scrollable element in the `<aside>` (contains both nav and chat items, `scrollHeight` 1137 > `clientHeight` 635), scrolling it brings the last recent chat fully into view
-- [ ] Validation: live browser check on a narrow/mobile viewport — desktop (1440×900) verified; mobile viewport still pending
+- [x] Validation: live browser check on a narrow/mobile viewport — done 2026-07-03 as part of a full UI regression pass (see UI Regression Pass below)
+
+### UI Regression Pass (2026-07-03): full desktop + mobile sweep, 4 real bugs found and fixed
+
+Playwright sweep of all 11 views at 1440×900 and 390×844 against a live instance (auth-bypass test mode): console/page errors, horizontal overflow, and per-view screenshots. Desktop was clean everywhere. Mobile surfaced real breakage:
+
+- [x] **Mobile nav completely dead** — legacy `body.mobile-sidebar-open::before` backdrop (z-1050, no click handler) in `rasputin.css` sat above the new DashSidebar drawer (z-30) and its scrim (z-20), eating every tap once the drawer opened; invisible in dark mode. Removed — DashSidebar renders its own scrim with a close handler.
+- [x] **Sessions view count mismatch** — "All"/header showed the fetched list length (capped at 100) while "Unfiled" showed the true DB count (e.g. All 100 vs Unfiled 160). `AgentHub.sessions()` now returns `total` (real table count); the view uses it and notes "Showing the N most recent."
+- [x] **Dashboard/Activity/Models/Warsat/Trials/Archive clipped on mobile** — two causes: `grid gap-5 lg:grid-cols-[…]` without a base template (implicit auto column sizes to content; a Recharts inline width then locks the whole column wide), and inline `gridTemplateColumns` styles on `w2-main-grid` that override the ≤800px single-column media query. Fixed with explicit `grid-cols-1` bases, per-view `w2-main-grid` column CSS (media-query collapsible), `w-full min-w-0` on the `mx-auto` root columns (cross-axis auto margins cancel flex stretch), flex-wrap on the Activity/stat headers, and KPI row 1-col below `sm`.
+- [x] Re-verified after fixes: all 9 nav views + sessions + settings fit at 390px with zero console errors; desktop two/three-column layouts confirmed intact by screenshot; backend smoke 61/61.
 
 ---
 

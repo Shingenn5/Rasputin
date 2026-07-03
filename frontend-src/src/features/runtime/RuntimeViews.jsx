@@ -48,6 +48,9 @@ export function SessionsView({
 }) {
   const folders = chatFolders?.folders || [];
   const sessionItems = sessions?.sessions || [];
+  // The list is capped server-side (most recent 100); `total` is the real
+  // table count, so the header/"All" chip agree with the folder counts.
+  const totalSessions = sessions?.total ?? sessionItems.length;
   const [sessionSearch, setSessionSearch] = useState("");
   const selectedId = selectedSession?.session?.id;
   const needle = sessionSearch.trim().toLowerCase();
@@ -67,7 +70,10 @@ export function SessionsView({
                 <div className="section-row">
                   <div>
                     <h2>Chats</h2>
-                    <p className="text-body-secondary mb-0">{sessionItems.length} stored conversation{sessionItems.length === 1 ? "" : "s"}.</p>
+                    <p className="text-body-secondary mb-0">
+                      {totalSessions} stored conversation{totalSessions === 1 ? "" : "s"}.
+                      {totalSessions > sessionItems.length ? ` Showing the ${sessionItems.length} most recent.` : ""}
+                    </p>
                   </div>
                 </div>
                 <Form.Control
@@ -81,7 +87,7 @@ export function SessionsView({
                 />
                 <div className="chat-filter-chips mt-2" data-testid="chat-folder-list" aria-label="Chat folders">
                   <button type="button" className={activeChatFolder === "all" ? "is-active" : ""} onClick={() => setActiveChatFolder?.("all")}>
-                    All <small>{sessionItems.length}</small>
+                    All <small>{totalSessions}</small>
                   </button>
                   <button type="button" className={activeChatFolder === "unfiled" ? "is-active" : ""} onClick={() => setActiveChatFolder?.("unfiled")}>
                     Unfiled <small>{chatFolders?.unfiledCount || 0}</small>

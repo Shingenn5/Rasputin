@@ -228,7 +228,7 @@ export function WarsatView({
 
   return (
     <section className={`w2-layout app-view warsat-view tw ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat">
-      <div className="fx-rise mx-auto flex max-w-[1500px] flex-col gap-5 p-7">
+      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Commander Dashboard ── */}
       <div className="flex items-start justify-between gap-5">
@@ -279,7 +279,7 @@ export function WarsatView({
       </div>
 
       {/* ── Content ── */}
-      <div className="w2-main-grid" style={{ gridTemplateColumns: "1fr 320px" }}>
+      <div className="w2-main-grid">
         <div className="w2-column">
 
           {/* ═══ PLANNER TAB ═══ */}
