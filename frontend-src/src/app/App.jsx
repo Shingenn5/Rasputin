@@ -36,6 +36,15 @@ import {
   isModelHealthy,
   isUserFacingModel,
 } from "../lib/display.js";
+import { useSettingsStore } from "../features/settings/settingsStore.js";
+import { loadSettings } from "../features/settings/settingsActions.js";
+
+// Default Inference Engine (Settings > Models) -> Warsat runtime protocol.
+const ENGINE_PROTOCOLS = {
+  vllm: "vllmCudaOpenai",
+  llamacpp: "llamaCppGgufServer",
+  ollama: "ollamaOpenaiServer",
+};
 
 const routedViews = new Set([
   "home",
@@ -410,6 +419,9 @@ export function App() {
       setWorkspaceBrowse(null);
       setGlobalStatus(`Workspace browser will retry when opened: ${error.message}`);
     });
+    // Platform settings (Default Inference Engine etc.) affect behavior
+    // outside the Settings view, so load them at boot, not on first visit.
+    loadSettings();
   }
 
   async function loadModels() {
@@ -1322,7 +1334,13 @@ export function App() {
 
   async function prepareCatalogModelForWarsat(item, options = {}) {
     if (!item) return null;
-    const protocolId = options.protocolId || item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai";
+    // Honor the Default Inference Engine setting when this model actually
+    // offers that runtime; explicit choices and API-only entries still win.
+    const preferredProtocol = ENGINE_PROTOCOLS[useSettingsStore.getState().models?.defaultEngine];
+    const engineProtocol = preferredProtocol && item.runtimeOptions?.some((option) => option.protocolId === preferredProtocol)
+      ? preferredProtocol
+      : null;
+    const protocolId = options.protocolId || engineProtocol || item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai";
     if (!protocolId || protocolId === "apiOnly") {
       setGlobalStatus("This catalog entry is API-only. Register it as an API model instead of sending it to Warsat.");
       return null;

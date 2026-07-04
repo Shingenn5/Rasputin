@@ -874,6 +874,23 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("helper", defined)
         self.assertIn("runner", defined)
 
+    def testSettingsPersistModelsDomainAcrossUpdates(self):
+        # defaultEngine must survive both a reload (GET) and a later write to a
+        # different domain — hydration used to drop domains without defaults,
+        # so any cross-domain save silently erased the models settings.
+        self.assertOk(self.client.post("/api/settings/models", json={"key": "defaultEngine", "value": "vllm"}))
+        settings = self.assertOk(self.client.get("/api/settings"))
+        self.assertEqual(settings["models"]["defaultEngine"], "vllm")
+
+        self.assertOk(self.client.post("/api/settings/general", json={"key": "language", "value": "en"}))
+        settings = self.assertOk(self.client.get("/api/settings"))
+        self.assertEqual(settings["models"]["defaultEngine"], "vllm")
+        # defaults still hydrate for keys never explicitly saved
+        self.assertIn("autoQuantization", settings["models"])
+
+        # restore for other tests
+        self.assertOk(self.client.post("/api/settings/models", json={"key": "defaultEngine", "value": "llamacpp"}))
+
     def testArchiveSessionsSaveAndExportWithPermission(self):
         title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"
         saved = self.assertOk(self.client.post("/api/archive/sessions", json={

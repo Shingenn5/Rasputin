@@ -43,6 +43,12 @@ DEFAULT_SETTINGS = {
         "ollamaEnabled": True,
         "githubEnabled": False
     },
+    "models": {
+        "defaultEngine": "llamacpp",
+        "downloadPath": "",
+        "autoQuantization": True,
+        "allowUnverifiedSources": False
+    },
     "resources": {
         "cpuLimit": 4,
         "memoryLimit": 8192,
@@ -76,6 +82,13 @@ def _get_hydrated_settings():
     for domain, domain_defaults in hydrated.items():
         if domain in saved_settings and isinstance(saved_settings[domain], dict):
             domain_defaults.update(saved_settings[domain])
+    # Preserve saved domains that have no defaults entry. Without this, any
+    # update_setting() round-trip re-saved only the default domains and
+    # silently erased everything else (the "models" domain lost defaultEngine
+    # on every reload this way).
+    for domain, saved in saved_settings.items():
+        if domain not in hydrated and isinstance(saved, dict):
+            hydrated[domain] = copy.deepcopy(saved)
     return hydrated
 
 def _apply_dynamic_settings(domain: str, key: str, value: any):

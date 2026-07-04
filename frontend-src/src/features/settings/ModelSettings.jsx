@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, Form, Row, Col, Spinner, Badge } from "react-bootstrap";
 import { BrainCircuit, Download, Cpu, HardDrive } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
@@ -10,6 +10,10 @@ export function ModelSettings({ models: availableModels, modeModelOverrides, set
   const error = useSettingsStore(state => state.errors?.models);
 
   const [downloadPath, setDownloadPath] = useState(modelSettings?.downloadPath || "");
+  // Settings load async after mount — sync the local input when they arrive.
+  useEffect(() => {
+    setDownloadPath(modelSettings?.downloadPath || "");
+  }, [modelSettings?.downloadPath]);
 
   const handleToggle = (key) => {
     const newVal = !(modelSettings?.[key]);

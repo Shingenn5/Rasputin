@@ -7,6 +7,7 @@ export const useSettingsStore = create((set, get) => ({
   security: {},
   deployments: {},
   integrations: {},
+  models: {},
   resources: {},
   notifications: {},
   audit: {},
