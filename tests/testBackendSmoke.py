@@ -1609,6 +1609,8 @@ class BackendSmokeTests(unittest.TestCase):
 
         def fake_run(args, timeout=120, check=True):
             docker_calls.append(args)
+            if args[:3] == ["docker", "image", "inspect"]:
+                return {"returnCode": 0, "stdout": "[{}]", "stderr": ""}
             if args[:2] == ["docker", "pull"]:
                 return {"returnCode": 0, "stdout": "pulled", "stderr": ""}
             if args[:3] == ["docker", "rm", "-f"]:
@@ -1659,10 +1661,12 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(deployed["health"]["ok"])
         self.assertTrue(any(item["id"] == "probing" and item["status"] == "done" for item in deployed["lifecycle"]))
         self.assertEqual(deployed["containerId"], "container-123")
+        # image was reported cached, so no registry pull should have run
+        self.assertFalse(any(call[:2] == ["docker", "pull"] for call in docker_calls))
+        self.assertIn("skipped registry pull", deployed["pull"]["stdout"])
         self.assertEqual(deployed["containerName"], plan["containerName"])
         self.assertEqual(deployed["modelKey"], plan["expectedModelRegistryEntry"]["key"])
         self.assertEqual(deployed["registryEntry"].get("baseUrl") or deployed["registryEntry"].get("base_url"), plan["expectedModelRegistryEntry"]["baseUrl"])
-        self.assertTrue(any(call[:2] == ["docker", "pull"] for call in docker_calls))
         self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
 
     def testWarsatDeployDoesNotRegisterWhenHealthProbeFails(self):
@@ -1674,6 +1678,8 @@ class BackendSmokeTests(unittest.TestCase):
         }
 
         def fake_run(args, timeout=120, check=True):
+            if args[:3] == ["docker", "image", "inspect"]:
+                return {"returnCode": 0, "stdout": "[{}]", "stderr": ""}
             if args[:2] == ["docker", "pull"]:
                 return {"returnCode": 0, "stdout": "pulled", "stderr": ""}
             if args[:3] == ["docker", "rm", "-f"]:
@@ -1715,6 +1721,71 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(failed["health"]["ok"])
         self.assertNotIn("registryEntry", failed)
         self.assertTrue(any(item["id"] == "probing" and item["status"] == "error" for item in failed["lifecycle"]))
+
+    def testWarsatApprovedDeployStreamsPullProgress(self):
+        # Approved deploys answer as NDJSON. When the image is not cached the
+        # pull must emit progress lines so the UI never looks hung during a
+        # multi-GB download.
+        cfg = {
+            "allow_docker_control": True,
+            "allow_model_registry_edit": True,
+            "privacy_lock": True,
+            "allow_remote_models": False,
+        }
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:3] == ["docker", "image", "inspect"]:
+                return {"returnCode": 1, "stdout": "", "stderr": "No such image"}
+            if args[:3] == ["docker", "rm", "-f"]:
+                return {"returnCode": 0, "stdout": "", "stderr": ""}
+            if args[:3] == ["docker", "run", "-d"]:
+                return {"returnCode": 0, "stdout": "container-789", "stderr": ""}
+            if args[:2] == ["docker", "ps"]:
+                return {"returnCode": 0, "stdout": "Up 2 seconds", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        def fake_streamed_pull(pull_cmd):
+            yield ("progress", "abc123: Downloading 10MB/100MB")
+            yield ("result", {"returnCode": 0, "stdout": "Downloaded newer image", "stderr": ""})
+
+        with patch("backend.core.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.warsat._streamed_pull", side_effect=fake_streamed_pull), \
+             patch("backend.warsat._probe_model_endpoint", return_value={
+                 "ok": True,
+                 "status": "reachable",
+                 "attempts": 1,
+                 "latencyMs": 4,
+                 "availableModels": ["Qwen/Qwen2.5-0.5B-Instruct"],
+                 "message": "model ready",
+             }), \
+             patch("backend.models.registry.upsert", side_effect=lambda entry: dict(entry)):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8034,
+                "role": "helper",
+                "strengthProfile": "small",
+            }))
+            pending = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": plan}))
+            self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
+            response = self.client.post("/api/warsat/deploy", json={
+                "plan": plan,
+                "approvalId": pending["approval"]["id"],
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ndjson", response.headers.get("content-type", ""))
+        lines = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertGreater(len(lines), 2)
+        progress = [l for l in lines if not l["final"] and l["data"].get("status") == "pulling"]
+        self.assertTrue(any("Downloading" in (l["data"].get("message") or "") for l in progress))
+        final = lines[-1]
+        self.assertTrue(final["final"])
+        self.assertEqual(final["data"]["status"], "registered")
+        self.assertEqual(final["data"]["containerId"], "container-789")
+        self.assertIn("Downloaded newer image", final["data"]["pull"]["stdout"])
 
     def testWarsatFakeDeployModeExercisesApprovalAndRegistration(self):
         cfg = {

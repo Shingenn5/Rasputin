@@ -874,8 +874,10 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
   const [importedKeys, setImportedKeys] = useState(new Set());
   const operationApproval = (approvals?.approvals || []).find(a => a.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
 
-  const running = containers.filter(c => ["running", "healthy", "reachable"].includes(c.status || c.state));
-  const stopped = containers.filter(c => !["running", "healthy", "reachable"].includes(c.status || c.state));
+  // status is raw docker text ("Up 50 seconds"); state is the normalized flag.
+  const isUp = (c) => ["running", "healthy", "reachable"].includes(c.state || "") || (c.status || "").toLowerCase().startsWith("up");
+  const running = containers.filter(isUp);
+  const stopped = containers.filter(c => !isUp(c));
 
   function toggleLogs(name) {
     if (activeLogContainer === name) {
@@ -1009,19 +1011,22 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
         </button>
       </div>
 
-      {/* Execution disabled warning */}
-      {!runtimes?.executionEnabled && (
+      {/* Execution disabled warning — runtimes reports `enabled`, and when it
+          is true the message is informational, not a warning */}
+      {runtimes && runtimes.enabled === false && (
         <div className="ws-exec-warning">
           <AlertTriangle size={13} />
           <span>{runtimes?.message || "Docker control is off, so WarSat cannot manage containers."}</span>
-          <EnableDockerButton enableDockerControl={enableDockerControl} />
+          {!runtimes?.dockerControlEnabled && (
+            <EnableDockerButton enableDockerControl={enableDockerControl} />
+          )}
         </div>
       )}
 
       {/* Container cards */}
       {containers.map(container => {
         const st = container.status || container.state || "unknown";
-        const isRunning = ["running", "healthy", "reachable"].includes(st);
+        const isRunning = isUp(container);
         const isLogOpen = activeLogContainer === container.name;
         const logsForThis = logs?.containerName === container.name ? logs : null;
 

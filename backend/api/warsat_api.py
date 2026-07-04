@@ -6,8 +6,10 @@ from backend import warsat
 from backend.core import workspace
 from backend.core import audit
 from backend.core import security
-from backend.core.response import ok, fail
+from backend.core.response import ok, fail, camelize, AppError, _camel_code
+from fastapi.responses import StreamingResponse
 import asyncio
+import json
 
 router = APIRouter()
 
@@ -76,7 +78,33 @@ async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
 @warsat_router.post("/deploy")
 
 async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
-    return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
+    # Without an approval id this only creates the approval request — fast,
+    # so answer synchronously. Approved deploys pull images and boot
+    # containers, which can take minutes: stream NDJSON progress so the UI
+    # never sits on a silent request.
+    if not req.approval_id:
+        return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
+
+    def gen():
+        try:
+            for update in warsat.deploy_stream(req.plan, req.approval_id):
+                yield json.dumps({**update, "data": camelize(update.get("data"))}) + "\n"
+        except AppError as exc:
+            yield json.dumps({
+                "ok": False,
+                "final": True,
+                "data": None,
+                "error": {"code": _camel_code(exc.code), "message": exc.message},
+            }) + "\n"
+        except Exception as exc:  # noqa: BLE001 — surface anything to the stream
+            yield json.dumps({
+                "ok": False,
+                "final": True,
+                "data": None,
+                "error": {"code": "warsatDeployFailed", "message": str(exc)},
+            }) + "\n"
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
 
 @warsat_router.post("/logs")
 

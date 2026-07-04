@@ -21,6 +21,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/app/data
+      # Live runtime store (SQLite, security config, memory). Without this
+      # mount every rebuild silently discarded settings, chats, and model
+      # registrations baked into the previous container.
+      - ./data/wrapper:/app/backend/data
       - ./workspace:/app/workspace
       - ./models:/app/models:ro
     restart: "no"

@@ -49,3 +49,9 @@ graph.json
 *.pth
 *.onnx
 *.ckpt
+
+backend/data/
+backend/data-backup-*/
+*.db
+*.db-wal
+*.db-shm

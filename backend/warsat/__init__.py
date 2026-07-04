@@ -1105,6 +1105,68 @@ def _run_command(args, timeout=120, check=True):
     }
 
 
+def _image_exists_locally(image):
+    if _fake_deploy_enabled():
+        return False
+    result = _run_command(["docker", "image", "inspect", image], timeout=20, check=False)
+    return result["returnCode"] == 0
+
+
+def _pull_image(pull_cmd, image):
+    """Pull the protocol image, skipping the registry when a local copy exists.
+
+    Rasputin is local-first: a cached image should never block a deploy behind
+    a multi-GB registry download. Users refresh images explicitly.
+    """
+    if _image_exists_locally(image):
+        return {
+            "returnCode": 0,
+            "stdout": f"Image {image} already present locally - skipped registry pull.",
+            "stderr": "",
+        }
+    return _run_command(pull_cmd, timeout=DEPLOY_TIMEOUT_SECONDS)
+
+
+def _streamed_pull(pull_cmd):
+    """Run docker pull, yielding ('progress', line) then ('result', result).
+
+    Mirrors _run_command's error contract (503 missing CLI, 504 timeout,
+    502 failure) but keeps output flowing so the UI can show live layer
+    progress during large downloads instead of appearing hung.
+    """
+    if _fake_deploy_enabled():
+        yield ("result", _fake_run_command(pull_cmd, DEPLOY_TIMEOUT_SECONDS, True))
+        return
+    try:
+        proc = subprocess.Popen(pull_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    except FileNotFoundError:
+        raise AppError("warsat_docker_unavailable", "Docker CLI is not available to Rasputin. Restart with the docker-control profile.", 503)
+    deadline = time.time() + DEPLOY_TIMEOUT_SECONDS
+    lines = []
+    last_emit = 0.0
+    try:
+        for raw in proc.stdout:
+            if time.time() > deadline:
+                proc.kill()
+                raise AppError("warsat_docker_timeout", "Docker command timed out before it finished.", 504)
+            line = raw.strip()
+            if not line:
+                continue
+            lines.append(line)
+            now = time.time()
+            if now - last_emit >= 2.0:
+                last_emit = now
+                yield ("progress", line[:300])
+        proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    output = "\n".join(lines[-30:])
+    if proc.returncode != 0:
+        raise AppError("warsat_docker_failed", output or "Docker pull failed.", 502)
+    yield ("result", {"returnCode": proc.returncode, "stdout": output, "stderr": ""})
+
+
 def _validate_deploy_plan(plan):
     if not isinstance(plan, dict):
         raise AppError("warsat_plan_invalid", "Create a launch plan before deploying.", 400)
@@ -1583,7 +1645,7 @@ def deploy(plan, approval_id=None):
         "modelKey": registry_entry["key"],
     })
 
-    pull = _run_command(pull_cmd, timeout=DEPLOY_TIMEOUT_SECONDS)
+    pull = _pull_image(pull_cmd, protocol["image"])
     logs_out.append(_command_log("pulling", pull_cmd, pull))
     _run_command(["docker", "rm", "-f", container_name], timeout=60, check=False)
     started = _run_command(run_cmd, timeout=120)
@@ -1691,11 +1753,37 @@ def deploy_stream(plan, approval_id):
             "phase": "pulling",
             "lifecycle": _lifecycle(active="pulling", done={"planned", "approvalPending"}),
             "containerName": container_name,
-            "message": "Warsat is pulling the image...",
+            "message": "Warsat is checking for the image...",
         }
     }
 
-    pull = _run_command(pull_cmd, timeout=DEPLOY_TIMEOUT_SECONDS)
+    if _image_exists_locally(protocol["image"]):
+        pull = {
+            "returnCode": 0,
+            "stdout": f"Image {protocol['image']} already present locally - skipped registry pull.",
+            "stderr": "",
+        }
+    else:
+        pull = None
+        for kind, payload in _streamed_pull(pull_cmd):
+            if kind == "result":
+                pull = payload
+                continue
+            lifecycle = _lifecycle(active="pulling", done={"planned", "approvalPending"})
+            for item in lifecycle:
+                if item["id"] == "pulling":
+                    item["message"] = payload
+            yield {
+                "ok": True,
+                "final": False,
+                "data": {
+                    "status": "pulling",
+                    "phase": "pulling",
+                    "lifecycle": lifecycle,
+                    "containerName": container_name,
+                    "message": payload,
+                }
+            }
     logs_out.append(_command_log("pulling", pull_cmd, pull))
     _run_command(["docker", "rm", "-f", container_name], timeout=60, check=False)
 
