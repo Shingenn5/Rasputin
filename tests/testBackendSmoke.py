@@ -891,6 +891,31 @@ class BackendSmokeTests(unittest.TestCase):
         # restore for other tests
         self.assertOk(self.client.post("/api/settings/models", json={"key": "defaultEngine", "value": "llamacpp"}))
 
+    def testSettingsSecurityDomainWritesThroughToEnforcedConfig(self):
+        # The Settings > Security toggles must change the enforced security
+        # config (security kv) — before the write-through they only touched
+        # platform_settings, leaving warsat/mcp on the old value.
+        original = security.load().get("allow_docker_control", False)
+        try:
+            self.assertOk(self.client.post("/api/settings/security", json={"key": "allow_docker_control", "value": True}))
+            self.assertTrue(security.load()["allow_docker_control"])
+            # /api/security responses are camelized by ok()
+            self.assertTrue(self.assertOk(self.client.get("/api/security"))["allowDockerControl"])
+            settings = self.assertOk(self.client.get("/api/settings"))
+            self.assertTrue(settings["security"]["allow_docker_control"])
+
+            # and a change made through /api/security (e.g. the WarSat inline
+            # prompt) surfaces on the Settings page state as well
+            cfg = security.load()
+            cfg["allow_docker_control"] = False
+            self.assertOk(self.client.post("/api/security", json=cfg))
+            settings = self.assertOk(self.client.get("/api/settings"))
+            self.assertFalse(settings["security"]["allow_docker_control"])
+        finally:
+            cfg = security.load()
+            cfg["allow_docker_control"] = original
+            security.save(cfg)
+
     def testArchiveSessionsSaveAndExportWithPermission(self):
         title = f"Archive Smoke {runtime_store.new_id('arch')[-6:]}"
         saved = self.assertOk(self.client.post("/api/archive/sessions", json={

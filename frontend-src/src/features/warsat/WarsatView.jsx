@@ -41,6 +41,8 @@ import {
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { api, postJson } from "../../api/client.js";
+import { ENGINE_PROTOCOLS, ENGINE_LABELS } from "../../lib/engines.js";
+import { useSettingsStore } from "../settings/settingsStore.js";
 
 /* ── Tab config ── */
 const warsatTabs = [
@@ -106,9 +108,12 @@ export function WarsatView({
   cancelTask,
   pauseTask,
   resumeTask,
+  enableDockerControl,
   go,
 }) {
   const [activeTab, setActiveTab] = useState("planner");
+  const defaultEngine = useSettingsStore(state => state.models?.defaultEngine) || "llamacpp";
+  const defaultEngineLabel = ENGINE_LABELS[defaultEngine] || labelize(defaultEngine);
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
   const executeAction = useReliableAction("WarsatView");
 
@@ -158,8 +163,13 @@ export function WarsatView({
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
 
   useEffect(() => {
-    if (!protocolId && firstProtocol?.id) setProtocolId(firstProtocol.id);
-  }, [firstProtocol?.id, protocolId]);
+    if (protocolId) return;
+    // Start the recipe on the protocol matching the Default Inference Engine
+    // setting so the choice made in Settings carries through to deploys.
+    const preferred = ENGINE_PROTOCOLS[defaultEngine];
+    const initial = protocols.some(p => p.id === preferred) ? preferred : firstProtocol?.id;
+    if (initial) setProtocolId(initial);
+  }, [firstProtocol?.id, protocolId, defaultEngine, protocols]);
 
   useEffect(() => {
     if (plan) {
@@ -240,6 +250,7 @@ export function WarsatView({
         </div>
         <div className="flex flex-wrap justify-end gap-3">
           {[
+            { v: defaultEngineLabel, l: "Default Engine", c: "text-primary" },
             { v: runningTasks.length, l: "Running", c: "text-primary" },
             { v: pendingApprovals.length, l: "Approvals", c: "text-amber-400" },
             { v: containers.length, l: "Containers", c: "text-foreground" },
@@ -363,6 +374,8 @@ export function WarsatView({
               approveApproval={approveApproval}
               denyApproval={denyApproval}
               lifecycle={lifecycle}
+              defaultEngineLabel={defaultEngineLabel}
+              enableDockerControl={enableDockerControl}
             />
           )}
 
@@ -377,6 +390,7 @@ export function WarsatView({
               operation={operation}
               approvals={approvals}
               handleRefresh={handleRefresh}
+              enableDockerControl={enableDockerControl}
               go={go}
             />
           )}
@@ -506,9 +520,20 @@ function DeployTab({
   deployPlan, deploying, deployment, deployLabel, deployDisabled, canDeployPlan,
   approvalPending, approvalClosed, approvalStatus, currentApproval,
   approveApproval, denyApproval, lifecycle,
+  defaultEngineLabel, enableDockerControl,
 }) {
   const formRef = React.useRef(null);
+  const briefRef = React.useRef(null);
   const activePhase = deployment?.phase || plan?.phase || "";
+
+  // Bring the Mission Brief into view whenever a plan lands — it renders
+  // below the recipe form, and without the scroll a generate click looks
+  // like nothing happened.
+  React.useEffect(() => {
+    if (plan && briefRef.current) {
+      briefRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [plan]);
 
   React.useEffect(() => {
     if (plan && formRef.current) {
@@ -562,6 +587,9 @@ function DeployTab({
         <div className="ws-recipe-header">
           <SlidersHorizontal size={14} />
           <span>Launch Recipe</span>
+          {defaultEngineLabel && (
+            <span className="ws-protocol-hint">Default engine: {defaultEngineLabel}</span>
+          )}
           {protocols.length > 0 && (
             <span className="ws-protocol-hint">{selectedProtocol?.runtime || ""}</span>
           )}
@@ -605,7 +633,7 @@ function DeployTab({
           </label>
           <div className="ws-recipe-actions">
             <button className="w2-button primary" type="submit" style={{ flex: 1 }}>
-              <Zap size={14} /> Generate Plan
+              <Zap size={14} /> {plan ? "Regenerate Plan" : "Generate Plan"}
             </button>
             {(plan || error) && (
               <button className="w2-button" type="button" onClick={clearPlan}>Clear</button>
@@ -621,22 +649,25 @@ function DeployTab({
 
       {/* ── Mission Brief (Plan Preview) ── */}
       {plan && (
-        <PlanPreview
-          plan={plan}
-          deployment={deployment}
-          deploying={deploying}
-          deployLabel={deployLabel}
-          deployDisabled={deployDisabled}
-          canDeployPlan={canDeployPlan}
-          deployPlan={deployPlan}
-          approvalPending={approvalPending}
-          approvalClosed={approvalClosed}
-          approvalStatus={approvalStatus}
-          currentApproval={currentApproval}
-          approveApproval={approveApproval}
-          denyApproval={denyApproval}
-          lifecycle={lifecycle}
-        />
+        <div ref={briefRef}>
+          <PlanPreview
+            plan={plan}
+            deployment={deployment}
+            deploying={deploying}
+            deployLabel={deployLabel}
+            deployDisabled={deployDisabled}
+            canDeployPlan={canDeployPlan}
+            deployPlan={deployPlan}
+            approvalPending={approvalPending}
+            approvalClosed={approvalClosed}
+            approvalStatus={approvalStatus}
+            currentApproval={currentApproval}
+            approveApproval={approveApproval}
+            denyApproval={denyApproval}
+            lifecycle={lifecycle}
+            enableDockerControl={enableDockerControl}
+          />
+        </div>
       )}
     </div>
   );
@@ -644,12 +675,52 @@ function DeployTab({
 
 
 /* ═══════════════════════════════════════════
+   ENABLE DOCKER CONTROL (inline prompt)
+   ═══════════════════════════════════════════ */
+function EnableDockerButton({ enableDockerControl }) {
+  const [busy, setBusy] = useState(false);
+  if (!enableDockerControl) return null;
+
+  async function handleClick() {
+    const ok = window.confirm(
+      "Enable Docker control?\n\nWarSat will be allowed to manage Docker containers on this machine (same as the toggle in Settings > Security)."
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await enableDockerControl();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      className="w2-button primary"
+      type="button"
+      disabled={busy}
+      onClick={handleClick}
+      style={{ fontSize: "0.75rem", padding: "4px 10px", flexShrink: 0, marginLeft: "auto" }}
+    >
+      {busy ? <RefreshCw size={12} className="ws-spin" /> : <Server size={12} />}
+      {busy ? "Enabling..." : "Enable Docker Control"}
+    </button>
+  );
+}
+
+
+/* ═══════════════════════════════════════════
    PLAN PREVIEW (Mission Brief)
    ═══════════════════════════════════════════ */
-function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle }) {
+function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl }) {
   const isLocalhost = plan.securityChecks?.localhostOnly;
   const deployFailed = deployment?.status === "failed";
   const deployDone = deployment?.status === "registered";
+  // The docker-off banner (with its Enable action) supersedes the backend's
+  // plain-text warning about the same condition.
+  const planWarnings = (plan.warnings || []).filter(
+    (w) => plan.dockerControlEnabled || !w.startsWith("Docker control is disabled")
+  );
 
   return (
     <div className="ws-mission-brief">
@@ -714,10 +785,20 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
         </div>
       )}
 
+      {/* Docker control gate — offer the fix inline instead of sending the
+          user to Settings > Security */}
+      {!plan.dockerControlEnabled && (
+        <div className="ws-exec-warning">
+          <AlertTriangle size={13} />
+          <span>Docker control is off, so this plan cannot launch a container yet.</span>
+          <EnableDockerButton enableDockerControl={enableDockerControl} />
+        </div>
+      )}
+
       {/* Warnings */}
-      {(plan.warnings || []).length > 0 && (
+      {planWarnings.length > 0 && (
         <div className="ws-brief-warnings">
-          {plan.warnings.map((w, i) => (
+          {planWarnings.map((w, i) => (
             <div key={i} className="ws-brief-warning">
               <AlertTriangle size={12} /> {w}
             </div>
@@ -767,7 +848,7 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
 /* ═══════════════════════════════════════════
    CONTAINERS TAB
    ═══════════════════════════════════════════ */
-function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRuntimeAction, operation, approvals, handleRefresh, go }) {
+function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRuntimeAction, operation, approvals, handleRefresh, enableDockerControl, go }) {
   const [activeLogContainer, setActiveLogContainer] = useState(null);
   const [discovering, setDiscovering] = useState(false);
   const [discovered, setDiscovered] = useState(null);
@@ -914,7 +995,8 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
       {!runtimes?.executionEnabled && (
         <div className="ws-exec-warning">
           <AlertTriangle size={13} />
-          {runtimes?.message || "Enable Docker control in Safety settings to manage containers."}
+          <span>{runtimes?.message || "Docker control is off, so WarSat cannot manage containers."}</span>
+          <EnableDockerButton enableDockerControl={enableDockerControl} />
         </div>
       )}
 

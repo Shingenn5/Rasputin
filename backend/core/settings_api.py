@@ -4,6 +4,7 @@ import copy
 import logging
 
 from backend.core import runtime_store as store
+from backend.core import security as core_security
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -89,6 +90,10 @@ def _get_hydrated_settings():
     for domain, saved in saved_settings.items():
         if domain not in hydrated and isinstance(saved, dict):
             hydrated[domain] = copy.deepcopy(saved)
+    # The enforcement flags (allow_docker_control, privacy_lock, ...) live in
+    # the core security config, not platform_settings. Overlay them so the
+    # Settings > Security page always shows what is actually enforced.
+    hydrated.setdefault("security", {}).update(core_security.load())
     return hydrated
 
 def _apply_dynamic_settings(domain: str, key: str, value: any):
@@ -109,16 +114,25 @@ def get_all_settings():
 
 @router.post("/{domain}")
 def update_setting(domain: str, data: SettingUpdate):
+    # Security enforcement flags must land in the core security config —
+    # writing them only to platform_settings would leave the toggle cosmetic
+    # while warsat/mcp keep enforcing the old value.
+    if domain == "security" and data.key in core_security.defaults():
+        cfg = core_security.load()
+        cfg[data.key] = data.value
+        core_security.save(cfg)
+        return {"updatedSettings": _get_hydrated_settings()["security"]}
+
     all_settings = _get_hydrated_settings()
-    
+
     if domain not in all_settings:
         all_settings[domain] = {}
-        
+
     all_settings[domain][data.key] = data.value
     store.set_kv("platform_settings", all_settings)
-    
+
     _apply_dynamic_settings(domain, data.key, data.value)
-    
+
     return {"updatedSettings": all_settings[domain]}
 
 @router.post("/validate/{domain}")

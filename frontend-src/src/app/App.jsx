@@ -38,13 +38,7 @@ import {
 } from "../lib/display.js";
 import { useSettingsStore } from "../features/settings/settingsStore.js";
 import { loadSettings } from "../features/settings/settingsActions.js";
-
-// Default Inference Engine (Settings > Models) -> Warsat runtime protocol.
-const ENGINE_PROTOCOLS = {
-  vllm: "vllmCudaOpenai",
-  llamacpp: "llamaCppGgufServer",
-  ollama: "ollamaOpenaiServer",
-};
+import { ENGINE_PROTOCOLS } from "../lib/engines.js";
 
 const routedViews = new Set([
   "home",
@@ -1445,12 +1439,40 @@ export function App() {
       });
       setWarsatPlan(plan);
       setWarsatDeployment(null);
-      setGlobalStatus("Warsat launch plan created.");
+      setGlobalStatus("Launch plan ready — review the Mission Brief below, then request deploy approval.");
       return plan;
     } catch (error) {
       setWarsatError(error.message);
       setWarsatPlan(null);
       return null;
+    }
+  }
+
+  async function enableDockerControl() {
+    try {
+      const saved = await postJson("/api/security", { ...security, allowDockerControl: true });
+      setSecurity(saved);
+      await loadWarsat();
+      // Plans snapshot the docker flags at creation time, so refresh the
+      // active plan or the deploy button stays locked on stale data.
+      if (warsatPlan) {
+        const plan = await postJson("/api/warsat/plan", {
+          protocolId: warsatPlan.protocolId,
+          modelRef: warsatPlan.modelRef || undefined,
+          modelPath: warsatPlan.modelPath || undefined,
+          strengthProfile: warsatPlan.strengthProfile || undefined,
+          hostPort: warsatPlan.hostPort || undefined,
+          role: warsatPlan.role || undefined,
+          containerName: warsatPlan.containerName || undefined,
+        });
+        setWarsatPlan(plan);
+        setWarsatDeployment(null);
+      }
+      setGlobalStatus("Docker control enabled. WarSat can now launch containers.");
+      return true;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return false;
     }
   }
 
@@ -1688,6 +1710,7 @@ export function App() {
         cancelTask={cancelTask}
         pauseTask={pauseTask}
         resumeTask={resumeTask}
+        enableDockerControl={enableDockerControl}
         go={go}
       />
       <ArchiveView

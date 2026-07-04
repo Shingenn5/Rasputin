@@ -48,6 +48,8 @@ scripts/hatch_wrapper_spark.py
 
 # local state, never commit
 data/
+backend/data/
+backend/data-backup-*/
 workspace/*
 backend/workspace/
 models/*
