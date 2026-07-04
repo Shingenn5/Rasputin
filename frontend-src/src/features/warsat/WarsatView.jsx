@@ -196,6 +196,9 @@ export function WarsatView({
 
   /* deploy state */
   const canDeployPlan = !!plan?.executionEnabled && !!plan?.dockerControlEnabled && !!plan?.dockerCliAvailable;
+  // Deploy can never succeed without docker control + CLI — the backend 503s.
+  // Keep the button locked and let the mission-brief banners explain why.
+  const deployBlocked = !!plan && !canDeployPlan;
   const deploymentApprovalId = deployment?.approval?.id || deployment?.approvalId;
   const currentApproval = (approvals?.approvals || []).find(a => a.id === deploymentApprovalId) || deployment?.approval;
   const approvalStatus = currentApproval?.status;
@@ -203,12 +206,14 @@ export function WarsatView({
   const approvalApproved = deployment?.approvalRequired && approvalStatus === "approved";
   const approvalClosed = deployment?.approvalRequired && ["denied", "expired", "executed"].includes(approvalStatus);
   const approvalReady = !deployment?.approvalRequired || approvalApproved;
-  const deployDisabled = !plan || deploying || !approvalReady || approvalClosed;
+  const deployDisabled = !plan || deploying || deployBlocked || !approvalReady || approvalClosed;
   const lifecycle = deployment?.lifecycle || plan?.lifecycle || [];
   const deploymentFailed = deployment?.status === "failed";
   const deploymentRegistered = deployment?.status === "registered";
   const deployLabel = deploying
     ? "Deploying..."
+    : deployBlocked
+      ? "Deploy locked"
     : deployment?.approvalRequired
       ? approvalStatus === "approved" ? "Run approved deploy" : approvalClosed ? "Approval closed" : "Waiting for approval"
       : deploymentFailed ? "Request retry approval"
@@ -716,10 +721,11 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
   const isLocalhost = plan.securityChecks?.localhostOnly;
   const deployFailed = deployment?.status === "failed";
   const deployDone = deployment?.status === "registered";
-  // The docker-off banner (with its Enable action) supersedes the backend's
-  // plain-text warning about the same condition.
+  // The docker banners below supersede the backend's plain-text warnings
+  // about the same conditions.
+  const dockerReady = plan.dockerControlEnabled && plan.dockerCliAvailable;
   const planWarnings = (plan.warnings || []).filter(
-    (w) => plan.dockerControlEnabled || !w.startsWith("Docker control is disabled")
+    (w) => dockerReady || !w.startsWith("Docker control is")
   );
 
   return (
@@ -792,6 +798,18 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
           <AlertTriangle size={13} />
           <span>Docker control is off, so this plan cannot launch a container yet.</span>
           <EnableDockerButton enableDockerControl={enableDockerControl} />
+        </div>
+      )}
+      {plan.dockerControlEnabled && !plan.dockerCliAvailable && (
+        <div className="ws-exec-warning" style={{ flexWrap: "wrap" }}>
+          <AlertTriangle size={13} />
+          <span>
+            Docker control is on, but this Rasputin container was started without Docker CLI
+            access, so deploys will fail. Restart the stack with the docker-control overlay:
+          </span>
+          <pre style={{ width: "100%", margin: 0, padding: "8px 10px", borderRadius: "6px", background: "var(--cc-surface)", fontSize: "0.6875rem", overflowX: "auto" }}>
+            docker compose -f docker-compose.yml -f docker-compose.docker-control.yml up --build -d
+          </pre>
         </div>
       )}
 
