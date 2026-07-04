@@ -146,7 +146,7 @@ export function GeneralSettings({ setTheme }) {
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
                     <span className="fw-medium">Testing Mode</span>
-                    <Badge bg="warning" text="dark" className="ms-2">Dry-Run</Badge>
+                    <Badge bg="" className="badge-soft-warn ms-2">Dry-Run</Badge>
                   </div>
                   <Form.Check 
                     type="switch" 

@@ -61,6 +61,14 @@
   color: var(--ras-warn-text) !important;
 }
 
+/* Soft warning chip — replaces the glaring solid-yellow bg-warning badges
+   (Dry-Run, Approval Req.) with a quiet amber tint + readable amber text. */
+.badge-soft-warn {
+  background-color: color-mix(in srgb, var(--ras-warn) 14%, transparent) !important;
+  color: var(--ras-warn-text) !important;
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 34%, transparent);
+}
+
 :root {
 
   /* ── Systematic design scales (additive; theme-independent) ──
@@ -4999,6 +5007,7 @@ button.runtime-chip {
 
 .settings-tab {
   min-height: 44px;
+  width: 100%; /* uniform boxes — never sized by the label text */
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--ras-border) 88%, transparent) !important;
   background: color-mix(in srgb, var(--ras-panel) 80%, transparent) !important;
@@ -5021,23 +5030,13 @@ button.runtime-chip {
   background: color-mix(in srgb, var(--ras-accent) 8%, var(--ras-panel)) !important;
 }
 
+/* Active tab: highlight ring around the box — same size as every other tab
+   (the old inline ::before dot widened the active tab by its own width). */
 .settings-tab.btn-primary {
-  border-color: color-mix(in srgb, var(--ras-accent) 54%, var(--ras-border)) !important;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--ras-accent) 14%, var(--ras-panel)), var(--ras-panel)) !important;
+  border-color: var(--ras-accent) !important;
+  background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel)) !important;
   color: var(--ras-text) !important;
-}
-
-.settings-tab.btn-primary::before {
-  content: "";
-  display: inline-block;
-  width: .46rem;
-  height: .46rem;
-  border-radius: 999px;
-  background: var(--ras-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ras-accent) 13%, transparent);
-  margin-right: .45rem;
-  vertical-align: .08rem;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ras-accent) 30%, transparent) !important;
 }
 
 .settings-pane {

@@ -134,7 +134,7 @@ export function SecuritySettings() {
                       <div className="text-muted small">Require user approval before saving files.</div>
                     </td>
                     <td>
-                      {security?.approval_required_file_write !== false ? <Badge bg="warning" text="dark">Approval Req.</Badge> : <Badge bg="success">Auto-Approve</Badge>}
+                      {security?.approval_required_file_write !== false ? <Badge bg="" className="badge-soft-warn">Approval Req.</Badge> : <Badge bg="success">Auto-Approve</Badge>}
                     </td>
                     <td className="text-end pe-4">
                       <Form.Check type="switch" id="approval-file-write" checked={security?.approval_required_file_write !== false} onChange={() => handleToggle("approval_required_file_write")} />
@@ -146,7 +146,7 @@ export function SecuritySettings() {
                       <div className="text-muted small">Allow agents to execute terminal commands.</div>
                     </td>
                     <td>
-                      {security?.allow_shell_execution ? <Badge bg="warning" text="dark">Approval Req.</Badge> : <Badge bg="secondary">Blocked</Badge>}
+                      {security?.allow_shell_execution ? <Badge bg="" className="badge-soft-warn">Approval Req.</Badge> : <Badge bg="secondary">Blocked</Badge>}
                     </td>
                     <td className="text-end pe-4">
                       <Form.Check type="switch" id="allow-shell-execution" checked={!!security?.allow_shell_execution} onChange={() => handleToggle("allow_shell_execution")} />
