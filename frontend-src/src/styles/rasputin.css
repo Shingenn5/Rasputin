@@ -23,6 +23,10 @@
   --ras-blue: var(--dash-accent);
   --ras-safe: var(--dash-up);
   --ras-warn: #f59e0b;
+  /* Amber for *words*: #f59e0b is ~2:1 contrast on the cream themes, fine for
+     fills/borders/icons but unreadable as text. Use this darker amber
+     whenever warning-colored text is rendered. */
+  --ras-warn-text: #d97706;
   --ras-danger: var(--dash-down);
   --ras-shadow: none;
   --ras-focus: var(--dash-border-strong);
@@ -47,6 +51,17 @@
   --bs-list-group-bg: var(--ras-panel);
   --bs-light-rgb: 238, 232, 220;
   --bs-body-font-family: "Inter", system-ui, sans-serif;
+}
+
+/* Bootstrap's default warning yellow (#ffc107) is unreadable as text on the
+   cream themes. Yellow *fills* (bg-warning badges/tints) keep their color;
+   warning text renders in the readable amber. !important matches Bootstrap's
+   own utility weight. */
+.text-warning {
+  color: var(--ras-warn-text) !important;
+}
+
+:root {
 
   /* ── Systematic design scales (additive; theme-independent) ──
      Consumed by shared components (Toast, Skeleton, Button, ...).
@@ -10973,7 +10988,7 @@ button.helper-row:hover {
 }
 
 .w2-health-item.is-warn {
-  color: #F59E0B; /* Amber */
+  color: var(--ras-warn-text); /* readable amber — words, not a fill */
 }
 
 .w2-preview-block {

@@ -501,22 +501,24 @@ export function WorkspacesView({
               </div>
             </div>
           ) : (
-            // Empty State / Dashboard Mode. Top-aligned: centering vertically
-            // put the dashboard halfway down the page whenever the explorer
-            // column was taller than the viewport.
-            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: '24px', overflowY: 'auto' }}>
-              
-              <div style={{ maxWidth: '600px', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                
-                <div className="text-center mb-4">
-                  <FolderOpen size={48} style={{ color: 'var(--cc-muted)', marginBottom: '16px' }} />
-                  <h2 style={{ fontSize: '1.5rem', fontWeight: 600, margin: 0 }}>{activeName || "No workspace selected"}</h2>
-                  <p style={{ color: 'var(--cc-muted)', margin: '8px 0 0 0' }}>Select a file from the explorer to preview it.</p>
+            // Empty State / Dashboard Mode. Compact + top-aligned so the whole
+            // tab fits in the viewport without scrolling (overflowY is a
+            // fallback for short windows / open search results only).
+            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', overflowY: 'auto' }}>
+
+              <div style={{ maxWidth: '860px', width: '100%', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <FolderOpen size={28} style={{ color: 'var(--cc-muted)', flexShrink: 0 }} />
+                  <div>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>{activeName || "No workspace selected"}</h2>
+                    <p style={{ color: 'var(--cc-muted)', margin: 0, fontSize: '0.8rem' }}>Select a file from the explorer to preview it.</p>
+                  </div>
                 </div>
 
                 <div className="w2-section">
                   <h2 className="w2-section-title">Workspace Health</h2>
-                  <div className="w2-card w2-health-grid">
+                  <div className="w2-card w2-health-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
                     <div className="w2-health-item is-good"><Check size={16}/> Folder Access</div>
                     <div className={`w2-health-item ${activeIndexed ? 'is-good' : 'is-warn'}`}>
                       {activeIndexed ? <Check size={16}/> : <AlertTriangle size={16}/>} RAG Index
@@ -528,7 +530,7 @@ export function WorkspacesView({
                   </div>
                 </div>
 
-                <div className="w2-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div className="w2-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h2 className="w2-section-title">Knowledge Operations</h2>
@@ -585,7 +587,7 @@ export function WorkspacesView({
 
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h2 className="w2-section-title">Launch Workspace Task</h2>
-                    <div className="w2-action-panel-grid" style={{ gridTemplateColumns: '1fr' }}>
+                    <div className="w2-action-panel-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
                       <button className="w2-button" onClick={() => launchTask('summarize')}>Summarize Directory</button>
                       <button className="w2-button" onClick={() => launchTask('analyze')}>Analyze Workspace</button>
                       <button className="w2-button" onClick={() => launchTask('search')}>Search Vulnerabilities</button>
@@ -600,7 +602,7 @@ export function WorkspacesView({
                     <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', margin: 0 }}>
                       Assign specific tasks in this workspace to specific local models.
                     </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px' }}>
                       {[
                         { mode: 'review', label: 'Code Reviewer' },
                         { mode: 'research', label: 'Researcher' },

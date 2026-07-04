@@ -121,11 +121,13 @@ export function SettingsView(props) {
             <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Description</h6>
             <p className="small mb-3">{getInspectorText(activeSetting[0]).desc}</p>
 
+            {/* Status color lives on the icon; the words stay body-colored
+                for readability (amber/green text was illegible on cream). */}
             <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Validation Rules</h6>
-            <p className="small mb-3 text-success"><CheckCircle2 size={12} className="me-1" />{getInspectorText(activeSetting[0]).validation}</p>
+            <p className="small mb-3"><CheckCircle2 size={12} className="me-1 text-success" />{getInspectorText(activeSetting[0]).validation}</p>
 
             <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Impact Analysis</h6>
-            <p className="small mb-3 text-warning"><ShieldAlert size={12} className="me-1" />{getInspectorText(activeSetting[0]).impact}</p>
+            <p className="small mb-3"><ShieldAlert size={12} className="me-1 text-warning" />{getInspectorText(activeSetting[0]).impact}</p>
 
             <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Dependencies</h6>
             <div className="small">
