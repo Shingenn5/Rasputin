@@ -501,36 +501,28 @@ export function WorkspacesView({
               </div>
             </div>
           ) : (
-            // Empty State / Dashboard Mode. Compact + top-aligned so the whole
-            // tab fits in the viewport without scrolling (overflowY is a
-            // fallback for short windows / open search results only).
-            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', overflowY: 'auto' }}>
+            // Empty State / Dashboard Mode. Everything must fit on one screen
+            // with no scrolling: no redundant title block (the page header
+            // card above already names the workspace), health as one slim
+            // strip, and `margin: auto 0` centers the block when there is
+            // spare height but degrades to top-aligned scroll on tiny windows.
+            <div className="w2-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', overflowY: 'auto' }}>
 
-              <div style={{ maxWidth: '860px', width: '100%', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ maxWidth: '860px', width: '100%', display: 'flex', flexDirection: 'column', gap: '12px', margin: 'auto 0' }}>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <FolderOpen size={28} style={{ color: 'var(--cc-muted)', flexShrink: 0 }} />
-                  <div>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>{activeName || "No workspace selected"}</h2>
-                    <p style={{ color: 'var(--cc-muted)', margin: 0, fontSize: '0.8rem' }}>Select a file from the explorer to preview it.</p>
+                <div className="w2-card" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', padding: '10px 16px', gap: '10px 16px' }}>
+                  <div className="w2-health-item is-good"><Check size={16}/> Folder Access</div>
+                  <div className={`w2-health-item ${activeIndexed ? 'is-good' : 'is-warn'}`}>
+                    {activeIndexed ? <Check size={16}/> : <AlertTriangle size={16}/>} RAG Index
                   </div>
+                  <div className={`w2-health-item ${graphStats?.nodes > 0 ? 'is-good' : 'is-warn'}`}>
+                    {graphStats?.nodes > 0 ? <Check size={16}/> : <AlertTriangle size={16}/>} Graph DB
+                  </div>
+                  <div className="w2-health-item is-good"><Check size={16}/> Security</div>
+                  <span style={{ color: 'var(--cc-muted)', fontSize: '0.75rem' }}>Select a file from the explorer to preview it.</span>
                 </div>
 
-                <div className="w2-section">
-                  <h2 className="w2-section-title">Workspace Health</h2>
-                  <div className="w2-card w2-health-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-                    <div className="w2-health-item is-good"><Check size={16}/> Folder Access</div>
-                    <div className={`w2-health-item ${activeIndexed ? 'is-good' : 'is-warn'}`}>
-                      {activeIndexed ? <Check size={16}/> : <AlertTriangle size={16}/>} RAG Index
-                    </div>
-                    <div className={`w2-health-item ${graphStats?.nodes > 0 ? 'is-good' : 'is-warn'}`}>
-                      {graphStats?.nodes > 0 ? <Check size={16}/> : <AlertTriangle size={16}/>} Graph DB
-                    </div>
-                    <div className="w2-health-item is-good"><Check size={16}/> Security</div>
-                  </div>
-                </div>
-
-                <div className="w2-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div className="w2-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h2 className="w2-section-title">Knowledge Operations</h2>

@@ -11044,6 +11044,12 @@ button.helper-row:hover {
   grid-template-columns: minmax(250px, 320px) 1fr;
 }
 
+/* Slimmer header card so the whole tab fits on one screen with slack. */
+.workspaces-view .w2-header-card {
+  margin: 16px 24px;
+  padding: 12px 24px;
+}
+
 /* Desktop: pin the grid to the remaining viewport height so the explorer
    file list and the dashboard scroll inside their own columns instead of
    growing the whole page. */
