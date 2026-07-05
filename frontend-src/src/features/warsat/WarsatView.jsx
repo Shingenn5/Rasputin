@@ -216,8 +216,9 @@ export function WarsatView({
       ? "Deploy locked"
     : deployment?.approvalRequired
       ? approvalStatus === "approved" ? "Run approved deploy" : approvalClosed ? "Approval closed" : "Waiting for approval"
-      : deploymentFailed ? "Request retry approval"
-      : deploymentRegistered ? "Request redeploy approval"
+      : deploymentFailed ? "Retry deploy"
+      : deploymentRegistered ? "Redeploy"
+      : plan?.approvalGranted ? "Deploy (already approved)"
       : "Request deploy approval";
 
   /* reliable actions */

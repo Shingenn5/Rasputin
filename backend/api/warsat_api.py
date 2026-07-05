@@ -78,11 +78,13 @@ async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
 @warsat_router.post("/deploy")
 
 async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
-    # Without an approval id this only creates the approval request — fast,
-    # so answer synchronously. Approved deploys pull images and boot
+    # Deploys that will actually execute (fresh approval in hand, or a prior
+    # approval grant for the identical deployment) pull images and boot
     # containers, which can take minutes: stream NDJSON progress so the UI
-    # never sits on a silent request.
-    if not req.approval_id:
+    # never sits on a silent request. Otherwise this only creates the
+    # approval request — fast, so answer synchronously.
+    will_execute = bool(req.approval_id) or await asyncio.to_thread(warsat.has_deploy_grant, req.plan)
+    if not will_execute:
         return ok(await asyncio.to_thread(warsat.deploy, req.plan, req.approval_id))
 
     def gen():

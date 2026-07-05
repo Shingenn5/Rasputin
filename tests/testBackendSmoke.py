@@ -1656,6 +1656,32 @@ class BackendSmokeTests(unittest.TestCase):
                 "approvalId": pending["approval"]["id"],
             }))
 
+            # The original approval acts as a standing grant: redeploying the
+            # identical plan executes without a new approval round-trip...
+            redeployed = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": plan}))
+            regenerated = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8031,
+                "role": "helper",
+                "strengthProfile": "small",
+            }))
+            # ...a different model on the same container needs a fresh one.
+            other_plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-1.5B-Instruct",
+                "hostPort": 8031,
+                "role": "helper",
+                "strengthProfile": "small",
+            }))
+            reapproval = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": other_plan}))
+
+        self.assertFalse(redeployed["approvalRequired"])
+        self.assertEqual(redeployed["status"], "registered")
+        self.assertTrue(regenerated["approvalGranted"])
+        self.assertFalse(other_plan["approvalGranted"])
+        self.assertTrue(reapproval["approvalRequired"])
+
         self.assertEqual(deployed["status"], "registered")
         self.assertEqual(deployed["phase"], "registered")
         self.assertTrue(deployed["health"]["ok"])
@@ -1878,7 +1904,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(deployed["containerId"].startswith("test-"))
         self.assertTrue(any(item["id"] == "registered" and item["status"] == "done" for item in deployed["lifecycle"]))
 
-    def testWarsatRuntimeLifecycleIsApprovalGated(self):
+    def testWarsatRuntimeStopRunsImmediatelyOnManagedContainers(self):
         cfg = {
             "allow_docker_control": True,
             "allow_model_registry_edit": True,
@@ -1922,16 +1948,12 @@ class BackendSmokeTests(unittest.TestCase):
                 "containerName": "rasputin-vllm-8031",
             }))
             self.assertIn("server ready", logs["logs"])
-            pending = self.assertOk(self.client.post("/api/warsat/stop", json={
-                "containerName": "rasputin-vllm-8031",
-            }))
-            self.assertTrue(pending["approvalRequired"])
-            self.assertEqual(pending["approval"]["actionType"], "warsat_stop")
-            self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
+            # Stop/restart of Rasputin-managed containers execute directly —
+            # no approval round-trip (deploys stay approval-gated).
             stopped = self.assertOk(self.client.post("/api/warsat/stop", json={
                 "containerName": "rasputin-vllm-8031",
-                "approvalId": pending["approval"]["id"],
             }))
+        self.assertFalse(stopped["approvalRequired"])
         self.assertEqual(stopped["action"], "stop")
         self.assertTrue(any(call[:2] == ["docker", "stop"] for call in docker_calls))
 

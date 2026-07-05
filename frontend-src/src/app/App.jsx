@@ -1481,16 +1481,16 @@ export function App() {
     setWarsatError("");
     setWarsatDeploying(true);
     const approvalId = warsatDeployment?.approval?.id || warsatDeployment?.approvalId;
-    setGlobalStatus(approvalId ? "Warsat is pulling the image and starting the container. This can take several minutes." : "Creating Warsat deployment approval.");
+    setGlobalStatus(approvalId || warsatPlan.approvalGranted
+      ? "Warsat is starting the deployment. Large image pulls stream their progress below."
+      : "Creating Warsat deployment approval.");
     try {
-      let deployment;
-      if (approvalId) {
-        deployment = await postJsonStream("/api/warsat/deploy", { plan: warsatPlan, approvalId }, (partial) => {
-          setWarsatDeployment(partial);
-        });
-      } else {
-        deployment = await postJson("/api/warsat/deploy", { plan: warsatPlan });
-      }
+      // The endpoint streams NDJSON progress when the deploy executes and
+      // answers plain JSON when it only creates an approval request —
+      // postJsonStream handles both.
+      const deployment = await postJsonStream("/api/warsat/deploy", { plan: warsatPlan, approvalId }, (partial) => {
+        setWarsatDeployment(partial);
+      });
       setWarsatDeployment(deployment);
       if (deployment.approvalRequired) {
         await refreshApprovals();

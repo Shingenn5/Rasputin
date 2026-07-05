@@ -30,6 +30,14 @@ export async function postJsonStream(path, data, onProgress) {
     const text = await response.text().catch(() => "");
     throw new Error(`Request failed: ${response.status} ${text}`);
   }
+  // The server answers fast requests as plain JSON and long-running ones as
+  // NDJSON — accept both so callers don't need to know in advance.
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("ndjson")) {
+    const body = await response.json();
+    if (body.ok === false) throw new Error(body.error?.message || body.error);
+    return body?.ok === true && Object.prototype.hasOwnProperty.call(body, "data") ? body.data : body;
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let result = null;

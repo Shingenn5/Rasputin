@@ -12,6 +12,7 @@ from pathlib import Path
 
 from backend.core import approvals
 from backend.core import audit
+from backend.core import runtime_store as store
 from backend.models import registry as model_registry
 from backend.core import security
 from backend.core.response import AppError
@@ -974,6 +975,8 @@ def make_plan(payload):
         "healthUrl": endpoint.rstrip("/v1") + protocol.get("healthPath", "/v1/models"),
         "riskLevel": "approvalRequired",
         "requiresApproval": True,
+        # An identical deployment approved before deploys without re-asking.
+        "approvalGranted": False,
         "executionEnabled": execution["enabled"],
         "dockerControlEnabled": docker_control_enabled,
         "dockerCliAvailable": execution["dockerCliAvailable"],
@@ -1026,6 +1029,7 @@ def make_plan(payload):
             "After the runtime is healthy, test the model from the Models page.",
         ],
     }
+    plan["approvalGranted"] = _matching_deploy_grant(plan, protocol) is not None
     audit.log("warsat_plan_created", {
         "protocolId": plan["protocolId"],
         "runtime": plan["runtime"],
@@ -1553,38 +1557,17 @@ def logs(container_name, limit=120):
     }
 
 
-def _operation_approval(action_type, container_name, labels):
-    return approvals.create(
-        action_type,
-        {
-            "container": container_name,
-            "protocolId": labels.get("rasputin.protocol", ""),
-            "runtime": labels.get("rasputin.runtime", ""),
-            "workspace": "Warsat runtime",
-        },
-        risk_level="approval_required",
-        workspace="Warsat runtime",
-        ttl=10 * 60,
-    )
-
-
 def _container_operation(container_name, action, approval_id=None):
+    # Stop/restart only touch containers Rasputin itself created (label
+    # enforced below) and are reversible, so they run immediately under the
+    # allow_docker_control permission. Deploys — which pull images and create
+    # new containers — remain approval-gated. approval_id is accepted for
+    # backward compatibility but no longer required.
     execution = _docker_runtime_enabled()
     if not execution["enabled"]:
         raise AppError("warsat_execution_disabled", execution["message"], 403)
     name, labels = _managed_container(container_name)
     action_type = f"warsat_{action}"
-    if not approval_id:
-        approval = _operation_approval(action_type, name, labels)
-        audit.log(f"{action_type}_approval_requested", {"container": name, "approvalId": approval["id"]})
-        return {
-            "approvalRequired": True,
-            "status": "waitingForApproval",
-            "approval": approval,
-            "containerName": name,
-            "message": f"Approval created. Approve it before Warsat can {action} this container.",
-        }
-    approvals.require_approved(approval_id, action_type)
     docker_action = "restart" if action == "restart" else "stop"
     result = _run_command(["docker", docker_action, name], timeout=60, check=True)
     status = _container_status(name)
@@ -1604,6 +1587,52 @@ def stop(container_name, approval_id=None):
 
 def restart(container_name, approval_id=None):
     return _container_operation(container_name, "restart", approval_id)
+
+
+def _deploy_grant_fingerprint(plan, protocol):
+    # The risk-relevant shape of a deployment. Tuning knobs (context length,
+    # GPU utilization, quantization) can change without re-approval; a new
+    # image, model, or port is a new risk decision.
+    return {
+        "protocolId": protocol["id"],
+        "image": protocol["image"],
+        "modelRef": str(plan.get("modelRef") or ""),
+        "modelPath": str(plan.get("modelPath") or ""),
+        "hostPort": int(plan.get("hostPort") or 0),
+    }
+
+
+def _deploy_grants():
+    grants = store.get_kv("warsat_deploy_grants", {})
+    return grants if isinstance(grants, dict) else {}
+
+
+def _matching_deploy_grant(plan, protocol):
+    container = _slug(str(plan.get("containerName") or ""))
+    grant = _deploy_grants().get(container)
+    if grant and grant.get("fingerprint") == _deploy_grant_fingerprint(plan, protocol):
+        return grant
+    return None
+
+
+def _save_deploy_grant(plan, protocol, approval_id):
+    grants = _deploy_grants()
+    grants[_slug(str(plan.get("containerName") or ""))] = {
+        "fingerprint": _deploy_grant_fingerprint(plan, protocol),
+        "approvalId": approval_id,
+        "approvedAt": time.time(),
+    }
+    store.set_kv("warsat_deploy_grants", grants)
+
+
+def has_deploy_grant(plan):
+    """True when an identical deployment was already approved once —
+    redeploys and retries then execute without a fresh approval."""
+    try:
+        protocol = get_protocol((plan or {}).get("protocolId"))
+    except Exception:
+        return False
+    return _matching_deploy_grant(plan, protocol) is not None
 
 
 def _deployment_approval_detail(plan, protocol, container_name, registry_entry):
@@ -1628,7 +1657,8 @@ def deploy(plan, approval_id=None):
     approval_detail = _deployment_approval_detail(plan, protocol, container_name, registry_entry)
     logs_out = []
 
-    if not approval_id:
+    granted = _matching_deploy_grant(plan, protocol) is not None
+    if not approval_id and not granted:
         approval = approvals.create(
             "warsat_deploy",
             approval_detail,
@@ -1660,7 +1690,14 @@ def deploy(plan, approval_id=None):
             ],
         }
 
-    approvals.require_approved(approval_id, "warsat_deploy")
+    if approval_id:
+        approvals.require_approved(approval_id, "warsat_deploy")
+        _save_deploy_grant(plan, protocol, approval_id)
+    else:
+        audit.log("warsat_deploy_grant_reused", {
+            "planId": plan.get("planId"),
+            "container": container_name,
+        })
 
     audit.log("warsat_deploy_started", {
         "planId": plan.get("planId"),
@@ -1760,7 +1797,16 @@ def deploy_stream(plan, approval_id):
     registry_entry = _registry_entry_from_plan(plan)
     logs_out = []
 
-    approvals.require_approved(approval_id, "warsat_deploy")
+    if approval_id:
+        approvals.require_approved(approval_id, "warsat_deploy")
+        _save_deploy_grant(plan, protocol, approval_id)
+    elif _matching_deploy_grant(plan, protocol) is None:
+        raise AppError("warsat_approval_required", "This deployment has not been approved yet.", 403)
+    else:
+        audit.log("warsat_deploy_grant_reused", {
+            "planId": plan.get("planId"),
+            "container": container_name,
+        })
 
     audit.log("warsat_deploy_started", {
         "planId": plan.get("planId"),
