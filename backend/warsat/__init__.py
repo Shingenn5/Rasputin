@@ -1185,6 +1185,62 @@ def _gpu_probe_via_docker():
     return gpus
 
 
+def _parse_gpu_metrics_csv(text):
+    out = []
+    for line in (text or "").strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 6:
+            try:
+                out.append({
+                    "index": int(parts[0]),
+                    "name": parts[1],
+                    "utilization": float(parts[2]),
+                    "memory_used_mb": float(parts[3]),
+                    "memory_total_mb": float(parts[4]),
+                    "temperature": float(parts[5]),
+                })
+            except ValueError:
+                continue
+    return out
+
+
+def gpu_live_metrics_via_docker():
+    """Live GPU telemetry for the containerized wrapper (no local nvidia-smi):
+    exec nvidia-smi inside a running Rasputin-managed GPU container — cheap
+    per poll — falling back to cached totals with zeroed live values."""
+    if _fake_deploy_enabled() or not _docker_cli_path():
+        return []
+    if not security.load().get("allow_docker_control", False):
+        return []
+    query = [
+        "nvidia-smi",
+        "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+        "--format=csv,noheader,nounits",
+    ]
+    try:
+        ps = _run_command(["docker", "ps", "--filter", "label=rasputin.managed=true", "--format", "{{.Names}}"], timeout=10, check=False)
+        names = [n.strip() for n in ps["stdout"].splitlines() if n.strip()] if ps["returnCode"] == 0 else []
+        for name in names:
+            result = _run_command(["docker", "exec", name] + query, timeout=10, check=False)
+            if result["returnCode"] == 0 and result["stdout"].strip():
+                metrics = _parse_gpu_metrics_csv(result["stdout"])
+                if metrics:
+                    return metrics
+    except AppError:
+        pass
+    return [
+        {
+            "index": i,
+            "name": gpu["name"],
+            "utilization": 0.0,
+            "memory_used_mb": 0.0,
+            "memory_total_mb": float(gpu.get("memoryTotalMb") or 0),
+            "temperature": 0.0,
+        }
+        for i, gpu in enumerate(_gpu_probe_via_docker())
+    ]
+
+
 def _occupied_host_ports():
     """Host port -> container name for running containers."""
     try:

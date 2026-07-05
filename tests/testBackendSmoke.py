@@ -1889,6 +1889,28 @@ class BackendSmokeTests(unittest.TestCase):
         finally:
             warsat_module._DOCKER_GPU_CACHE.update({"at": 0.0, "gpus": None})
 
+    def testWarsatGpuLiveMetricsExecIntoManagedContainer(self):
+        # Containerized wrapper reads live GPU telemetry by exec-ing
+        # nvidia-smi inside a running managed GPU container.
+        from backend import warsat as warsat_module
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:2] == ["docker", "ps"]:
+                return {"returnCode": 0, "stdout": "rasputin-vllmcudaopenai-8000\n", "stderr": ""}
+            if args[:2] == ["docker", "exec"]:
+                return {"returnCode": 0, "stdout": "0, NVIDIA GeForce RTX 5060 Ti, 43, 9000, 16311, 61", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run):
+            metrics = warsat_module.gpu_live_metrics_via_docker()
+
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics[0]["memory_total_mb"], 16311.0)
+        self.assertEqual(metrics[0]["utilization"], 43.0)
+        self.assertEqual(metrics[0]["temperature"], 61.0)
+
     def testWarsatPlanWarnsWhenBf16ModelWontFitCommonGpus(self):
         # A 7B bf16 model needs ~14GB VRAM for weights alone; planning one
         # without quantization must carry a warning so 16GB-class GPU users

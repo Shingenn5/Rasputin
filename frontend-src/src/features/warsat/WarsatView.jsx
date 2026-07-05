@@ -1339,6 +1339,8 @@ function AgentsTab({ agentState }) {
 function TelemetryTab({ telemetry }) {
   if (!telemetry) return <div className="w2-section" style={{ flex: 1, padding: "32px", textAlign: "center", color: "var(--cc-muted)" }}>Connecting to telemetry...</div>;
   const { cpu, ram, disk, gpus } = telemetry;
+  // API responses are camelized; accept legacy snake_case too.
+  const gb = (o, key, alt) => o?.[key] ?? o?.[alt];
   
   return (
     <div className="w2-section" style={{ flex: 1 }}>
@@ -1359,7 +1361,7 @@ function TelemetryTab({ telemetry }) {
           
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
-              <span>RAM ({ram.used_gb} / {ram.total_gb} GB)</span>
+              <span>RAM ({gb(ram, "usedGb", "used_gb")} / {gb(ram, "totalGb", "total_gb")} GB)</span>
               <strong>{ram.percent}%</strong>
             </div>
             <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
@@ -1369,7 +1371,7 @@ function TelemetryTab({ telemetry }) {
           
           <div style={{ gridColumn: "1 / -1" }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
-              <span>Disk ({disk.used_gb} / {disk.total_gb} GB)</span>
+              <span>Disk ({gb(disk, "usedGb", "used_gb")} / {gb(disk, "totalGb", "total_gb")} GB)</span>
               <strong>{disk.percent}%</strong>
             </div>
             <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
@@ -1382,13 +1384,17 @@ function TelemetryTab({ telemetry }) {
       {gpus && gpus.length > 0 && (
         <div className="w2-card" style={{ gap: "12px", marginTop: "16px" }}>
           <h3 style={{ margin: 0, fontSize: "0.875rem" }}>GPU Clusters</h3>
-          {gpus.map(gpu => (
+          {gpus.map(gpu => {
+            const usedMb = gb(gpu, "memoryUsedMb", "memory_used_mb") || 0;
+            const totalMb = gb(gpu, "memoryTotalMb", "memory_total_mb") || 0;
+            const vramPct = totalMb ? Math.round((usedMb / totalMb) * 100) : 0;
+            return (
             <div key={gpu.index} style={{ border: "1px solid var(--cc-border)", padding: "12px", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "8px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <strong style={{ fontSize: "0.875rem" }}>GPU {gpu.index}: {gpu.name}</strong>
                 <span style={{ fontSize: "0.75rem", color: "var(--cc-muted)", background: "var(--cc-surface)", padding: "2px 6px", borderRadius: "4px" }}>{gpu.temperature}°C</span>
               </div>
-              
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginTop: "8px" }}>
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
@@ -1399,19 +1405,20 @@ function TelemetryTab({ telemetry }) {
                     <div style={{ height: "100%", width: `${gpu.utilization}%`, background: "var(--ras-danger)", transition: "width 0.5s ease" }} />
                   </div>
                 </div>
-                
+
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "4px" }}>
-                    <span>VRAM ({Math.round(gpu.memory_used_mb / 1024 * 10)/10} / {Math.round(gpu.memory_total_mb / 1024 * 10)/10} GB)</span>
-                    <strong>{Math.round((gpu.memory_used_mb / gpu.memory_total_mb) * 100)}%</strong>
+                    <span>VRAM ({Math.round(usedMb / 1024 * 10)/10} / {Math.round(totalMb / 1024 * 10)/10} GB)</span>
+                    <strong>{vramPct}%</strong>
                   </div>
                   <div style={{ height: "6px", background: "var(--cc-border)", borderRadius: "3px", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(gpu.memory_used_mb / gpu.memory_total_mb) * 100}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
+                    <div style={{ height: "100%", width: `${vramPct}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
                   </div>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1456,12 +1463,15 @@ function SafetyLockPanel({ security, warsat, hardware }) {
         <>
           <h3 className="w2-section-title">GPU Hardware</h3>
           <div className="w2-card">
-            {gpus.map((gpu, i) => (
-              <div key={i} style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-                <strong style={{ color: "var(--cc-text)" }}>{gpu.name}</strong>
-                <div>{gpu.memory_total_mb ? `${(gpu.memory_total_mb / 1024).toFixed(1)} GB VRAM` : "Unknown VRAM"}</div>
-              </div>
-            ))}
+            {gpus.map((gpu, i) => {
+              const vramMb = gpu.memoryTotalMb || gpu.memory_total_mb;
+              return (
+                <div key={i} style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+                  <strong style={{ color: "var(--cc-text)" }}>{gpu.name}</strong>
+                  <div>{vramMb ? `${(vramMb / 1024).toFixed(1)} GB VRAM` : "Unknown VRAM"}</div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

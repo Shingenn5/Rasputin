@@ -804,12 +804,15 @@ function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHar
         <>
           <h3 className="w2-section-title">GPU Hardware</h3>
           <div className="w2-card">
-            {warsatHardware.detectedHardware.gpus.map((gpu, i) => (
-              <div key={i} style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-                <strong style={{ color: "var(--cc-text)" }}>{gpu.name}</strong>
-                <div>{gpu.memory_total_mb ? `${(gpu.memory_total_mb / 1024).toFixed(1)} GB VRAM` : "Unknown VRAM"}</div>
-              </div>
-            ))}
+            {warsatHardware.detectedHardware.gpus.map((gpu, i) => {
+              const vramMb = gpu.memoryTotalMb || gpu.memory_total_mb;
+              return (
+                <div key={i} style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+                  <strong style={{ color: "var(--cc-text)" }}>{gpu.name}</strong>
+                  <div>{vramMb ? `${(vramMb / 1024).toFixed(1)} GB VRAM` : "Unknown VRAM"}</div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

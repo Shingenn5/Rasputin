@@ -176,6 +176,14 @@ async def warsat_system_metrics(_user=Depends(current_user)):
             except Exception:
                 pass
 
+        if not gpu_metrics:
+            # Containerized wrapper: no local nvidia-smi — read GPU stats
+            # through Docker instead.
+            try:
+                gpu_metrics = warsat.gpu_live_metrics_via_docker()
+            except Exception:
+                gpu_metrics = []
+
         return ok({
             "cpu": {"percent": cpu},
             "ram": {
