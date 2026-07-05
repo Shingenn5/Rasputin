@@ -1722,6 +1722,39 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertNotIn("registryEntry", failed)
         self.assertTrue(any(item["id"] == "probing" and item["status"] == "error" for item in failed["lifecycle"]))
 
+    def testWarsatDiscoverProbesHostGatewayWhenWrapperIsContainerized(self):
+        # Inside the containerized wrapper 127.0.0.1 is the wrapper itself, so
+        # discovery must probe host.docker.internal or Scan for Models finds
+        # nothing. Also covers host-port extraction from 127.0.0.1 bindings
+        # (the fallback used to return the container port instead).
+        cfg = {"allow_docker_control": True, "allow_model_registry_edit": True}
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:2] == ["docker", "ps"]:
+                return {
+                    "returnCode": 0,
+                    "stdout": '{"ID":"abc","Names":"some-vllm","Image":"vllm/vllm-openai:latest","Status":"Up 5 minutes","Ports":"127.0.0.1:8123->8000/tcp"}',
+                    "stderr": "",
+                }
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        def fake_probe(base_url, timeout=2.0):
+            if base_url.startswith("http://host.docker.internal:"):
+                return ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"]
+            return None  # loopback inside the wrapper reaches nothing
+
+        with patch.dict(os.environ, {"WRAPPER_RUNTIME": "docker"}, clear=False), \
+             patch("backend.core.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.warsat._probe_openai_endpoint", side_effect=fake_probe), \
+             patch("backend.warsat._probe_ollama_endpoint", return_value=None):
+            result = self.assertOk(self.client.get("/api/warsat/discover"))
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["discovered"][0]["baseUrl"], "http://host.docker.internal:8123")
+        self.assertEqual(result["discovered"][0]["modelId"], "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
+
     def testWarsatPlanWarnsWhenBf16ModelWontFitCommonGpus(self):
         # A 7B bf16 model needs ~14GB VRAM for weights alone; planning one
         # without quantization must carry a warning so 16GB-class GPU users

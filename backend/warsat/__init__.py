@@ -1340,6 +1340,15 @@ def containers():
     }
 
 
+def _discovery_hosts():
+    # Inside the containerized wrapper 127.0.0.1 is the wrapper itself —
+    # published container ports live on the host, reachable only via
+    # host.docker.internal. A native wrapper reaches them on loopback.
+    if os.environ.get("WRAPPER_RUNTIME") == "docker":
+        return ["host.docker.internal", "127.0.0.1"]
+    return ["127.0.0.1"]
+
+
 def _probe_openai_endpoint(base_url: str, timeout: float = 2.0):
     """Try GET /v1/models and return list of model IDs, or empty list if unreachable."""
     try:
@@ -1374,8 +1383,9 @@ def _extract_host_port(ports_str: str):
     """Parse Docker ports string like '0.0.0.0:8000->8000/tcp' → return host port int or None."""
     if not ports_str:
         return None
-    # Match patterns like 0.0.0.0:PORT->PORT/tcp or :::PORT->PORT/tcp or just PORT/tcp
-    matches = re.findall(r'(?:0\.0\.0\.0|:::|\[::\]):(\d+)->', ports_str)
+    # Match any host binding: 0.0.0.0:PORT->, 127.0.0.1:PORT->, :::PORT->,
+    # [::]:PORT-> — Warsat's own containers bind 127.0.0.1.
+    matches = re.findall(r'(?:\d{1,3}(?:\.\d{1,3}){3}|:::|\[[^\]]*\]):(\d+)->', ports_str)
     if not matches:
         # Maybe a simple mapping without host binding like 8000/tcp
         simple = re.findall(r'(\d{4,5})/tcp', ports_str)
@@ -1428,26 +1438,32 @@ def discover():
         if not host_port:
             continue
 
-        base_url = f"http://127.0.0.1:{host_port}"
-        if base_url.lower() in existing_urls:
-            # Already registered — skip
-            continue
-
-        # Probe the container for model APIs
-        model_ids = _probe_openai_endpoint(base_url)
+        base_url = None
+        model_ids = None
         protocol_hint = "openai-compatible"
         is_ollama = False
+        already_registered = False
+        for host in _discovery_hosts():
+            candidate = f"http://{host}:{host_port}"
+            # Registered entries usually carry a /v1 suffix — match both.
+            if candidate.lower() in existing_urls or f"{candidate.lower()}/v1" in existing_urls:
+                already_registered = True
+                break
+            ids = _probe_openai_endpoint(candidate)
+            if ids is None:
+                # Try Ollama native API
+                ollama_models = _probe_ollama_endpoint(candidate)
+                if ollama_models is not None:
+                    ids = ollama_models
+                    protocol_hint = "ollamaOpenaiServer"
+                    is_ollama = True
+            if ids is not None:
+                base_url = candidate
+                model_ids = ids
+                break
 
-        if model_ids is None:
-            # Try Ollama native API
-            ollama_models = _probe_ollama_endpoint(base_url)
-            if ollama_models is not None:
-                model_ids = ollama_models
-                protocol_hint = "ollamaOpenaiServer"
-                is_ollama = True
-
-        if model_ids is None:
-            # Port open but not an AI model endpoint we recognise
+        if already_registered or model_ids is None:
+            # Registered already, or port open but not a model endpoint
             continue
 
         for model_id in model_ids:
