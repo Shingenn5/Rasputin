@@ -505,8 +505,10 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
     """Search Hugging Face Hub API for models."""
     if sort == "trending":
         sort = "trendingScore"
+    limit = max(1, min(int(limit), 500))
     params = {
-        "limit": min(int(limit), 100),
+        # The Hub API serves at most 100 per page; follow Link headers for more.
+        "limit": min(limit, 100),
         "sort": sort or "downloads",
         "direction": str(direction),
     }
@@ -515,11 +517,19 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
     if model_type:
         params["pipeline_tag"] = model_type
 
+    raw_models = []
     try:
         with httpx.Client(timeout=HF_FETCH_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(HF_API_URL, params=params)
-            response.raise_for_status()
-            raw_models = response.json()
+            url = HF_API_URL
+            while url and len(raw_models) < limit:
+                response = client.get(url, params=params)
+                response.raise_for_status()
+                batch = response.json()
+                if not isinstance(batch, list) or not batch:
+                    break
+                raw_models.extend(batch)
+                url = (response.links.get("next") or {}).get("url")
+                params = None  # the next-page URL already carries the query
     except Exception as exc:
         audit.log("hf_search_failed", {"query": query, "error": str(exc)})
         return {"items": [], "count": 0, "error": str(exc), "source": "huggingface"}
@@ -527,9 +537,32 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
     if not isinstance(raw_models, list):
         return {"items": [], "count": 0, "error": "Unexpected HF API response format", "source": "huggingface"}
 
-    items = [_normalize_hf_model(m) for m in raw_models[:int(limit)]]
+    items = [_normalize_hf_model(m) for m in raw_models[:limit]]
+
+    # Exact-id lookup: searching a full org/name reference must surface that
+    # model even when the Hub's fuzzy search misses it, so ANY model can be
+    # pulled by pasting its id.
+    lookup = (query or "").strip().strip("/")
+    if lookup and "/" in lookup and not any(i["id"].lower() == lookup.lower() for i in items):
+        try:
+            with httpx.Client(timeout=HF_FETCH_TIMEOUT, follow_redirects=True) as client:
+                response = client.get(f"{HF_API_URL}/{lookup}")
+                if response.status_code == 200:
+                    exact = response.json()
+                    if isinstance(exact, dict) and (exact.get("id") or exact.get("modelId")):
+                        items.insert(0, _normalize_hf_model(exact))
+        except Exception:
+            pass
+
     if hardware:
         items = _apply_fit(items, hardware)
+
+    # An exact-id match belongs at the top, above fuzzy derivatives and the
+    # fit re-sort.
+    if lookup and "/" in lookup:
+        idx = next((i for i, item in enumerate(items) if item["id"].lower() == lookup.lower()), None)
+        if idx is not None and idx != 0:
+            items.insert(0, items.pop(idx))
     
     audit.log("hf_search", {"query": query, "type": model_type, "count": len(items)})
     return {

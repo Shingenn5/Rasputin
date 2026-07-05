@@ -1781,6 +1781,58 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(result["discovered"][0]["baseUrl"], "http://host.docker.internal:8123")
         self.assertEqual(result["discovered"][0]["modelId"], "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
 
+    def testHfSearchPaginatesPast100AndFindsExactIds(self):
+        # The Hub API caps each page at 100 — search_hf must follow Link
+        # headers to honor larger limits, and an exact org/name query must
+        # surface that model even when fuzzy search misses it.
+        from backend.models import catalog as catalog_module
+
+        class FakeResponse:
+            def __init__(self, payload, links=None, status_code=200):
+                self._payload = payload
+                self.links = links or {}
+                self.status_code = status_code
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self._payload
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, params=None):
+                if url.rstrip("/").endswith("/org/special-model"):
+                    return FakeResponse({"id": "org/special-model", "pipeline_tag": "text-generation", "tags": [], "downloads": 5})
+                if "page2" in url:
+                    return FakeResponse([{"id": f"org/m{i}", "tags": []} for i in range(100, 150)])
+                return FakeResponse(
+                    [{"id": f"org/m{i}", "tags": []} for i in range(100)],
+                    links={"next": {"url": catalog_module.HF_API_URL + "?page2"}},
+                )
+
+        with patch.object(catalog_module.httpx, "Client", FakeClient):
+            result = catalog_module.search_hf(query="org/special-model", limit=150)
+
+        self.assertEqual(result["count"], 151)  # 150 paginated + the exact hit
+        self.assertEqual(result["items"][0]["id"], "org/special-model")
+        self.assertTrue(result["items"][0]["deployable"])
+
+        # An exact id already present in fuzzy results gets promoted to the
+        # top instead of duplicated.
+        with patch.object(catalog_module.httpx, "Client", FakeClient):
+            promoted = catalog_module.search_hf(query="org/m120", limit=150)
+        self.assertEqual(promoted["count"], 150)
+        self.assertEqual(promoted["items"][0]["id"], "org/m120")
+
     def testWarsatPlanAutoPicksFreeHostPort(self):
         # With no explicit port, the plan takes the first host port not held
         # by another running container — unless the occupant is the very

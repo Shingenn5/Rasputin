@@ -171,7 +171,9 @@ export function ModelsView({
     const t = setTimeout(async () => {
       setHfLoading(true);
       try {
-        const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: "100", fit: "true" });
+        // Fetch enough results to fill several pages at the chosen size.
+        const hfLimit = String(Math.min(500, Math.max(100, pageSize * 5)));
+        const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: hfLimit, fit: "true" });
         if (catalogPurpose !== "all") {
           const pm = { chat: "text-generation", coding: "text-generation", vision: "image-to-text", embeddings: "feature-extraction", speech: "automatic-speech-recognition" };
           if (pm[catalogPurpose]) p.set("type", pm[catalogPurpose]);
@@ -185,7 +187,7 @@ export function ModelsView({
       setHfLoading(false);
     }, 500);
     return () => clearTimeout(t);
-  }, [hfQuery, hfSort, catalogPurpose, searchMode]);
+  }, [hfQuery, hfSort, catalogPurpose, searchMode, pageSize]);
 
   const totalVramGb = useMemo(() => {
     const gpus = warsatHardware?.detectedHardware?.gpus || [];
