@@ -31,9 +31,10 @@
   "dataMounts": [
     {
       "name": "huggingfaceCache",
-      "hostPath": "./data/huggingface",
+      "hostPath": "rasputin-huggingface-cache",
       "containerPath": "/root/.cache/huggingface",
-      "readOnly": false
+      "readOnly": false,
+      "note": "Named Docker volume. A relative path here resolves inside the Docker VM (not the project dir) when the wrapper runs containerized, silently filling the VM disk with model weights."
     }
   ],
   "security": {

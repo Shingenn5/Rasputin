@@ -29,9 +29,10 @@
   "dataMounts": [
     {
       "name": "ollamaData",
-      "hostPath": "./data/ollama",
+      "hostPath": "rasputin-ollama-data",
       "containerPath": "/root/.ollama",
-      "readOnly": false
+      "readOnly": false,
+      "note": "Named Docker volume. A relative path here resolves inside the Docker VM (not the project dir) when the wrapper runs containerized, silently filling the VM disk with model weights."
     }
   ],
   "defaultArguments": [],
