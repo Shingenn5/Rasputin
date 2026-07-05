@@ -934,6 +934,16 @@ def make_plan(payload):
         warnings.append("This protocol expects GPU passthrough to Docker.")
     if tuning.get("gpuMemoryUtilization", 0) >= 0.92:
         warnings.append("GPU memory utilization is aggressive. Leave headroom if you use the desktop while the model runs.")
+    size_match = re.search(r"(\d+(?:\.\d+)?)\s*[bB](?![a-zA-Z0-9])", model_ref or "")
+    if protocol["runtime"] == "vllm" and size_match and not tuning.get("quantization"):
+        params_b = float(size_match.group(1))
+        est_weights_gb = params_b * 2.05  # bf16 = 2 bytes/param plus overhead
+        if est_weights_gb >= 12:
+            warnings.append(
+                f"~{params_b:g}B parameters at bf16 needs roughly {est_weights_gb:.0f} GB of VRAM for weights alone, "
+                "before any KV cache. On 16 GB-class GPUs the engine will fail to start — set Quantization "
+                "(fp8 works well on RTX 40/50 series) or pick a smaller model."
+            )
     if tuning.get("maxModelLen", 0) >= 32768:
         warnings.append("Long context can sharply increase VRAM usage and startup time.")
     if limits.get("memoryLimitGb") and limits["memoryLimitGb"] < 8:

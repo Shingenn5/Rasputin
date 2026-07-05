@@ -1722,6 +1722,28 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertNotIn("registryEntry", failed)
         self.assertTrue(any(item["id"] == "probing" and item["status"] == "error" for item in failed["lifecycle"]))
 
+    def testWarsatPlanWarnsWhenBf16ModelWontFitCommonGpus(self):
+        # A 7B bf16 model needs ~14GB VRAM for weights alone; planning one
+        # without quantization must carry a warning so 16GB-class GPU users
+        # are not surprised by an engine crash at KV-cache allocation.
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+                "hostPort": 8035,
+                "strengthProfile": "small",
+            }))
+            self.assertTrue(any("VRAM" in w for w in plan["warnings"]))
+
+            quantized = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+                "hostPort": 8035,
+                "strengthProfile": "small",
+                "quantization": "fp8",
+            }))
+            self.assertFalse(any("weights alone" in w for w in quantized["warnings"]))
+
     def testWarsatApprovedDeployStreamsPullProgress(self):
         # Approved deploys answer as NDJSON. When the image is not cached the
         # pull must emit progress lines so the UI never looks hung during a
