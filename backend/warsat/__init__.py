@@ -461,34 +461,44 @@ def hardware_probe():
         ))
 
     nvidia_smi = shutil.which("nvidia-smi")
+    gpus = []
+    probed_via_docker = False
     if nvidia_smi:
         gpu_raw = _probe_command([
             "nvidia-smi",
             "--query-gpu=name,memory.total",
             "--format=csv,noheader,nounits",
         ], timeout=10)
-        gpus = []
         if gpu_raw.get("ok"):
-            for line in gpu_raw.get("stdout", "").splitlines():
-                parts = [part.strip() for part in line.split(",")]
-                if parts and parts[0]:
-                    gpus.append({"name": parts[0], "memoryTotalMb": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None})
-        detected["gpus"] = gpus
+            gpus = _parse_gpu_csv(gpu_raw.get("stdout", ""))
+    else:
+        gpus = _gpu_probe_via_docker()
+        probed_via_docker = bool(gpus)
+    detected["gpus"] = gpus
+    if gpus:
         checks.append(_check(
             "hostGpu",
             "GPU Visibility",
-            "pass" if gpus else "warn",
-            f"{len(gpus)} GPU(s) visible to Rasputin." if gpus else "nvidia-smi is present, but no GPU details were returned.",
+            "pass",
+            f"{len(gpus)} GPU(s) visible to Rasputin" + (" (probed through Docker)." if probed_via_docker else "."),
             {"gpus": gpus},
-            "Confirm NVIDIA drivers are installed and available to Docker." if not gpus else "",
+            "",
         ))
-    else:
-        detected["gpus"] = []
+    elif nvidia_smi:
         checks.append(_check(
             "hostGpu",
             "GPU Visibility",
             "warn",
-            "nvidia-smi is not available inside this Rasputin runtime.",
+            "nvidia-smi is present, but no GPU details were returned.",
+            {},
+            "Confirm NVIDIA drivers are installed and available to Docker.",
+        ))
+    else:
+        checks.append(_check(
+            "hostGpu",
+            "GPU Visibility",
+            "warn",
+            "nvidia-smi is not available inside this Rasputin runtime, and the Docker GPU probe found nothing.",
             {},
             "CPU deployment can still work. For GPU deployment, expose NVIDIA tools/runtime to the container.",
         ))
@@ -900,7 +910,10 @@ def make_plan(payload):
         )
         role = suggested if suggested != "helper" else str(protocol.get("defaultRole") or "helper")
     strength = _safe_strength(payload.get("strengthProfile") or payload.get("strength_profile"))
-    host_port = int(payload.get("hostPort") or payload.get("host_port") or protocol["defaultHostPort"])
+    requested_port = payload.get("hostPort") or payload.get("host_port")
+    # No explicit port -> pick the first one not held by another running
+    # container, so a second deploy doesn't collide with the first.
+    host_port = int(requested_port) if requested_port else _pick_host_port(protocol)
     container_name = _slug(payload.get("containerName") or f"rasputin-{protocol['id']}-{host_port}")
     tuning = _build_tuning(payload, protocol, strength)
     limits = _build_limits(payload)
@@ -1124,6 +1137,85 @@ def _image_exists_locally(image):
         return False
     result = _run_command(["docker", "image", "inspect", image], timeout=20, check=False)
     return result["returnCode"] == 0
+
+
+_DOCKER_GPU_CACHE = {"at": 0.0, "gpus": None}
+
+
+def _parse_gpu_csv(text):
+    gpus = []
+    for line in (text or "").splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if parts and parts[0]:
+            gpus.append({
+                "name": parts[0],
+                "memoryTotalMb": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None,
+            })
+    return gpus
+
+
+def _gpu_probe_via_docker():
+    """GPU visibility for the containerized wrapper, which has no nvidia-smi.
+
+    The NVIDIA container toolkit injects nvidia-smi into any --gpus container,
+    so run it through our own (glibc-based) image. Cached — this spins up a
+    short-lived container.
+    """
+    if _fake_deploy_enabled() or not _docker_cli_path():
+        return []
+    if not security.load().get("allow_docker_control", False):
+        return []
+    now = time.time()
+    if _DOCKER_GPU_CACHE["gpus"] is not None and now - _DOCKER_GPU_CACHE["at"] < 600:
+        return _DOCKER_GPU_CACHE["gpus"]
+    image = os.environ.get("WRAPPER_SELF_IMAGE", "rasputin-wrapper:latest")
+    gpus = []
+    try:
+        if _image_exists_locally(image):
+            result = _run_command([
+                "docker", "run", "--rm", "--gpus", "all", "--entrypoint", "nvidia-smi", image,
+                "--query-gpu=name,memory.total", "--format=csv,noheader,nounits",
+            ], timeout=45, check=False)
+            if result["returnCode"] == 0:
+                gpus = _parse_gpu_csv(result["stdout"])
+    except AppError:
+        gpus = []
+    _DOCKER_GPU_CACHE["at"] = now
+    _DOCKER_GPU_CACHE["gpus"] = gpus
+    return gpus
+
+
+def _occupied_host_ports():
+    """Host port -> container name for running containers."""
+    try:
+        result = _run_command(["docker", "ps", "--format", "{{.Names}}\t{{.Ports}}"], timeout=15, check=False)
+    except AppError:
+        return {}
+    if result["returnCode"] != 0:
+        return {}
+    occupied = {}
+    for line in result["stdout"].splitlines():
+        name, _, ports = line.partition("\t")
+        for match in re.findall(r":(\d+)->", ports):
+            occupied[int(match)] = name.strip()
+    return occupied
+
+
+def _pick_host_port(protocol):
+    """First free host port at or after the protocol default. A port still
+    counts as free when its occupant is the very container this plan would
+    replace, so redeploys keep their port."""
+    start = int(protocol["defaultHostPort"])
+    if not _docker_cli_path() or _fake_deploy_enabled():
+        return start
+    occupied = _occupied_host_ports()
+    port = start
+    while port < start + 200:
+        owner = occupied.get(port)
+        if owner is None or owner == _slug(f"rasputin-{protocol['id']}-{port}"):
+            return port
+        port += 1
+    return start
 
 
 def _pull_image(pull_cmd, image):

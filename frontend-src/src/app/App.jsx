@@ -416,6 +416,9 @@ export function App() {
     // Platform settings (Default Inference Engine etc.) affect behavior
     // outside the Settings view, so load them at boot, not on first visit.
     loadSettings();
+    // The bootstrap catalog has no VRAM-based fit labels; swap in the
+    // hardware-aware copy in the background.
+    api("/api/model-catalog?fit=true").then(setModelCatalog).catch(() => {});
   }
 
   async function loadModels() {
@@ -428,9 +431,12 @@ export function App() {
     setModelCatalogLoading(true);
     setModelCatalogError("");
     try {
-      const nextCatalog = refresh
-        ? await postJson("/api/model-catalog/refresh", { force: false })
-        : await api("/api/model-catalog");
+      if (refresh) {
+        await postJson("/api/model-catalog/refresh", { force: false });
+      }
+      // fit=true runs the hardware probe so catalog entries carry real
+      // VRAM-based fit labels instead of generic estimates.
+      const nextCatalog = await api("/api/model-catalog?fit=true");
       setModelCatalog(nextCatalog);
       setGlobalStatus(refresh
         ? `Model catalog refreshed. ${nextCatalog.count || 0} entries available.`
@@ -1358,7 +1364,11 @@ export function App() {
       setWarsatPlan(plan);
       setWarsatDeployment(null);
       go("warsat");
-      setGlobalStatus(`Warsat launch plan created for ${item.name || modelRef}.`);
+      // Surface fit problems the moment the plan lands, not at deploy time.
+      const fitWarning = (plan.warnings || []).find((w) => w.includes("VRAM"));
+      setGlobalStatus(fitWarning
+        ? `Plan created for ${item.name || modelRef} — heads-up: ${fitWarning}`
+        : `Warsat launch plan created for ${item.name || modelRef}.`);
       return plan;
     } catch (error) {
       setWarsatError(error.message);

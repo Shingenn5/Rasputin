@@ -111,6 +111,13 @@ export function ModelsView({
   const [hfLoading, setHfLoading] = useState(false);
   const [hfSort, setHfSort] = useState("downloads");
   const [activeDownloads, setActiveDownloads] = useState([]);
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+
+  // Back to page 1 whenever the visible set changes shape.
+  useEffect(() => {
+    setPage(1);
+  }, [catalogSearch, catalogPurpose, catalogRuntime, catalogFit, searchMode, hfQuery, pageSize]);
 
   useEffect(() => {
     if (view !== "models") return;
@@ -194,6 +201,13 @@ export function ModelsView({
       return item.vramEstimateGb <= vramLimit + 1; // 1GB headroom
     });
   }, [searchMode, hfResults, filteredCatalog, catalogFit, totalVramGb]);
+
+  const pageCount = Math.max(1, Math.ceil(displayItems.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedItems = useMemo(
+    () => displayItems.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [displayItems, currentPage, pageSize]
+  );
 
   /* reliable actions */
   const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
@@ -359,9 +373,27 @@ export function ModelsView({
               )}
 
               {/* Model list */}
-              {displayItems.slice(0, 40).map(item => (
+              {pagedItems.map(item => (
                 <CatalogCard key={item.id} item={item} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
               ))}
+
+              {/* Pagination */}
+              {displayItems.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", padding: "6px 0" }}>
+                  <button className="w2-button" type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
+                    Prev
+                  </button>
+                  <span style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
+                    Page {currentPage} of {pageCount} · {displayItems.length} models
+                  </span>
+                  <button className="w2-button" type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
+                    Next
+                  </button>
+                  <select className="w2-input" style={{ width: "110px", flex: "none" }} value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+                    {[10, 20, 40, 80].map(n => <option key={n} value={n}>{n} / page</option>)}
+                  </select>
+                </div>
+              )}
 
               {/* Loading skeletons while the catalog/search is in flight and nothing is shown yet */}
               {!displayItems.length && (modelCatalogLoading || hfLoading) && (

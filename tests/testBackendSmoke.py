@@ -1781,6 +1781,62 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(result["discovered"][0]["baseUrl"], "http://host.docker.internal:8123")
         self.assertEqual(result["discovered"][0]["modelId"], "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B")
 
+    def testWarsatPlanAutoPicksFreeHostPort(self):
+        # With no explicit port, the plan takes the first host port not held
+        # by another running container — unless the occupant is the very
+        # container this plan would replace (redeploys keep their port).
+        cfg = {"allow_docker_control": True, "allow_model_registry_edit": True}
+
+        def make_fake_run(ports_stdout):
+            def fake_run(args, timeout=120, check=True):
+                if args[:2] == ["docker", "ps"]:
+                    return {"returnCode": 0, "stdout": ports_stdout, "stderr": ""}
+                raise AssertionError(f"unexpected docker command: {args}")
+            return fake_run
+
+        with patch("backend.core.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=make_fake_run("someones-app\t127.0.0.1:8000->8000/tcp")):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "strengthProfile": "small",
+            }))
+        self.assertEqual(plan["hostPort"], 8001)
+
+        with patch("backend.core.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=make_fake_run("rasputin-vllmcudaopenai-8000\t127.0.0.1:8000->8000/tcp")):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "strengthProfile": "small",
+            }))
+        self.assertEqual(plan["hostPort"], 8000)
+
+    def testWarsatGpuProbeFallsBackToDocker(self):
+        # The containerized wrapper has no nvidia-smi; GPU visibility comes
+        # from running it through our own image via the docker CLI.
+        from backend import warsat as warsat_module
+
+        warsat_module._DOCKER_GPU_CACHE.update({"at": 0.0, "gpus": None})
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:3] == ["docker", "image", "inspect"]:
+                return {"returnCode": 0, "stdout": "[{}]", "stderr": ""}
+            if args[:2] == ["docker", "run"] and "--entrypoint" in args:
+                return {"returnCode": 0, "stdout": "NVIDIA GeForce RTX 5060 Ti, 16311", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        try:
+            with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+                 patch("backend.warsat._docker_cli_path", return_value="docker"), \
+                 patch("backend.warsat._run_command", side_effect=fake_run):
+                gpus = warsat_module._gpu_probe_via_docker()
+            self.assertEqual(gpus, [{"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311}])
+        finally:
+            warsat_module._DOCKER_GPU_CACHE.update({"at": 0.0, "gpus": None})
+
     def testWarsatPlanWarnsWhenBf16ModelWontFitCommonGpus(self):
         # A 7B bf16 model needs ~14GB VRAM for weights alone; planning one
         # without quantization must carry a warning so 16GB-class GPU users

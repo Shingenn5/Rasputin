@@ -541,15 +541,20 @@ function DeployTab({
     }
   }, [plan]);
 
+  // Sync the recipe form to each NEW plan (keyed by planId). Filling only
+  // empty fields left the previous model's values behind, so sending a
+  // second model from the catalog still showed — and regenerated — the
+  // first one.
+  const lastPlanIdRef = React.useRef(null);
   React.useEffect(() => {
-    if (plan && formRef.current) {
-      if (formRef.current.elements.modelRef && !formRef.current.elements.modelRef.value && plan.modelRef)
-        formRef.current.elements.modelRef.value = plan.modelRef;
-      if (formRef.current.elements.modelPath && !formRef.current.elements.modelPath.value && plan.modelPath)
-        formRef.current.elements.modelPath.value = plan.modelPath;
-      if (formRef.current.elements.hostPort && !formRef.current.elements.hostPort.value && plan.hostPort)
-        formRef.current.elements.hostPort.value = plan.hostPort;
-    }
+    if (!plan || !formRef.current) return;
+    if (lastPlanIdRef.current === plan.planId) return;
+    lastPlanIdRef.current = plan.planId;
+    const els = formRef.current.elements;
+    if (els.modelRef) els.modelRef.value = plan.modelRef || "";
+    if (els.modelPath) els.modelPath.value = plan.modelPath || "";
+    if (els.hostPort) els.hostPort.value = plan.hostPort || "";
+    if (els.role && plan.role) els.role.value = plan.role;
   }, [plan]);
 
   /* Derive which pipeline step is active/done */
