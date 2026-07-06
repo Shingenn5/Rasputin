@@ -94,8 +94,10 @@ export function App() {
   const [selectedModel, setSelectedModel] = useState(null);
   const [testingMode, setTestingMode] = useState(false);
   const [taskMode, setTaskMode] = useState("chat");
+  const [reasoningMode, setReasoningMode] = useState("auto");
   const [modeModelOverrides, setModeModelOverrides] = useState({});
   const [subagentCount, setSubagentCount] = useState(0);
+  const [queuedMessages, setQueuedMessages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [taskDetails, setTaskDetails] = useState(null);
@@ -351,6 +353,7 @@ export function App() {
         activeWorkspace: workspace.activePath || ".",
         skill: "general",
         taskMode,
+        reasoning: reasoningMode,
         modeModelOverrides: modeModelOverridesRef.current,
         subagents: subagentCount,
         workspaceExplorer,
@@ -360,7 +363,7 @@ export function App() {
       }).catch(() => {});
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, session, ready]);
+  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, session, ready]);
 
   async function boot() {
     const markReady = () => {
@@ -427,6 +430,7 @@ export function App() {
     setTestingMode(!!prefs.testingMode);
     setSelectedModel(!prefs.testingMode && prefs.selectedModel === "dry-run" ? null : prefs.selectedModel || null);
     setTaskMode(prefs.taskMode || "chat");
+    setReasoningMode(prefs.reasoning || "auto");
     setModeModelOverrides(prefs.modeModelOverrides || {});
     setSubagentCount(Math.max(0, Math.min(Number(prefs.subagents || 0), 4)));
     setWorkspaceExplorer(prefs.workspaceExplorer || {});
@@ -740,6 +744,7 @@ export function App() {
       setSelectedSession(detail);
       setActiveChatSessionId(sessionId || null);
       setObjective("");
+      setQueuedMessages([]);
       go("chat");
       loadChatFolders().catch((error) => setGlobalStatus(error.message));
       setGlobalStatus("New chat created.");
@@ -750,25 +755,29 @@ export function App() {
     }
   }
 
-  async function sendTask(event, customMessage = null) {
+  async function sendTask(event, customMessage = null, options = {}) {
     if (event) event.preventDefault();
     const message = customMessage || objective.trim();
+    const mode = options.mode || taskMode;
+    const reasoning = options.reasoning || reasoningMode;
+    const modelKey = options.model || selectedModel;
     if (!healthy) {
       setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
-      return;
+      return false;
     }
     if (!message) {
       setComposerStatus("Write a message first.");
-      return;
+      return false;
     }
     const tempId = `pending-${Date.now()}`;
     const tempTask = {
       id: tempId,
       sessionId: activeChatSessionId,
       objective: message,
-      model: selectedModel,
+      model: modelKey,
       skill: "general",
-      mode: taskMode,
+      mode,
+      reasoning,
       status: "queued",
       progress: 0,
       logs: ["queued"],
@@ -783,14 +792,15 @@ export function App() {
     };
     setTasks((current) => [tempTask, ...current.filter((item) => item.id !== tempId)]);
     setHomeTaskIds((current) => new Set([...current, tempId]));
-    setObjective("");
+    if (!options.fromQueue) setObjective("");
     try {
       setComposerStatus("");
       const task = await postJson("/api/tasks", {
         objective: message,
-        model: selectedModel,
+        model: modelKey,
         skill: "general",
-        mode: taskMode,
+        mode,
+        reasoning,
         subagents: subagentCount,
         workspacePath: workspace.activePath || ".",
         sessionId: activeChatSessionId || undefined,
@@ -806,6 +816,7 @@ export function App() {
       setActiveChatSessionId(task.sessionId || activeChatSessionId);
       api("/api/sessions").then(setSessions).catch(() => {});
       setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} sub-agent${subagentCount === 1 ? "" : "s"}.` : "Task started.");
+      return true;
     } catch (error) {
       setTasks((current) => current.filter((item) => item.id !== tempId));
       setHomeTaskIds((current) => {
@@ -813,10 +824,55 @@ export function App() {
         next.delete(tempId);
         return next;
       });
-      setObjective(message);
+      if (!options.fromQueue) setObjective(message);
       setComposerStatus(error.message);
+      return false;
     }
   }
+
+  const queueMessage = useCallback((text, options = {}) => {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return null;
+    const entry = {
+      id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text: trimmed,
+      mode: options.mode || taskMode,
+      reasoning: options.reasoning || reasoningMode,
+    };
+    setQueuedMessages((current) => [...current, entry]);
+    return entry;
+  }, [taskMode, reasoningMode]);
+
+  const removeQueuedMessage = useCallback((id) => {
+    setQueuedMessages((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  const clearQueuedMessages = useCallback(() => setQueuedMessages([]), []);
+
+  // Drain the queue: whenever the current chat has no active task, send the
+  // next queued message. Failures land in composerStatus and drop the entry
+  // from the queue so a broken runtime can't retry-loop.
+  const queueDispatchRef = useRef(false);
+  useEffect(() => {
+    if (!queuedMessages.length || queueDispatchRef.current || !healthy) return;
+    const busy = tasks.some((task) => !task.parentId && homeTaskIds.has(task.id)
+      && ["queued", "running", "paused"].includes(task.status));
+    if (busy) return;
+    const [next, ...rest] = queuedMessages;
+    queueDispatchRef.current = true;
+    setQueuedMessages(rest);
+    sendTask(null, next.text, { mode: next.mode, reasoning: next.reasoning, fromQueue: true })
+      .then((sent) => {
+        if (!sent) {
+          // Recover the text into the composer (if it's free) so nothing is lost.
+          setObjective((current) => current || next.text);
+          setGlobalStatus("A queued message failed to send. Its text was returned to the composer.");
+        }
+      })
+      .finally(() => {
+        queueDispatchRef.current = false;
+      });
+  }, [tasks, queuedMessages, healthy, homeTaskIds]);
 
   async function cancelTask(taskId) {
     try {
@@ -1238,6 +1294,7 @@ export function App() {
         return Array.from(next.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
       });
       setObjective("");
+      setQueuedMessages([]);
       go("chat");
       setGlobalStatus("Chat restored.");
     } catch (error) {
@@ -1624,6 +1681,13 @@ export function App() {
         approvalCount={approvalCount}
         taskMode={taskMode}
         setTaskMode={chooseTaskMode}
+        reasoningMode={reasoningMode}
+        setReasoningMode={setReasoningMode}
+        queuedMessages={queuedMessages}
+        queueMessage={queueMessage}
+        removeQueuedMessage={removeQueuedMessage}
+        clearQueuedMessages={clearQueuedMessages}
+        startNewChat={startNewChat}
         modeModelOverrides={modeModelOverrides}
         setModeModelOverride={setModeModelOverride}
         modelKeyForMode={modelKeyForMode}

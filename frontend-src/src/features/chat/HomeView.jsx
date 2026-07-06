@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
+  Brain,
+  Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Cpu,
-  Folder,
   FileText,
+  ListPlus,
   Paperclip,
   Pause,
   PanelLeftOpen,
@@ -12,9 +16,8 @@ import {
   Send,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
+  SquareSlash,
   Square,
-  Users,
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -27,7 +30,7 @@ import {
   modelHealthLine,
   runtimeStatus,
 } from "../../lib/display.js";
-import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
+import { useReliableAction } from "../../lib/actionRegistry.js";
 import { extractFileContent } from "../../lib/fileExtraction.js";
 import { Avatar } from "../../components/Avatar.jsx";
 import { CodeSandbox } from "../../components/CodeSandbox.jsx";
@@ -84,6 +87,35 @@ const modeOptions = [
   },
 ];
 
+const reasoningOptions = [
+  { value: "auto", label: "Auto", description: "Use the model's default thinking behavior." },
+  { value: "off", label: "Off", description: "Skip extended thinking for fast answers." },
+  { value: "low", label: "Low", description: "Brief reasoning for simple tasks." },
+  { value: "medium", label: "Medium", description: "Balanced reasoning depth." },
+  { value: "high", label: "High", description: "Deep reasoning for hard problems." },
+];
+
+const modePlaceholders = {
+  chat: "Message Rasputin...  ( / for commands )",
+  analyze: "Ask about your documents or draft new ones...",
+  research: "What are we researching?",
+  code: "Describe the coding task...",
+  write: "What should we draft?",
+  organize: "Describe the folder cleanup or file organization job...",
+  review: "What output should we review?",
+};
+
+const quickPrompts = [
+  { text: "Deep dive a topic", mode: "research" },
+  { text: "Find latest references", mode: "research" },
+  { text: "Summarize active workspace", mode: "analyze" },
+  { text: "Organize files", mode: "organize" },
+  { text: "Review code", mode: "code" },
+  { text: "Plan next feature", mode: "code" },
+  { text: "Find bugs", mode: "code" },
+  { text: "Brainstorm ideas", mode: "chat" },
+];
+
 export function HomeView(props) {
   const {
     activeWorkspaceName,
@@ -105,9 +137,15 @@ export function HomeView(props) {
     cancelTask,
     pauseTask,
     resumeTask,
-    approvalCount,
     taskMode,
     setTaskMode,
+    reasoningMode,
+    setReasoningMode,
+    queuedMessages,
+    queueMessage,
+    removeQueuedMessage,
+    clearQueuedMessages,
+    startNewChat,
     modeModelOverrides,
     setModeModelOverride,
     modelKeyForMode,
@@ -115,11 +153,11 @@ export function HomeView(props) {
     setSubagentCount,
     runningTasks,
     openTaskDetails,
-    setPrompt,
   } = props;
 
   const threadScrollRef = useRef(null);
   const composerRef = useRef(null);
+  const fileInputRef = useRef(null);
   const modeButtonRef = useRef(null);
   const modePanelRef = useRef(null);
   const modelButtonRef = useRef(null);
@@ -129,7 +167,6 @@ export function HomeView(props) {
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [modePanelOpen, setModePanelOpen] = useState(false);
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
-  const [activeCommandWorkspace, setActiveCommandWorkspace] = useState("General");
 
   // Phase 10: Button Reliability Framework State
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
@@ -149,46 +186,10 @@ export function HomeView(props) {
   // Re-grow whenever the bound value changes (typing, paste, prompt-fill, clear).
   useEffect(() => { resizeComposer(); }, [objective, resizeComposer]);
 
-  // Modernization: Drag and Drop Attachments
+  // Attachments (drag-and-drop or file picker)
   const [attachments, setAttachments] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleSendTask = async (e) => {
-    e.preventDefault();
-    if (!objective.trim() && attachments.length === 0) return;
-    
-    let combinedMessage = objective.trim();
-    if (attachments.length > 0) {
-      const attachStr = attachments.map(a => `<document name="${a.name}">\n${a.content}\n</document>`).join("\n\n");
-      combinedMessage = combinedMessage ? `${combinedMessage}\n\n${attachStr}` : attachStr;
-    }
-
-    try {
-      await executeAction("SendTask", taskMode, async () => {
-        await sendTask(e, combinedMessage);
-        setAttachments([]);
-      }, setUiState);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleCancelTask = (id) => executeAction("CancelTask", id, async () => cancelTask(id), setUiState);
-  const handlePauseTask = (id) => executeAction("PauseTask", id, async () => pauseTask(id), setUiState);
-  const handleResumeTask = (id) => executeAction("ResumeTask", id, async () => resumeTask(id), setUiState);
-
-  function selectCommandWorkspace(ws) {
-    setActiveCommandWorkspace(ws);
-    if (ws === "Research") setTaskMode("research");
-    if (ws === "Documents") setTaskMode("analyze");
-    if (ws === "Coding") setTaskMode("code");
-    if (ws === "General") setTaskMode("chat");
-  }
-
-  let objectivePlaceholder = "Message Rasputin...";
-  if (activeCommandWorkspace === "Research") objectivePlaceholder = "What are we researching?";
-  if (activeCommandWorkspace === "Documents") objectivePlaceholder = "Ask about your documents or draft new ones...";
-  if (activeCommandWorkspace === "Coding") objectivePlaceholder = "Describe the coding task...";
   const orderedHomeTasks = useMemo(
     () => [...homeTasks].sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)),
     [homeTasks],
@@ -199,35 +200,259 @@ export function HomeView(props) {
   );
   const activeHomeTasks = orderedHomeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const latestActiveTask = activeHomeTasks[activeHomeTasks.length - 1] || runningTasks?.[0];
+  const composerBusy = activeHomeTasks.length > 0;
   const privacyTitle = security.privacyLock ? "Local-only" : "Review mode";
   const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
   const selectedModelHealthLine = modelHealthLine(selectedModelObject, models);
   const disabledReason = healthy ? "" : `${selectedModelHealthLine} Use Models to test or repair the local runtime, or enable Testing Mode.`;
   const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
-  const laneSummaries = useMemo(() => {
-    const taskMap = new Map();
-    [...orderedHomeTasks, ...(runningTasks || [])].forEach((task) => {
-      if (task?.id && !taskMap.has(task.id)) taskMap.set(task.id, task);
-    });
-    const allTasks = [...taskMap.values()];
-    return modeOptions.map((mode) => {
-      const routedKey = modelKeyForMode?.(mode.value, modeModelOverrides) || selectedModel;
-      const routed = models.find((model) => model.key === routedKey) || models.find((model) => model.role === mode.role) || selectedModelObject;
-      const modeTasks = allTasks
-        .filter((task) => (task.mode || "chat") === mode.value)
-        .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
-      const activeRun = modeTasks.find((task) => ["queued", "running", "paused"].includes(task.status));
-      const recent = modeTasks[0];
-      return {
-        ...mode,
-        modelName: routed ? displayModelName(routed, models) : "No routed model",
-        workspaceName: activeWorkspaceName || "No workspace selected",
-        statusLabel: activeRun ? labelize(activeRun.status || "running") : "Ready",
-        recentTitle: recent?.objective || "",
-        isRunning: Boolean(activeRun),
-      };
-    });
-  }, [activeWorkspaceName, modelKeyForMode, modeModelOverrides, models, orderedHomeTasks, runningTasks, selectedModel, selectedModelObject]);
+  const activeReasoning = reasoningOptions.find((option) => option.value === reasoningMode) || reasoningOptions[0];
+  const objectivePlaceholder = modePlaceholders[activeMode.value] || modePlaceholders.chat;
+
+  // Live header indicator: what model is routed and whether it is running.
+  const modelIsMock = selectedModelObject?.key === "dry-run" || selectedModelObject?.provider === "mock";
+  const modelRuntimeStatus = modelIsMock ? "reachable" : runtimeStatus(selectedModelObject);
+  const modelStateLabel = !selectedModelObject
+    ? "No model"
+    : composerBusy && healthy
+      ? "Generating"
+      : modelIsMock
+        ? "Testing"
+        : modelRuntimeStatus === "reachable"
+          ? "Running"
+          : modelRuntimeStatus === "unknown"
+            ? "Not checked"
+            : "Stopped";
+
+  // ---- Command menu (Claude Code style) -------------------------------
+  // source "typed": opened by a leading "/" in the composer; the composer
+  // text after "/" filters the list. source "button": opened from a toolbar
+  // chip; browse with arrows/mouse, composer draft is left alone.
+  const [cmd, setCmd] = useState(null); // null | { path, source }
+  const [cmdIndex, setCmdIndex] = useState(0);
+
+  const cmdQuery = cmd?.source === "typed" && objective.startsWith("/")
+    ? objective.slice(1).trim().toLowerCase()
+    : "";
+
+  const closeCmd = useCallback((consumeSlashText = false) => {
+    setCmd(null);
+    setCmdIndex(0);
+    if (consumeSlashText) {
+      setObjective((current) => (typeof current === "string" && current.startsWith("/") ? "" : current));
+    }
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }, [setObjective]);
+
+  const openCmd = useCallback((path = null) => {
+    // With an empty composer, seed a "/" so typing filters the menu just like
+    // a typed slash command; with a draft in progress, leave the text alone.
+    const draft = composerRef.current?.value ?? "";
+    if (!draft.trim()) {
+      setObjective("/");
+      setCmd({ path, source: "typed" });
+    } else {
+      setCmd({ path, source: "button" });
+    }
+    setCmdIndex(0);
+    window.requestAnimationFrame(() => composerRef.current?.focus());
+  }, [setObjective]);
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  function queueCurrentDraft() {
+    const text = buildOutgoingMessage();
+    if (!text) return;
+    queueMessage(text);
+    setObjective("");
+    setAttachments([]);
+  }
+
+  const cmdItems = useMemo(() => {
+    let items = [];
+    if (cmd?.path === "mode") {
+      items = modeOptions.map((mode) => ({
+        id: `mode-${mode.value}`,
+        name: mode.label,
+        hint: mode.description,
+        active: taskMode === mode.value,
+        run: () => setTaskMode(mode.value),
+      }));
+      items.push({
+        id: "configure-modes",
+        name: "Configure modes...",
+        hint: "Per-mode model overrides and parallel sub-agents.",
+        run: () => setModePanelOpen(true),
+      });
+    } else if (cmd?.path === "model") {
+      const list = visibleModels.length ? visibleModels : models;
+      items = list.map((model) => ({
+        id: `model-${model.key}`,
+        name: displayModelName(model, models),
+        hint: displayModelSecondary(model, models) || model.key,
+        dotStatus: model.key === "dry-run" || model.provider === "mock" ? "reachable" : runtimeStatus(model),
+        active: model.key === selectedModel,
+        run: () => setSelectedModel(model.key),
+      }));
+      items.push({
+        id: "manage-models",
+        name: "Manage models...",
+        hint: "Deploy, test, and register models.",
+        run: () => go("models"),
+      });
+    } else if (cmd?.path === "reasoning") {
+      items = reasoningOptions.map((option) => ({
+        id: `reasoning-${option.value}`,
+        name: option.label,
+        hint: option.description,
+        active: reasoningMode === option.value,
+        run: () => setReasoningMode(option.value),
+      }));
+    } else if (cmd?.path === "prompts") {
+      items = quickPrompts.map((prompt, index) => ({
+        id: `prompt-${index}`,
+        name: prompt.text,
+        hint: `${labelize(prompt.mode)} mode`,
+        keepText: prompt.text,
+        run: () => setTaskMode(prompt.mode),
+      }));
+    } else {
+      items = [
+        { id: "mode", name: "/mode", hint: `Switch task mode - now ${activeMode.label}.`, submenu: "mode" },
+        { id: "model", name: "/model", hint: `Switch model - now ${displayModelName(selectedModelObject, models)}.`, submenu: "model" },
+        { id: "reasoning", name: "/reasoning", hint: `Reasoning effort - now ${activeReasoning.label}.`, submenu: "reasoning" },
+        { id: "attach", name: "/attach", hint: "Attach files to the next message.", run: openFilePicker },
+        { id: "queue", name: "/queue", hint: "Queue the current draft to run after the active task.", run: queueCurrentDraft },
+        ...(queuedMessages.length ? [{ id: "clear-queue", name: "/clear-queue", hint: `Remove ${queuedMessages.length} queued message${queuedMessages.length === 1 ? "" : "s"}.`, run: clearQueuedMessages }] : []),
+        { id: "prompts", name: "/prompts", hint: "Starter prompts for each mode.", submenu: "prompts" },
+        { id: "new", name: "/new", hint: "Start a new chat session.", run: () => startNewChat?.() },
+        ...(latestActiveTask ? [{ id: "stop", name: "/stop", hint: "Stop the latest running task.", run: () => cancelTask(latestActiveTask.id) }] : []),
+        { id: "models-view", name: "/models", hint: "Open the Models view.", run: () => go("models") },
+        { id: "workspaces-view", name: "/workspaces", hint: "Open the Workspaces view.", run: () => go("workspaces") },
+        { id: "activity-view", name: "/activity", hint: "Open the Activity view.", run: () => go("activity") },
+        { id: "settings-view", name: "/settings", hint: "Open Settings.", run: () => go("settings", "general") },
+      ];
+    }
+    if (!cmdQuery) return items;
+    return items.filter((item) =>
+      `${item.name} ${item.hint || ""}`.toLowerCase().includes(cmdQuery));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cmd, cmdQuery, taskMode, reasoningMode, selectedModel, selectedModelObject, models, visibleModels, queuedMessages.length, latestActiveTask?.id]);
+
+  useEffect(() => { setCmdIndex(0); }, [cmdQuery, cmd?.path]);
+
+  function runCmdItem(item) {
+    if (!item) return;
+    if (item.submenu) {
+      setCmd((current) => ({ path: item.submenu, source: current?.source || "button" }));
+      setCmdIndex(0);
+      if (cmd?.source === "typed") setObjective("/");
+      return;
+    }
+    closeCmd(true);
+    item.run?.();
+    if (item.keepText) setObjective(item.keepText);
+  }
+
+  function handleComposerChange(event) {
+    const value = event.target.value;
+    setObjective(value);
+    if (value.startsWith("/")) {
+      if (!cmd) {
+        setCmd({ path: null, source: "typed" });
+        setCmdIndex(0);
+      }
+    } else if (cmd?.source === "typed") {
+      setCmd(null);
+    }
+  }
+
+  function handleComposerKeyDown(event) {
+    if (cmd) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setCmdIndex((index) => Math.min(index + 1, Math.max(cmdItems.length - 1, 0)));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setCmdIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        runCmdItem(cmdItems[cmdIndex]);
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        runCmdItem(cmdItems[cmdIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (cmd.path) {
+          setCmd((current) => ({ ...current, path: null }));
+          setCmdIndex(0);
+          return;
+        }
+        closeCmd(true);
+        return;
+      }
+      if (event.key === "Backspace" && cmd.path && !cmdQuery) {
+        event.preventDefault();
+        setCmd((current) => ({ ...current, path: null }));
+        setCmdIndex(0);
+        return;
+      }
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form.requestSubmit();
+    }
+  }
+
+  // ---- Sending / queueing ---------------------------------------------
+  function buildOutgoingMessage() {
+    let combined = objective.trim();
+    if (combined.startsWith("/")) return "";
+    if (attachments.length > 0) {
+      const attachStr = attachments.map((a) => `<document name="${a.name}">\n${a.content}\n</document>`).join("\n\n");
+      combined = combined ? `${combined}\n\n${attachStr}` : attachStr;
+    }
+    return combined;
+  }
+
+  const handleSendTask = async (e) => {
+    e.preventDefault();
+    if (cmd) return; // Enter inside the command menu never submits.
+    const combinedMessage = buildOutgoingMessage();
+    if (!combinedMessage) return;
+
+    if (composerBusy) {
+      queueMessage(combinedMessage);
+      setObjective("");
+      setAttachments([]);
+      return;
+    }
+
+    try {
+      await executeAction("SendTask", taskMode, async () => {
+        const sent = await sendTask(null, combinedMessage);
+        if (sent === false) throw new Error("Send failed. Check the model status.");
+        setAttachments([]);
+        setObjective("");
+      }, setUiState);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleCancelTask = (id) => executeAction("CancelTask", id, async () => cancelTask(id), setUiState);
+  const handlePauseTask = (id) => executeAction("PauseTask", id, async () => pauseTask(id), setUiState);
+  const handleResumeTask = (id) => executeAction("ResumeTask", id, async () => resumeTask(id), setUiState);
 
   useEffect(() => {
     if (view !== "chat" || !threadScrollRef.current) return;
@@ -278,13 +503,35 @@ export function HomeView(props) {
     if (atBottom) setHasNewActivity(false);
   }
 
-function jumpToLatest() {
+  function jumpToLatest() {
     const target = threadScrollRef.current;
     if (!target) return;
     target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
     setAutoScroll(true);
     setHasNewActivity(false);
   }
+
+  // ---- Attachments ------------------------------------------------------
+  const addFiles = async (files) => {
+    if (!files.length) return;
+    setUiState({ status: 'running', message: 'Extracting file content...' });
+    const newAttachments = [];
+    for (const file of files) {
+      try {
+        const content = await extractFileContent(file);
+        newAttachments.push({ name: file.name, content });
+      } catch (err) {
+        console.error("Failed to parse file", file.name, err);
+      }
+    }
+    if (newAttachments.length > 0) {
+      setAttachments(prev => [...prev, ...newAttachments]);
+      setUiState({ status: 'success', message: `Attached ${newAttachments.length} file(s)` });
+      setTimeout(() => setUiState({ status: 'idle', message: '' }), 3000);
+    } else {
+      setUiState({ status: 'failed', message: 'Failed to extract any text from files.' });
+    }
+  };
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -299,30 +546,22 @@ function jumpToLatest() {
   const handleDrop = async (e) => {
     e.preventDefault();
     setIsDragging(false);
-    
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
-
-    setUiState({ status: 'running', message: 'Extracting file content...' });
-    
-    const newAttachments = [];
-    for (const file of files) {
-      try {
-        const content = await extractFileContent(file);
-        newAttachments.push({ name: file.name, content });
-      } catch (err) {
-        console.error("Failed to parse file", file.name, err);
-      }
-    }
-    
-    if (newAttachments.length > 0) {
-      setAttachments(prev => [...prev, ...newAttachments]);
-      setUiState({ status: 'success', message: `Attached ${newAttachments.length} file(s)` });
-      setTimeout(() => setUiState({ status: 'idle', message: '' }), 3000);
-    } else {
-      setUiState({ status: 'failed', message: 'Failed to extract any text from files.' });
-    }
+    await addFiles(Array.from(e.dataTransfer.files));
   };
+
+  const handleFileInput = async (e) => {
+    await addFiles(Array.from(e.target.files || []));
+    e.target.value = "";
+  };
+
+  const canSubmit = (objective.trim() && !objective.trim().startsWith("/")) || attachments.length > 0;
+  const knowledgeGroup = activeMode.value === "research"
+    ? "research"
+    : ["analyze", "organize", "write"].includes(activeMode.value)
+      ? "documents"
+      : activeMode.value === "code"
+        ? "coding"
+        : "general";
 
   return (
     <section className={`cc-layout app-view home-view tw ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
@@ -338,9 +577,21 @@ function jumpToLatest() {
           </div>
         </div>
         <div className="cc-status-area">
-          <div className="cc-status-item" style={{ cursor: "pointer" }} onClick={() => setModelPanelOpen(true)} title="Click to change model">
-            <Cpu size={14} /> <span>{displayModelName(selectedModelObject, models)}</span>
-          </div>
+          <button
+            className="cc-model-indicator"
+            data-testid="header-model-indicator"
+            type="button"
+            onClick={() => setModelPanelOpen(true)}
+            title={`${selectedModelHealthLine} Click to change model.`}
+          >
+            <span
+              className={`cc-model-dot status-${modelRuntimeStatus}${composerBusy && healthy ? " is-busy" : ""}`}
+              aria-hidden="true"
+            />
+            <Cpu size={14} />
+            <span className="cc-model-name">{displayModelName(selectedModelObject, models)}</span>
+            <span className={`cc-model-state state-${modelRuntimeStatus}`}>{modelStateLabel}</span>
+          </button>
           <div className="cc-status-item" title={`${privacyTitle}: ${privacyDetail}`}>
             <ShieldCheck size={14} /> <span>{privacyTitle}</span>
           </div>
@@ -363,109 +614,180 @@ function jumpToLatest() {
         )}
         {/* Content Area */}
         <div className="cc-content-area">
-          {/* Workspace Selector */}
-          <div className="cc-workspace-selector">
-            <div className={`cc-workspace-card ${activeCommandWorkspace === "Research" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("Research")}>Research</div>
-            <div className={`cc-workspace-card ${activeCommandWorkspace === "Documents" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("Documents")}>Documents</div>
-            <div className={`cc-workspace-card ${activeCommandWorkspace === "Coding" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("Coding")}>Coding</div>
-            <div className={`cc-workspace-card ${activeCommandWorkspace === "General" ? "is-active" : ""}`} onClick={() => selectCommandWorkspace("General")}>General</div>
-          </div>
-
           {/* Quick Action Center */}
           <div className="cc-quick-action-center">
             <h1 className="cc-objective-title">What is our objective?</h1>
-            
+
             <form id="taskForm" className="cc-input-container" onSubmit={handleSendTask}>
+              {queuedMessages.length > 0 && (
+                <div className="queue-strip" data-testid="queue-strip" aria-label="Queued messages">
+                  <span className="queue-strip-label">{queuedMessages.length} queued</span>
+                  {queuedMessages.map((entry) => (
+                    <span key={entry.id} className="queued-chip" data-testid="queued-message" title={entry.text}>
+                      <em>{labelize(entry.mode)}</em>
+                      <span className="queued-chip-text">{entry.text}</span>
+                      <button type="button" aria-label="Remove queued message" onClick={() => removeQueuedMessage(entry.id)}>
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                  <button type="button" className="tiny-action" onClick={clearQueuedMessages}>Clear all</button>
+                </div>
+              )}
               {attachments.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingBottom: '8px', borderBottom: '1px solid var(--cc-border)', marginBottom: '8px' }}>
+                <div className="attachment-strip">
                   {attachments.map((att, idx) => (
-                    <div key={idx} style={{ 
-                      display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', 
-                      backgroundColor: 'var(--cc-surface)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--cc-border)' 
-                    }}>
+                    <div key={idx} className="attachment-chip">
                       <FileText size={14} color="var(--ras-primary)" />
-                      <span style={{ maxWidth: '150px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{att.name}</span>
-                      <button type="button" aria-label="Remove attachment" style={{ background: 'none', border: 'none', color: 'var(--cc-muted)', cursor: 'pointer', padding: '0 2px' }} onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}>
+                      <span className="attachment-chip-name">{att.name}</span>
+                      <button type="button" aria-label="Remove attachment" onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}>
                         <X size={12} />
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-              <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
-              <textarea
-                id="objective"
-                ref={composerRef}
-                className="cc-input ras-autogrow"
-                rows={3}
-                placeholder={objectivePlaceholder}
-                value={objective}
-                onChange={(event) => setObjective(event.target.value)}
-                onInput={resizeComposer}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form.requestSubmit();
-                  }
-                }}
+              <div className="composer-shell">
+                {cmd && (
+                  <div className="cmd-menu" data-testid="command-menu">
+                    {cmd.path && (
+                      <div className="cmd-menu-crumb">
+                        <button
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            setCmd((current) => ({ ...current, path: null }));
+                            setCmdIndex(0);
+                          }}
+                        >
+                          <ChevronLeft size={14} /> Commands
+                        </button>
+                        <span>{cmd.path === "mode" ? "Mode" : cmd.path === "model" ? "Model" : cmd.path === "reasoning" ? "Reasoning" : "Quick prompts"}</span>
+                      </div>
+                    )}
+                    <div className="cmd-menu-list" role="listbox" aria-label="Commands">
+                      {cmdItems.length === 0 && <div className="cmd-menu-empty">No matching commands</div>}
+                      {cmdItems.map((item, index) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="option"
+                          aria-selected={index === cmdIndex}
+                          data-testid="command-item"
+                          className={index === cmdIndex ? "cmd-item is-active" : "cmd-item"}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            runCmdItem(item);
+                          }}
+                          onMouseEnter={() => setCmdIndex(index)}
+                        >
+                          {item.dotStatus && <span className={`model-choice-status status-${item.dotStatus}`} aria-hidden="true" />}
+                          <span className="cmd-item-name">{item.name}</span>
+                          <span className="cmd-item-hint">{item.hint}</span>
+                          {item.active && <Check size={14} className="cmd-item-check" aria-hidden="true" />}
+                          {item.submenu && <ChevronRight size={14} className="cmd-item-more" aria-hidden="true" />}
+                        </button>
+                      ))}
+                    </div>
+                    <footer className="cmd-menu-foot">
+                      <span><kbd>Up</kbd><kbd>Down</kbd> navigate</span>
+                      <span><kbd>Enter</kbd> select</span>
+                      <span><kbd>Esc</kbd> close</span>
+                    </footer>
+                  </div>
+                )}
+                <label className="visually-hidden" htmlFor="objective">Message Rasputin</label>
+                <textarea
+                  id="objective"
+                  ref={composerRef}
+                  className="cc-input ras-autogrow"
+                  rows={3}
+                  placeholder={objectivePlaceholder}
+                  value={objective}
+                  onChange={handleComposerChange}
+                  onInput={resizeComposer}
+                  onKeyDown={handleComposerKeyDown}
+                />
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="visually-hidden"
+                aria-label="Attach files"
+                tabIndex={-1}
+                onChange={handleFileInput}
               />
               <div className="cc-input-actions">
-                <div className="cc-quick-actions">
-                  {activeCommandWorkspace === "Research" && (
-                    <>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Deep dive a topic", "research")}>Deep dive a topic</button>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Find latest references", "research")}>Find latest references</button>
-                    </>
-                  )}
-                  {activeCommandWorkspace === "Documents" && (
-                    <>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Summarize active workspace", "analyze")}>Summarize active workspace</button>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Organize files", "organize")}>Organize files</button>
-                    </>
-                  )}
-                  {activeCommandWorkspace === "Coding" && (
-                    <>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Review code", "code")}>Review code</button>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Plan next feature", "code")}>Plan next feature</button>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Find bugs", "code")}>Find bugs</button>
-                    </>
-                  )}
-                  {activeCommandWorkspace === "General" && (
-                    <>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("General chat", "chat")}>General chat</button>
-                      <button type="button" className="w2-button w2-button-outline" onClick={() => setPrompt?.("Brainstorm ideas", "chat")}>Brainstorm ideas</button>
-                    </>
-                  )}
+                <div className="composer-tools">
+                  <button type="button" className="composer-icon-button" aria-label="Attach files" title="Attach files" onClick={openFilePicker}>
+                    <Paperclip size={16} />
+                  </button>
+                  <button type="button" className="composer-icon-button" aria-label="Open command menu" title="Commands ( / )" onClick={() => (cmd ? closeCmd(true) : openCmd(null))}>
+                    <SquareSlash size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    ref={modeButtonRef}
+                    className="composer-chip"
+                    data-testid="chat-mode-chip"
+                    title={`${activeMode.label}: ${activeMode.description}`}
+                    onClick={() => (cmd?.path === "mode" ? closeCmd(true) : openCmd("mode"))}
+                  >
+                    <Bot size={14} />
+                    <span>{activeMode.label}</span>
+                    <ChevronDown size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    ref={modelButtonRef}
+                    className="composer-chip"
+                    data-testid="chat-model-chip"
+                    title={selectedModelHealthLine}
+                    onClick={() => (cmd?.path === "model" ? closeCmd(true) : openCmd("model"))}
+                  >
+                    <span className={`cc-model-dot status-${modelRuntimeStatus}`} aria-hidden="true" />
+                    <span className="composer-chip-model-name">{displayModelName(selectedModelObject, models)}</span>
+                    <ChevronDown size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    className="composer-chip"
+                    data-testid="chat-reasoning-chip"
+                    title={`Reasoning effort: ${activeReasoning.label}. ${activeReasoning.description}`}
+                    onClick={() => (cmd?.path === "reasoning" ? closeCmd(true) : openCmd("reasoning"))}
+                  >
+                    <Brain size={14} />
+                    <span>{activeReasoning.label}</span>
+                    <ChevronDown size={12} />
+                  </button>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  {/* Button Reliability Status Readout */}
+                <div className="composer-actions">
                   {uiState.status !== 'idle' && (
-                    <div style={{ 
-                      padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem',
-                      backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                                      uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
-                      color: '#fff', display: 'flex', alignItems: 'center'
-                    }}>
+                    <div className={`composer-feedback is-${uiState.status}`}>
                       {uiState.message}
                     </div>
                   )}
+                  {composerStatus && uiState.status === 'idle' && (
+                    <div className="composer-feedback is-failed">{composerStatus}</div>
+                  )}
                   {latestActiveTask && (
-                    <button className="cc-quick-action-chip" style={{ borderColor: 'var(--ras-danger)', color: 'var(--ras-danger)' }} type="button" onClick={() => handleCancelTask(latestActiveTask.id)}>
-                      <Square size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
-                      Stop latest
+                    <button className="cc-quick-action-chip composer-stop" type="button" onClick={() => handleCancelTask(latestActiveTask.id)}>
+                      <Square size={14} />
+                      Stop
                     </button>
                   )}
                   <button
                     id="sendBtn"
-                    className="w2-button w2-button-primary"
-                    style={{ padding: '6px 16px' }}
+                    className="w2-button w2-button-primary composer-send"
                     type="submit"
-                    disabled={!healthy || !objective.trim()}
-                    aria-disabled={!healthy || !objective.trim()}
-                    aria-label="Send message"
-                    title={!objective.trim() ? "Enter a message" : (disabledReason || "Send message")}
+                    disabled={!canSubmit || (!composerBusy && !healthy)}
+                    aria-disabled={!canSubmit || (!composerBusy && !healthy)}
+                    aria-label={composerBusy ? "Queue message" : "Send message"}
+                    title={!canSubmit ? "Enter a message" : composerBusy ? "A task is running - this message will queue and send when it finishes" : (disabledReason || "Send message")}
                   >
-                    <Send size={14} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> Send
+                    {composerBusy ? <ListPlus size={14} /> : <Send size={14} />}
+                    {composerBusy ? " Queue" : " Send"}
                   </button>
                 </div>
               </div>
@@ -512,11 +834,6 @@ function jumpToLatest() {
                 />
               )}
             </form>
-
-            <div style={{ display: 'none' }}>
-              <button ref={modeButtonRef} onClick={() => setModePanelOpen(true)}>Mode</button>
-              <button ref={modelButtonRef} onClick={() => setModelPanelOpen(true)}>Model</button>
-            </div>
           </div>
         </div>
 
@@ -524,7 +841,7 @@ function jumpToLatest() {
         <aside className="cc-sidebar">
           <div className="cc-sidebar-section">
             <h3 className="cc-sidebar-section-title">Recent Activity</h3>
-            <div className="thread-list" aria-live="polite" style={{ padding: 0 }} ref={threadScrollRef}>
+            <div className="thread-list" aria-live="polite" style={{ padding: 0 }} ref={threadScrollRef} onScroll={handleThreadScroll}>
               {orderedHomeTasks.length === 0 && (
                 <div className="cc-sidebar-item">
                   <p>No recent activity in this chat.</p>
@@ -542,11 +859,16 @@ function jumpToLatest() {
                 />
               ))}
             </div>
+            {hasNewActivity && (
+              <button type="button" className="tiny-action" onClick={jumpToLatest}>
+                Jump to latest
+              </button>
+            )}
           </div>
 
           <div className="cc-sidebar-section">
             <h3 className="cc-sidebar-section-title">Active Knowledge</h3>
-            {activeCommandWorkspace === "Research" ? (
+            {knowledgeGroup === "research" ? (
               <>
                 <div className="cc-sidebar-item">
                   <h4>Graph Status</h4>
@@ -557,7 +879,7 @@ function jumpToLatest() {
                   <p>Enabled for deep research tasks.</p>
                 </div>
               </>
-            ) : activeCommandWorkspace === "Documents" ? (
+            ) : knowledgeGroup === "documents" ? (
               <>
                 <div className="cc-sidebar-item">
                   <h4>Mounted Workspace</h4>
@@ -568,7 +890,7 @@ function jumpToLatest() {
                   <p>Ready for summarization.</p>
                 </div>
               </>
-            ) : activeCommandWorkspace === "Coding" ? (
+            ) : knowledgeGroup === "coding" ? (
               <>
                 <div className="cc-sidebar-item">
                   <h4>Target Repository</h4>
@@ -583,7 +905,7 @@ function jumpToLatest() {
               <>
                 <div className="cc-sidebar-item">
                   <h4>Current Mode</h4>
-                  <p>General Chat</p>
+                  <p>{activeMode.label}</p>
                 </div>
                 <div className="cc-sidebar-item">
                   <h4>Local Context</h4>
@@ -593,89 +915,6 @@ function jumpToLatest() {
             )}
           </div>
         </aside>
-      </div>
-    </section>
-  );
-}
-
-function AgentLaneStrip({ lanes, activeMode, setTaskMode }) {
-  const activeLane = lanes.find((lane) => lane.value === activeMode) || lanes[0];
-
-  function handleKeyDown(event) {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const currentIndex = lanes.findIndex((lane) => lane.value === activeMode);
-    let nextIndex = currentIndex;
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = lanes.length - 1;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1 + lanes.length) % lanes.length;
-    if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + lanes.length) % lanes.length;
-    const nextLane = lanes[nextIndex];
-    if (!nextLane) return;
-    setTaskMode(nextLane.value);
-    window.requestAnimationFrame(() => {
-      document.getElementById(`agent-lane-tab-${nextLane.value}`)?.focus();
-    });
-  }
-
-  if (!lanes.length) return null;
-
-  return (
-    <section className="agent-lane-shell" data-testid="agent-lanes" aria-label="Agent lanes">
-      <div className="agent-lane-head">
-        <span className="eyebrow">Agent lanes</span>
-        <span>{activeLane.label} lane selected</span>
-      </div>
-      <div className="agent-lane-tabs" role="tablist" aria-label="Choose active AI lane" onKeyDown={handleKeyDown}>
-        {lanes.map((lane) => {
-          const selected = lane.value === activeMode;
-          return (
-            <button
-              key={lane.value}
-              id={`agent-lane-tab-${lane.value}`}
-              className={selected ? "agent-lane-tab is-active" : "agent-lane-tab"}
-              data-testid="agent-lane"
-              title={`${lane.label} lane`}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls="agent-lane-current"
-              tabIndex={selected ? 0 : -1}
-              aria-label={`${lane.label}. ${lane.statusLabel}. Model ${lane.modelName}. Workspace ${lane.workspaceName}. ${lane.recentTitle ? `Recent task ${lane.recentTitle}.` : "No recent task."}`}
-              onClick={() => setTaskMode(lane.value)}
-            >
-              <strong>{lane.label}</strong>
-              <span>{lane.modelName}</span>
-              <em className={lane.isRunning ? "is-running" : ""}>{lane.statusLabel}</em>
-            </button>
-          );
-        })}
-      </div>
-      <div
-        id="agent-lane-current"
-        className="agent-lane-current"
-        role="tabpanel"
-        aria-labelledby={`agent-lane-tab-${activeLane.value}`}
-        data-testid="active-agent-lane"
-      >
-        <dl>
-          <div>
-            <dt>Mode</dt>
-            <dd>{activeLane.label}</dd>
-          </div>
-          <div>
-            <dt>Model</dt>
-            <dd>{activeLane.modelName}</dd>
-          </div>
-          <div>
-            <dt>Workspace</dt>
-            <dd>{activeLane.workspaceName}</dd>
-          </div>
-          <div>
-            <dt>Recent</dt>
-            <dd>{activeLane.recentTitle || "No recent task"}</dd>
-          </div>
-        </dl>
       </div>
     </section>
   );
@@ -856,7 +1095,7 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           )}
         </div>
         <div className="markdown-body">
-          <ReactMarkdown 
+          <ReactMarkdown
             rehypePlugins={[rehypeSanitize]}
             components={{
               code: CodeSandbox
@@ -870,6 +1109,11 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           <dl className="detail-grid">
             <dt>Model</dt><dd>{displayModelName(task.model, models)}</dd>
             <dt>Mode</dt><dd>{task.mode || "chat"}</dd>
+            {task.reasoning && task.reasoning !== "auto" && (
+              <>
+                <dt>Reasoning</dt><dd>{labelize(task.reasoning)}</dd>
+              </>
+            )}
             <dt>Workspace</dt><dd>{displayWorkspaceName(task.workspace)}</dd>
             <dt>Status</dt><dd>{status}</dd>
           </dl>

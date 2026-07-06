@@ -9,7 +9,7 @@ from pathlib import Path
 from backend.mcp.layer import McpLayer
 from backend.models import providers as model_providers
 
-async def _chat(model_key, messages, tools=None, on_delta=None):
+async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
     if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
         user_msg = messages[-1]["content"] if messages else ""
@@ -25,7 +25,7 @@ async def _chat(model_key, messages, tools=None, on_delta=None):
     max_tokens = context_governor.normalize_limits(cfg_for_limits)["maxTokens"]
 
     try:
-        return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools, on_delta=on_delta)
+        return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools, on_delta=on_delta, reasoning=reasoning)
     except Exception as exc:
         security.audit.log("model_chat_failed", {
             "key": model_key,
@@ -59,13 +59,14 @@ FILE_SNIPPET_TERMS = (
 
 
 class AgentTask:
-    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None):
+    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto"):
         self.id = task_id or str(uuid.uuid4())[:8]
         self.session_id = session_id or store.new_id("sess")
         self.objective = objective
         self.model = model
         self.skill = skill or "general"
         self.mode = mode or "chat"
+        self.reasoning = reasoning if reasoning in {"auto", "off", "low", "medium", "high"} else "auto"
         self.parent_id = parent_id
         self.status = "queued"
         self.progress = 0
@@ -297,6 +298,7 @@ class AgentHub:
             "model": task.model,
             "skill": task.skill,
             "mode": task.mode,
+            "reasoning": getattr(task, "reasoning", "auto"),
             "status": task.status,
             "progress": task.progress,
             "logs": task.logs[-80:],
@@ -570,8 +572,8 @@ class AgentHub:
         self.listeners.add(q)
         return q
 
-    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat", session_id=None):
-        task = AgentTask(objective, model, skill, workspace_path=workspace_path, mode=mode, session_id=session_id)
+    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat", session_id=None, reasoning="auto"):
+        task = AgentTask(objective, model, skill, workspace_path=workspace_path, mode=mode, session_id=session_id, reasoning=reasoning)
         self._wire(task)
         self.tasks[task.id] = task
         self._persist_task(task)
@@ -860,7 +862,7 @@ class AgentHub:
 
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
-                text, tool_calls = await _chat(model_key, messages, tools=tools, on_delta=on_delta)
+                text, tool_calls = await _chat(model_key, messages, tools=tools, on_delta=on_delta, reasoning=getattr(task, "reasoning", "auto"))
 
                 if text or tool_calls:
                     messages.append({

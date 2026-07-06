@@ -74,6 +74,7 @@ class TaskIn(CamelModel):
     model: str = "dry-run"
     skill: str = "general"
     mode: str = "chat"
+    reasoning: str = "auto"
     subagents: int = 0
     workspace_path: str | None = None
     session_id: str | None = None
@@ -87,7 +88,7 @@ class ScheduleIn(CamelModel):
 @tasks_router.post("/tasks")
 
 async def create_task(req: TaskIn, _user=Depends(current_user)):
-    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), req.workspace_path, req.mode, req.session_id)
+    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), req.workspace_path, req.mode, req.session_id, reasoning=req.reasoning)
     return ok(hub.snapshot_task(task))
 
 @tasks_router.post("/tasks/{task_id}/cancel")

@@ -518,7 +518,48 @@ def _stream_gemini(url, payload, headers, on_delta):
     return "".join(text_parts).strip(), tool_calls
 
 
-def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=None):
+REASONING_LEVELS = {"off", "low", "medium", "high"}
+_ANTHROPIC_THINKING_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
+_GEMINI_THINKING_BUDGETS = {"off": 0, "low": 1024, "medium": 4096, "high": 8192}
+
+
+def _apply_reasoning(payload, provider, model, reasoning):
+    """Translate the UI reasoning level into provider-native request fields.
+
+    "auto" leaves the payload untouched so existing behavior never changes.
+    Servers that don't understand a field either ignore it (llama.cpp) or
+    reject the request with a clear error the user can fix by switching back
+    to Auto.
+    """
+    if reasoning not in REASONING_LEVELS:
+        return payload
+    if provider == "anthropic":
+        budget = _ANTHROPIC_THINKING_BUDGETS.get(reasoning)
+        if budget:
+            payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            # Anthropic requires temperature=1 and max_tokens > budget when
+            # extended thinking is enabled.
+            payload["temperature"] = 1
+            payload["max_tokens"] = max(int(payload.get("max_tokens") or 0), budget + 1024)
+    elif provider == "gemini":
+        payload.setdefault("generationConfig", {})["thinkingConfig"] = {
+            "thinkingBudget": _GEMINI_THINKING_BUDGETS[reasoning],
+        }
+    else:
+        # OpenAI-compatible: reasoning models honor reasoning_effort; local
+        # runtimes (llama.cpp/vLLM) additionally accept chat_template_kwargs
+        # to toggle hybrid-thinking templates like Qwen3.
+        if reasoning == "off":
+            if model.get("runtime") != "remote-api":
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
+        else:
+            payload["reasoning_effort"] = reasoning
+            if model.get("runtime") != "remote-api":
+                payload["chat_template_kwargs"] = {"enable_thinking": True}
+    return payload
+
+
+def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=None, reasoning="auto"):
     provider = provider_key(model.get("provider"))
     stream = on_delta is not None
     url = chat_url(model, stream=stream)
@@ -544,6 +585,7 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
         parser = _parse_openai_response
         streamer = _stream_openai
         payload["stream"] = stream
+    _apply_reasoning(payload, provider, model, reasoning)
 
     if stream:
         text, tool_calls = streamer(url, payload, headers, on_delta)
@@ -555,12 +597,12 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
     return text, tool_calls
 
 
-async def chat(model, messages, max_tokens=1024, temperature=0.2, tools=None, on_delta=None):
+async def chat(model, messages, max_tokens=1024, temperature=0.2, tools=None, on_delta=None, reasoning="auto"):
     """on_delta, when given, switches to a streaming request. It is invoked
     from a worker thread with {"type": "text", "text": ...} and
     {"type": "tool_call", "id": ..., "name": ...} events as they arrive;
     the returned (text, tool_calls) is identical either way."""
-    return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature, tools, on_delta)
+    return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature, tools, on_delta, reasoning)
 
 
 def _parse_model_ids(payload, provider):
