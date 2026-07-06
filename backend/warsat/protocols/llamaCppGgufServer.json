@@ -5,6 +5,7 @@
   "runtime": "llama.cpp",
   "category": "helper-runtime",
   "image": "ghcr.io/ggml-org/llama.cpp:server",
+  "imageCuda": "ghcr.io/ggml-org/llama.cpp:server-cuda",
   "modelFormat": "gguf",
   "defaultRole": "helper",
   "defaultHostPort": 8081,

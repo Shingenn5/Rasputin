@@ -617,6 +617,62 @@ def _uses_gpu(protocol, tuning, limits):
     return bool(tuning.get("gpuLayers"))
 
 
+HF_API_BASE = os.environ.get("HF_API_URL", "https://huggingface.co/api/models")
+_HF_INVENTORY_CACHE = {}
+_HF_INVENTORY_TTL_SECONDS = 300
+
+# Mid-size quants first: what people actually run on desktop GPUs/CPUs.
+GGUF_QUANT_PREFERENCE = (
+    "q4_k_m", "q4_k_s", "q4_k", "q5_k_m", "q5_k", "q4_0",
+    "q6_k", "iq4", "q8_0", "q3_k_m", "q3_k", "iq3", "q2_k",
+)
+
+
+def _looks_like_hf_repo(model_ref):
+    ref = str(model_ref or "").strip()
+    return bool(ref) and "/" in ref and not ref.lower().endswith(".gguf") and not ref.startswith(("/", ".", "\\"))
+
+
+def _hf_repo_inventory(model_ref):
+    """What weight formats a Hugging Face repo actually ships.
+
+    Returns {"ggufFiles": [...], "transformersOk": bool} or None when the Hub
+    can't be reached — offline plans keep today's behavior instead of failing.
+    """
+    if _fake_deploy_enabled() or not _looks_like_hf_repo(model_ref):
+        return None
+    ref = str(model_ref).strip().strip("/")
+    cached = _HF_INVENTORY_CACHE.get(ref.lower())
+    if cached and time.time() - cached[0] < _HF_INVENTORY_TTL_SECONDS:
+        return cached[1]
+    try:
+        req = urllib.request.Request(f"{HF_API_BASE}/{ref}", headers={"User-Agent": "rasputin-warsat/0.1"})
+        with urllib.request.urlopen(req, timeout=8) as response:
+            data = json.loads(response.read(2_000_000).decode("utf-8", "replace"))
+    except Exception:
+        return None
+    files = [str(item.get("rfilename") or "") for item in data.get("siblings") or [] if isinstance(item, dict)]
+    lowered = [name.lower() for name in files]
+    gguf_files = [
+        name for name in files
+        if name.lower().endswith(".gguf") and not Path(name).name.lower().startswith("mmproj")
+    ]
+    has_config = "config.json" in lowered
+    has_weights = any(name.endswith((".safetensors", ".bin", ".pt")) for name in lowered)
+    inventory = {"ggufFiles": gguf_files, "transformersOk": has_config and has_weights}
+    _HF_INVENTORY_CACHE[ref.lower()] = (time.time(), inventory)
+    return inventory
+
+
+def _pick_gguf_file(gguf_files):
+    ranked = sorted(gguf_files)
+    for quant in GGUF_QUANT_PREFERENCE:
+        for name in ranked:
+            if quant in name.lower():
+                return name
+    return ranked[0] if ranked else ""
+
+
 def _strip_option(args, names):
     names = set(names)
     out = []
@@ -684,20 +740,27 @@ def _model_mount_parts(model_path, model_ref, protocol):
     return model_path_text, f"{container_root}/{model_name}"
 
 
-def _runtime_command(protocol, model_ref, model_path, tuning):
+def _runtime_command(protocol, model_ref, model_path, tuning, hf_source=None):
     command = []
     model_mount = protocol.get("modelMount") or {}
     _, container_model_path = _model_mount_parts(model_path, model_ref, protocol)
-    if protocol.get("modelArgument"):
+    if protocol["modelFormat"] == "gguf" and hf_source:
+        # llama.cpp downloads the GGUF from the Hub itself; no mount needed.
+        command.extend(["--hf-repo", hf_source["repo"], "--hf-file", hf_source["file"]])
+    elif protocol.get("modelArgument"):
         if protocol["modelFormat"] == "gguf":
             command.extend([protocol["modelArgument"], container_model_path or f"{model_mount.get('containerPath', '/models')}/{Path(model_ref).name}"])
         else:
             command.extend([protocol["modelArgument"], model_ref])
+    if protocol["modelFormat"] == "gguf" and str(protocol.get("runtime", "")).lower() == "llama.cpp" and model_ref:
+        # Serve under a stable id so health probes and chat requests can
+        # address the model by the same name the registry stores.
+        command.extend(["--alias", model_ref])
     command.extend(_runtime_arguments(protocol, tuning))
     return command
 
 
-def _docker_run_preview(protocol, model_ref, model_path, host_port, container_name, tuning, limits):
+def _docker_run_preview(protocol, model_ref, model_path, host_port, container_name, tuning, limits, hf_source=None):
     command = [
         "docker", "run", "-d",
         "--name", container_name,
@@ -727,7 +790,7 @@ def _docker_run_preview(protocol, model_ref, model_path, host_port, container_na
         mode = "ro" if model_mount.get("readOnly", True) else "rw"
         command.extend(["-v", f"{host_model_path}:{model_mount['containerPath']}:{mode}"])
     command.append(protocol["image"])
-    command.extend(_runtime_command(protocol, model_ref, model_path, tuning))
+    command.extend(_runtime_command(protocol, model_ref, model_path, tuning, hf_source))
     return command
 
 
@@ -735,7 +798,7 @@ def _yaml_scalar(value):
     return json.dumps(str(value))
 
 
-def _compose_preview(protocol, model_ref, model_path, host_port, container_name, strength, tuning, limits):
+def _compose_preview(protocol, model_ref, model_path, host_port, container_name, strength, tuning, limits, hf_source=None):
     service = _slug(container_name)
     port_spec = f"{protocol['hostBinding']}:{host_port}:{protocol['containerPort']}"
     lines = [
@@ -777,7 +840,7 @@ def _compose_preview(protocol, model_ref, model_path, host_port, container_name,
         lines.append("    volumes:")
         for volume in volumes:
             lines.append(f"      - {_yaml_scalar(volume)}")
-    command = _runtime_command(protocol, model_ref, model_path, tuning)
+    command = _runtime_command(protocol, model_ref, model_path, tuning, hf_source)
     if command:
         lines.append("    command:")
         for part in command:
@@ -902,6 +965,27 @@ def make_plan(payload):
     protocol = get_protocol(payload.get("protocolId") or payload.get("protocol_id"))
     model_ref = str(payload.get("modelRef") or payload.get("model_ref") or "").strip()
     model_path = str(payload.get("modelPath") or payload.get("model_path") or "").strip()
+
+    # A Hugging Face repo only works on the runtime that matches the weights
+    # it actually ships. Check the repo's file list and reroute rather than
+    # letting the container crash-loop on an incompatible format.
+    reroute_note = ""
+    inventory = _hf_repo_inventory(model_ref) if not model_path else None
+    if protocol["runtime"] == "vllm" and inventory is not None and not inventory["transformersOk"]:
+        if inventory["ggufFiles"]:
+            reroute_note = (
+                f"{model_ref} only ships GGUF weights, which vLLM cannot load. "
+                "Warsat rerouted this deployment to the llama.cpp GGUF server."
+            )
+            protocol = get_protocol("llamaCppGgufServer")
+        else:
+            raise AppError(
+                "warsat_model_format",
+                f"{model_ref} has no deployable weights: no transformers config/weights and no GGUF files. "
+                "Pick a different upload of this model.",
+                400,
+            )
+
     role = str(payload.get("role") or "").strip()
     if not role:
         suggested = model_registry.suggest_role(
@@ -920,22 +1004,51 @@ def make_plan(payload):
 
     if not model_ref and protocol["modelFormat"] != "gguf":
         raise AppError("warsat_model_required", "Enter a model id for this Warsat protocol.", 400)
+    hf_source = None
     if protocol["modelFormat"] == "gguf":
-        if not model_path:
+        if model_path:
+            if model_path.lower().endswith(".gguf"):
+                model_ref = Path(model_path).name
+            elif not model_ref:
+                model_ref = Path(model_path).name
+        elif _looks_like_hf_repo(model_ref):
+            # No local file: let llama.cpp pull the GGUF from the Hub itself.
+            if inventory is None:
+                inventory = _hf_repo_inventory(model_ref)
+            gguf_files = (inventory or {}).get("ggufFiles") or []
+            if not gguf_files:
+                raise AppError(
+                    "warsat_model_path_required",
+                    f"Could not find GGUF files for {model_ref} on Hugging Face. "
+                    "Download the GGUF into the models folder and set the model path, or retry while online.",
+                    400,
+                )
+            hf_file = _pick_gguf_file(gguf_files)
+            hf_source = {"repo": str(model_ref).strip().strip("/"), "file": hf_file}
+            model_ref = Path(hf_file).stem
+        else:
             raise AppError("warsat_model_path_required", "Enter the mounted GGUF model folder or file path.", 400)
-        if model_path.lower().endswith(".gguf"):
-            model_ref = Path(model_path).name
-        elif not model_ref:
-            model_ref = Path(model_path).name
+
+    if protocol.get("imageCuda") and _uses_gpu(protocol, tuning, limits):
+        protocol = dict(protocol)
+        protocol["image"] = protocol["imageCuda"]
 
     endpoint = _endpoint_for(protocol["hostBinding"], host_port)
     model_key = _slug(f"{protocol['runtime']}-{model_ref or protocol['id']}-{host_port}")
-    docker_run = _docker_run_preview(protocol, model_ref, model_path, host_port, container_name, tuning, limits)
-    compose_preview = _compose_preview(protocol, model_ref, model_path, host_port, container_name, strength, tuning, limits)
+    docker_run = _docker_run_preview(protocol, model_ref, model_path, host_port, container_name, tuning, limits, hf_source)
+    compose_preview = _compose_preview(protocol, model_ref, model_path, host_port, container_name, strength, tuning, limits, hf_source)
     dockerfile_preview = _dockerfile_preview(protocol)
     execution = _docker_runtime_enabled()
     docker_control_enabled = execution["dockerControlEnabled"]
     warnings = []
+    if reroute_note:
+        warnings.append(reroute_note)
+    if hf_source:
+        warnings.append(
+            f"llama.cpp downloads {hf_source['file']} from {hf_source['repo']} on first start, "
+            "so the first health probe can take several minutes. The download is cached only for the "
+            "container's lifetime; a redeploy fetches it again."
+        )
     if not docker_control_enabled:
         warnings.append("Docker control is disabled. This plan cannot be executed from Rasputin yet.")
     elif not execution["dockerCliAvailable"]:
@@ -976,6 +1089,9 @@ def make_plan(payload):
         "modelFormat": protocol["modelFormat"],
         "modelRef": model_ref,
         "modelPath": model_path,
+        "hfSource": hf_source,
+        # Startup downloads need a much longer probe window than a warm model.
+        "healthProbe": {"attempts": 30, "intervalSeconds": 10} if hf_source else None,
         "role": role,
         "strengthProfile": strength,
         "resourceProfile": STRENGTH_PROFILES[strength],
@@ -1257,6 +1373,21 @@ def _occupied_host_ports():
     return occupied
 
 
+def _registry_reserved_ports():
+    """Host port -> container name for registered managed models, so a new
+    deploy can't steal the port of a runtime that is merely stopped."""
+    reserved = {}
+    try:
+        for model in model_registry.all_models():
+            port = model.get("port")
+            container = model.get("container")
+            if port and container:
+                reserved[int(port)] = str(container)
+    except Exception:
+        return {}
+    return reserved
+
+
 def _pick_host_port(protocol):
     """First free host port at or after the protocol default. A port still
     counts as free when its occupant is the very container this plan would
@@ -1265,10 +1396,11 @@ def _pick_host_port(protocol):
     if not _docker_cli_path() or _fake_deploy_enabled():
         return start
     occupied = _occupied_host_ports()
+    reserved = _registry_reserved_ports()
     port = start
     while port < start + 200:
-        owner = occupied.get(port)
-        if owner is None or owner == _slug(f"rasputin-{protocol['id']}-{port}"):
+        own_name = _slug(f"rasputin-{protocol['id']}-{port}")
+        if occupied.get(port) in (None, own_name) and reserved.get(port) in (None, own_name):
             return port
         port += 1
     return start
@@ -1349,7 +1481,10 @@ def _validate_deploy_plan(plan):
 
     run_cmd = ((plan.get("commandPreview") or {}).get("run") or [])
     pull_cmd = ((plan.get("commandPreview") or {}).get("pull") or [])
-    if pull_cmd[:2] != ["docker", "pull"] or pull_cmd[-1] != protocol["image"]:
+    allowed_images = {protocol["image"]}
+    if protocol.get("imageCuda"):
+        allowed_images.add(protocol["imageCuda"])
+    if pull_cmd[:2] != ["docker", "pull"] or pull_cmd[-1] not in allowed_images:
         raise AppError("warsat_command_rejected", "Docker pull command does not match the selected protocol image.", 400)
     if run_cmd[:3] != ["docker", "run", "-d"]:
         raise AppError("warsat_command_rejected", "Docker run command must be generated by Warsat.", 400)
@@ -1365,7 +1500,7 @@ def _validate_deploy_plan(plan):
         raise AppError("warsat_binding_rejected", "Docker run command must bind the model to 127.0.0.1.", 400)
     if "--security-opt" not in run_cmd or "no-new-privileges" not in run_cmd:
         raise AppError("warsat_privileges_rejected", "Docker run command must include no-new-privileges.", 400)
-    if protocol["image"] not in run_cmd:
+    if not any(image in run_cmd for image in allowed_images):
         raise AppError("warsat_command_rejected", "Docker run command does not match the selected protocol image.", 400)
 
     container_name = _slug(plan.get("containerName"))
@@ -1856,13 +1991,20 @@ def deploy(plan, approval_id=None):
         "modelKey": registry_entry["key"],
     })
 
-    pull = _pull_image(pull_cmd, protocol["image"])
+    plan_image = plan.get("image") or protocol["image"]
+    pull = _pull_image(pull_cmd, plan_image)
     logs_out.append(_command_log("pulling", pull_cmd, pull))
     _run_command(["docker", "rm", "-f", container_name], timeout=60, check=False)
     started = _run_command(run_cmd, timeout=120)
     logs_out.append(_command_log("starting", run_cmd, started))
     status = _container_status(container_name)
-    health = _probe_model_endpoint(plan.get("healthUrl"), registry_entry.get("model"))
+    probe_cfg = plan.get("healthProbe") or {}
+    health = _probe_model_endpoint(
+        plan.get("healthUrl"),
+        registry_entry.get("model"),
+        attempts=probe_cfg.get("attempts"),
+        interval=probe_cfg.get("intervalSeconds"),
+    )
     logs_out.append({
         "phase": "probing",
         "status": "done" if health.get("ok") else "error",
@@ -1977,10 +2119,11 @@ def deploy_stream(plan, approval_id):
         }
     }
 
-    if _image_exists_locally(protocol["image"]):
+    plan_image = plan.get("image") or protocol["image"]
+    if _image_exists_locally(plan_image):
         pull = {
             "returnCode": 0,
-            "stdout": f"Image {protocol['image']} already present locally - skipped registry pull.",
+            "stdout": f"Image {plan_image} already present locally - skipped registry pull.",
             "stderr": "",
         }
     else:
@@ -2035,7 +2178,13 @@ def deploy_stream(plan, approval_id):
         }
     }
 
-    health = _probe_model_endpoint(plan.get("healthUrl"), registry_entry.get("model"))
+    probe_cfg = plan.get("healthProbe") or {}
+    health = _probe_model_endpoint(
+        plan.get("healthUrl"),
+        registry_entry.get("model"),
+        attempts=probe_cfg.get("attempts"),
+        interval=probe_cfg.get("intervalSeconds"),
+    )
     logs_out.append({
         "phase": "probing",
         "status": "done" if health.get("ok") else "error",

@@ -1381,7 +1381,9 @@ export function App() {
       const plan = await postJson("/api/warsat/plan", {
         protocolId,
         modelRef,
-        modelPath: item.modelPath || (protocolId === "llamaCppGgufServer" ? modelRef : undefined),
+        // Only a real local file/folder goes in modelPath; for HF repos the
+        // backend resolves a GGUF file and lets llama.cpp download it.
+        modelPath: item.modelPath || undefined,
         strengthProfile: profile,
         hostPort: port,
         role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),

@@ -189,10 +189,10 @@ def _runtime_options(provider_id, model_id, model, purpose):
     options = []
     if provider in {"ollama"}:
         options.append({"protocolId": "ollamaOpenaiServer", "label": "Run through Ollama"})
+    if "gguf" in blob:
+        options.append({"protocolId": "llamaCppGgufServer", "label": "Run GGUF with llama.cpp"})
     if "/" in str(model_id) or provider in {"huggingface", "hf"} or model.get("open_weights") or model.get("openWeights"):
         options.append({"protocolId": "vllmCudaOpenai", "label": "Run through vLLM"})
-    if "gguf" in blob:
-        options.append({"protocolId": "llamaCppGgufServer", "label": "Run mounted GGUF with llama.cpp"})
     if not options:
         options.append({"protocolId": "apiOnly", "label": "Register as provider API"})
     if purpose == "embeddings":
@@ -464,10 +464,21 @@ def _normalize_hf_model(hf_model):
 
     is_gguf = "gguf" in blob
     has_open_weights = "/" in model_id  # HF models with org/name are usually open weights
+    # GGUF-only uploads (quant repos) have no transformers weights, so vLLM
+    # can never load them — offering it just produces crash-looping deploys.
+    library = str(hf_model.get("library_name") or "").lower()
+    tag_blob = " ".join(str(tag).lower() for tag in tags)
+    has_transformers_weights = (
+        library == "transformers"
+        or "safetensors" in tag_blob
+        or "pytorch" in tag_blob
+        or bool(architecture)
+    )
+    gguf_only = is_gguf and not has_transformers_weights
     runtime_options = []
     if is_gguf:
         runtime_options.append({"protocolId": "llamaCppGgufServer", "label": "Run GGUF with llama.cpp"})
-    if has_open_weights and purpose not in {"embeddings", "reranker"}:
+    if has_open_weights and not gguf_only and purpose not in {"embeddings", "reranker"}:
         runtime_options.append({"protocolId": "vllmCudaOpenai", "label": "Run through vLLM"})
     if not runtime_options:
         runtime_options.append({"protocolId": "apiOnly", "label": "Register as provider API"})
