@@ -338,7 +338,7 @@ function jumpToLatest() {
           </div>
         </div>
         <div className="cc-status-area">
-          <div className="cc-status-item">
+          <div className="cc-status-item" style={{ cursor: "pointer" }} onClick={() => setModelPanelOpen(true)} title="Click to change model">
             <Cpu size={14} /> <span>{displayModelName(selectedModelObject, models)}</span>
           </div>
           <div className="cc-status-item" title={`${privacyTitle}: ${privacyDetail}`}>

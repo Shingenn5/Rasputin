@@ -159,11 +159,6 @@ export function App() {
     if (authenticated && ready && !onboarded && models.length > 0) setOnboarded(true);
   }, [authenticated, ready, onboarded, models.length, setOnboarded]);
 
-  const selectedModelObject = useMemo(
-    () => models.find((model) => model.key === selectedModel) || models.find((model) => model.role === "main") || models[0],
-    [models, selectedModel],
-  );
-
   const visibleModels = useMemo(() => {
     const shown = models.filter((model) => isUserFacingModel(model, testingMode));
     const selected = models.find((model) => model.key === selectedModel);
@@ -172,6 +167,19 @@ export function App() {
     }
     return shown.length ? shown : models.filter((model) => model.key !== "local-embeddings");
   }, [models, selectedModel, testingMode]);
+
+  const selectedModelObject = useMemo(
+    () => models.find((model) => model.key === selectedModel) || visibleModels.find((model) => model.role === "main") || visibleModels[0] || null,
+    [models, selectedModel, visibleModels],
+  );
+
+  useEffect(() => {
+    if (!testingMode && selectedModel === "dry-run") {
+      const fallback = models.find((m) => m.role === "main" && m.key !== "dry-run")
+        || models.find((m) => m.key !== "dry-run" && m.role !== "embeddings");
+      setSelectedModel(fallback ? fallback.key : null);
+    }
+  }, [testingMode, selectedModel, models, setSelectedModel]);
 
   const activeWorkspaceName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const activeWorkspaceEntry = (workspace.workspaces || []).find(
