@@ -165,7 +165,9 @@ export function App() {
     if (selected && selected.key !== "local-embeddings" && !shown.some((model) => model.key === selected.key)) {
       return [selected, ...shown];
     }
-    return shown.length ? shown : models.filter((model) => model.key !== "local-embeddings");
+    return shown.length ? shown : models.filter(
+      (model) => model.key !== "local-embeddings" && (testingMode || model.key !== "dry-run"),
+    );
   }, [models, selectedModel, testingMode]);
 
   const selectedModelObject = useMemo(
