@@ -5,7 +5,7 @@ import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 import { themeOptions } from "../../lib/constants.js";
 
-export function GeneralSettings({ setTheme }) {
+export function GeneralSettings({ setTheme, testingMode, updateTestingMode }) {
   const general = useSettingsStore(state => state.general);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.general);
@@ -147,12 +147,13 @@ export function GeneralSettings({ setTheme }) {
                   <div>
                     <span className="fw-medium">Testing Mode</span>
                     <Badge bg="" className="badge-soft-warn ms-2">Dry-Run</Badge>
+                    <Form.Text className="d-block text-muted">Routes chat to a mock model with canned replies. Applies immediately.</Form.Text>
                   </div>
-                  <Form.Check 
-                    type="switch" 
+                  <Form.Check
+                    type="switch"
                     id="testing-mode-switch"
-                    checked={!!formData?.testingMode}
-                    onChange={() => handleToggle("testingMode")}
+                    checked={!!testingMode}
+                    onChange={() => updateTestingMode?.(!testingMode)}
                   />
                 </div>
               </div>

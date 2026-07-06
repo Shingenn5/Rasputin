@@ -27,7 +27,7 @@ def defaults():
     return {
         "theme": "rasputin-light",
         "sidebarCollapsed": False,
-        "selectedModel": "dry-run",
+        "selectedModel": "",
         "testingMode": False,
         "activeWorkspace": ".",
         "skill": "general",
@@ -62,6 +62,10 @@ def _coerce(data):
     if not isinstance(merged.get("activeChatFolder"), str):
         merged["activeChatFolder"] = "all"
     merged["sidebarCollapsed"] = bool(merged["sidebarCollapsed"])
+    # The dry-run mock model is only selectable while testing mode is on;
+    # never resurrect it from stored preferences otherwise.
+    if not merged["testingMode"] and merged["selectedModel"] == "dry-run":
+        merged["selectedModel"] = ""
     return merged
 
 

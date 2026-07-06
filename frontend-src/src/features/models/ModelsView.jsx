@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -77,7 +77,7 @@ export function ModelsView({
   selectedModel,
   setSelectedModel,
   testingMode,
-  setTestingMode,
+  updateTestingMode,
   runModelAction,
   loadModels,
   scanGguf,
@@ -227,16 +227,6 @@ export function ModelsView({
   /* stats */
   const totalModels = (models || []).length;
   const healthyCount = (models || []).filter(m => isModelHealthy(m)).length;
-
-  const updateTestingMode = useCallback((on) => {
-    setTestingMode(!!on);
-    if (on && models?.some(m => m.key === "dry-run")) { setSelectedModel?.("dry-run"); return; }
-    if (!on && selectedModel === "dry-run") {
-      const fb = (models || []).find(m => m.role === "main" && m.key !== "dry-run")
-        || (models || []).find(m => m.key !== "dry-run" && m.role !== "embeddings");
-      if (fb) setSelectedModel?.(fb.key);
-    }
-  }, [models, selectedModel, setSelectedModel, setTestingMode]);
 
   return (
     <section className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">

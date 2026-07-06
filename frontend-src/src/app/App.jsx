@@ -91,7 +91,7 @@ export function App() {
   const [modelCatalog, setModelCatalog] = useState({ items: [], categories: [], runtimes: [], source: {} });
   const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
   const [modelCatalogError, setModelCatalogError] = useState("");
-  const [selectedModel, setSelectedModel] = useState("main-vllm");
+  const [selectedModel, setSelectedModel] = useState(null);
   const [testingMode, setTestingMode] = useState(false);
   const [taskMode, setTaskMode] = useState("chat");
   const [modeModelOverrides, setModeModelOverrides] = useState({});
@@ -173,13 +173,30 @@ export function App() {
     [models, selectedModel, visibleModels],
   );
 
-  useEffect(() => {
-    if (!testingMode && selectedModel === "dry-run") {
-      const fallback = models.find((m) => m.role === "main" && m.key !== "dry-run")
-        || models.find((m) => m.key !== "dry-run" && m.role !== "embeddings");
+  const updateTestingMode = useCallback((on) => {
+    setTestingMode(!!on);
+    if (on) {
+      if (models.some((model) => model.key === "dry-run")) setSelectedModel("dry-run");
+      return;
+    }
+    if (selectedModel === "dry-run") {
+      const fallback = models.find((model) => model.role === "main" && model.key !== "dry-run")
+        || models.find((model) => isUserFacingModel(model, false));
       setSelectedModel(fallback ? fallback.key : null);
     }
-  }, [testingMode, selectedModel, models, setSelectedModel]);
+  }, [models, selectedModel]);
+
+  // Keep the selection valid: never the dry-run model while testing mode is
+  // off, and never a key that doesn't resolve to a registered, visible model.
+  useEffect(() => {
+    if (!models.length) return;
+    const current = models.find((model) => model.key === selectedModel);
+    if (current && isUserFacingModel(current, testingMode)) return;
+    const fallback = models.find((model) => model.role === "main" && isUserFacingModel(model, testingMode))
+      || models.find((model) => isUserFacingModel(model, testingMode));
+    if (fallback) setSelectedModel(fallback.key);
+    else if (!testingMode && selectedModel === "dry-run") setSelectedModel(null);
+  }, [testingMode, selectedModel, models]);
 
   const activeWorkspaceName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const activeWorkspaceEntry = (workspace.workspaces || []).find(
@@ -406,7 +423,7 @@ export function App() {
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
     setSidebarCollapsed(localSidebarCollapsed === null ? !!prefs.sidebarCollapsed : localSidebarCollapsed);
     setTestingMode(!!prefs.testingMode);
-    setSelectedModel(prefs.selectedModel || "main-vllm");
+    setSelectedModel(!prefs.testingMode && prefs.selectedModel === "dry-run" ? null : prefs.selectedModel || null);
     setTaskMode(prefs.taskMode || "chat");
     setModeModelOverrides(prefs.modeModelOverrides || {});
     setSubagentCount(Math.max(0, Math.min(Number(prefs.subagents || 0), 4)));
@@ -1756,7 +1773,7 @@ export function App() {
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
         testingMode={testingMode}
-        setTestingMode={setTestingMode}
+        updateTestingMode={updateTestingMode}
         runModelAction={runModelAction}
         loadModels={loadModels}
         scanGguf={scanGguf}
@@ -1800,7 +1817,7 @@ export function App() {
         selectedModelObject={selectedModelObject}
         selectedModel={selectedModel}
         testingMode={testingMode}
-        setTestingMode={setTestingMode}
+        updateTestingMode={updateTestingMode}
         runModelAction={runModelAction}
         scanGguf={scanGguf}
         workspace={workspace}
