@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowUp,
   Bot,
   Brain,
   Check,
@@ -13,7 +14,6 @@ import {
   Pause,
   PanelLeftOpen,
   Play,
-  Send,
   Settings,
   ShieldCheck,
   SquareSlash,
@@ -647,7 +647,7 @@ export function HomeView(props) {
                   ))}
                 </div>
               )}
-              <div className="composer-shell">
+              <div className="composer-box">
                 {cmd && (
                   <div className="cmd-menu" data-testid="command-menu">
                     {cmd.path && (
@@ -700,15 +700,83 @@ export function HomeView(props) {
                 <textarea
                   id="objective"
                   ref={composerRef}
-                  className="cc-input ras-autogrow"
-                  rows={3}
+                  className="composer-input ras-autogrow"
+                  rows={2}
                   placeholder={objectivePlaceholder}
                   value={objective}
                   onChange={handleComposerChange}
                   onInput={resizeComposer}
                   onKeyDown={handleComposerKeyDown}
                 />
+                <div className="composer-toolbar">
+                  <div className="composer-tools">
+                    <button type="button" className="composer-icon-button" aria-label="Attach files" title="Attach files" onClick={openFilePicker}>
+                      <Paperclip size={16} />
+                    </button>
+                    <button type="button" className="composer-icon-button" aria-label="Open command menu" title="Commands ( / )" onClick={() => (cmd ? closeCmd(true) : openCmd(null))}>
+                      <SquareSlash size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      ref={modeButtonRef}
+                      className="composer-chip"
+                      data-testid="chat-mode-chip"
+                      title={`${activeMode.label}: ${activeMode.description}`}
+                      onClick={() => (cmd?.path === "mode" ? closeCmd(true) : openCmd("mode"))}
+                    >
+                      <Bot size={14} />
+                      <span>{activeMode.label}</span>
+                      <ChevronDown size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      className="composer-chip"
+                      data-testid="chat-reasoning-chip"
+                      title={`Reasoning effort: ${activeReasoning.label}. ${activeReasoning.description}`}
+                      onClick={() => (cmd?.path === "reasoning" ? closeCmd(true) : openCmd("reasoning"))}
+                    >
+                      <Brain size={14} />
+                      <span>{activeReasoning.label}</span>
+                      <ChevronDown size={12} />
+                    </button>
+                  </div>
+                  <div className="composer-actions">
+                    {latestActiveTask && (
+                      <button type="button" className="composer-icon-button composer-stop-round" aria-label="Stop latest task" title="Stop the running task" onClick={() => handleCancelTask(latestActiveTask.id)}>
+                        <Square size={14} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      ref={modelButtonRef}
+                      className="composer-chip composer-model-chip"
+                      data-testid="chat-model-chip"
+                      title={selectedModelHealthLine}
+                      onClick={() => (cmd?.path === "model" ? closeCmd(true) : openCmd("model"))}
+                    >
+                      <span className={`cc-model-dot status-${modelRuntimeStatus}`} aria-hidden="true" />
+                      <span className="composer-chip-model-name">{displayModelName(selectedModelObject, models)}</span>
+                      <ChevronDown size={12} />
+                    </button>
+                    <button
+                      id="sendBtn"
+                      className="composer-send-round"
+                      type="submit"
+                      disabled={!canSubmit || (!composerBusy && !healthy)}
+                      aria-disabled={!canSubmit || (!composerBusy && !healthy)}
+                      aria-label={composerBusy ? "Queue message" : "Send message"}
+                      title={!canSubmit ? "Enter a message" : composerBusy ? "A task is running - this message will queue and send when it finishes" : (disabledReason || "Send message")}
+                    >
+                      {composerBusy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+                    </button>
+                  </div>
+                </div>
               </div>
+              {(uiState.status !== 'idle' || composerStatus) && (
+                <div className={`composer-feedback ${uiState.status !== 'idle' ? `is-${uiState.status}` : "is-failed"}`}>
+                  {uiState.status !== 'idle' ? uiState.message : composerStatus}
+                </div>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -718,79 +786,6 @@ export function HomeView(props) {
                 tabIndex={-1}
                 onChange={handleFileInput}
               />
-              <div className="cc-input-actions">
-                <div className="composer-tools">
-                  <button type="button" className="composer-icon-button" aria-label="Attach files" title="Attach files" onClick={openFilePicker}>
-                    <Paperclip size={16} />
-                  </button>
-                  <button type="button" className="composer-icon-button" aria-label="Open command menu" title="Commands ( / )" onClick={() => (cmd ? closeCmd(true) : openCmd(null))}>
-                    <SquareSlash size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    ref={modeButtonRef}
-                    className="composer-chip"
-                    data-testid="chat-mode-chip"
-                    title={`${activeMode.label}: ${activeMode.description}`}
-                    onClick={() => (cmd?.path === "mode" ? closeCmd(true) : openCmd("mode"))}
-                  >
-                    <Bot size={14} />
-                    <span>{activeMode.label}</span>
-                    <ChevronDown size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    ref={modelButtonRef}
-                    className="composer-chip"
-                    data-testid="chat-model-chip"
-                    title={selectedModelHealthLine}
-                    onClick={() => (cmd?.path === "model" ? closeCmd(true) : openCmd("model"))}
-                  >
-                    <span className={`cc-model-dot status-${modelRuntimeStatus}`} aria-hidden="true" />
-                    <span className="composer-chip-model-name">{displayModelName(selectedModelObject, models)}</span>
-                    <ChevronDown size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    className="composer-chip"
-                    data-testid="chat-reasoning-chip"
-                    title={`Reasoning effort: ${activeReasoning.label}. ${activeReasoning.description}`}
-                    onClick={() => (cmd?.path === "reasoning" ? closeCmd(true) : openCmd("reasoning"))}
-                  >
-                    <Brain size={14} />
-                    <span>{activeReasoning.label}</span>
-                    <ChevronDown size={12} />
-                  </button>
-                </div>
-                <div className="composer-actions">
-                  {uiState.status !== 'idle' && (
-                    <div className={`composer-feedback is-${uiState.status}`}>
-                      {uiState.message}
-                    </div>
-                  )}
-                  {composerStatus && uiState.status === 'idle' && (
-                    <div className="composer-feedback is-failed">{composerStatus}</div>
-                  )}
-                  {latestActiveTask && (
-                    <button className="cc-quick-action-chip composer-stop" type="button" onClick={() => handleCancelTask(latestActiveTask.id)}>
-                      <Square size={14} />
-                      Stop
-                    </button>
-                  )}
-                  <button
-                    id="sendBtn"
-                    className="w2-button w2-button-primary composer-send"
-                    type="submit"
-                    disabled={!canSubmit || (!composerBusy && !healthy)}
-                    aria-disabled={!canSubmit || (!composerBusy && !healthy)}
-                    aria-label={composerBusy ? "Queue message" : "Send message"}
-                    title={!canSubmit ? "Enter a message" : composerBusy ? "A task is running - this message will queue and send when it finishes" : (disabledReason || "Send message")}
-                  >
-                    {composerBusy ? <ListPlus size={14} /> : <Send size={14} />}
-                    {composerBusy ? " Queue" : " Send"}
-                  </button>
-                </div>
-              </div>
 
               {/* Render panels if open */}
               {modePanelOpen && (

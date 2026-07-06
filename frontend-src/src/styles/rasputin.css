@@ -12790,3 +12790,88 @@ textarea.cc-input.ras-autogrow {
   .composer-chip-model-name { max-width: 90px; }
   .composer-tools { gap: 6px; }
 }
+
+/* =========================================================================
+   COMPOSER BOX — textarea + toolbar contained in one input pill
+   ========================================================================= */
+
+.composer-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border: 1px solid var(--cc-border);
+  border-radius: 16px;
+  background: var(--cc-surface);
+  box-shadow: var(--cc-shadow);
+  transition: border-color 0.15s ease;
+}
+
+.composer-box:focus-within {
+  border-color: var(--cc-accent);
+}
+
+.composer-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--cc-text);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  padding: 14px 16px 4px;
+  resize: none;
+  min-height: 52px;
+  max-height: 220px;
+}
+
+.composer-input:focus {
+  outline: none;
+}
+
+.composer-input::placeholder {
+  color: var(--cc-muted);
+}
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 10px;
+}
+
+.composer-send-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--cc-accent);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  flex: 0 0 auto;
+}
+
+.composer-send-round:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.composer-send-round:disabled {
+  background: var(--cc-border);
+  color: var(--cc-muted);
+  cursor: not-allowed;
+}
+
+.composer-stop-round {
+  border-color: var(--ras-danger);
+  color: var(--ras-danger);
+}
+
+.composer-model-chip {
+  font-weight: 500;
+  color: var(--cc-muted);
+}
