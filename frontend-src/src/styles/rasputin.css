@@ -10578,7 +10578,44 @@ button.helper-row:hover {
   display: flex;
   flex-direction: column;
   padding: 32px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cc-chat-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.cc-thread-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 4px 24px;
+}
+
+.cc-jump-latest {
+  align-self: center;
+  margin: 4px 0 12px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--cc-border);
+  background-color: var(--cc-surface);
+  color: var(--cc-text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cc-jump-latest:hover {
+  border-color: var(--cc-accent);
 }
 
 .cc-workspace-selector {

@@ -118,7 +118,6 @@ const quickPrompts = [
 
 export function HomeView(props) {
   const {
-    activeWorkspaceName,
     view,
     selectedModel,
     selectedModelObject,
@@ -584,13 +583,6 @@ export function HomeView(props) {
   };
 
   const canSubmit = (objective.trim() && !objective.trim().startsWith("/")) || attachments.length > 0;
-  const knowledgeGroup = activeMode.value === "research"
-    ? "research"
-    : ["analyze", "organize", "write"].includes(activeMode.value)
-      ? "documents"
-      : activeMode.value === "code"
-        ? "coding"
-        : "general";
 
   return (
     <section className={`cc-layout app-view home-view tw ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
@@ -643,9 +635,33 @@ export function HomeView(props) {
         )}
         {/* Content Area */}
         <div className="cc-content-area">
-          {/* Quick Action Center */}
-          <div className="cc-quick-action-center">
-            <h1 className="cc-objective-title">What is our objective?</h1>
+          <div className="cc-chat-column">
+            {orderedHomeTasks.length === 0 ? (
+              <div className="cc-quick-action-center">
+                <h1 className="cc-objective-title">What is our objective?</h1>
+              </div>
+            ) : (
+              <div className="cc-thread-scroll" aria-live="polite" ref={threadScrollRef} onScroll={handleThreadScroll}>
+                <div className="thread-list">
+                  {orderedHomeTasks.map((task) => (
+                    <TaskThread
+                      key={task.id}
+                      task={task}
+                      models={models}
+                      cancelTask={handleCancelTask}
+                      pauseTask={handlePauseTask}
+                      resumeTask={handleResumeTask}
+                      openTaskDetails={openTaskDetails}
+                    />
+                  ))}
+                </div>
+                {hasNewActivity && (
+                  <button type="button" className="cc-jump-latest" onClick={jumpToLatest}>
+                    Jump to latest
+                  </button>
+                )}
+              </div>
+            )}
 
             <form id="taskForm" className="cc-input-container" onSubmit={handleSendTask}>
               {queuedMessages.length > 0 && (
@@ -860,85 +876,6 @@ export function HomeView(props) {
             </form>
           </div>
         </div>
-
-        {/* Context Sidebar */}
-        <aside className="cc-sidebar">
-          <div className="cc-sidebar-section">
-            <h3 className="cc-sidebar-section-title">Recent Activity</h3>
-            <div className="thread-list" aria-live="polite" style={{ padding: 0 }} ref={threadScrollRef} onScroll={handleThreadScroll}>
-              {orderedHomeTasks.length === 0 && (
-                <div className="cc-sidebar-item">
-                  <p>No recent activity in this chat.</p>
-                </div>
-              )}
-              {orderedHomeTasks.map((task) => (
-                <TaskThread
-                  key={task.id}
-                  task={task}
-                  models={models}
-                  cancelTask={handleCancelTask}
-                  pauseTask={handlePauseTask}
-                  resumeTask={handleResumeTask}
-                  openTaskDetails={openTaskDetails}
-                />
-              ))}
-            </div>
-            {hasNewActivity && (
-              <button type="button" className="tiny-action" onClick={jumpToLatest}>
-                Jump to latest
-              </button>
-            )}
-          </div>
-
-          <div className="cc-sidebar-section">
-            <h3 className="cc-sidebar-section-title">Active Knowledge</h3>
-            {knowledgeGroup === "research" ? (
-              <>
-                <div className="cc-sidebar-item">
-                  <h4>Graph Status</h4>
-                  <p>Knowledge graph active and indexing...</p>
-                </div>
-                <div className="cc-sidebar-item">
-                  <h4>Web Access</h4>
-                  <p>Enabled for deep research tasks.</p>
-                </div>
-              </>
-            ) : knowledgeGroup === "documents" ? (
-              <>
-                <div className="cc-sidebar-item">
-                  <h4>Mounted Workspace</h4>
-                  <p>{activeWorkspaceName || "No workspace selected"}</p>
-                </div>
-                <div className="cc-sidebar-item">
-                  <h4>Document Index</h4>
-                  <p>Ready for summarization.</p>
-                </div>
-              </>
-            ) : knowledgeGroup === "coding" ? (
-              <>
-                <div className="cc-sidebar-item">
-                  <h4>Target Repository</h4>
-                  <p>{activeWorkspaceName || "None"}</p>
-                </div>
-                <div className="cc-sidebar-item">
-                  <h4>Code Tools</h4>
-                  <p>Read/Write enabled.</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="cc-sidebar-item">
-                  <h4>Current Mode</h4>
-                  <p>{activeMode.label}</p>
-                </div>
-                <div className="cc-sidebar-item">
-                  <h4>Local Context</h4>
-                  <p>{activeWorkspaceName || "None"}</p>
-                </div>
-              </>
-            )}
-          </div>
-        </aside>
       </div>
     </section>
   );
