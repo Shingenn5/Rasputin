@@ -36,6 +36,7 @@ async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"
         raise RuntimeError(str(exc)) from None
 
 from backend.engine import context as context_governor
+from backend.engine import prompt_security
 from backend.rag import memory as memory
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
@@ -835,6 +836,20 @@ class AgentHub:
 
     async def governed_chat(self, task, phase, role, sections, tools=None):
         model_key = self.phase_model(task, role)
+        # Prepended here (not by each phase's own section list) so the policy
+        # is present for every phase, including any added later, and can't be
+        # dropped by a call site forgetting it. required+priority=0 means
+        # compose_prompt never trims or omits it.
+        sections = [
+            context_governor.section(
+                "untrusted_content_policy",
+                "Data-handling policy",
+                prompt_security.UNTRUSTED_CONTEXT_POLICY,
+                required=True,
+                priority=0,
+            ),
+            *sections,
+        ]
         bundle = context_governor.compose_prompt(model_key, phase, sections)
         trace = bundle["trace"]
         task.seen("context_budget", trace)
@@ -886,7 +901,10 @@ class AgentHub:
                             "role": "tool",
                             "tool_call_id": tc["id"],
                             "name": tc["name"],
-                            "content": json.dumps(result, ensure_ascii=False)
+                            "content": prompt_security.untrusted_context_message(
+                                f"tool result: {tc['name']}",
+                                json.dumps(result, ensure_ascii=False),
+                            )
                         })
                         self._finish_step(task, step, "done")
                     except Exception as exc:
@@ -1317,7 +1335,7 @@ class AgentHub:
             content = str(snippet.get("content") or "")[:900]
             marker = " [truncated]" if snippet.get("truncated") else ""
             lines.append(f"[{path}{marker}]\n{content}")
-        return "\n".join(lines)
+        return prompt_security.untrusted_context_message("workspace file contents", "\n".join(lines))
 
     def format_context(self, context, max_items=3, max_chars=450):
         hits = context.get("hits", [])
@@ -1326,7 +1344,7 @@ class AgentHub:
         lines = []
         for h in hits[:max_items]:
             lines.append(f"[{h['source']}#{h['chunk']} score={h['score']}]\n{h['text'][:max_chars]}")
-        return "\n\n".join(lines)
+        return prompt_security.untrusted_context_message("local RAG search results", "\n\n".join(lines))
 
     def format_graph(self, graph):
         edges = graph.get("edges", [])
@@ -1336,7 +1354,7 @@ class AgentHub:
         for edge in edges[:10]:
             suffix = f" ({edge.get('why')})" if edge.get("why") else ""
             lines.append(f"{edge['source']} --{edge['relation']}--> {edge['target']}{suffix}")
-        return "\n".join(lines)
+        return prompt_security.untrusted_context_message("workspace knowledge graph", "\n".join(lines))
 
     def format_memory(self, recall):
         items = recall.get("items", [])
@@ -1346,7 +1364,7 @@ class AgentHub:
         for item in items[:4]:
             content = str(item.get("content"))[:420]
             lines.append(f"- {item.get('kind')}: {content}")
-        return "\n".join(lines)
+        return prompt_security.untrusted_context_message("saved memory", "\n".join(lines))
 
     def format_task_sources(self, sources):
         if not sources:
@@ -1360,7 +1378,7 @@ class AgentHub:
         for edge in graph[:10]:
             suffix = f" ({edge.get('why')})" if edge.get("why") else ""
             lines.append(f"{edge.get('source')} --{edge.get('relation')}--> {edge.get('target')}{suffix}")
-        return "\n".join(lines)
+        return prompt_security.untrusted_context_message("workspace knowledge graph", "\n".join(lines))
 
     def compact_graph_edges(self, graph):
         out = []
