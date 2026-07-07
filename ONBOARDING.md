@@ -1,115 +1,258 @@
 # Welcome to Rasputin
 
-Welcome to the team! This document is designed to get you up to speed on the **Rasputin** architecture, the **WarSat** deployment layer, and how to start shipping code during your first week.
+Welcome to the team! This document gets you up to speed on the **Rasputin**
+architecture, the **WarSat** deployment layer, and how to start shipping
+code during your first week. It was rewritten on 2026-07-06 against the
+actual code (not the previous roadmap) — if something here drifts from what
+you're looking at, trust the code and fix this doc.
 
 ---
 
 ## 1. Project Overview
 
-**Rasputin** is a local-first, autonomous AI orchestration system. It manages long-running agentic loops, contextual memory, and workspace routing.
+**Rasputin** is a local-first, autonomous AI workbench: it runs agentic
+tool-calling loops (chat, plan, execute, reflect), keeps a persistent
+RAG + knowledge-graph memory over your workspaces, and gates every
+file/shell/docker/network action behind an explicit permission model built
+for one operator running this on their own machine.
 
-**WarSat** is the operational deployment layer of Rasputin. It is responsible for discovering, downloading, validating, containerizing, and deploying AI models. 
+**WarSat** is Rasputin's model-runtime deployment layer. It discovers,
+downloads, validates, containerizes, and deploys AI models (local
+llama.cpp/GGUF, vLLM, or any OpenAI-compatible endpoint) through the host's
+Docker socket.
 
 > [!IMPORTANT]
-> **Core Rule**: WarSat acts as the single source of truth for all infrastructure-changing operations. No model can be downloaded or deployed silently outside of WarSat. Every action requires an audit log, resource estimation, and rollback capability.
+> **Core rule**: WarSat is the single source of truth for infrastructure
+> changes. No model gets downloaded or deployed silently outside of it —
+> every action is audit-logged, resource-estimated, and reversible.
+
+> [!IMPORTANT]
+> **Read `THREAT_MODEL.md` at the repo root before writing anything
+> security-adjacent** (auth, permissions, tool dispatch, sandboxing). It's
+> short, current, and includes an honest "Known Gaps" section — most
+> notably that the login/session path is currently a no-op (see §5 below).
+> Don't assume the login screen protects anything until that's resolved.
 
 ---
 
 ## 2. Tech Stack
 
-### 🎨 Frontend
-- **Framework**: React 18 & Vite
-- **State Management**: Zustand
-- **Data Fetching**: TanStack React Query
-- **Styling**: React-Bootstrap & Vanilla CSS
+### Frontend
+- **Framework**: React 18 + Vite, plain JS/JSX (not TypeScript)
+- **State**: Zustand
+- **Data fetching**: TanStack React Query
+- **Styling**: hand-written vanilla CSS (`frontend-src/src/styles/`) —
+  Tailwind/shadcn were tried and reverted; don't reintroduce them
 - **Icons**: Lucide React
-- **Entry point**: `frontend-src/index.html`
+- **Entry point**: `frontend-src/index.html` → `frontend-src/src/app/App.jsx`
 
-### ⚙️ Backend
-- **Framework**: FastAPI (Python 3.12)
-- **Server**: Uvicorn
-- **AI/LLM Integrations**: HuggingFace Hub, OpenAI-compatible APIs, local `llama.cpp` containers.
-- **Data Layer**: SQLite (`data/rasputin.db`)
-- **Execution Sandboxes**: Ephemeral Docker Containers (`rasputin-sandbox`)
+### Backend
+- **Framework**: FastAPI (Python 3.12), Uvicorn
+- **Model integrations**: HuggingFace Hub, OpenAI/Anthropic/Gemini-compatible
+  APIs, local llama.cpp containers via WarSat
+- **Data layer**: SQLite (`data/rasputin.db`) via `backend/core/runtime_store.py`
+  — almost everything (sessions, messages, memory, skills, auth, mount
+  requests) lives there now; legacy flat JSON files under `data/` are only
+  read once as a migration seed
+- **Execution surfaces**: two, with different isolation properties — see
+  `THREAT_MODEL.md` §5. Skills run in ephemeral Docker containers
+  (`rasputin-sandbox`); `shell_exec`/git tools run as a direct subprocess
+  inside Rasputin's own backend, gated by per-workspace **Trusted Dev Mode**
 - **Entry point**: `backend/main.py`
 
 ---
 
-## 3. Directory Structure & Architecture
+## 3. Directory Structure
 
-Understanding where things live is half the battle:
-
-* `frontend-src/src/features/` - The core UI modules (WarSat, Workspaces, Settings, Trials, Archive).
-* `backend/` - The Python logic.
-  * `main.py` - FastAPI routes.
-  * `engine/agent.py` - The core AI orchestration and autonomous tool loop.
-  * `mcp/` - Model Context Protocol servers and the REST API relay.
-  * `core/sandbox.py` - Ephemeral Docker Sandbox engine for safely executing Action Skills.
-  * `warsat/providers/` - Standardized deployment interfaces (Docker, Kubernetes, local).
-  * `rag/` - Graphify memory and vector-search engine with background token consolidation.
-  * `trials/` - The evaluation engine for testing deployed models.
-* `data/` - The local database. Almost all state (sessions, messages, memory, skills) is stored in the SQLite database (`data/rasputin.db`), superseding the legacy flat JSON files.
-* `sandbox/` - The HTTP API clients injected into Ephemeral Docker containers.
+- `frontend-src/src/features/` — UI modules: WarSat, Workspaces, Settings,
+  Trials, Archive, Activity.
+- `backend/`
+  - `main.py` — FastAPI app assembly, startup, request-timeout middleware.
+  - `api/` — route handlers, thin; real logic lives in `core`/`engine`/`rag`/`mcp`.
+  - `engine/agent.py` — the agentic tool-loop (`AgentHub.governed_chat` is
+    the one function every phase funnels through) and context assembly.
+  - `engine/prompt_security.py` — the untrusted-content wrapper (see
+    `THREAT_MODEL.md` §3) — read this before touching anything that feeds
+    retrieved content into a prompt.
+  - `mcp/` — Model Context Protocol relay (`relay.py`), the fixed tool
+    registry (`tools.py`, 25 tool IDs), and the real tool implementations
+    (`layer.py` — this is where `web_search`, `shell_exec`, `fs_*`, `git_*`
+    actually live).
+  - `core/security.py` / `core/approvals.py` — the permission-flag and
+    per-action-approval system.
+  - `core/workspace.py` — workspace records, Trusted Dev Mode flag, host
+    folder mount requests (the docker-compose override that lets an
+    approved host folder show up as a bind mount on restart).
+  - `core/host_fs.py` — browses the *host* filesystem from inside the
+    (usually containerized) backend, for the folder-picker UI.
+  - `core/auth.py` — password hashing, login, sessions. **Currently a
+    no-op boundary** — see `THREAT_MODEL.md` §6.1 before building on it.
+  - `core/sandbox.py` — spawns the ephemeral Docker sandbox for Skills.
+  - `warsat/` — model acquisition/deployment providers (Docker, etc.).
+  - `rag/vector.py`, `rag/graph.py` — the vector index and AST-based
+    code-structure graph, each with a cached stats summary so `/stats`
+    endpoints never re-read the full (potentially huge) index blob.
+  - `trials/` — blind model-comparison/scoring engine.
+- `data/` — SQLite DB + generated files (`docker-compose.mounts.yml`,
+  first-run `auth.json` seed). Gitignored — never commit anything from here.
+- `docs/` — planning/status docs. Two worth knowing:
+  `docs/CODING_AGENT_COMPETITIVENESS_PLAN.md` (why we're building what
+  we're building) and `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`
+  (the actual checkbox list of what's done vs. not — check this before
+  assuming a feature doesn't exist yet).
 
 ---
 
 ## 4. Local Development Setup
 
-We use a decoupled frontend/backend setup for local development.
+Rasputin is **Docker-first** — that's how it's actually run day to day.
 
-**Terminal 1 (Backend):**
+**Fastest path**, from the repo root:
+```powershell
+# Windows
+.\rasputin.ps1 start                  # add -EnableWarSat for the Docker control layer
+.\rasputin.ps1 credentials            # fetch the generated first-run admin login
+```
 ```bash
-# From the project root
+# macOS/Linux
+./rasputin.sh start
+./rasputin.sh credentials
+```
+This wraps `docker compose up --build -d` and automatically layers in
+`data/docker-compose.mounts.yml` if it exists (generated when someone
+approves a host folder from the Workspaces tab — see `core/workspace.py`).
+
+**Native / decoupled dev loop** (faster iteration, no rebuild-on-every-change):
+```powershell
+# Terminal 1 — backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn backend.main:app --reload --port 8787
 ```
-
-**Terminal 2 (Frontend):**
-```bash
-# From the project root
+```powershell
+# Terminal 2 — frontend
 cd frontend-src
 npm install
 npm run dev
 ```
+Point `RASPUTIN_DATA_DIR` at a scratch directory if you want a native run
+that doesn't touch your real `data/` folder — several backend modules
+(`workspace.py`, `runtime_store.py`, `auth.py`) read this env var and fall
+back to `data/` only when it's unset.
 
 ---
 
-## 5. Security & Action Skills
+## 5. Security Model — read this section, not just skim it
 
-One of the most critical parts of Rasputin is how it handles dynamically generated code or scripts. We **never** execute Action Skills directly on the host machine. 
+Full detail lives in `THREAT_MODEL.md`; the load-bearing points:
 
-Whenever the agent triggers an Action Skill (e.g., `excel_data_entry`), Rasputin pipes the script into an **Ephemeral Docker Sandbox** (`rasputin-sandbox`). The script communicates back to Rasputin using an injected HTTP API Client (`sandbox/client.py`) before the container is instantly destroyed. Keep this security boundary in mind when writing new skills!
+- **Operating assumption**: one trusted operator, local machine. The thing
+  actively defended against is *retrieved content* trying to act as
+  instructions (prompt injection), not the operator.
+- **Permission flags** (`backend/core/security.py`): flat booleans —
+  `allow_shell_execution` and `allow_docker_control` are **off** by
+  default; `allow_remote_models` (Privacy Lock) is **off** by default.
+- **Trusted Dev Mode**: a per-workspace opt-in that lets a workspace skip
+  the per-action approval queue for file/git writes, and is the *only* way
+  to unlock `shell_exec` at all. Scoped to that workspace's directory;
+  every call is still audit-logged and still runs through deny-pattern
+  shell guardrails.
+- **Untrusted-content wrapper** (`backend/engine/prompt_security.py`): RAG
+  hits, graph evidence, saved memory, workspace file contents, and every
+  tool-call result get fenced in a labeled
+  `=== BEGIN/END UNTRUSTED CONTENT ===` block plus a standing
+  do-not-obey-this policy, applied centrally in `governed_chat` so no call
+  site can forget it. If you add a new source of retrieved/fetched text
+  into a prompt, wrap it the same way — check `prompt_security.py`'s
+  docstring for the reasoning.
+- **Known gap you need to know about (`THREAT_MODEL.md` §6.1)**:
+  `backend/core/auth.py`'s `login()`/`public_session()`/`require_user()`
+  currently grant an authenticated admin session unconditionally,
+  regardless of password or cookie. Real password hashing and session
+  infrastructure exist in the same file but aren't wired to those three
+  functions. Don't expose an instance beyond `127.0.0.1` assuming the
+  login form is doing anything, and don't build new "requires login"
+  features assuming `current_user()` is a real check — it isn't yet.
 
 ---
 
 ## 6. Testing Conventions
 
-Before pushing any code, you must ensure you haven't broken the orchestration loop or WarSat interfaces.
-
-We rely on a comprehensive suite of tests. Run them before every commit:
-
 ```bash
 python -m unittest discover tests
 ```
+or, isolated from your real data dir (this is how CI/native test runs work):
+```bash
+RASPUTIN_DATA_DIR=/tmp/rasputin-test RASPUTIN_ENV=test RASPUTIN_TEST_AUTH_BYPASS=1 \
+  python -m unittest tests.testBackendSmoke -v
+```
+`tests/testBackendSmoke.py` currently has **73 tests** (not 48 — check the
+`-v` output rather than trusting a number in a doc, this one included).
+Do not merge with a red suite.
 
-Currently, the `testBackendSmoke.py` suite contains 48 checks covering everything from Graph ingestion to tool standardization. **Do not merge code unless all tests pass (`OK`).**
+Docker-based harness: `.\scripts\test.ps1` (add `-Ui` for the Playwright
+E2E pass; `sh scripts/test.sh` on macOS/Linux).
+
+For anything touching the agent tool-loop, the pattern to copy is in
+`testBackendSmoke.py`: patch `backend.engine.agent._chat` with a scripted
+async function, and set `hub.mcp.call_tool` to a fake dispatcher, so you
+can assert on exactly what messages/tool calls the loop produces without
+needing a real model endpoint.
+
+For anything that needs to be observed running rather than unit-tested
+(a new tool, a new context section, a new UI flow), drive the **real**
+backend: start it natively against a scratch `RASPUTIN_DATA_DIR`, hit the
+actual HTTP routes with `curl`, and use the `dry-run` model (provider
+`"mock"` — it just echoes the fully composed prompt back as the reply,
+which is the fastest way to see exactly what's being sent to a model
+without needing a real API key).
 
 ---
 
-## 7. Your First Week (The Sandbox)
+## 7. Branch Topology
 
-To get you familiar with how data moves through Rasputin without risking breaking the core LLM execution loop, you will be owning **The Trials Engine & The WarSat UI**. 
+Check this yourself before trusting any doc (this repo's active branch
+changes fast): `git log -1 --format="%ci %h %s" <branch>` on the candidates.
+As of 2026-07-06: `codex/agentic-coding-loop-v1` is the active line;
+`main` is a clean ancestor of it (GitHub's default branch, `origin/HEAD`),
+so the normal flow is feature work on a `codex/*` branch, merged into
+`main` periodically. Several stale branches exist from earlier UI
+experiments (`claude-branch`, `claude-ui`, various `backup/*`) — don't
+assume any of them are current without checking their last commit date
+yourself.
 
-This is a low-risk, high-impact area. You will be writing isolated Python modules and connecting them to the React frontend.
+---
 
-**Your specific tasks:**
-1. **The Trials & Scorecard Evaluation Engine**: Look at `backend/trials/engine.py`. You'll be building out the logic to test newly deployed models against standard prompts and score their outputs (soon to be migrated into the Sandbox Execution model).
-2. **WarSat Deployment Dashboards**: Look at `frontend-src/src/features/warsat/WarsatView.jsx`. You'll be building the UI to display active model downloads and container health statuses. 
-3. **Workspace Capability Routing**: Look at `frontend-src/src/features/workspaces/WorkspacesView.jsx`. You'll be building the UI dropdowns that allow users to assign the models they deployed in WarSat to specific agents.
+## 8. Your First Week
+
+Check `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` before picking
+something — it's kept current with `[x]`/`[ ]` per item and is the real
+source of truth on what's done. As of this writing, the concrete open
+work is:
+
+1. **Stage 5 — coding task UX** (`frontend-src`, task detail view): a
+   per-file diff viewer, a touched-files list, a live terminal/log pane for
+   shell output, and a revert-file quick action. The tool-call stream and
+   step/plan list this builds on are already wired up (Stage 4b, done
+   2026-07-02) — you're adding views onto data that already flows.
+2. **Stage 6 — test-loop integration** (`backend/engine/agent.py`,
+   workspace settings): per-workspace test/build/lint command config,
+   running it after an edit, parsing pass/fail out of the output, and
+   feeding failures back into the next tool-loop iteration with a bounded
+   retry count separate from the general tool-call ceiling.
+
+Both stages have detailed sub-checklists in the implementation doc,
+difficulty-tagged (Easy/Medium/Hard/Very Hard) — start with an Easy item
+in whichever stage looks more interesting and work up.
 
 > [!TIP]
-> Always check `data/models.json` while working. This file is the absolute source of truth for what models are currently "active" in the system.
+> Read `THREAT_MODEL.md` §5 (the two execution surfaces) before touching
+> Stage 6's "run a test command" work — you're adding another path that
+> executes something on the operator's behalf, so it needs to go through
+> the same Trusted-Dev-Mode-gated `shell_exec`, not a new unsandboxed one.
 
-Welcome aboard! If you have questions about the core deployment engine or the orchestration loop, reach out to the Lead Developer.
+Welcome aboard. Questions about the orchestration loop, WarSat, or the
+security model — the answers are more likely to be sitting in
+`THREAT_MODEL.md` or `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` than anywhere
+else; start there before asking.
