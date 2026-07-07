@@ -477,8 +477,25 @@ export function HomeView(props) {
         window.requestAnimationFrame(() => modeButtonRef.current?.focus());
       }
     }
+    function closeOnOutsideClick(event) {
+      if (modePanelRef.current && !modePanelRef.current.contains(event.target)) {
+        setModePanelOpen(false);
+      }
+    }
     document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    // Some triggers open the panel from a mousedown handler (e.g. the command
+    // menu's "Configure modes..." item), so that same native mousedown is
+    // still bubbling toward document when this effect runs. Attaching the
+    // outside-click listener on the next tick keeps it from catching the
+    // tail of the very click that opened the panel.
+    const attachTimer = window.setTimeout(() => {
+      document.addEventListener("mousedown", closeOnOutsideClick);
+    }, 0);
+    return () => {
+      window.clearTimeout(attachTimer);
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
   }, [modePanelOpen]);
 
   useEffect(() => {
@@ -491,8 +508,20 @@ export function HomeView(props) {
         window.requestAnimationFrame(() => modelButtonRef.current?.focus());
       }
     }
+    function closeOnOutsideClick(event) {
+      if (modelPanelRef.current && !modelPanelRef.current.contains(event.target)) {
+        setModelPanelOpen(false);
+      }
+    }
     document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    const attachTimer = window.setTimeout(() => {
+      document.addEventListener("mousedown", closeOnOutsideClick);
+    }, 0);
+    return () => {
+      window.clearTimeout(attachTimer);
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
   }, [modelPanelOpen]);
 
   function handleThreadScroll(event) {

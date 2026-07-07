@@ -25,7 +25,7 @@ export function displayWorkspaceName(value) {
 }
 
 export function runtimeStatus(model) {
-  return model?.lastHealth?.status || model?.runtimeStatus || "unknown";
+  return model?.runtimeStatus || model?.lastHealth?.status || "unknown";
 }
 
 export function isUserFacingModel(model, testingMode) {

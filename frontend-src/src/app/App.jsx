@@ -35,6 +35,7 @@ import {
   displayWorkspaceName,
   isModelHealthy,
   isUserFacingModel,
+  runtimeStatus,
 } from "../lib/display.js";
 import { useSettingsStore } from "../features/settings/settingsStore.js";
 import { loadSettings } from "../features/settings/settingsActions.js";
@@ -173,9 +174,12 @@ export function App() {
     );
   }, [models, selectedModel, testingMode]);
 
+  // No implicit fallback here: a null/unmatched selectedModel means "no
+  // model selected" and should render that way, not silently show some
+  // other registered-but-possibly-inactive model as if it were chosen.
   const selectedModelObject = useMemo(
-    () => models.find((model) => model.key === selectedModel) || visibleModels.find((model) => model.role === "main") || visibleModels[0] || null,
-    [models, selectedModel, visibleModels],
+    () => models.find((model) => model.key === selectedModel) || null,
+    [models, selectedModel],
   );
 
   const updateTestingMode = useCallback((on) => {
@@ -193,14 +197,17 @@ export function App() {
 
   // Keep the selection valid: never the dry-run model while testing mode is
   // off, and never a key that doesn't resolve to a registered, visible model.
+  // A null selection is left alone -- that's the intentional "no model
+  // selected" state, not a stale key to recover from. And recovery only ever
+  // lands on a model that's actually running; otherwise it clears to null
+  // rather than silently pretending some inactive model is selected.
   useEffect(() => {
-    if (!models.length) return;
+    if (!models.length || selectedModel === null) return;
     const current = models.find((model) => model.key === selectedModel);
     if (current && isUserFacingModel(current, testingMode)) return;
-    const fallback = models.find((model) => model.role === "main" && isUserFacingModel(model, testingMode))
-      || models.find((model) => isUserFacingModel(model, testingMode));
-    if (fallback) setSelectedModel(fallback.key);
-    else if (!testingMode && selectedModel === "dry-run") setSelectedModel(null);
+    const isActive = (model) => isUserFacingModel(model, testingMode) && runtimeStatus(model) === "reachable";
+    const fallback = models.find((model) => model.role === "main" && isActive(model)) || models.find(isActive);
+    setSelectedModel(fallback ? fallback.key : null);
   }, [testingMode, selectedModel, models]);
 
   const activeWorkspaceName = workspace.activeName || displayWorkspaceName(workspace.activePath);
@@ -429,7 +436,7 @@ export function App() {
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
     setSidebarCollapsed(localSidebarCollapsed === null ? !!prefs.sidebarCollapsed : localSidebarCollapsed);
     setTestingMode(!!prefs.testingMode);
-    setSelectedModel(!prefs.testingMode && prefs.selectedModel === "dry-run" ? null : prefs.selectedModel || null);
+    setSelectedModel(pickBootModel(data.models || [], prefs));
     setTaskMode(prefs.taskMode || "chat");
     setReasoningMode(prefs.reasoning || "auto");
     setModeModelOverrides(prefs.modeModelOverrides || {});
@@ -2015,6 +2022,23 @@ export function App() {
 async function fetchModels() {
   const registry = await api("/api/model-registry");
   return registry.models || [];
+}
+
+// Boot-time model selection: never trust the last-used model key blindly,
+// since that runtime may no longer be active. Only restore it if it's still
+// reachable; otherwise auto-detect whichever model (if any) is already
+// running, preferring the main role. With nothing running, land on null so
+// the UI reads "no model selected" instead of pretending a stopped model
+// is ready.
+function pickBootModel(models, prefs) {
+  if (prefs.testingMode) {
+    return models.some((model) => model.key === "dry-run") ? "dry-run" : null;
+  }
+  const isActive = (model) => isUserFacingModel(model, false) && runtimeStatus(model) === "reachable";
+  const preferred = models.find((model) => model.key === prefs.selectedModel);
+  if (preferred && isActive(preferred)) return preferred.key;
+  const fallback = models.find((model) => model.role === "main" && isActive(model)) || models.find(isActive);
+  return fallback ? fallback.key : null;
 }
 
 async function fetchAuditEvents() {
