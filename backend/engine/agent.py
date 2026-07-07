@@ -27,7 +27,7 @@ async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"
     try:
         return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools, on_delta=on_delta, reasoning=reasoning)
     except Exception as exc:
-        security.audit.log("model_chat_failed", {
+        audit.log("model_chat_failed", {
             "key": model_key,
             "model": cfg.get("model"),
             "provider": cfg.get("provider"),
@@ -41,6 +41,7 @@ from backend.rag import memory as memory
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
 from backend.core import security as security
+from backend.core import audit as audit
 from backend.mcp import tools as tool_relay
 from backend.core import workspace
 
