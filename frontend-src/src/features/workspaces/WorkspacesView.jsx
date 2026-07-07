@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronRight,
+  Clock,
   Copy,
   Database,
   Eye,
@@ -17,11 +18,14 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  ShieldPlus,
   Activity,
   AlertTriangle,
-  ArrowLeft
+  ArrowLeft,
+  X
 } from "lucide-react";
 import { Modal, Button, Form, Table, Spinner, Badge, Alert, Card } from "react-bootstrap";
+import { postJson } from "../../api/client.js";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
@@ -40,6 +44,9 @@ export function WorkspacesView({
   previewMount,
   requestMount,
   mountPlan,
+  pendingMounts,
+  removePendingMount,
+  approvePendingMount,
   security,
   ragStats,
   graphStats,
@@ -73,6 +80,18 @@ export function WorkspacesView({
   const [isMounting, setIsMounting] = useState(false);
   const [mountSuccess, setMountSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Host folder picker: click through host folders instead of typing a path.
+  const [hostRoots, setHostRoots] = useState([]);
+  const [hostRootsMessage, setHostRootsMessage] = useState("");
+  const [hostListing, setHostListing] = useState(null); // {path, parent, entries}
+  const [hostBrowseLoading, setHostBrowseLoading] = useState(false);
+  const [hostBrowseError, setHostBrowseError] = useState("");
+  const [hostPathDraft, setHostPathDraft] = useState("");
+
+  // Pending Mounts panel: which entry's compose line was just copied.
+  const [copiedPendingPath, setCopiedPendingPath] = useState("");
+  const pendingMountsList = pendingMounts || [];
 
   // Phase 10: Button Reliability Framework State
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
@@ -179,6 +198,21 @@ export function WorkspacesView({
     }
   }
 
+  // Approve a folder that is already visible under an approved root as its
+  // own workspace. Unlike mounting, this needs no Docker restart, and the new
+  // workspace gets its own access mode and Trusted Dev Mode toggle.
+  async function approveSubfolder(path) {
+    if (!approvePath || !path) return;
+    try {
+      await executeAction("ApproveSubfolder", path, async () => {
+        await approvePath(path);
+        await loadWorkspaceRoots();
+      }, setUiState);
+    } catch (error) {
+      setKnowledgeStatus(error.message);
+    }
+  }
+
   function launchTask(type) {
     if (!setPrompt) return;
     const folderName = displayWorkspaceName(currentPath);
@@ -217,7 +251,39 @@ export function WorkspacesView({
     setMountSuccess(false);
     setIsMounting(false);
     setCopied(false);
+    setHostListing(null);
+    setHostBrowseError("");
+    setHostBrowseLoading(false);
+    setHostPathDraft("");
   };
+
+  // Load host starting points (project folder, home, drive) when the picker opens.
+  useEffect(() => {
+    if (!showAddModal || !security?.allowDockerControl) return;
+    postJson("/api/workspace/host-browse", {})
+      .then((data) => {
+        setHostRoots(data.roots || []);
+        setHostRootsMessage(data.message || "");
+      })
+      .catch((error) => setHostRootsMessage(error.message));
+  }, [showAddModal, security?.allowDockerControl]);
+
+  async function browseHost(path) {
+    const target = String(path || "").trim();
+    if (!target || hostBrowseLoading) return;
+    setHostBrowseLoading(true);
+    setHostBrowseError("");
+    try {
+      const listing = await postJson("/api/workspace/host-browse", { path: target });
+      setHostListing(listing);
+      setMountHostPath(listing.path);
+      setHostPathDraft(listing.path);
+    } catch (error) {
+      setHostBrowseError(error.message);
+    } finally {
+      setHostBrowseLoading(false);
+    }
+  }
 
   async function handleAddFolderSubmit(e) {
     e.preventDefault();
@@ -225,47 +291,35 @@ export function WorkspacesView({
       setMountStatus("Host path is required.");
       return;
     }
-    
+
     setIsMounting(true);
     setMountStatus("");
-    
+
     try {
       await executeAction("MountFolder", mountHostPath, async () => {
-        // Step 1: Generate Plan
         const formData = new FormData();
         formData.append("hostPath", mountHostPath);
         formData.append("name", displayWorkspaceName(mountHostPath));
         if (mountReadOnly) formData.append("readOnly", "on");
-        
-        await previewMount({ preventDefault: () => {}, currentTarget: formData });
-        
-        // Use the reactive mountPlan from props if possible, but it might not be updated yet.
-        // The requestMount relies on mountPlan being in state.
-        // A better robust way is to wait a tick or rely on the updated prop.
-        // Assuming the previewMount triggers a re-render and mountPlan is populated:
+
+        // Linear chain: plan, then save the request exactly once. (This used
+        // to hand off to a useEffect keyed on the parent's mountPlan state;
+        // requestMount's own setMountPlan(...) call retriggered that same
+        // effect, so every submit re-saved the same mount request in a tight
+        // loop until the modal closed.)
+        const plan = await previewMount({ preventDefault: () => {}, currentTarget: formData });
+        if (plan?.error) throw new Error(plan.error);
+        await requestMount(plan);
+        await loadWorkspaceRoots();
       }, setUiState);
-      
-      // We will let a useEffect catch the mountPlan and submit it, or we require the user to hit "Confirm".
-      // Since previewMount is async but sets state in parent, we'll stop the spinner and show confirmation step in modal.
-      setIsMounting(false);
+
       setMountSuccess(true);
-      
     } catch (error) {
       setMountStatus(error.message);
+    } finally {
       setIsMounting(false);
     }
   }
-
-  // Effect to automatically save mount request once plan is generated
-  useEffect(() => {
-    if (showAddModal && mountSuccess && mountPlan && !mountPlan.error && requestMount) {
-       requestMount(mountPlan).then(() => {
-           loadWorkspaceRoots();
-       }).catch(err => {
-           setMountStatus("Failed to save mount request: " + err.message);
-       });
-    }
-  }, [mountPlan, mountSuccess, showAddModal, requestMount]);
 
   // --- Trusted Dev Mode ---
   function handleTrustToggleClick() {
@@ -307,6 +361,41 @@ export function WorkspacesView({
     } catch {
       setMountStatus("Copy failed. Select and copy the volume line manually.");
     }
+  }
+
+  // --- Pending Mounts panel ---
+  async function copyPendingVolume(item) {
+    if (!item?.composeVolume) return;
+    try {
+      await navigator.clipboard.writeText(item.composeVolume);
+      setCopiedPendingPath(item.hostPath);
+      setTimeout(() => setCopiedPendingPath(""), 2000);
+    } catch (error) {
+      console.error("Clipboard copy failed", error);
+    }
+  }
+
+  function handleApprovePendingMount(item) {
+    return executeAction("ApprovePendingMount", item.hostPath, async () => {
+      await approvePendingMount?.(item);
+      await loadWorkspaceRoots?.();
+    }, setUiState);
+  }
+
+  function handleRemovePendingMount(item) {
+    return executeAction("RemovePendingMount", item.hostPath, async () => {
+      await removePendingMount?.(item.hostPath);
+    }, setUiState);
+  }
+
+  // Clicking an approved folder both switches to it (updates the header,
+  // the highlight, and what "Index Workspace" / task launches target) and
+  // loads its file listing into the explorer below.
+  function selectAndBrowseRoot(root) {
+    const rootId = root.id;
+    const rootPath = root.path || root.root;
+    selectWorkspace?.(rootId || rootPath);
+    browseWorkspace(rootId);
   }
 
   return (
@@ -391,7 +480,7 @@ export function WorkspacesView({
                 const displayName = root.displayName || root.display_name || root.name || displayWorkspaceName(rootPath);
                 const active = rootId === activeId || normalizePath(rootPath) === normalizePath(workspace.activePath);
                 return (
-                  <div key={rootId} className={`w2-tree-item ${active ? 'is-active' : ''}`} onClick={() => browseWorkspace(rootId)} style={{ fontWeight: active ? 600 : 400 }}>
+                  <div key={rootId} className={`w2-tree-item ${active ? 'is-active' : ''}`} onClick={() => selectAndBrowseRoot(root)} style={{ fontWeight: active ? 600 : 400 }}>
                     <FolderOpen size={16} className="w2-tree-icon" />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
                     {root.trusted && (
@@ -412,11 +501,86 @@ export function WorkspacesView({
             </div>
           </div>
 
+          {pendingMountsList.length > 0 && (
+            <>
+              <hr style={{ borderColor: 'var(--cc-border)', margin: '4px 0' }} />
+              <div className="w2-section" style={{ gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h2 className="w2-section-title">Pending Mounts</h2>
+                  <Badge bg="secondary" pill>{pendingMountsList.length}</Badge>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '30vh', overflowY: 'auto' }}>
+                  {pendingMountsList.map((item) => (
+                    <div key={item.hostPath} className="pending-mount-item">
+                      <div className="pending-mount-head">
+                        <Folder size={14} className="w2-tree-icon" style={{ flexShrink: 0 }} />
+                        <span className="pending-mount-name" title={item.hostPath}>
+                          {item.displayName || displayWorkspaceName(item.hostPath)}
+                        </span>
+                        {item.readOnly ? (
+                          <Lock size={12} title="Read only" style={{ flexShrink: 0, color: 'var(--cc-muted)' }} />
+                        ) : (
+                          <Eye size={12} title="Read / write" style={{ flexShrink: 0, color: 'var(--ras-warn, #d97706)' }} />
+                        )}
+                      </div>
+                      <div className="pending-mount-status">
+                        {item.ready ? (
+                          <span className="pending-mount-badge is-ready"><Check size={11} /> Ready to approve</span>
+                        ) : (
+                          <span className="pending-mount-badge is-waiting"><Clock size={11} /> Restart needed</span>
+                        )}
+                      </div>
+                      <div className="pending-mount-actions">
+                        {item.ready && (
+                          <button
+                            type="button"
+                            className="tiny-action"
+                            title="Approve this folder as a workspace now"
+                            onClick={() => handleApprovePendingMount(item)}
+                          >
+                            <ShieldPlus size={13} /> Approve
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="tiny-action"
+                          title="Copy the Docker Compose volume line"
+                          onClick={() => copyPendingVolume(item)}
+                        >
+                          {copiedPendingPath === item.hostPath ? <Check size={13} /> : <Copy size={13} />}
+                        </button>
+                        <button
+                          type="button"
+                          className="tiny-action danger"
+                          title="Remove this pending mount request"
+                          onClick={() => handleRemovePendingMount(item)}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
           <hr style={{ borderColor: 'var(--cc-border)', margin: '4px 0' }} />
 
           <div className="w2-section" style={{ flex: 1, gap: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="w2-section-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>EXPLORER: {currentFolder}</h2>
+              {workspaceBrowse?.path && normalizePath(workspaceBrowse.path) !== normalizePath(currentRoot?.path) && (
+                <button
+                  className="icon-button"
+                  type="button"
+                  title="Approve this folder as its own workspace (separate access mode and trust)"
+                  aria-label="Approve current folder as its own workspace"
+                  onClick={() => approveSubfolder(workspaceBrowse.path)}
+                >
+                  <ShieldPlus size={14} />
+                </button>
+              )}
             </div>
             
             <div className="w2-breadcrumbs" style={{ fontSize: '0.75rem', padding: '0 8px' }}>
@@ -452,6 +616,20 @@ export function WorkspacesView({
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {entry.displayName || entry.name}
                   </span>
+                  {entry.kind === "folder" && (
+                    <button
+                      type="button"
+                      className="tree-approve-btn"
+                      title="Approve as its own workspace (separate access mode and trust)"
+                      aria-label={`Approve ${entry.displayName || entry.name} as its own workspace`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        approveSubfolder(entry.path);
+                      }}
+                    >
+                      <ShieldPlus size={14} />
+                    </button>
+                  )}
                 </div>
               ))}
               {filteredEntries.length === 0 && (
@@ -645,16 +823,94 @@ export function WorkspacesView({
               </p>
               
               <Form.Group className="mb-4">
-                <Form.Label className="fw-semibold">Absolute Host Path</Form.Label>
-                <Form.Control 
-                  type="text" 
-                  value={mountHostPath}
-                  onChange={e => setMountHostPath(e.target.value)}
-                  placeholder="e.g. C:\Projects\MyRepo or /home/user/code"
-                  autoFocus
-                  required
-                />
-                <Form.Text className="text-muted">Enter the absolute path on your host machine.</Form.Text>
+                <Form.Label className="fw-semibold">Pick a folder</Form.Label>
+                {security?.allowDockerControl && hostRoots.length > 0 && (
+                  <div className="d-flex flex-wrap gap-2 mb-2">
+                    {hostRoots.map((root) => (
+                      <Button
+                        key={root.path}
+                        type="button"
+                        size="sm"
+                        variant={hostListing?.path === root.path ? "primary" : "outline-secondary"}
+                        disabled={hostBrowseLoading}
+                        onClick={() => browseHost(root.path)}
+                      >
+                        <HardDrive size={14} className="me-1" /> {root.name}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <div className="d-flex gap-2 mb-2">
+                  <Button
+                    type="button"
+                    variant="outline-secondary"
+                    disabled={!hostListing?.parent || hostBrowseLoading}
+                    onClick={() => browseHost(hostListing?.parent)}
+                    title="Up one level"
+                    aria-label="Up one level"
+                  >
+                    <ArrowLeft size={15} />
+                  </Button>
+                  <Form.Control
+                    type="text"
+                    value={hostPathDraft}
+                    onChange={(e) => {
+                      setHostPathDraft(e.target.value);
+                      setMountHostPath(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        browseHost(hostPathDraft);
+                      }
+                    }}
+                    placeholder="Click a starting point above, or type a path and press Enter"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline-primary"
+                    disabled={hostBrowseLoading || !hostPathDraft.trim()}
+                    onClick={() => browseHost(hostPathDraft)}
+                  >
+                    Go
+                  </Button>
+                </div>
+                <div className="border rounded" style={{ maxHeight: 240, overflowY: "auto" }} data-testid="host-folder-list">
+                  {hostBrowseLoading && (
+                    <div className="d-flex align-items-center gap-2 p-3 text-muted">
+                      <Spinner size="sm" /> <span>Listing folders...</span>
+                    </div>
+                  )}
+                  {!hostBrowseLoading && !hostListing && (
+                    <div className="p-3 text-muted small">
+                      {hostRootsMessage || "Choose a starting point above, then click folders to drill in. The folder you are viewing is the one that gets approved."}
+                    </div>
+                  )}
+                  {!hostBrowseLoading && hostListing && hostListing.entries.length === 0 && (
+                    <div className="p-3 text-muted small">No subfolders here. Approve this folder below.</div>
+                  )}
+                  {!hostBrowseLoading && hostListing && hostListing.entries.map((entry) => (
+                    <button
+                      type="button"
+                      key={entry.path}
+                      className="host-folder-row d-flex align-items-center gap-2 w-100 text-start border-0 bg-transparent px-3 py-2"
+                      data-testid="host-folder-row"
+                      onClick={() => browseHost(entry.path)}
+                    >
+                      <Folder size={15} className="text-primary flex-shrink-0" />
+                      <span className="text-truncate">{entry.name}</span>
+                      <ChevronRight size={14} className="ms-auto text-muted flex-shrink-0" />
+                    </button>
+                  ))}
+                </div>
+                {hostBrowseError && <Alert variant="danger" className="mt-2 mb-0 py-2">{hostBrowseError}</Alert>}
+                {mountHostPath && (
+                  <div className="mt-2 small">
+                    <span className="text-muted">Folder to approve: </span>
+                    <strong className="font-monospace text-break" data-testid="host-selected-path">{mountHostPath}</strong>
+                  </div>
+                )}
               </Form.Group>
 
               <Form.Group className="mb-4">
@@ -720,6 +976,12 @@ export function WorkspacesView({
                   {copied ? <Check size={14}/> : <Copy size={14}/>}
                 </Button>
               </div>
+
+              <p className="text-muted small px-4">
+                Tip: after the restart you can approve any subfolder of this mount as its own
+                workspace straight from the explorer — hover a folder and click the shield.
+                No extra mounts or restarts needed.
+              </p>
 
               <Button variant="primary" size="lg" onClick={resetMountModal} className="px-5">
                 Done

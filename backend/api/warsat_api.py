@@ -4,6 +4,7 @@ from backend import archive
 from backend import trials
 from backend import warsat
 from backend.core import workspace
+from backend.core import host_fs
 from backend.core import audit
 from backend.core import security
 from backend.core.response import ok, fail, camelize, AppError, _camel_code
@@ -491,6 +492,12 @@ class WorkspaceMountIn(CamelModel):
     name: str | None = None
     read_only: bool = True
 
+class HostBrowseIn(CamelModel):
+    path: str | None = None
+
+class MountRequestRemoveIn(CamelModel):
+    host_path: str
+
 class WorkspaceMutationPreviewIn(CamelModel):
     kind: str
     workspace_path: str | None = "."
@@ -542,6 +549,18 @@ async def workspace_approve(req: WorkspaceApproveIn, _user=Depends(current_user)
     audit.log("workspace_approved", {"path": req.path, "name": req.name, "read_only": req.read_only})
     return ok(item)
 
+@workspace_router.post("/workspace/host-browse")
+
+async def workspace_host_browse(req: HostBrowseIn, _user=Depends(current_user)):
+    # Same grant as mount-apply: picking a host folder to mount is only
+    # possible when the wrapper may drive Docker, and every listing is audited.
+    security.require("allow_docker_control")
+    if not req.path:
+        return ok(host_fs.roots())
+    listing = host_fs.browse(req.path)
+    audit.log("workspace_host_browse", {"path": listing["path"], "entries": len(listing["entries"])})
+    return ok(listing)
+
 @workspace_router.post("/workspace/mount-plan")
 
 async def workspace_mount_plan(req: WorkspaceMountIn, _user=Depends(current_user)):
@@ -554,6 +573,20 @@ async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(current_use
     plan = workspace.save_mount_request(req.host_path, req.name, req.read_only)
     audit.log("workspace_mount_requested", plan)
     return ok(plan)
+
+@workspace_router.get("/workspace/mount-requests")
+
+async def workspace_mount_requests_get(_user=Depends(current_user)):
+    security.require("allow_docker_control")
+    return ok(workspace.list_mount_requests())
+
+@workspace_router.post("/workspace/mount-requests/remove")
+
+async def workspace_mount_requests_remove(req: MountRequestRemoveIn, _user=Depends(current_user)):
+    security.require("allow_docker_control")
+    result = workspace.remove_mount_request(req.host_path)
+    audit.log("workspace_mount_request_removed", {"hostPath": req.host_path})
+    return ok(result)
 
 @workspace_router.post("/workspace/mutation-preview")
 

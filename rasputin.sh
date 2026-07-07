@@ -76,13 +76,21 @@ start_rasputin() {
     URL="http://127.0.0.1:$PORT"
 
     echo -e "\033[0;36mStarting Rasputin on $URL\033[0m"
-    
+
+    COMPOSE_FILES=(-f docker-compose.yml)
     if [ "$ENABLE_WARSAT" -eq 1 ]; then
         echo -e "\033[0;35mEnabled WarSat Docker Control Layer...\033[0m"
-        docker compose -f docker-compose.yml -f docker-compose.docker-control.yml up --build -d
-    else
-        docker compose up --build -d
+        COMPOSE_FILES+=(-f docker-compose.docker-control.yml)
     fi
+    # Approving a local folder from the Workspaces tab writes this file with
+    # the new bind mount; including it here means picking it up is just a
+    # normal restart, no manual editing of any compose file.
+    MOUNTS_OVERRIDE="data/docker-compose.mounts.yml"
+    if [ -f "$MOUNTS_OVERRIDE" ]; then
+        echo -e "\033[0;36mIncluding approved folder mounts from $MOUNTS_OVERRIDE\033[0m"
+        COMPOSE_FILES+=(-f "$MOUNTS_OVERRIDE")
+    fi
+    docker compose "${COMPOSE_FILES[@]}" up --build -d
 
     echo -e "\033[0;36mWaiting for Rasputin to become healthy...\033[0m"
     

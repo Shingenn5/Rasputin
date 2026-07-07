@@ -12875,3 +12875,107 @@ textarea.cc-input.ras-autogrow {
   font-weight: 500;
   color: var(--cc-muted);
 }
+
+/* Host folder picker rows (Approve Local Folder modal) */
+.host-folder-row {
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  border-bottom: 1px solid var(--cc-border, rgba(128, 128, 128, 0.15)) !important;
+}
+
+.host-folder-row:last-child {
+  border-bottom: none !important;
+}
+
+.host-folder-row:hover,
+.host-folder-row:focus-visible {
+  background: color-mix(in srgb, var(--cc-accent, #0d6efd) 10%, transparent) !important;
+}
+
+/* Explorer folder rows: hover-revealed "approve as workspace" action */
+.tree-approve-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cc-muted);
+  cursor: pointer;
+}
+
+.w2-tree-item:hover .tree-approve-btn,
+.tree-approve-btn:focus-visible {
+  display: inline-flex;
+}
+
+.tree-approve-btn:hover {
+  color: var(--cc-accent);
+  background: color-mix(in srgb, var(--cc-accent) 12%, transparent);
+}
+
+/* Pending Mounts panel (Workspaces tab) */
+.pending-mount-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--cc-border);
+  background: color-mix(in srgb, var(--cc-bg) 50%, var(--cc-surface));
+}
+
+.pending-mount-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pending-mount-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cc-text);
+}
+
+.pending-mount-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.pending-mount-badge.is-ready {
+  color: var(--ras-safe, #16a34a);
+  background: color-mix(in srgb, var(--ras-safe, #16a34a) 14%, transparent);
+}
+
+.pending-mount-badge.is-waiting {
+  color: var(--cc-muted);
+  background: color-mix(in srgb, var(--cc-muted) 14%, transparent);
+}
+
+.pending-mount-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pending-mount-actions .tiny-action {
+  padding: 3px 8px;
+}

@@ -112,6 +112,7 @@ export function App() {
   const [workspaceBrowse, setWorkspaceBrowse] = useState(null);
   const [workspaceExplorer, setWorkspaceExplorer] = useState({});
   const [mountPlan, setMountPlan] = useState(null);
+  const [pendingMounts, setPendingMounts] = useState([]);
   const [security, setSecurity] = useState({});
   const [auditEvents, setAuditEvents] = useState([]);
   const [ragStats, setRagStats] = useState(null);
@@ -669,6 +670,7 @@ export function App() {
     if (section) setSettingsSection(section);
     if (nextView === "workspaces") {
       loadWorkspaceRoots().catch((error) => setGlobalStatus(error.message));
+      loadPendingMounts().catch((error) => setGlobalStatus(error.message));
     }
     if (["activity", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"].includes(nextView)) {
       loadRuntimeData().catch((error) => setGlobalStatus(error.message));
@@ -1084,7 +1086,10 @@ export function App() {
 
   async function previewMount(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    // Callers pass either a real form submit event or a synthetic
+    // { currentTarget: FormData } (WorkspacesView's guided modal).
+    const source = event.currentTarget;
+    const form = source instanceof FormData ? source : new FormData(source);
     try {
       const plan = await postJson("/api/workspace/mount-plan", {
         hostPath: form.get("hostPath"),
@@ -1092,13 +1097,15 @@ export function App() {
         readOnly: form.get("readOnly") === "on",
       });
       setMountPlan(plan);
+      return plan;
     } catch (error) {
       setMountPlan({ error: error.message });
+      throw error;
     }
   }
 
   async function requestMount(plan) {
-    if (!plan?.hostPath) return;
+    if (!plan?.hostPath) return null;
     try {
       const saved = await postJson("/api/workspace/mount-apply", {
         hostPath: plan.hostPath,
@@ -1106,9 +1113,56 @@ export function App() {
         readOnly: !!plan.readOnly,
       });
       setMountPlan({ ...saved, saved: true });
-      setGlobalStatus("Mount request saved. Restart Rasputin with the generated volume before browsing that folder.");
+      setGlobalStatus(saved.composeWritten
+        ? `Mount saved and written to ${saved.composeFile}. Restart Rasputin to pick up ${saved.displayName || "the folder"}.`
+        : "Mount request saved. Restart Rasputin with the generated volume before browsing that folder.");
+      loadPendingMounts().catch(() => {});
+      return saved;
     } catch (error) {
       setMountPlan({ ...plan, applyError: error.message });
+      setGlobalStatus(error.message);
+      throw error;
+    }
+  }
+
+  async function loadPendingMounts() {
+    // Never throws: Docker control may still be disabled, or this may run
+    // before the boot-time security fetch resolves (this is called from the
+    // hash-route effect, which fires before loadBasics() finishes). Either
+    // way, an empty pending-mounts panel is the correct, silent fallback.
+    try {
+      const payload = await api("/api/workspace/mount-requests");
+      setPendingMounts(payload.requests || []);
+      return payload;
+    } catch {
+      setPendingMounts([]);
+      return { requests: [] };
+    }
+  }
+
+  async function removePendingMount(hostPath, options = {}) {
+    try {
+      const result = await postJson("/api/workspace/mount-requests/remove", { hostPath });
+      setPendingMounts(result.requests || []);
+      if (!options.silent) setGlobalStatus("Pending mount removed.");
+    } catch (error) {
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function approvePendingMount(item) {
+    if (!item?.containerPath) return;
+    try {
+      await approvePath(item.containerPath);
+      // Don't remove the underlying mount registration here: it's the only
+      // record of which host folder this container path came from, and it
+      // must keep producing a Compose volume line on every future restart
+      // or the now-approved workspace goes empty. loadPendingMounts() just
+      // re-filters the panel -- the server already hides entries that match
+      // an approved workspace, so this one naturally drops off the list.
+      await loadPendingMounts();
+      setGlobalStatus(`${item.displayName || displayWorkspaceName(item.hostPath)} approved as a workspace.`);
+    } catch (error) {
       setGlobalStatus(error.message);
     }
   }
@@ -1719,6 +1773,9 @@ export function App() {
         previewMount={previewMount}
         requestMount={requestMount}
         mountPlan={mountPlan}
+        pendingMounts={pendingMounts}
+        removePendingMount={removePendingMount}
+        approvePendingMount={approvePendingMount}
         security={security}
         ragStats={ragStats}
         graphStats={graphStats}

@@ -1,11 +1,16 @@
 import json
+import os
 import re
 import time
 from pathlib import Path
 from threading import Lock
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+# RASPUTIN_DATA_DIR (shared with runtime_store.py) redirects file-based
+# workspace state during native test/verification runs, so they stop writing
+# workspace.json / the generated compose override into the real repo's data/
+# folder. Unset in every shipped compose file, so production is unaffected.
+DATA_DIR = Path(os.environ.get("RASPUTIN_DATA_DIR") or (ROOT / "data"))
 WORKSPACE_FILE = DATA_DIR / "workspace.json"
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".pytest_cache"}
 PREVIEW_EXTENSIONS = {
@@ -469,14 +474,111 @@ def mount_plan(host_path, name=None, read_only=True):
     }
 
 
+COMPOSE_MOUNTS_FILE = DATA_DIR / "docker-compose.mounts.yml"
+COMPOSE_MOUNTS_SERVICE = "rasputin-wrapper"
+
+
+def _normalize_host_path_key(path):
+    text = str(path or "").strip().replace("\\", "/")
+    while len(text) > 3 and text.endswith("/"):
+        text = text[:-1]
+    # Windows paths are case-insensitive; POSIX paths are not.
+    return text.lower() if re.match(r"^[A-Za-z]:/", text) else text
+
+
+def _yaml_single_quoted(text):
+    # Single-quoted YAML scalars need no escaping except doubling embedded
+    # single quotes; backslashes and colons are safe as-is in this style.
+    return "'" + str(text).replace("'", "''") + "'"
+
+
+def _write_compose_mounts_override(requests):
+    """Regenerate the Compose override with one volume line per pending
+    mount request, so restarting Rasputin picks up newly-approved folders
+    without any manual YAML editing. Compose concatenates (does not replace)
+    list-valued keys like `volumes` across -f files, so this purely adds to
+    the base file's mounts. Deleted when there is nothing pending so restart
+    scripts can skip a stale -f flag."""
+    if not requests:
+        COMPOSE_MOUNTS_FILE.unlink(missing_ok=True)
+        return False
+    lines = ["services:", f"  {COMPOSE_MOUNTS_SERVICE}:", "    volumes:"]
+    for item in requests:
+        lines.append(f"      - {_yaml_single_quoted(item['compose_volume'])}")
+    DATA_DIR.mkdir(exist_ok=True)
+    COMPOSE_MOUNTS_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return True
+
+
 def save_mount_request(host_path, name=None, read_only=True):
+    """Register a host folder to be bind-mounted, regenerating the Compose
+    override from every registered mount. Entries here are permanent once
+    saved: this is the only record of which host path a given
+    /app/workspace/mounted/<slug> container path came from, so once a folder
+    is approved as a workspace, this entry must keep producing that volume
+    line on every future restart -- otherwise the mount silently disappears
+    (and the workspace becomes an empty, broken folder) the next time
+    Rasputin restarts without this exact host_path re-submitted. Only
+    remove_mount_request (an explicit user action) may delete an entry."""
     plan = mount_plan(host_path, name, read_only)
     data = _load()
     requests = data.setdefault("mount_requests", [])
+    # Idempotent by host path: re-approving the same folder (or a UI retry)
+    # replaces its entry instead of piling up duplicates.
+    key = _normalize_host_path_key(plan["host_path"])
+    requests[:] = [r for r in requests if _normalize_host_path_key(r.get("host_path")) != key]
     plan["requested_at"] = time.time()
     requests.append(plan)
     _save(data)
+    written = _write_compose_mounts_override(requests)
+    plan = dict(plan)
+    plan["compose_written"] = written
+    plan["compose_file"] = str(COMPOSE_MOUNTS_FILE) if written else ""
     return plan
+
+
+def _mount_already_approved(container_path, workspaces):
+    target = Path(container_path)
+    return any(_abs(item) == target for item in workspaces)
+
+
+def list_mount_requests():
+    """Host-folder mounts still needing user action, oldest first. Entries
+    already approved as a workspace are left out here (nothing left to do)
+    but stay in storage permanently -- see save_mount_request's docstring for
+    why they must not be deleted just because they were approved.
+
+    `ready` means the bind mount is already live in the running container
+    (an earlier restart already picked it up), so the folder can be approved
+    as a workspace right now with no further restart needed."""
+    data = _load()
+    requests = sorted(data.get("mount_requests", []), key=lambda r: r.get("requested_at", 0))
+    workspaces = data.get("workspaces", [])
+    result = []
+    for item in requests:
+        if _mount_already_approved(item["container_path"], workspaces):
+            continue
+        entry = dict(item)
+        entry["ready"] = Path(item["container_path"]).is_dir()
+        result.append(entry)
+    return {"requests": result}
+
+
+def remove_mount_request(host_path):
+    """Cancel a registered mount so it stops being written into the Compose
+    override. If the bind mount is already live, it stays live in the
+    running container until the next restart, at which point it goes away
+    for good -- Docker has no way to detach a mount from a running
+    container, only to leave it out of the next one."""
+    data = _load()
+    requests = data.get("mount_requests", [])
+    key = _normalize_host_path_key(host_path)
+    remaining = [r for r in requests if _normalize_host_path_key(r.get("host_path")) != key]
+    removed = len(remaining) != len(requests)
+    data["mount_requests"] = remaining
+    _save(data)
+    _write_compose_mounts_override(remaining)
+    return {"removed": removed, "requests": remaining}
 
 
 def _plan_path(workspace_path=".", path="."):
