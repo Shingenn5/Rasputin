@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 from backend.api.core import CamelModel, current_user, hub
 from backend.core import audit
@@ -251,7 +253,10 @@ async def rag_stats(_user=Depends(current_user)):
 
 async def rag_ingest(req: RagIn, _user=Depends(current_user)):
     security.require("allow_file_read")
-    return ok(rag.ingest(req.path, req.label))
+    # Walking + parsing a real workspace can take a while even after
+    # SKIP_DIRS pruning; run it off the event loop so it can't stall every
+    # other request (health checks included) for the duration.
+    return ok(await asyncio.to_thread(rag.ingest, req.path, req.label))
 
 @rag_router.post("/rag/search")
 
@@ -268,7 +273,9 @@ async def graph_stats(_user=Depends(current_user)):
 
 async def graph_build(req: GraphBuildIn, _user=Depends(current_user)):
     security.require("allow_file_read")
-    return ok(graphify.build(req.path))
+    # build() calls rag.ingest() itself when the index is empty -- same
+    # reasoning as /rag/ingest above.
+    return ok(await asyncio.to_thread(graphify.build, req.path))
 
 @rag_router.post("/graph/search")
 

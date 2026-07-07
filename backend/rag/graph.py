@@ -61,11 +61,33 @@ def _load():
     return data
 
 
+def _rebuild_stats_summary(graph):
+    # Mirrors rag/vector.py's _rebuild_stats_summary: stats() must never load
+    # the full graph blob, which for a real workspace can run into the
+    # hundreds of MB and take 20s+ just to read back through Docker
+    # Desktop's Windows bind mount.
+    node_kinds = Counter(node.get("kind") for node in graph.get("nodes", []))
+    edge_types = Counter(edge.get("type") or edge.get("relation") for edge in graph.get("edges", []))
+    summary = {
+        "version": graph.get("version", GRAPH_VERSION),
+        "nodes_count": len(graph.get("nodes", [])),
+        "edges_count": len(graph.get("edges", [])),
+        "node_kinds": dict(sorted(node_kinds.items())),
+        "edge_types": dict(sorted(edge_types.items())),
+        "updated_at": graph.get("updated_at"),
+        # nodes are saved pre-sorted by weight descending -- see build().
+        "top_nodes": graph.get("nodes", [])[:15],
+    }
+    store.set_kv("rag_graph_stats", summary)
+    return summary
+
+
 def _save(graph):
     DATA_DIR.mkdir(exist_ok=True)
     graph["updated_at"] = time.time()
     with _lock:
         store.set_kv("rag_graph", graph)
+    _rebuild_stats_summary(graph)
 
 
 def _clean(text):
@@ -474,17 +496,17 @@ def _why(relation, source, target, evidence):
 
 
 def stats():
-    graph = _load()
-    node_kinds = Counter(node.get("kind") for node in graph.get("nodes", []))
-    edge_types = Counter(edge.get("type") or edge.get("relation") for edge in graph.get("edges", []))
+    summary = store.get_kv("rag_graph_stats")
+    if not isinstance(summary, dict):
+        summary = _rebuild_stats_summary(_load())
     return {
-        "version": graph.get("version", GRAPH_VERSION),
-        "nodes": len(graph.get("nodes", [])),
-        "edges": len(graph.get("edges", [])),
-        "node_kinds": dict(sorted(node_kinds.items())),
-        "edge_types": dict(sorted(edge_types.items())),
-        "updated_at": graph.get("updated_at"),
-        "top_nodes": graph.get("nodes", [])[:15],
+        "version": summary.get("version", GRAPH_VERSION),
+        "nodes": summary.get("nodes_count", 0),
+        "edges": summary.get("edges_count", 0),
+        "node_kinds": summary.get("node_kinds", {}),
+        "edge_types": summary.get("edge_types", {}),
+        "updated_at": summary.get("updated_at"),
+        "top_nodes": summary.get("top_nodes", []),
     }
 
 

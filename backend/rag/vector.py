@@ -1,6 +1,7 @@
 import hashlib
 import json
 import math
+import os
 import re
 import time
 from collections import Counter
@@ -56,11 +57,29 @@ def raw_index():
     return _load()
 
 
+def _rebuild_stats_summary(index):
+    # A separate, small KV entry mirroring what stats() needs, so it never
+    # has to load+parse the full index -- which, for a real workspace, is a
+    # multi-hundred-MB blob that took 20s+ to even read back off disk through
+    # Docker Desktop's Windows bind mount, let alone parse. Every save keeps
+    # this in sync; stats() reads only this.
+    summary = {
+        "version": index.get("version", 2),
+        "docs_count": len(index.get("docs", [])),
+        "chunks_count": len(index.get("chunks", [])),
+        "updated_at": index.get("updated_at"),
+        "sources": index.get("docs", [])[-25:],
+    }
+    store.set_kv("rag_vector_stats", summary)
+    return summary
+
+
 def _save(index):
     DATA_DIR.mkdir(exist_ok=True)
     index["updated_at"] = time.time()
     with _lock:
         store.set_kv("rag_vector", index)
+    _rebuild_stats_summary(index)
 
 
 def query_terms(text):
@@ -297,11 +316,18 @@ def _walk(target):
     if target.is_file():
         return [target]
     files = []
-    for p in target.rglob("*"):
-        if any(x in SKIP_DIRS for x in p.parts):
-            continue
-        if p.is_file() and p.suffix.lower() not in SKIP_EXTS:
-            if p.resolve() == INDEX_FILE.resolve():
+    index_file = INDEX_FILE.resolve()
+    # os.walk (not rglob) so SKIP_DIRS can be pruned *before* descending --
+    # a workspace root that contains node_modules/.git can otherwise mean
+    # enumerating hundreds of thousands of files just to discard them,
+    # which is slow enough to time out the request entirely.
+    for root, dirs, filenames in os.walk(target):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for name in filenames:
+            p = Path(root) / name
+            if p.suffix.lower() in SKIP_EXTS:
+                continue
+            if p.resolve() == index_file:
                 continue
             files.append(p)
     return files
@@ -339,12 +365,24 @@ def ingest(path=".", label=None):
     for file_path in files:
         source = _source(file_path, item, root)
         rel = str(file_path.relative_to(root)).replace("\\", "/")
-        stat = file_path.stat()
+        try:
+            stat = file_path.stat()
+        except OSError:
+            # Indexing a large live workspace can take long enough for a file
+            # to disappear mid-walk (e.g. a database's own -shm/-wal sidecar
+            # files, or any other app's temp/lock files) -- skip it rather
+            # than aborting the whole ingest over one vanished file.
+            skipped.append({"path": rel, "reason": "vanished_during_scan", "parser": "unknown"})
+            continue
         existing_doc = existing.get(source)
         if existing_doc and existing_doc.get("mtime") == stat.st_mtime and existing_doc.get("bytes") == stat.st_size:
             unchanged.append(source)
             continue
-        segments, parser = _read_document(file_path)
+        try:
+            segments, parser = _read_document(file_path)
+        except OSError:
+            skipped.append({"path": rel, "reason": "vanished_during_scan", "parser": "unknown"})
+            continue
         if not segments:
             skipped.append({"path": rel, "reason": parser.get("reason"), "parser": parser.get("parser")})
             continue
@@ -416,14 +454,19 @@ def ingest(path=".", label=None):
 
 
 def stats():
-    index = _load()
+    summary = store.get_kv("rag_vector_stats")
+    if not isinstance(summary, dict):
+        # No cached summary yet (pre-migration install, or a fresh index) --
+        # compute it once from the full index and cache it so every later
+        # call is cheap.
+        summary = _rebuild_stats_summary(_load())
     return {
-        "version": index.get("version", 2),
+        "version": summary.get("version", 2),
         "index_backend": "local-hash-vector-json",
-        "docs": len(index["docs"]),
-        "chunks": len(index["chunks"]),
-        "updated_at": index.get("updated_at"),
-        "sources": index["docs"][-25:],
+        "docs": summary.get("docs_count", 0),
+        "chunks": summary.get("chunks_count", 0),
+        "updated_at": summary.get("updated_at"),
+        "sources": summary.get("sources", []),
         "parser_status": parser_status(),
     }
 

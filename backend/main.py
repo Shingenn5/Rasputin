@@ -89,6 +89,12 @@ async def startup():
         audit.log("model_auto_repair_startup_failed", {"error": str(exc)})
 
 
+# Indexing a real, approved workspace (RAG ingest + Graphify build) walks and
+# parses every file under it; a large repo through a slow Docker Desktop
+# bind mount can genuinely take minutes, well past the general API timeout.
+LONG_INDEX_PATHS = {"/api/rag/ingest", "/api/graph/build"}
+
+
 @app.middleware("http")
 async def production_headers(request: Request, call_next):
     request_id = str(uuid.uuid4())[:12]
@@ -98,6 +104,8 @@ async def production_headers(request: Request, call_next):
             response = await call_next(request)
         elif request.url.path == "/api/warsat/deploy":
             response = await asyncio.wait_for(call_next(request), timeout=float(os.environ.get("WARSAT_DEPLOY_HTTP_TIMEOUT", "1900")))
+        elif request.url.path in LONG_INDEX_PATHS:
+            response = await asyncio.wait_for(call_next(request), timeout=float(os.environ.get("RASPUTIN_INDEX_TIMEOUT", "900")))
         else:
             response = await asyncio.wait_for(call_next(request), timeout=timeout)
     except asyncio.TimeoutError:
