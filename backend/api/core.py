@@ -38,7 +38,12 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 def current_user(request: Request):
-    return {"username": "admin", "role": "admin"}
+    host = request.client.host if request.client else ""
+    token = request.cookies.get(auth.COOKIE_NAME)
+    session = auth.public_session(token, host)
+    if not session.get("authenticated"):
+        raise PermissionError("login required")
+    return {"username": session.get("username"), "role": session.get("role")}
 
 hub = AgentHub()
 

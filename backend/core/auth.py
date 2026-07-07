@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 AUTH_FILE = DATA_DIR / "auth.json"
 COOKIE_NAME = "rasputin_session"
+# request.client.host is only ever a real loopback address for a native
+# (non-Docker) run hit directly on 127.0.0.1 -- behind the standard
+# docker-compose deployment it's the bridge gateway IP, so this bypass is a
+# native-dev convenience only and simply never fires in production.
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
 _lock = Lock()
 _sessions = {}
@@ -186,7 +191,24 @@ def cookie_secure():
 
 
 def login(username, password, client="local"):
-    return "mock-token", {"username": "admin", "role": "admin"}
+    _check_login_rate(username, client)
+    data = load()
+    user = next((u for u in data.get("users", []) if u.get("username") == username), None)
+    if not user or not _verify(password, user.get("salt", ""), user.get("password_hash", "")):
+        _record_login_failure(username, client)
+        audit.log("auth_login_failed", {"username": username}, actor=username or "unknown")
+        raise PermissionError("invalid username or password")
+    _clear_login_failures(username, client)
+    token = secrets.token_urlsafe(32)
+    with _lock:
+        _prune_sessions()
+        _sessions[token] = {
+            "username": user.get("username"),
+            "role": user.get("role", "admin"),
+            "created_at": time.time(),
+        }
+    audit.log("auth_login", {"username": user.get("username")}, actor=user.get("username"))
+    return token, {"username": user.get("username"), "role": user.get("role", "admin")}
 
 
 def logout(token):
@@ -233,7 +255,17 @@ def session_info(token):
 
 
 def public_session(token=None, client_host=""):
-    return {"authenticated": True, "username": "admin", "role": "admin"}
+    # Both bypasses are explicit, env-gated opt-ins (see load_public()) --
+    # neither is on unless someone deliberately set the env var.
+    if test_bypass_enabled():
+        return {"authenticated": True, "username": "admin", "role": "admin"}
+    if localhost_bypass_enabled() and client_host in _LOOPBACK_HOSTS:
+        return {"authenticated": True, "username": "admin", "role": "admin"}
+    if token:
+        info = session_info(token)
+        if info:
+            return info
+    return {"authenticated": False, "username": None, "role": None}
 
 
 def require_user(token=None, client_host=""):

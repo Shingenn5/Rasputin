@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend.api.core import current_user, hub
 from backend.core import approvals as approvals
+from backend.core import auth as auth
 from backend.engine import agent as agent
 from backend.engine import context as context_governor
 from backend.engine import prompt_security as prompt_security
@@ -90,6 +91,77 @@ class BackendSmokeTests(unittest.TestCase):
     def testAuthSessionShape(self):
         data = self.assertOk(self.client.get("/api/auth/session"))
         self.assertIn("authenticated", data)
+
+    def _set_known_admin_password(self, password):
+        data = auth.load()
+        username = data["users"][0]["username"]
+        hashed = auth._hash_password(password)
+        data["users"][0]["salt"] = hashed["salt"]
+        data["users"][0]["password_hash"] = hashed["hash"]
+        auth.store.set_kv("auth", data)
+        return username
+
+    def testLoginRejectsWrongPasswordAndAcceptsCorrectOne(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        username = self._set_known_admin_password("correct-horse-battery-staple")
+
+        with patch.dict(os.environ, {
+            "RASPUTIN_TEST_AUTH_BYPASS": "0", "RASPUTIN_LOCALHOST_BYPASS": "0",
+        }, clear=False):
+            bad = self.client.post("/api/auth/login", json={"username": username, "password": "not-it"})
+            self.assertEqual(bad.status_code, 403)
+            self.assertEqual(bad.json()["error"]["code"], "permissionDenied")
+
+            session_after_failure = self.assertOk(self.client.get("/api/auth/session"))
+            self.assertFalse(session_after_failure["authenticated"])
+
+            good = self.assertOk(self.client.post(
+                "/api/auth/login", json={"username": username, "password": "correct-horse-battery-staple"}
+            ))
+            self.assertEqual(good["username"], username)
+            session_after_login = self.assertOk(self.client.get("/api/auth/session"))
+            self.assertTrue(session_after_login["authenticated"])
+            self.assertEqual(session_after_login["username"], username)
+
+    def testLoginRateLimitLocksOutAfterRepeatedFailures(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        username = self._set_known_admin_password("another-known-password")
+        with patch.dict(os.environ, {
+            "RASPUTIN_LOGIN_MAX_FAILURES": "3",
+            "RASPUTIN_LOGIN_WINDOW_SECONDS": "300",
+            "RASPUTIN_LOGIN_LOCKOUT_SECONDS": "300",
+        }, clear=False):
+            for _ in range(3):
+                resp = self.client.post("/api/auth/login", json={"username": username, "password": "wrong"})
+                self.assertEqual(resp.status_code, 403)
+            locked_out = self.client.post(
+                "/api/auth/login", json={"username": username, "password": "another-known-password"}
+            )
+            self.assertEqual(locked_out.status_code, 403)
+            self.assertIn("too many failed login attempts", locked_out.json()["error"]["message"])
+
+    def testCurrentUserEnforcesRealSessionWhenBypassesDisabled(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        del main.app.dependency_overrides[current_user]
+        try:
+            with patch.dict(os.environ, {
+                "RASPUTIN_TEST_AUTH_BYPASS": "0", "RASPUTIN_LOCALHOST_BYPASS": "0",
+            }, clear=False):
+                anon = self.client.get("/api/tasks")
+                self.assertEqual(anon.status_code, 403)
+                self.assertEqual(anon.json()["error"]["code"], "permissionDenied")
+
+                username = self._set_known_admin_password("yet-another-known-password")
+                self.assertOk(self.client.post(
+                    "/api/auth/login", json={"username": username, "password": "yet-another-known-password"}
+                ))
+                authed = self.client.get("/api/tasks")
+                self.assertEqual(authed.status_code, 200)
+        finally:
+            main.app.dependency_overrides[current_user] = lambda: {"username": "test", "role": "admin"}
 
     def testModelRegistryUsesCamelCase(self):
         data = self.assertOk(self.client.get("/api/model-registry"))

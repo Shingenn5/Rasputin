@@ -6,7 +6,7 @@ aren't. It's written for whoever is deciding whether to expose an instance
 beyond their own machine, and for whoever picks up the next piece of
 security work.
 
-It is a snapshot as of 2026-07-06. Verify file:line citations against
+It is a snapshot as of 2026-07-07. Verify file:line citations against
 current code before relying on them; this system moves fast.
 
 ---
@@ -25,10 +25,11 @@ that the thing to defend against is *content*, not *the operator*:
   Privacy Lock, and the approval system all exist to let the *operator*
   control what an *agentic loop running on their behalf* can do — not to
   protect Rasputin from someone who already has legitimate access to it.
-- Anyone who can reach the API surface at all is currently a different
-  question — see the Known Gaps section (§6), specifically 6.1. That gap
-  means the "single trusted operator" assumption is presently enforced by
-  network topology (don't expose the port), not by the app itself.
+- Anyone who can reach the API surface must now present real credentials
+  (§6.1) — a login screen, password verification, and session cookie all
+  actually enforce this as of 2026-07-07. Before that date this was
+  enforced only by network topology (don't expose the port); don't assume
+  that's still the only backstop without re-reading §6.1.
 
 ## 2. Roles & permission flags
 
@@ -140,50 +141,53 @@ and no additional container wall.
 
 Ranked by how much they should change what you're willing to expose.
 
-### 6.1 — HIGH — the login/session boundary is currently a no-op
+### 6.1 — RESOLVED 2026-07-07 — the login/session boundary was a no-op
 
-`backend/core/auth.py`'s `login()`, `public_session()`, and `require_user()`
-unconditionally return an authenticated admin session regardless of any
-password or cookie:
+Found 2026-07-06: `backend/core/auth.py`'s `login()`, `public_session()`,
+and `require_user()` unconditionally returned an authenticated admin
+session regardless of any password or cookie, and `backend/api/core.py`'s
+`current_user()` — the actual `Depends(...)` gate on nearly every API
+route — was an even more direct version of the same stub, entirely
+disconnected from `auth.py`. Real PBKDF2-HMAC-SHA256 password hashing, a
+real first-run credential bootstrap, login rate-limiting/lockout, and
+session TTL pruning all existed in the same file but weren't wired to any
+of those three functions.
 
-```python
-def login(username, password, client="local"):
-    return "mock-token", {"username": "admin", "role": "admin"}
+**Fixed by reconnecting the existing infrastructure, not building new
+infrastructure:**
+- `login()` now calls `_check_login_rate` / `_verify()` against the stored
+  hash, records failures (`_record_login_failure`), and on success mints a
+  real token and populates `_sessions`.
+- `public_session()` now checks `test_bypass_enabled()` and
+  `localhost_bypass_enabled()` (both still explicit, env-gated opt-ins —
+  see §1) before falling through to a real `session_info(token)` lookup;
+  no token or an invalid one now correctly returns
+  `{"authenticated": False}`.
+- `current_user()` (`backend/api/core.py`) now reads the session cookie,
+  calls `auth.public_session(token, host)`, and raises `PermissionError`
+  (→ HTTP 403, matching every other permission-style failure in this
+  codebase) when not authenticated — this is the change that actually
+  closes the gap, since it's the dependency every protected route uses.
 
-def public_session(token=None, client_host=""):
-    return {"authenticated": True, "username": "admin", "role": "admin"}
-```
+**Why this didn't brick the app:** the frontend (`LoginShell.jsx`,
+gated rendering in `App.jsx`) was already fully built against real
+session semantics — it just never had a reason to fail before. Verified
+end-to-end against a live server: session check before login reports
+`authenticated: false`, a protected route 403s, wrong password 403s,
+correct password (the real bootstrap-printed one) succeeds and sets a
+working cookie, the same protected route then returns 200, and logout
+immediately locks it back out. Covered by three new tests in
+`testBackendSmoke.py` (`testLoginRejectsWrongPasswordAndAcceptsCorrectOne`,
+`testLoginRateLimitLocksOutAfterRepeatedFailures`,
+`testCurrentUserEnforcesRealSessionWhenBypassesDisabled`); full suite
+76/76.
 
-`login()` never calls `_verify()` against the stored password hash and
-never populates `_sessions`. `public_session()` never consults `_sessions`
-either (that's what `session_info()` does — correctly — but nothing calls
-it). `require_user()`'s failure branch (`if not session.get("authenticated")`)
-can therefore never trigger. `backend/api/core.py`'s `current_user()` is an
-even more direct version of the same stub.
-
-This sits next to **real** infrastructure that suggests it was meant to be
-wired up, not that no-auth was the plan: correct PBKDF2-HMAC-SHA256
-password hashing (`_hash_password`/`_verify`, 180k iterations), a real
-first-run bootstrap that generates and prints genuine admin credentials,
-login rate-limiting/lockout state (`_check_login_rate`,
-`_record_login_failure`), a session TTL/pruning mechanism
-(`_prune_sessions`), and `change_password()`, which *does* correctly call
-`_verify()`. The separate, explicit `RASPUTIN_LOCALHOST_BYPASS` /
-`RASPUTIN_TEST_AUTH_BYPASS` env flags — which look like the *intended*,
-narrow, opt-in bypass mechanism — aren't even what's causing this; the
-unconditional stub bypasses everything regardless of those flags' values.
-
-**Practical effect:** as shipped today, any request that reaches the API —
-with any password, any cookie, or none at all — is treated as authenticated
-admin. The login screen is decorative. This is fine if Rasputin never
-listens on anything but `127.0.0.1` on a single-user machine; it stops
-being fine the moment the port is reachable from anywhere else (a LAN, a
-VPN peer, a container network shared with something less trusted).
-
-This was **not fixed** as part of this pass — deciding whether real login
-should be wired up (the pieces to do it are ~90% already in the file) or
-whether localhost-only-no-auth is the accepted design is a call for
-whoever owns this instance's exposure, not a unilateral code change.
+**Caveat carried forward, not fixed:** `localhost_bypass_enabled()` checks
+`request.client.host` against a literal loopback set. Behind the standard
+docker-compose deployment that's the bridge gateway IP, not `127.0.0.1` —
+so this bypass is a native-dev convenience only and simply never fires in
+the primary deployment mode. That's intentional (conservative), not a gap,
+but don't extend it to trust proxy headers without real thought.
 
 ### 6.2 — MEDIUM — Skills sandbox shares the host network namespace
 

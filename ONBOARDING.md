@@ -85,8 +85,9 @@ Docker socket.
     approved host folder show up as a bind mount on restart).
   - `core/host_fs.py` — browses the *host* filesystem from inside the
     (usually containerized) backend, for the folder-picker UI.
-  - `core/auth.py` — password hashing, login, sessions. **Currently a
-    no-op boundary** — see `THREAT_MODEL.md` §6.1 before building on it.
+  - `core/auth.py` — password hashing, login, sessions. Real
+    login/session enforcement as of 2026-07-07 (see `THREAT_MODEL.md`
+    §6.1 for how it's wired and the one caveat that's left).
   - `core/sandbox.py` — spawns the ephemeral Docker sandbox for Skills.
   - `warsat/` — model acquisition/deployment providers (Docker, etc.).
   - `rag/vector.py`, `rag/graph.py` — the vector index and AST-based
@@ -166,14 +167,18 @@ Full detail lives in `THREAT_MODEL.md`; the load-bearing points:
   site can forget it. If you add a new source of retrieved/fetched text
   into a prompt, wrap it the same way — check `prompt_security.py`'s
   docstring for the reasoning.
-- **Known gap you need to know about (`THREAT_MODEL.md` §6.1)**:
-  `backend/core/auth.py`'s `login()`/`public_session()`/`require_user()`
-  currently grant an authenticated admin session unconditionally,
-  regardless of password or cookie. Real password hashing and session
-  infrastructure exist in the same file but aren't wired to those three
-  functions. Don't expose an instance beyond `127.0.0.1` assuming the
-  login form is doing anything, and don't build new "requires login"
-  features assuming `current_user()` is a real check — it isn't yet.
+- **Auth is real** (`THREAT_MODEL.md` §6.1, fixed 2026-07-07):
+  `backend/core/auth.py`'s `login()` checks the password hash and rate
+  limit for real, and `backend/api/core.py`'s `current_user()` — the
+  `Depends(...)` gate on nearly every route — actually checks the session
+  cookie via `auth.public_session()` and 403s if it's missing or invalid.
+  One caveat: `localhost_bypass_enabled()` only ever fires for a native
+  (non-Docker) run hit directly on `127.0.0.1` — behind the standard
+  docker-compose deployment, `request.client.host` is the bridge gateway
+  IP, so that bypass is a dev convenience that simply doesn't apply in
+  production. If you lose your admin password, `.\rasputin.ps1
+  credentials` only recovers it from container logs on the very first
+  boot — there's no reset flow yet.
 
 ---
 
