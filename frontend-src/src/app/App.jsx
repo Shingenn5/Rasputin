@@ -1864,6 +1864,7 @@ export function App() {
           setGlobalStatus("");
         }}
         refresh={loadWarsat}
+        loadModels={loadModels}
         tasks={tasks}
         models={models}
         security={security}

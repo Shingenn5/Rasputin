@@ -104,6 +104,7 @@ export function WarsatView({
   /* new props for mission control */
   tasks,
   models,
+  loadModels,
   security,
   cancelTask,
   pauseTask,
@@ -397,6 +398,7 @@ export function WarsatView({
               approvals={approvals}
               handleRefresh={handleRefresh}
               enableDockerControl={enableDockerControl}
+              loadModels={loadModels}
               go={go}
             />
           )}
@@ -872,7 +874,7 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
 /* ═══════════════════════════════════════════
    CONTAINERS TAB
    ═══════════════════════════════════════════ */
-function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRuntimeAction, operation, approvals, handleRefresh, enableDockerControl, go }) {
+function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRuntimeAction, operation, approvals, handleRefresh, enableDockerControl, loadModels, go }) {
   const [activeLogContainer, setActiveLogContainer] = useState(null);
   const [discovering, setDiscovering] = useState(false);
   const [discovered, setDiscovered] = useState(null);
@@ -918,6 +920,7 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
         protocolHint: item.protocolHint,
       });
       setImportedKeys(prev => new Set([...prev, k]));
+      await loadModels?.();
       // Navigate to chat — give the user 400ms to see the success state
       setTimeout(() => go?.("home"), 400);
     } catch (err) {

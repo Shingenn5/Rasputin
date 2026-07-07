@@ -120,6 +120,18 @@ def _slug(value):
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(value or "")).strip("-").lower() or "warsat-model"
 
 
+def _model_label_for_container(model_ref, model_path):
+    # container names built from the protocol id + port ("rasputin-
+    # llamacppggufserver-8081") give no hint which model is inside once you
+    # have more than one running -- prefer the model itself when we know it.
+    base = ""
+    if model_ref:
+        base = str(model_ref).split("/")[-1]
+    elif model_path:
+        base = Path(str(model_path)).stem
+    return base[:60]
+
+
 def _safe_protocol_id(value):
     return re.sub(r"[^a-zA-Z0-9_.-]+", "", str(value or "")).strip(".-") or "warsatProtocol"
 
@@ -998,7 +1010,9 @@ def make_plan(payload):
     # No explicit port -> pick the first one not held by another running
     # container, so a second deploy doesn't collide with the first.
     host_port = int(requested_port) if requested_port else _pick_host_port(protocol)
-    container_name = _slug(payload.get("containerName") or f"rasputin-{protocol['id']}-{host_port}")
+    model_label = _model_label_for_container(model_ref, model_path)
+    default_name = f"rasputin-{model_label}-{host_port}" if model_label else f"rasputin-{protocol['id']}-{host_port}"
+    container_name = _slug(payload.get("containerName") or default_name)
     tuning = _build_tuning(payload, protocol, strength)
     limits = _build_limits(payload)
 
