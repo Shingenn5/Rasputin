@@ -1091,15 +1091,18 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
                 type="button"
                 onClick={() => handleRuntimeAction("restart", container.name)}
               >
-                <RefreshCw size={12} /> Restart
+                {isRunning ? <RefreshCw size={12} /> : <Play size={12} />}
+                {isRunning ? "Restart" : "Start"}
               </button>
-              <button
-                className="ws-runtime-btn is-danger"
-                type="button"
-                onClick={() => handleRuntimeAction("stop", container.name)}
-              >
-                <Power size={12} /> Stop
-              </button>
+              {isRunning && (
+                <button
+                  className="ws-runtime-btn is-danger"
+                  type="button"
+                  onClick={() => handleRuntimeAction("stop", container.name)}
+                >
+                  <Power size={12} /> Stop
+                </button>
+              )}
             </div>
 
             {/* Inline log panel */}
