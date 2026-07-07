@@ -1090,8 +1090,11 @@ def make_plan(payload):
         "modelRef": model_ref,
         "modelPath": model_path,
         "hfSource": hf_source,
-        # Startup downloads need a much longer probe window than a warm model.
-        "healthProbe": {"attempts": 30, "intervalSeconds": 10} if hf_source else None,
+        # Startup downloads need a much longer probe window than a warm model --
+        # a multi-GB GGUF pulled by llama.cpp's own --hf-repo/--hf-file flags
+        # can take well past 5 minutes on an ordinary connection. 30 * 30s is
+        # the max _probe_model_endpoint's own clamps allow (15 minutes).
+        "healthProbe": {"attempts": 30, "intervalSeconds": 30} if hf_source else None,
         "role": role,
         "strengthProfile": strength,
         "resourceProfile": STRENGTH_PROFILES[strength],
@@ -2034,8 +2037,11 @@ def deploy(plan, approval_id=None):
             "lastError": health.get("lastError") or health.get("message"),
             "message": "Container started, but Warsat did not register the model because the health probe failed.",
             "nextSteps": [
-                "Open container logs from Managed Runtimes.",
-                "Wait for the model server to finish loading, then retry deployment approval if needed.",
+                "Open container logs from Managed Runtimes to see if the model is still loading.",
+                "If the container is still running, do not redeploy -- that removes the container "
+                "and restarts any in-progress download from scratch. Instead wait for it to report "
+                "healthy, then use Discover (below) to import it without redeploying.",
+                "Only retry the deploy if the container actually exited or crashed.",
                 "Check the selected model id, port, GPU settings, and mounted model path.",
             ],
         }
@@ -2214,8 +2220,11 @@ def deploy_stream(plan, approval_id):
             "lastError": health.get("lastError") or health.get("message"),
             "message": "Container started, but Warsat did not register the model because the health probe failed.",
             "nextSteps": [
-                "Open container logs from Managed Runtimes.",
-                "Wait for the model server to finish loading, then retry deployment approval if needed.",
+                "Open container logs from Managed Runtimes to see if the model is still loading.",
+                "If the container is still running, do not redeploy -- that removes the container "
+                "and restarts any in-progress download from scratch. Instead wait for it to report "
+                "healthy, then use Discover (below) to import it without redeploying.",
+                "Only retry the deploy if the container actually exited or crashed.",
                 "Check the selected model id, port, GPU settings, and mounted model path.",
             ],
         }
