@@ -973,6 +973,23 @@ def _probe_model_endpoint(health_url, expected_model=None, attempts=None, interv
     }
 
 
+def _probe_failure_log_tail(container_name, limit=15):
+    # The probe's own error ("connection refused", "remote end closed
+    # connection without response", etc.) only describes the symptom -- a TCP
+    # connection was accepted or refused. The actual cause (gated HF repo,
+    # OOM, CUDA driver mismatch, bad CLI args) is almost always in the last
+    # few lines of the container's own stderr, so pull that in instead of
+    # making the user dig through Managed Runtimes to find it.
+    try:
+        result = _run_command(["docker", "logs", "--tail", str(limit), container_name], timeout=15, check=False)
+    except Exception:
+        return ""
+    text = ((result.get("stdout") or "") + "\n" + (result.get("stderr") or "")).strip()
+    if not text:
+        return ""
+    return "\n".join(text.splitlines()[-limit:])[:1500]
+
+
 def make_plan(payload):
     protocol = get_protocol(payload.get("protocolId") or payload.get("protocol_id"))
     model_ref = str(payload.get("modelRef") or payload.get("model_ref") or "").strip()
@@ -2032,6 +2049,10 @@ def deploy(plan, approval_id=None):
     })
 
     if not health.get("ok"):
+        last_error = health.get("lastError") or health.get("message")
+        log_tail = _probe_failure_log_tail(container_name)
+        if log_tail:
+            last_error = f"{last_error}\n\nContainer log tail:\n{log_tail}"
         result = {
             "planId": plan.get("planId"),
             "approvalRequired": False,
@@ -2048,7 +2069,7 @@ def deploy(plan, approval_id=None):
             "pull": pull,
             "run": started,
             "logs": logs_out,
-            "lastError": health.get("lastError") or health.get("message"),
+            "lastError": last_error,
             "message": "Container started, but Warsat did not register the model because the health probe failed.",
             "nextSteps": [
                 "Open container logs from Managed Runtimes to see if the model is still loading.",
@@ -2215,6 +2236,10 @@ def deploy_stream(plan, approval_id):
     })
 
     if not health.get("ok"):
+        last_error = health.get("lastError") or health.get("message")
+        log_tail = _probe_failure_log_tail(container_name)
+        if log_tail:
+            last_error = f"{last_error}\n\nContainer log tail:\n{log_tail}"
         result = {
             "planId": plan.get("planId"),
             "approvalRequired": False,
@@ -2231,7 +2256,7 @@ def deploy_stream(plan, approval_id):
             "pull": pull,
             "run": started,
             "logs": logs_out,
-            "lastError": health.get("lastError") or health.get("message"),
+            "lastError": last_error,
             "message": "Container started, but Warsat did not register the model because the health probe failed.",
             "nextSteps": [
                 "Open container logs from Managed Runtimes to see if the model is still loading.",
