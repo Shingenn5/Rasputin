@@ -1751,16 +1751,24 @@ def discover():
         check=False,
     )
 
-    # Get registered model base_urls to avoid suggesting already-registered endpoints
+    # Registered (base_url, model) pairs to avoid re-suggesting an endpoint
+    # that's already imported under the model it's currently serving. This is
+    # deliberately keyed on the pair, not just the URL -- a port getting
+    # reused for a different deploy (the default GGUF/vLLM ports are fixed)
+    # must still surface as discoverable even though some earlier, now-stale
+    # registration still points at that same URL under the old model name.
     try:
         existing_models = model_registry.all_models()
-        existing_urls = {
-            str(m.get("base_url") or "").rstrip("/").lower()
-            for m in existing_models
-            if m.get("base_url")
-        }
+        existing_pairs = set()
+        for m in existing_models:
+            base = str(m.get("base_url") or "").rstrip("/").lower()
+            model_id = str(m.get("model") or "")
+            if not base or not model_id:
+                continue
+            existing_pairs.add((base, model_id))
+            existing_pairs.add((base[:-3] if base.endswith("/v1") else base, model_id))
     except Exception:
-        existing_urls = set()
+        existing_pairs = set()
 
     discovered = []
     for row in _parse_json_lines(result["stdout"]):
@@ -1777,13 +1785,8 @@ def discover():
         model_ids = None
         protocol_hint = "openai-compatible"
         is_ollama = False
-        already_registered = False
         for host in _discovery_hosts():
             candidate = f"http://{host}:{host_port}"
-            # Registered entries usually carry a /v1 suffix — match both.
-            if candidate.lower() in existing_urls or f"{candidate.lower()}/v1" in existing_urls:
-                already_registered = True
-                break
             ids = _probe_openai_endpoint(candidate)
             if ids is None:
                 # Try Ollama native API
@@ -1797,12 +1800,15 @@ def discover():
                 model_ids = ids
                 break
 
-        if already_registered or model_ids is None:
-            # Registered already, or port open but not a model endpoint
+        if model_ids is None:
+            # Port open but not a model endpoint.
             continue
 
+        candidate_norm = base_url.rstrip("/").lower()
         for model_id in model_ids:
             if not model_id:
+                continue
+            if (candidate_norm, model_id) in existing_pairs or (f"{candidate_norm}/v1", model_id) in existing_pairs:
                 continue
             discovered.append({
                 "containerName": name,
