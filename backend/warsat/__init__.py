@@ -1080,6 +1080,12 @@ def make_plan(payload):
             "so the first health probe can take several minutes. The download is cached only for the "
             "container's lifetime; a redeploy fetches it again."
         )
+    elif protocol.get("modelFormat") == "huggingface" and model_ref:
+        warnings.append(
+            f"vLLM downloads {model_ref} from Hugging Face on first start, so the first health probe "
+            "can take several minutes for a multi-GB model. The download is cached in a persistent "
+            "volume, so later deploys of the same model reuse it."
+        )
     if not docker_control_enabled:
         warnings.append("Docker control is disabled. This plan cannot be executed from Rasputin yet.")
     elif not execution["dockerCliAvailable"]:
@@ -1122,10 +1128,13 @@ def make_plan(payload):
         "modelPath": model_path,
         "hfSource": hf_source,
         # Startup downloads need a much longer probe window than a warm model --
-        # a multi-GB GGUF pulled by llama.cpp's own --hf-repo/--hf-file flags
-        # can take well past 5 minutes on an ordinary connection. 30 * 30s is
-        # the max _probe_model_endpoint's own clamps allow (15 minutes).
-        "healthProbe": {"attempts": 30, "intervalSeconds": 30} if hf_source else None,
+        # a multi-GB GGUF pulled by llama.cpp's own --hf-repo/--hf-file flags, or
+        # a multi-GB HF model vLLM downloads itself via --model, can take well
+        # past 5 minutes on an ordinary connection. 30 * 30s is the max
+        # _probe_model_endpoint's own clamps allow (15 minutes).
+        "healthProbe": {"attempts": 30, "intervalSeconds": 30}
+        if (hf_source or (protocol.get("modelFormat") == "huggingface" and model_ref))
+        else None,
         "role": role,
         "strengthProfile": strength,
         "resourceProfile": STRENGTH_PROFILES[strength],
