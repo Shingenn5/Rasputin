@@ -1858,6 +1858,15 @@ def import_discovered(model_id: str, base_url: str, container_name: str, protoco
     }
 
     model_registry.upsert(model_entry)
+    # A freshly-upserted entry has no runtime_status at all, which the Models
+    # page reads as "not running" indistinguishably from actually-broken --
+    # exactly the confusing state Discover exists to resolve. Run a real
+    # health check immediately so the import lands already marked reachable
+    # instead of leaving the user to notice and click Test themselves.
+    try:
+        model_registry.test_model(key)
+    except Exception as exc:
+        audit.log("warsat_import_discovered_health_check_failed", {"key": key, "error": str(exc)})
     audit.log("warsat_import_discovered", {
         "key": key,
         "modelId": model_id,
