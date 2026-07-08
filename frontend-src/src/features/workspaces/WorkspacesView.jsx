@@ -390,12 +390,15 @@ export function WorkspacesView({
 
   // Clicking an approved folder both switches to it (updates the header,
   // the highlight, and what "Index Workspace" / task launches target) and
-  // loads its file listing into the explorer below.
+  // loads its file listing into the explorer below. selectWorkspace already
+  // re-browses the newly active root as part of loadWorkspaceRoots, so a
+  // second, separate browseWorkspace() call here was pure duplicate work on
+  // every click -- doubling the round trips (and doubling the folder-listing
+  // cost when the root has a lot of entries) for no visible difference.
   function selectAndBrowseRoot(root) {
     const rootId = root.id;
     const rootPath = root.path || root.root;
     selectWorkspace?.(rootId || rootPath);
-    browseWorkspace(rootId);
   }
 
   return (

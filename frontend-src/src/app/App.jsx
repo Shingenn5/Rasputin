@@ -1024,9 +1024,15 @@ export function App() {
     return postJson("/api/workspace/preview-file", { rootId, path });
   }
 
-  async function refreshKnowledgeStats() {
+  async function refreshKnowledgeStats(workspaceId) {
+    // "RAG Indexed" is scoped to a single approved folder -- default to
+    // whichever one is currently active rather than the combined total
+    // across every folder, which is what made the count look frozen when
+    // switching folders (it genuinely never changed).
+    const scopeId = workspaceId !== undefined ? workspaceId : (workspace.activeId || workspace.active_id);
+    const ragQuery = scopeId ? `?workspace_id=${encodeURIComponent(scopeId)}` : "";
     const [nextRagStats, nextGraphStats] = await Promise.all([
-      api("/api/rag/stats"),
+      api(`/api/rag/stats${ragQuery}`),
       api("/api/graph/stats"),
     ]);
     setRagStats(nextRagStats);
@@ -1069,7 +1075,16 @@ export function App() {
     try {
       const active = await postJson("/api/workspace/select", { path });
       setWorkspace(active);
-      await loadWorkspaceRoots(active.activePath);
+      // Fire-and-forget: the knowledge panel should catch up to the newly
+      // active folder, but switching folders shouldn't wait on it -- this
+      // path is already slow enough without adding a blocking round trip.
+      refreshKnowledgeStats(active.activeId || active.active_id).catch(() => {});
+      // Explicitly point at the just-activated root rather than relying on
+      // loadWorkspaceRoots' default (the closure's workspaceExplorer, which
+      // is still the *previous* root at this point) -- otherwise it browses
+      // the old folder and overwrites the explorer back to it a moment
+      // after the switch, undoing the click.
+      await loadWorkspaceRoots(active.activePath, { rootId: active.activeId || active.active_id, path: undefined });
       setGlobalStatus(`Workspace set to ${active.activeName || displayWorkspaceName(active.activePath)}.`);
     } catch (error) {
       setGlobalStatus(error.message);

@@ -246,8 +246,13 @@ class GraphRelationsIn(CamelModel):
 
 @rag_router.get("/rag/stats")
 
-async def rag_stats(_user=Depends(current_user)):
-    return ok(rag.stats())
+async def rag_stats(workspace_id: str | None = None, _user=Depends(current_user)):
+    # stats() is cheap once the summary cache is warm, but the first call
+    # after a cache-format change (see STATS_SUMMARY_VERSION) rebuilds it
+    # from the full index -- multiple seconds on a real workspace. Run off
+    # the event loop so that one-time cost can't stall every other request,
+    # same reasoning as rag_ingest below.
+    return ok(await asyncio.to_thread(rag.stats, workspace_id))
 
 @rag_router.post("/rag/ingest")
 

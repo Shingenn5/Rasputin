@@ -57,18 +57,39 @@ def raw_index():
     return _load()
 
 
+# Bump when the cached summary's shape changes (e.g. a new field stats()
+# depends on) so stale caches from before the change get one forced rebuild
+# instead of silently reading as zeros/missing.
+STATS_SUMMARY_VERSION = 2
+
+
 def _rebuild_stats_summary(index):
     # A separate, small KV entry mirroring what stats() needs, so it never
     # has to load+parse the full index -- which, for a real workspace, is a
     # multi-hundred-MB blob that took 20s+ to even read back off disk through
     # Docker Desktop's Windows bind mount, let alone parse. Every save keeps
     # this in sync; stats() reads only this.
+    docs = index.get("docs", [])
+    chunks = index.get("chunks", [])
+    by_workspace = {}
+    for doc in docs:
+        wid = doc.get("workspace_id") or "unknown"
+        entry = by_workspace.setdefault(wid, {"docs": 0, "chunks": 0, "sources": []})
+        entry["docs"] += 1
+        if len(entry["sources"]) < 25:
+            entry["sources"].append(doc)
+    for chunk in chunks:
+        wid = chunk.get("workspace_id") or "unknown"
+        entry = by_workspace.setdefault(wid, {"docs": 0, "chunks": 0, "sources": []})
+        entry["chunks"] += 1
     summary = {
+        "summary_version": STATS_SUMMARY_VERSION,
         "version": index.get("version", 2),
-        "docs_count": len(index.get("docs", [])),
-        "chunks_count": len(index.get("chunks", [])),
+        "docs_count": len(docs),
+        "chunks_count": len(chunks),
         "updated_at": index.get("updated_at"),
-        "sources": index.get("docs", [])[-25:],
+        "sources": docs[-25:],
+        "by_workspace": by_workspace,
     }
     store.set_kv("rag_vector_stats", summary)
     return summary
@@ -453,13 +474,25 @@ def ingest(path=".", label=None):
     }
 
 
-def stats():
+def stats(workspace_id=None):
     summary = store.get_kv("rag_vector_stats")
-    if not isinstance(summary, dict):
-        # No cached summary yet (pre-migration install, or a fresh index) --
-        # compute it once from the full index and cache it so every later
-        # call is cheap.
+    if not isinstance(summary, dict) or summary.get("summary_version") != STATS_SUMMARY_VERSION:
+        # No cached summary yet (pre-migration install, a fresh index, or a
+        # summary cached before by_workspace existed) -- compute it once from
+        # the full index and cache it so every later call is cheap.
         summary = _rebuild_stats_summary(_load())
+    if workspace_id:
+        scoped = summary.get("by_workspace", {}).get(workspace_id, {})
+        return {
+            "version": summary.get("version", 2),
+            "index_backend": "local-hash-vector-json",
+            "docs": scoped.get("docs", 0),
+            "chunks": scoped.get("chunks", 0),
+            "updated_at": summary.get("updated_at"),
+            "sources": scoped.get("sources", []),
+            "parser_status": parser_status(),
+            "workspace_id": workspace_id,
+        }
     return {
         "version": summary.get("version", 2),
         "index_backend": "local-hash-vector-json",
