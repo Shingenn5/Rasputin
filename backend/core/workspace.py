@@ -841,9 +841,21 @@ def select(path):
     try:
         _, item = _find(path)
     except ValueError:
-        add(path, permission_profile=_read_only_profile())
+        # `path` may be the id of a synthetic pseudo-root that approved_roots()
+        # surfaces (e.g. "workspace-folder" for ./workspace) but that was never
+        # actually registered in data["workspaces"]. Resolve it to its real
+        # absolute path first -- otherwise add() treats the id string itself
+        # as a relative path (ROOT/"workspace-folder"), which doesn't exist.
+        resolved = path
+        resolved_name = None
+        for root in approved_roots()["roots"]:
+            if root.get("id") == path:
+                resolved = root.get("absolute_path")
+                resolved_name = root.get("name")
+                break
+        add(resolved, name=resolved_name, permission_profile=_read_only_profile())
         data = _load()
-        _, item = _find(path)
+        _, item = _find(resolved)
     item["last_used"] = time.time()
     data["active_id"] = item.get("id")
     _save(data)
