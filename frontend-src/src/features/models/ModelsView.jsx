@@ -109,6 +109,7 @@ export function ModelsView({
   const [hfQuery, setHfQuery] = useState("");
   const [hfResults, setHfResults] = useState([]);
   const [hfLoading, setHfLoading] = useState(false);
+  const [hfError, setHfError] = useState("");
   const [hfSort, setHfSort] = useState("downloads");
   const [activeDownloads, setActiveDownloads] = useState([]);
   const [pageSize, setPageSize] = useState(20);
@@ -168,8 +169,16 @@ export function ModelsView({
   /* HF search with debounce */
   useEffect(() => {
     if (searchMode !== "huggingface") return;
+    // Neither fetch() nor the backend's own HF call had an upper bound the
+    // UI could see, so a slow/dropped connection to huggingface.co left the
+    // spinner running forever with no error and no way out. Bound it and
+    // abort the previous request when a new one starts, so a stale slow
+    // response can't land after a newer, faster one already resolved.
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 30000);
     const t = setTimeout(async () => {
       setHfLoading(true);
+      setHfError("");
       try {
         // Fetch enough results to fill several pages at the chosen size.
         const hfLimit = String(Math.min(500, Math.max(100, pageSize * 5)));
@@ -178,15 +187,29 @@ export function ModelsView({
           const pm = { chat: "text-generation", coding: "text-generation", vision: "image-to-text", embeddings: "feature-extraction", speech: "automatic-speech-recognition" };
           if (pm[catalogPurpose]) p.set("type", pm[catalogPurpose]);
         }
-        const d = await api(`/api/model-catalog/search?${p.toString()}`);
+        const d = await api(`/api/model-catalog/search?${p.toString()}`, { signal: controller.signal });
         setHfResults(d.items || []);
+        setHfError(d.error ? `Hugging Face search failed: ${d.error}` : "");
       } catch (err) {
-        console.error("HF Search Error:", err);
-        setHfResults([]);
+        if (err.name === "AbortError") {
+          // Either superseded by a newer search, or the 30s bound tripped.
+          if (!controller.signal.reason || controller.signal.reason !== "superseded") {
+            setHfResults([]);
+            setHfError("Hugging Face search timed out after 30s. Check the container's network access to huggingface.co and try again.");
+          }
+        } else {
+          console.error("HF Search Error:", err);
+          setHfResults([]);
+          setHfError(`Hugging Face search failed: ${err.message || "unknown error"}`);
+        }
       }
       setHfLoading(false);
     }, 500);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(abortTimer);
+      controller.abort("superseded");
+    };
   }, [hfQuery, hfSort, catalogPurpose, searchMode, pageSize]);
 
   const totalVramGb = useMemo(() => {
@@ -342,6 +365,12 @@ export function ModelsView({
                   ? `${filteredCatalog.length} models · Source: ${modelCatalog?.source?.status || "local"}`
                   : hfLoading ? "Searching Hugging Face..." : `${hfResults.length} results`}
               </div>
+
+              {searchMode === "huggingface" && hfError && (
+                <div style={{ fontSize: "0.8125rem", color: "var(--ras-danger)", backgroundColor: "color-mix(in srgb, var(--ras-danger) 10%, var(--cc-surface))", border: "1px solid var(--ras-danger)", borderRadius: "6px", padding: "8px 12px" }}>
+                  {hfError}
+                </div>
+              )}
 
               {/* Active Downloads */}
               {activeDownloads.length > 0 && (
