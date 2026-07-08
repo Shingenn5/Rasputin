@@ -947,7 +947,12 @@ def _probe_model_endpoint(health_url, expected_model=None, attempts=None, interv
                 else:
                     model_ids.append(str(item))
             expected = str(expected_model or "").strip()
-            model_present = not expected or not model_ids or expected in model_ids
+            # An empty model list must NOT count as "present" -- for Ollama
+            # deploys (Warsat starts the bare server; it never pulls the
+            # model itself), a fresh container with nothing pulled yet
+            # returns an empty /v1/models list, and treating that as success
+            # registered a model that was never actually loaded.
+            model_present = not expected or expected in model_ids
             if 200 <= int(status_code) < 300 and model_present:
                 return {
                     "ok": True,
