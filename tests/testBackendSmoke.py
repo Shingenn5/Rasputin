@@ -2219,6 +2219,127 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(stopped["action"], "stop")
         self.assertTrue(any(call[:2] == ["docker", "stop"] for call in docker_calls))
 
+    def testWarsatHealthUrlKeepsPortEndingInOne(self):
+        # str.rstrip("/v1") strips the *characters* {'/', 'v', '1'}, not the
+        # literal suffix -- an endpoint on a port ending in "1" (8001 is a
+        # common default) used to get mangled into a health URL for a
+        # truncated port ("http://127.0.0.1:800"), so it could never pass its
+        # health probe.
+        from backend import warsat as warsat_module
+
+        plan = warsat_module.make_plan({
+            "protocolId": "llamaCppGgufServer",
+            "modelPath": "/models/tiny.q4_k_m.gguf",
+            "hostPort": 8001,
+            "role": "helper",
+        })
+        self.assertEqual(plan["healthUrl"], "http://127.0.0.1:8001/v1/models")
+
+    def testWarsatRuntimeArgumentsAddsToolCallSupportOnceForVllm(self):
+        # Rasputin's engine always sends tool definitions with chat requests;
+        # without --enable-auto-tool-choice / --tool-call-parser, vLLM
+        # returns 400 on every tool-enabled chat call against a Warsat vLLM
+        # deploy.
+        from backend import warsat as warsat_module
+
+        vllm_protocol = {"runtime": "vllm", "modelFormat": "huggingface"}
+        tuning = warsat_module._build_tuning({}, vllm_protocol, "balanced")
+        args = warsat_module._runtime_arguments(vllm_protocol, tuning)
+        self.assertEqual(args.count("--enable-auto-tool-choice"), 1)
+        self.assertEqual(args.count("--tool-call-parser"), 1)
+        self.assertEqual(args[args.index("--tool-call-parser") + 1], "hermes")
+
+        # A protocol whose defaultArguments already ship the flags (even with
+        # a different parser value) must not end up with duplicates -- the
+        # last word wins and stays singular.
+        vllm_protocol_with_defaults = {
+            "runtime": "vllm",
+            "modelFormat": "huggingface",
+            "defaultArguments": ["--enable-auto-tool-choice", "--tool-call-parser", "mistral"],
+        }
+        args_with_defaults = warsat_module._runtime_arguments(vllm_protocol_with_defaults, tuning)
+        self.assertEqual(args_with_defaults.count("--enable-auto-tool-choice"), 1)
+        self.assertEqual(args_with_defaults.count("--tool-call-parser"), 1)
+        self.assertEqual(args_with_defaults[args_with_defaults.index("--tool-call-parser") + 1], "hermes")
+
+        # A GGUF protocol never gets vLLM-only flags.
+        gguf_protocol = {"runtime": "llama.cpp", "modelFormat": "gguf"}
+        gguf_tuning = warsat_module._build_tuning({}, gguf_protocol, "balanced")
+        gguf_args = warsat_module._runtime_arguments(gguf_protocol, gguf_tuning)
+        self.assertNotIn("--enable-auto-tool-choice", gguf_args)
+        self.assertNotIn("--tool-call-parser", gguf_args)
+
+    def testWarsatDockerProviderCoversWarsatRuntimesWithoutLeakingExceptions(self):
+        # WarSat registers deployed models with runtime f"warsat-{protocol
+        # runtime}" (e.g. "warsat-vllm"), but get_provider only used to
+        # recognize "docker-llamacpp". Every WarSat deploy therefore raised
+        # ValueError inside registry.all_models(), which swallowed it into
+        # container_status "unknown" -> a permanent STOPPED badge.
+        from backend.warsat import providers as warsat_providers
+
+        warsat_model = {"managed": True, "runtime": "warsat-vllm", "container": "rasputin-vllm-8001"}
+        provider = warsat_providers.get_provider(warsat_model)
+        self.assertIsInstance(provider, warsat_providers.DeploymentProvider)
+
+        # start() is llama.cpp-specific (docker-llamacpp only); calling it on
+        # a WarSat-managed runtime must return a structured error, not raise.
+        result = provider.start(warsat_model)
+        self.assertFalse(result["ok"])
+        self.assertIn("message", result)
+
+        # The existing docker-llamacpp runtime keeps working the same way.
+        self.assertIs(warsat_providers.get_provider({"managed": True, "runtime": "docker-llamacpp"}), provider)
+
+        # Unmanaged models still raise -- they have no deployment provider.
+        with self.assertRaises(ValueError):
+            warsat_providers.get_provider({"managed": False, "runtime": "warsat-vllm"})
+
+    def testWarsatExtractHostPortsReturnsAllPublishedPorts(self):
+        # A container publishing more than one port (metrics + API) used to
+        # be reduced to just its first reported port, so discovery could miss
+        # the actual model endpoint entirely.
+        from backend import warsat as warsat_module
+
+        self.assertEqual(
+            warsat_module._extract_host_ports("0.0.0.0:9090->9090/tcp, 0.0.0.0:8000->8000/tcp"),
+            [9090, 8000],
+        )
+        self.assertEqual(warsat_module._extract_host_ports(":::8000->8000/tcp"), [8000])
+        self.assertEqual(warsat_module._extract_host_ports("8000/tcp"), [8000])
+        self.assertEqual(warsat_module._extract_host_ports(""), [])
+
+    def testWarsatDiscoverTriesEachPublishedPortUntilOneAnswers(self):
+        # End-to-end regression for the discover() caller: a container
+        # reporting its metrics port before its model API port must still be
+        # discovered once the API port is tried.
+        cfg = {"allow_docker_control": True, "allow_model_registry_edit": True}
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:2] == ["docker", "ps"]:
+                return {
+                    "returnCode": 0,
+                    "stdout": '{"ID":"abc","Names":"multi-port","Image":"vllm/vllm-openai:latest",'
+                              '"Status":"Up 5 minutes","Ports":"0.0.0.0:9090->9090/tcp, 0.0.0.0:8000->8000/tcp"}',
+                    "stderr": "",
+                }
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        def fake_probe(base_url, timeout=2.0):
+            if base_url.endswith(":8000"):
+                return ["local/served-model"]
+            return None  # the metrics port (9090) never answers as a model API
+
+        with patch("backend.core.security.load", return_value=cfg), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.warsat._probe_openai_endpoint", side_effect=fake_probe), \
+             patch("backend.warsat._probe_ollama_endpoint", return_value=None):
+            result = self.assertOk(self.client.get("/api/warsat/discover"))
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["discovered"][0]["port"], 8000)
+        self.assertEqual(result["discovered"][0]["baseUrl"], "http://127.0.0.1:8000")
+
     def testWorkspaceRootsBrowseAndMountPlan(self):
         preview_file = main.ROOT / "workspace" / "smoke-preview.txt"
         preview_file.parent.mkdir(parents=True, exist_ok=True)

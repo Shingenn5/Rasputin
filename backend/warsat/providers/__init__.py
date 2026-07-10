@@ -12,7 +12,11 @@ def get_provider(model: dict) -> DeploymentProvider:
         raise ValueError("Model is external/unmanaged and has no deployment provider.")
 
     runtime = model.get("runtime")
-    if runtime == "docker-llamacpp":
+    # WarSat registers deployed models with runtime f"warsat-{protocol['runtime']}"
+    # (e.g. "warsat-vllm", "warsat-llama.cpp", "warsat-ollama"). All of them are
+    # plain Docker containers under the hood, same as the standalone
+    # "docker-llamacpp" runtime used by the local-model quick-deploy path.
+    if runtime == "docker-llamacpp" or str(runtime or "").startswith("warsat-"):
         return _docker_provider
-        
+
     raise ValueError(f"Unsupported deployment runtime: {runtime}")

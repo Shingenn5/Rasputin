@@ -43,6 +43,17 @@ class DockerProvider(DeploymentProvider):
         return cmd
 
     def start(self, model: dict) -> dict:
+        if model.get("runtime") != "docker-llamacpp":
+            # WarSat-deployed models (runtime "warsat-*") are started through
+            # the WarSat deploy flow, which builds their full docker run
+            # command from the protocol definition. _docker_args() below only
+            # knows how to build a llama.cpp command, so route anything else
+            # to a structured error instead of letting its ValueError leak.
+            return {
+                "ok": False,
+                "message": "This model is managed by WarSat. Stop it and redeploy through WarSat instead of starting it directly.",
+            }
+
         status = self.status(model)
         if status == "running":
             return {"ok": True, "status": status, "message": "already running"}

@@ -716,7 +716,12 @@ def _runtime_arguments(protocol, tuning):
         args = _strip_option(args, [
             "--max-model-len", "--gpu-memory-utilization", "--tensor-parallel-size",
             "--dtype", "--quantization", "--kv-cache-dtype", "--max-num-seqs", "--swap-space",
+            "--tool-call-parser",
         ])
+        # --enable-auto-tool-choice takes no value, so _strip_option (which
+        # always drops the token after a match) would eat the next real flag
+        # -- filter it out directly instead.
+        args = [item for item in args if item != "--enable-auto-tool-choice"]
         args.extend([
             "--max-model-len", str(tuning["maxModelLen"]),
             "--gpu-memory-utilization", str(tuning["gpuMemoryUtilization"]),
@@ -733,6 +738,9 @@ def _runtime_arguments(protocol, tuning):
             args.extend(["--max-num-seqs", str(tuning["maxNumSeqs"])])
         if tuning.get("swapSpaceGb"):
             args.extend(["--swap-space", str(tuning["swapSpaceGb"])])
+        # Rasputin's engine always sends tool definitions with chat requests;
+        # without these, vLLM returns 400 on every tool-enabled chat call.
+        args.extend(["--enable-auto-tool-choice", "--tool-call-parser", "hermes"])
     elif protocol.get("modelFormat") == "gguf":
         args = _strip_option(args, ["-c", "--ctx-size", "--ctx_size", "-ngl", "--n-gpu-layers", "--threads", "-b", "--batch-size", "--parallel"])
         args.extend(["-c", str(tuning["contextWindow"])])
@@ -1158,7 +1166,7 @@ def make_plan(payload):
         "containerPort": protocol["containerPort"],
         "containerName": container_name,
         "endpoint": endpoint,
-        "healthUrl": endpoint.rstrip("/v1") + protocol.get("healthPath", "/v1/models"),
+        "healthUrl": endpoint.rstrip("/").removesuffix("/v1") + protocol.get("healthPath", "/v1/models"),
         "riskLevel": "approvalRequired",
         "requiresApproval": True,
         # An identical deployment approved before deploys without re-asking.
@@ -1723,20 +1731,30 @@ def _probe_ollama_endpoint(base_url: str, timeout: float = 2.0):
         return None
 
 
-def _extract_host_port(ports_str: str):
-    """Parse Docker ports string like '0.0.0.0:8000->8000/tcp' → return host port int or None."""
+def _extract_host_ports(ports_str: str):
+    """Parse a Docker ports string like '0.0.0.0:8000->8000/tcp, 0.0.0.0:9090->9090/tcp'
+    → return an ordered list of distinct host port ints (empty list if none parse).
+
+    A container can publish more than one port (e.g. a metrics port alongside
+    the model API); probing only the first one means the real endpoint can go
+    undiscovered whenever it isn't reported first.
+    """
     if not ports_str:
-        return None
+        return []
     # Match any host binding: 0.0.0.0:PORT->, 127.0.0.1:PORT->, :::PORT->,
     # [::]:PORT-> — Warsat's own containers bind 127.0.0.1.
     matches = re.findall(r'(?:\d{1,3}(?:\.\d{1,3}){3}|:::|\[[^\]]*\]):(\d+)->', ports_str)
     if not matches:
         # Maybe a simple mapping without host binding like 8000/tcp
-        simple = re.findall(r'(\d{4,5})/tcp', ports_str)
-        if simple:
-            return int(simple[0])
-        return None
-    return int(matches[0])
+        matches = re.findall(r'(\d{4,5})/tcp', ports_str)
+    ports = []
+    seen = set()
+    for raw in matches:
+        port = int(raw)
+        if port not in seen:
+            seen.add(port)
+            ports.append(port)
+    return ports
 
 
 def discover():
@@ -1786,31 +1804,36 @@ def discover():
         image = row.get("Image") or ""
         container_id = row.get("ID") or row.get("IDShort") or ""
 
-        host_port = _extract_host_port(ports_str)
-        if not host_port:
+        host_ports = _extract_host_ports(ports_str)
+        if not host_ports:
             continue
 
         base_url = None
         model_ids = None
+        host_port = None
         protocol_hint = "openai-compatible"
         is_ollama = False
-        for host in _discovery_hosts():
-            candidate = f"http://{host}:{host_port}"
-            ids = _probe_openai_endpoint(candidate)
-            if ids is None:
-                # Try Ollama native API
-                ollama_models = _probe_ollama_endpoint(candidate)
-                if ollama_models is not None:
-                    ids = ollama_models
-                    protocol_hint = "ollamaOpenaiServer"
-                    is_ollama = True
-            if ids is not None:
-                base_url = candidate
-                model_ids = ids
+        for candidate_port in host_ports:
+            for host in _discovery_hosts():
+                candidate = f"http://{host}:{candidate_port}"
+                ids = _probe_openai_endpoint(candidate)
+                if ids is None:
+                    # Try Ollama native API
+                    ollama_models = _probe_ollama_endpoint(candidate)
+                    if ollama_models is not None:
+                        ids = ollama_models
+                        protocol_hint = "ollamaOpenaiServer"
+                        is_ollama = True
+                if ids is not None:
+                    base_url = candidate
+                    model_ids = ids
+                    host_port = candidate_port
+                    break
+            if model_ids is not None:
                 break
 
         if model_ids is None:
-            # Port open but not a model endpoint.
+            # None of this container's published ports answered as a model endpoint.
             continue
 
         candidate_norm = base_url.rstrip("/").lower()
