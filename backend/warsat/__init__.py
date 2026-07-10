@@ -594,6 +594,15 @@ def _choice_value(payload, names, choices, default=""):
 
 def _build_tuning(payload, protocol, strength):
     profile = STRENGTH_PROFILES[_safe_strength(strength)]
+    # llama.cpp's --parallel splits -c (total context) evenly across that
+    # many slots, unlike vLLM's --max-num-seqs which shares one paged KV
+    # cache across concurrent requests. Reusing the vLLM-oriented profile
+    # default (up to 64) here silently shrinks each GGUF slot to a sliver of
+    # the configured context window -- a single local chat request routinely
+    # exceeds a 256-token slot once Rasputin's own prompt-policy/rules
+    # overhead is included. Default to one sequence so the full context
+    # window is actually usable; an explicit payload value still wins.
+    default_max_num_seqs = 1 if protocol.get("modelFormat") == "gguf" else profile.get("maxNumSeqs", 32)
     return {
         "contextWindow": _int_value(payload, ["contextWindow", "context_window"], profile["contextWindow"], 512, 262144),
         "maxModelLen": _int_value(payload, ["maxModelLen", "max_model_len"], profile["maxModelLen"], 512, 262144),
@@ -602,7 +611,7 @@ def _build_tuning(payload, protocol, strength):
         "tensorParallelSize": _int_value(payload, ["tensorParallelSize", "tensor_parallel_size"], 1, 1, 16),
         "cpuThreads": _int_value(payload, ["cpuThreads", "cpu_threads"], 0, 0, 256),
         "batchSize": _int_value(payload, ["batchSize", "batch_size"], profile.get("batchSize", 512), 1, 65536),
-        "maxNumSeqs": _int_value(payload, ["maxNumSeqs", "max_num_seqs"], profile.get("maxNumSeqs", 32), 1, 4096),
+        "maxNumSeqs": _int_value(payload, ["maxNumSeqs", "max_num_seqs"], default_max_num_seqs, 1, 4096),
         "dtype": _choice_value(payload, ["dtype"], DTYPE_CHOICES, "auto"),
         "quantization": _choice_value(payload, ["quantization"], QUANTIZATION_CHOICES, ""),
         "kvCacheDtype": _choice_value(payload, ["kvCacheDtype", "kv_cache_dtype"], KV_CACHE_CHOICES, "auto"),

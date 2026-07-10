@@ -1499,6 +1499,41 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(text, "Hello")
         self.assertEqual(len(tool_calls), 1)
 
+    def testProviderFormatsInternalToolCallsToOpenaiWireFormatForReplay(self):
+        # Rasputin's internal tool-call shape is {id, name, args}. On the
+        # second hop of a tool loop, replayed assistant messages must be
+        # converted to OpenAI's wire format ({id, type:"function",
+        # function:{name, arguments: <JSON string>}}) or strict servers
+        # (llama.cpp) reject the request outright.
+        from backend.models import providers as model_providers
+
+        user_message = {"role": "user", "content": "search for cats"}
+        assistant_message = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "call_1", "name": "web_search", "args": {"query": "cats", "limit": 3}}],
+        }
+        formatted = model_providers._format_openai_messages([user_message, assistant_message])
+
+        # Plain messages without tool_calls pass through unchanged.
+        self.assertEqual(formatted[0], user_message)
+
+        wire_call = formatted[1]["tool_calls"][0]
+        self.assertEqual(wire_call["id"], "call_1")
+        self.assertEqual(wire_call["type"], "function")
+        self.assertEqual(wire_call["function"]["name"], "web_search")
+        self.assertIsInstance(wire_call["function"]["arguments"], str)
+        self.assertEqual(json.loads(wire_call["function"]["arguments"]), {"query": "cats", "limit": 3})
+
+        # The same conversion must happen when building the actual payload
+        # sent to an OpenAI-compatible endpoint (the real call site).
+        model = {"provider": "vllm", "base_url": "http://127.0.0.1:8000/v1", "model": "local-main"}
+        payload = model_providers._openai_payload(model, [user_message, assistant_message], 64, 0)
+        self.assertEqual(payload["messages"][0], user_message)
+        payload_call = payload["messages"][1]["tool_calls"][0]
+        self.assertEqual(payload_call["type"], "function")
+        self.assertEqual(json.loads(payload_call["function"]["arguments"]), {"query": "cats", "limit": 3})
+
     def testCodingTrialBlindCompareScoresAndPinsCoderRole(self):
         from backend.models import registry as model_registry
 
@@ -1983,6 +2018,30 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(metrics[0]["memory_total_mb"], 16311.0)
         self.assertEqual(metrics[0]["utilization"], 43.0)
         self.assertEqual(metrics[0]["temperature"], 61.0)
+
+    def testWarsatBuildTuningDefaultsGgufToSingleSequence(self):
+        # llama.cpp's --parallel splits the context window across that many
+        # slots, unlike vLLM's paged KV cache. A GGUF protocol must default
+        # maxNumSeqs to 1 so the full configured context is usable, while a
+        # non-GGUF (vLLM) protocol keeps the strength profile's own default,
+        # and an explicit payload value always wins regardless of format.
+        from backend import warsat as warsat_module
+
+        gguf_protocol = {"modelFormat": "gguf"}
+        hf_protocol = {"modelFormat": "huggingface"}
+
+        gguf_tuning = warsat_module._build_tuning({}, gguf_protocol, "balanced")
+        self.assertEqual(gguf_tuning["maxNumSeqs"], 1)
+
+        hf_tuning = warsat_module._build_tuning({}, hf_protocol, "balanced")
+        self.assertEqual(
+            hf_tuning["maxNumSeqs"],
+            warsat_module.STRENGTH_PROFILES["balanced"]["maxNumSeqs"],
+        )
+        self.assertNotEqual(hf_tuning["maxNumSeqs"], 1)
+
+        explicit_tuning = warsat_module._build_tuning({"maxNumSeqs": 4}, gguf_protocol, "balanced")
+        self.assertEqual(explicit_tuning["maxNumSeqs"], 4)
 
     def testWarsatPlanWarnsWhenBf16ModelWontFitCommonGpus(self):
         # A 7B bf16 model needs ~14GB VRAM for weights alone; planning one

@@ -291,10 +291,41 @@ def _gemini_payload(model, messages, max_tokens, temperature, tools=None):
     return payload
 
 
+def _format_openai_messages(messages):
+    # Rasputin's internal tool-call shape is {id, name, args} (see
+    # _parse_openai_response / _finalize_tool_calls). That's what we parse
+    # OUT of a model response, but OpenAI's wire format for an assistant
+    # message going back IN requires each entry nested under
+    # type:"function" / function:{name, arguments (a JSON string)}. Without
+    # this, the second hop of any tool loop re-sends the internal shape
+    # verbatim and a strict server (llama.cpp) rejects it outright.
+    formatted = []
+    for msg in messages or []:
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            formatted.append({
+                "role": "assistant",
+                "content": msg.get("content") or None,
+                "tool_calls": [
+                    {
+                        "id": tc.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": tc.get("name"),
+                            "arguments": json.dumps(tc.get("args", {}), ensure_ascii=False),
+                        },
+                    }
+                    for tc in msg["tool_calls"]
+                ],
+            })
+        else:
+            formatted.append(msg)
+    return formatted
+
+
 def _openai_payload(model, messages, max_tokens, temperature, tools=None):
     payload = {
         "model": model.get("model") or default_model(model.get("provider")),
-        "messages": messages,
+        "messages": _format_openai_messages(messages),
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
