@@ -62,6 +62,23 @@ function Get-Credentials {
     }
 }
 
+function Reset-Password {
+    Write-Host "Resetting admin password inside the running container..." -ForegroundColor Cyan
+    docker compose exec rasputin-wrapper python -m backend.tools.reset_password
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "Password reset failed." -ForegroundColor Red
+        Write-Host "Make sure the container is running and was built from a version that includes this tool:" -ForegroundColor Yellow
+        Write-Host "  .\rasputin.ps1 start   (or: docker compose up --build -d)" -ForegroundColor Yellow
+        Write-Host "Alternatively, stop the app and run it natively:" -ForegroundColor Yellow
+        Write-Host "  python -m backend.tools.reset_password" -ForegroundColor Yellow
+        return
+    }
+    Write-Host ""
+    Write-Host "Note: the running server keeps its own in-memory sessions, so any" -ForegroundColor DarkGray
+    Write-Host "already-logged-in browser sessions remain valid until the container restarts." -ForegroundColor DarkGray
+}
+
 function Start-Rasputin {
     Test-DockerEnv
 
@@ -135,12 +152,14 @@ switch ($Command.ToLower()) {
     "start" { Start-Rasputin }
     "stop" { Stop-Rasputin }
     "credentials" { Test-DockerEnv; Get-Credentials }
+    "reset-password" { Test-DockerEnv; Reset-Password }
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin in the background"
         Write-Host "  .\rasputin.ps1 start -EnableWarSat - Starts Rasputin with Docker Control layer"
         Write-Host "  .\rasputin.ps1 stop              - Stops all Rasputin containers"
         Write-Host "  .\rasputin.ps1 credentials       - Fetches your login credentials"
+        Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
         Write-Host ""
     }
 }

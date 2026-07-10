@@ -165,6 +165,47 @@ class BackendSmokeTests(unittest.TestCase):
         finally:
             main.app.dependency_overrides[current_user] = lambda: {"username": "test", "role": "admin"}
 
+    def testResetPasswordDefaultsToAdminAndInvalidatesOldPassword(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        username = self._set_known_admin_password("old-known-password")
+
+        result = auth.reset_password()
+        self.assertEqual(result["username"], username)
+        self.assertGreaterEqual(len(result["password"]), 10)
+
+        with self.assertRaises(PermissionError):
+            auth.login(username, "old-known-password")
+
+        token, info = auth.login(username, result["password"])
+        self.assertEqual(info["username"], username)
+        self.assertIsNotNone(token)
+
+    def testResetPasswordInvalidatesExistingSessions(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        username = self._set_known_admin_password("session-known-password")
+
+        token, _info = auth.login(username, "session-known-password")
+        self.assertIsNotNone(auth.session_info(token))
+
+        auth.reset_password(username=username)
+        self.assertIsNone(auth.session_info(token))
+
+    def testResetPasswordRejectsShortExplicitPassword(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        username = self._set_known_admin_password("short-check-password")
+        with self.assertRaises(ValueError):
+            auth.reset_password(username=username, new_password="short")
+
+    def testResetPasswordRejectsUnknownUsername(self):
+        auth._sessions.clear()
+        auth._failed_logins.clear()
+        self._set_known_admin_password("unknown-check-password")
+        with self.assertRaises(ValueError):
+            auth.reset_password(username="does-not-exist")
+
     def testModelRegistryUsesCamelCase(self):
         data = self.assertOk(self.client.get("/api/model-registry"))
         self.assertIn("models", data)

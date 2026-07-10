@@ -240,6 +240,36 @@ def change_password(username, current_password, new_password):
     raise ValueError("user missing")
 
 
+def reset_password(username=None, new_password=None):
+    bootstrap()
+    data = load()
+    users = data.get("users", [])
+    if username:
+        user = next((u for u in users if u.get("username") == username), None)
+        if not user:
+            raise ValueError(f"unknown user: {username}")
+    else:
+        user = next((u for u in users if u.get("role") == "admin"), None)
+        if not user:
+            raise ValueError("no admin user found to reset")
+        username = user.get("username")
+
+    if new_password is None:
+        new_password = secrets.token_urlsafe(18)
+    elif len(str(new_password)) < 10:
+        raise ValueError("new password must be at least 10 characters")
+
+    hashed = _hash_password(new_password)
+    user["salt"] = hashed["salt"]
+    user["password_hash"] = hashed["hash"]
+    user["password_changed_at"] = time.time()
+    with _lock:
+        store.set_kv("auth", data)
+        _sessions.clear()
+    audit.log("auth_password_reset", {"username": username}, actor=username)
+    return {"username": username, "password": new_password}
+
+
 def session_info(token):
     _prune_sessions()
     session = _sessions.get(token)
