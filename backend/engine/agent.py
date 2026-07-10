@@ -1088,7 +1088,7 @@ class AgentHub:
     def phase_model(self, task, role):
         if task.model == "dry-run":
             return "dry-run"
-        return model_registry.key_for_role(role, task.model)
+        return model_registry.key_for_task(role, task.model)
 
     def execution_role(self, task):
         if task.mode == "code":

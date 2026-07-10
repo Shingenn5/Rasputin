@@ -4,6 +4,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import urllib.error
 import urllib.parse
 import unittest
 from pathlib import Path
@@ -1621,6 +1623,178 @@ class BackendSmokeTests(unittest.TestCase):
             with patch("backend.core.security.load", return_value=flags):
                 model_registry.delete_model("trial-coder-good")
                 model_registry.delete_model("trial-coder-bad")
+
+    def testKeyForTaskPrefersExplicitSelectionOverRoleMatch(self):
+        from backend.models import registry as model_registry
+
+        flags = {"allow_model_registry_edit": True}
+        with patch("backend.core.security.load", return_value=flags):
+            # Defensive cleanup: earlier smoke runs against the same
+            # persistent registry may have left "researcher" candidates.
+            for model in list(model_registry.enabled_models()):
+                if model.get("role") == "researcher" and model.get("key", "").startswith("smoke-"):
+                    model_registry.delete_model(model["key"])
+            model_registry.upsert({
+                "key": "smoke-task-role-match",
+                "name": "Role Match",
+                "provider": "openai-compatible",
+                "base_url": "http://127.0.0.1:9581/v1",
+                "model": "role-match",
+                "role": "researcher",
+            })
+            model_registry.upsert({
+                "key": "smoke-task-selected-reachable",
+                "name": "Selected Reachable",
+                "provider": "openai-compatible",
+                "base_url": "http://127.0.0.1:9582/v1",
+                "model": "selected-reachable",
+                "role": "coder",
+            })
+            model_registry.upsert({
+                "key": "smoke-task-selected-unknown",
+                "name": "Selected Unknown",
+                "provider": "openai-compatible",
+                "base_url": "http://127.0.0.1:9583/v1",
+                "model": "selected-unknown",
+                "role": "coder",
+            })
+        try:
+            model_registry._store_health("smoke-task-role-match", "reachable")
+            model_registry._store_health("smoke-task-selected-reachable", "reachable")
+            # Sanity: plain role routing picks the role-matching model, not
+            # either "selected" model below — proves the override below is
+            # actually doing something.
+            self.assertEqual(model_registry.key_for_role("researcher"), "smoke-task-role-match")
+
+            self.assertEqual(
+                model_registry.key_for_task("researcher", "smoke-task-selected-reachable"),
+                "smoke-task-selected-reachable",
+            )
+            # "smoke-task-selected-unknown" never had _store_health called, so
+            # its runtime_status is missing/"unknown" — still acceptable, not
+            # a known-dead status, so the explicit selection still wins.
+            self.assertEqual(
+                model_registry.key_for_task("researcher", "smoke-task-selected-unknown"),
+                "smoke-task-selected-unknown",
+            )
+        finally:
+            with patch("backend.core.security.load", return_value=flags):
+                model_registry.delete_model("smoke-task-role-match")
+                model_registry.delete_model("smoke-task-selected-reachable")
+                model_registry.delete_model("smoke-task-selected-unknown")
+
+    def testKeyForTaskFallsBackToRoleRoutingWhenSelectedIsDeadOrMissing(self):
+        from backend.models import registry as model_registry
+
+        flags = {"allow_model_registry_edit": True}
+        with patch("backend.core.security.load", return_value=flags):
+            for model in list(model_registry.enabled_models()):
+                if model.get("role") == "researcher" and model.get("key", "").startswith("smoke-"):
+                    model_registry.delete_model(model["key"])
+            model_registry.upsert({
+                "key": "smoke-task-role-fallback",
+                "name": "Role Fallback",
+                "provider": "openai-compatible",
+                "base_url": "http://127.0.0.1:9584/v1",
+                "model": "role-fallback",
+                "role": "researcher",
+            })
+            model_registry.upsert({
+                "key": "smoke-task-selected-unhealthy",
+                "name": "Selected Unhealthy",
+                "provider": "openai-compatible",
+                "base_url": "http://127.0.0.1:9585/v1",
+                "model": "selected-unhealthy",
+                "role": "coder",
+            })
+        try:
+            model_registry._store_health("smoke-task-role-fallback", "reachable")
+            model_registry._store_health("smoke-task-selected-unhealthy", "unhealthy", error="boom")
+
+            # Selected model is known-dead -> falls back to role routing.
+            self.assertEqual(
+                model_registry.key_for_task("researcher", "smoke-task-selected-unhealthy"),
+                "smoke-task-role-fallback",
+            )
+            # Selected key doesn't exist at all -> same fallback.
+            self.assertEqual(
+                model_registry.key_for_task("researcher", "does-not-exist-anywhere"),
+                "smoke-task-role-fallback",
+            )
+            # Selected key is empty -> same fallback.
+            self.assertEqual(
+                model_registry.key_for_task("researcher", ""),
+                "smoke-task-role-fallback",
+            )
+        finally:
+            with patch("backend.core.security.load", return_value=flags):
+                model_registry.delete_model("smoke-task-role-fallback")
+                model_registry.delete_model("smoke-task-selected-unhealthy")
+
+    def testHealthMonitorTickFlipsDeadEndpointToUnhealthy(self):
+        from backend.models import registry as model_registry
+
+        # Isolated fake registry (not the shared persistent one) so this
+        # test can't leak "unhealthy" onto real entries like main-vllm and
+        # can't be polluted by leftover state from other tests.
+        fake_registry = {
+            "models": [
+                {
+                    "key": "smoke-health-monitor-dead",
+                    "name": "Health Monitor Dead",
+                    "provider": "openai-compatible",
+                    "role": "researcher",
+                    "base_url": "http://127.0.0.1:9/v1",
+                    "model": "dead-model",
+                    "enabled": True,
+                    "managed": False,
+                    "runtime_status": "reachable",
+                },
+                {
+                    # No base_url -> excluded from the tick's candidate scan,
+                    # so it stays "reachable" and proves key_for_task's
+                    # fallback lands on a real, still-healthy role match
+                    # rather than just re-picking the dead model.
+                    "key": "smoke-health-monitor-fallback",
+                    "name": "Health Monitor Fallback",
+                    "provider": "openai-compatible",
+                    "role": "researcher",
+                    "base_url": "",
+                    "model": "fallback-model",
+                    "enabled": True,
+                    "managed": False,
+                    "runtime_status": "reachable",
+                },
+            ]
+        }
+
+        def fake_urlopen(req, timeout=None):
+            raise urllib.error.URLError("connection refused")
+
+        with patch("backend.models.registry._load", return_value=fake_registry), \
+             patch("backend.models.registry._save", lambda data: None), \
+             patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            results = model_registry._health_monitor_tick()
+
+            self.assertEqual(dict(results).get("smoke-health-monitor-dead"), "unhealthy")
+            self.assertEqual(fake_registry["models"][0]["runtime_status"], "unhealthy")
+
+            # The dead model no longer wins routing — a still-healthy model
+            # of the same role wins instead.
+            self.assertEqual(
+                model_registry.key_for_task("researcher", "smoke-health-monitor-dead"),
+                "smoke-health-monitor-fallback",
+            )
+
+    def testStartHealthMonitorDisabledByZeroInterval(self):
+        from backend.models import registry as model_registry
+
+        with patch.dict(os.environ, {"RASPUTIN_HEALTH_INTERVAL": "0"}):
+            result = model_registry.start_health_monitor()
+
+        self.assertIsNone(result)
+        self.assertFalse(model_registry._HEALTH_MONITOR_STARTED)
+        self.assertFalse(any(t.name == "rasputin-health-monitor" for t in threading.enumerate()))
 
     def testWarsatHardwareProbeReportsReadinessWithoutMutatingDocker(self):
         docker_outputs = {

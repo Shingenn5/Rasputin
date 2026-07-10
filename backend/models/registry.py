@@ -6,7 +6,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import urlparse, urlunparse
 
 from backend.core import audit as audit
@@ -369,6 +369,28 @@ def key_for_role(role, fallback="main-vllm"):
     return "dry-run"
 
 
+# Statuses that mean "we already know this endpoint is down" — a model in one
+# of these should not win task routing just because the user picked it.
+# Missing/empty/"unknown"/"reachable" are all treated as acceptable.
+_DEAD_HEALTH_STATUSES = {"unhealthy", "stopped", "unreachable", "error"}
+
+
+def key_for_task(role, selected):
+    """Route a task to the model the user explicitly selected (task.model),
+    unless the registry already knows it's dead — then fall back to the
+    existing role-based routing exactly as before. This keeps the user's
+    choice authoritative instead of letting `key_for_role` silently swap in
+    a different model of the same role."""
+    selected = str(selected or "")
+    if selected:
+        for model in enabled_models():
+            if model.get("key") == selected:
+                if model.get("runtime_status") not in _DEAD_HEALTH_STATUSES:
+                    return selected
+                break
+    return key_for_role(role, selected)
+
+
 def chat_url(model):
     if model_providers.is_api_provider(model):
         return model_providers.chat_url(model)
@@ -637,6 +659,84 @@ def auto_repair_obvious():
             audit.log("model_auto_repair_failed", {"key": key, "error": str(exc)})
             results.append({"key": key, "repaired": False, "error": str(exc)})
     return results
+
+
+def _health_monitor_tick():
+    """One re-probe pass over every enabled, non-managed, non-mock, non-API
+    model with a base_url, so external/imported endpoints that have gone
+    dark stop being reported as reachable forever. Managed (Docker) models
+    already get live status computed in all_models() and API providers are
+    skipped so we don't burn keys/quota on a background timer.
+
+    Returns a list of (key, status) for observability. Logs one audit line
+    per tick, but only when at least one model's status actually changed.
+    """
+    data = _load()
+    candidates = [
+        m for m in data.get("models", [])
+        if m.get("enabled", True)
+        and not m.get("managed")
+        and m.get("base_url")
+        and m.get("provider") not in {"mock", "hash-vector"}
+        and not model_providers.is_api_provider(m)
+    ]
+    results = []
+    changes = []
+    for model in candidates:
+        key = model.get("key")
+        previous = model.get("runtime_status") or "unknown"
+        try:
+            discovery = discover_model(key, require_permission=False)
+            status = discovery.get("status") or "unknown"
+        except Exception as exc:
+            # discover_model already stores "unhealthy" on the network-error
+            # paths it catches itself; this is only a safety net for the few
+            # paths (e.g. security.require_local_url) that raise before it
+            # gets a chance to.
+            status = "unhealthy"
+            try:
+                _store_health(key, status, error=str(exc))
+            except Exception:
+                pass
+        results.append((key, status))
+        if status != previous:
+            changes.append({"key": key, "from": previous, "to": status})
+    if changes:
+        audit.log("model_health_monitor_tick", {"changed": changes})
+    return results
+
+
+_HEALTH_MONITOR_STARTED = False
+
+
+def start_health_monitor():
+    """Start the background health-monitor thread once per process. Reads
+    RASPUTIN_HEALTH_INTERVAL (seconds, default 60); any value <= 0 disables
+    the monitor and returns None. Only ever called from app startup — never
+    on module import — so tests stay deterministic."""
+    global _HEALTH_MONITOR_STARTED
+    try:
+        interval = float(os.environ.get("RASPUTIN_HEALTH_INTERVAL", "60") or 0)
+    except (TypeError, ValueError):
+        interval = 60.0
+    if interval <= 0:
+        return None
+    with _lock:
+        if _HEALTH_MONITOR_STARTED:
+            return None
+        _HEALTH_MONITOR_STARTED = True
+
+    def _loop():
+        while True:
+            time.sleep(interval)
+            try:
+                _health_monitor_tick()
+            except Exception as exc:
+                audit.log("model_health_monitor_failed", {"error": str(exc)})
+
+    thread = Thread(target=_loop, daemon=True, name="rasputin-health-monitor")
+    thread.start()
+    return thread
 
 
 def import_gguf(req):

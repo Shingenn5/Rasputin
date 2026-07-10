@@ -87,6 +87,10 @@ async def startup():
         model_registry.auto_repair_obvious()
     except Exception as exc:
         audit.log("model_auto_repair_startup_failed", {"error": str(exc)})
+    try:
+        model_registry.start_health_monitor()
+    except Exception as exc:
+        audit.log("model_health_monitor_start_failed", {"error": str(exc)})
 
 
 # Indexing a real, approved workspace (RAG ingest + Graphify build) walks and
