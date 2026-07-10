@@ -1086,6 +1086,56 @@ def make_plan(payload):
         protocol = dict(protocol)
         protocol["image"] = protocol["imageCuda"]
 
+    # Fleet awareness: a second GPU deploy at the strength profile's default
+    # gpuMemoryUtilization can OOM against whatever is already running, since
+    # vLLM's --gpu-memory-utilization is a fraction of *total* GPU memory, not
+    # "on top of" other processes. Only kicks in when there is at least one
+    # OTHER running model -- a redeploy of the sole running model (same
+    # container name as this plan) must not count itself as occupying the
+    # GPU -- and is a no-op on CPU-only machines / when probing fails.
+    fleet = _fleet_state()
+    fleet_gpus = fleet.get("gpus") or []
+    fleet_running = [
+        item for item in fleet.get("runningModels") or []
+        if item.get("container") and item.get("container") != container_name
+    ]
+    gpu_total_mb = fleet_gpus[0].get("totalMb") if fleet_gpus else None
+    gpu_free_mb = fleet_gpus[0].get("freeMb") if fleet_gpus else None
+    fleet_warnings = []
+    if fleet_gpus and fleet_running and gpu_total_mb:
+        running_names = ", ".join(
+            f"{item.get('name') or item.get('key') or 'a running model'} "
+            f"({item.get('role') or 'helper'}, :{item.get('port')})"
+            for item in fleet_running
+        )
+        available_fraction = max(0.0, (gpu_free_mb / gpu_total_mb) - 0.05)
+        if protocol["runtime"] == "vllm":
+            explicit_gmu = _payload_get(payload, "gpuMemoryUtilization", "gpu_memory_utilization") is not None
+            profile_default = STRENGTH_PROFILES[strength]["gpuMemoryUtilization"]
+            if not explicit_gmu and profile_default > available_fraction:
+                clamped = round(available_fraction, 2)
+                fleet_warnings.append(
+                    f"GPU memory utilization was reduced from {profile_default:g} to {clamped:g} to leave "
+                    f"headroom for the model(s) already running on this GPU: {running_names}."
+                )
+                tuning["gpuMemoryUtilization"] = clamped
+            elif explicit_gmu and tuning.get("gpuMemoryUtilization", 0) > available_fraction:
+                fleet_warnings.append(
+                    f"Requested GPU memory utilization {tuning['gpuMemoryUtilization']:g} likely runs out of "
+                    f"memory alongside the model(s) already running on this GPU: {running_names}."
+                )
+            if available_fraction < 0.15:
+                fleet_warnings.append(
+                    f"Less than 15% of this GPU is free once {running_names} is accounted for. "
+                    "Stop one of the running models or switch this deploy to CPU offload before continuing."
+                )
+        elif protocol.get("modelFormat") == "gguf" and gpu_free_mb < 2048 and tuning.get("gpuLayers") != 0:
+            fleet_warnings.append(
+                f"Only ~{int(gpu_free_mb)} MB of GPU memory is free because {running_names} is already "
+                "running on it. Consider deploying this model CPU-only (set GPU Layers to 0 and set CPU "
+                "Threads) so it runs alongside the GPU model instead of competing for VRAM."
+            )
+
     endpoint = _endpoint_for(protocol["hostBinding"], host_port)
     model_key = _slug(f"{protocol['runtime']}-{model_ref or protocol['id']}-{host_port}")
     docker_run = _docker_run_preview(protocol, model_ref, model_path, host_port, container_name, tuning, limits, hf_source)
@@ -1093,7 +1143,7 @@ def make_plan(payload):
     dockerfile_preview = _dockerfile_preview(protocol)
     execution = _docker_runtime_enabled()
     docker_control_enabled = execution["dockerControlEnabled"]
-    warnings = []
+    warnings = list(fleet_warnings)
     if reroute_note:
         warnings.append(reroute_note)
     if hf_source:
@@ -1215,6 +1265,11 @@ def make_plan(payload):
             "modelMountReadOnly": bool((protocol.get("modelMount") or {}).get("readOnly", True)),
         },
         "warnings": warnings,
+        "fleet": {
+            "runningModels": fleet_running,
+            "gpuFreeMb": gpu_free_mb,
+            "gpuTotalMb": gpu_total_mb,
+        },
         "nextSteps": [
             "Review the launch plan.",
             "Copy or export the compose preview if you want a standalone model compose file.",
@@ -1420,6 +1475,62 @@ def gpu_live_metrics_via_docker():
         }
         for i, gpu in enumerate(_gpu_probe_via_docker())
     ]
+
+
+def _fleet_state():
+    """Live snapshot of already-running managed models and, when any of them
+    are actually running, GPU headroom -- so make_plan can avoid
+    overcommitting VRAM across simultaneous deploys.
+
+    Neither hardware_probe()'s nvidia-smi query nor _gpu_probe_via_docker()
+    report memory.used (both only ask for name/memory.total), so live used
+    memory comes from gpu_live_metrics_via_docker() instead -- it execs
+    nvidia-smi inside a running managed container and already reports
+    memory_used_mb/memory_total_mb per GPU.
+
+    The GPU probe only runs when at least one managed model is already
+    running: with nothing running there is no VRAM contention to guard
+    against, and planning must stay a read-only, docker-free operation
+    otherwise (existing behavior asserted by
+    testWarsatDeployCanRegisterGeneratedContainerWhenDockerControlIsEnabled --
+    a plan with an explicit host port must not touch docker at all).
+
+    Fully defensive: any probe or registry failure yields empty lists rather
+    than surfacing an error at plan time.
+    """
+    running_models = []
+    try:
+        for model in model_registry.all_models():
+            if not model.get("managed"):
+                continue
+            if model.get("container_status") != "running":
+                continue
+            running_models.append({
+                "key": model.get("key"),
+                "name": model.get("name"),
+                "container": model.get("container"),
+                "port": model.get("port"),
+                "role": model.get("role"),
+            })
+    except Exception:
+        running_models = []
+
+    gpus = []
+    if running_models:
+        try:
+            for item in gpu_live_metrics_via_docker() or []:
+                total_mb = float(item.get("memory_total_mb") or 0)
+                used_mb = float(item.get("memory_used_mb") or 0)
+                gpus.append({
+                    "index": item.get("index"),
+                    "totalMb": total_mb,
+                    "usedMb": used_mb,
+                    "freeMb": max(0.0, total_mb - used_mb),
+                })
+        except Exception:
+            gpus = []
+
+    return {"gpus": gpus, "runningModels": running_models}
 
 
 def _occupied_host_ports():

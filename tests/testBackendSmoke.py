@@ -2280,6 +2280,212 @@ class BackendSmokeTests(unittest.TestCase):
             }))
             self.assertFalse(any("weights alone" in w for w in quantized["warnings"]))
 
+    def testWarsatPlanClampsGpuMemoryUtilizationAlongsideRunningModel(self):
+        # vLLM's --gpu-memory-utilization is a fraction of *total* GPU
+        # memory, not "on top of" whatever else is already running. A second
+        # deploy at the strength profile's default (0.82) on a GPU that
+        # already has a coder model holding ~20GB of a 24GB card must clamp
+        # down instead of OOMing at container startup.
+        from backend import warsat as warsat_module
+
+        running_model = {
+            "key": "fleet-coder-running",
+            "name": "Coder Model",
+            "container": "rasputin-coder-8001",
+            "port": 8001,
+            "role": "coder",
+            "managed": True,
+            "container_status": "running",
+        }
+        gpu_metrics = [{
+            "index": 0,
+            "name": "NVIDIA GeForce RTX 4090",
+            "utilization": 80.0,
+            "memory_used_mb": 20000.0,
+            "memory_total_mb": 24576.0,
+            "temperature": 65.0,
+        }]
+
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat.gpu_live_metrics_via_docker", return_value=gpu_metrics), \
+             patch("backend.models.registry.all_models", return_value=[running_model]):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8002,
+                "strengthProfile": "balanced",
+            }))
+
+        # free = 24576 - 20000 = 4576MB; available_fraction = 4576/24576 -
+        # 0.05 ~= 0.136, which rounds to 0.14 -- below the 15% floor, so both
+        # the clamp and the stronger low-headroom warning should fire.
+        self.assertAlmostEqual(plan["tuning"]["gpuMemoryUtilization"], 0.14, places=2)
+        self.assertLess(
+            plan["tuning"]["gpuMemoryUtilization"],
+            warsat_module.STRENGTH_PROFILES["balanced"]["gpuMemoryUtilization"],
+        )
+        self.assertTrue(any("Coder Model" in w and "reduced" in w for w in plan["warnings"]))
+        self.assertTrue(any("15%" in w for w in plan["warnings"]))
+        self.assertEqual(plan["fleet"]["runningModels"][0]["key"], "fleet-coder-running")
+        self.assertAlmostEqual(plan["fleet"]["gpuTotalMb"], 24576.0)
+        self.assertAlmostEqual(plan["fleet"]["gpuFreeMb"], 4576.0)
+
+    def testWarsatPlanKeepsExplicitGpuMemoryUtilizationButWarnsOfOom(self):
+        # An operator-supplied gpuMemoryUtilization is a deliberate choice --
+        # Warsat must not silently override it -- but it still needs a loud
+        # warning when it will not fit alongside what's already running.
+        running_model = {
+            "key": "fleet-main-running",
+            "name": "Main Model",
+            "container": "rasputin-main-8000",
+            "port": 8000,
+            "role": "main",
+            "managed": True,
+            "container_status": "running",
+        }
+        gpu_metrics = [{
+            "index": 0,
+            "name": "NVIDIA GeForce RTX 4090",
+            "utilization": 80.0,
+            "memory_used_mb": 20000.0,
+            "memory_total_mb": 24576.0,
+            "temperature": 65.0,
+        }]
+
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat.gpu_live_metrics_via_docker", return_value=gpu_metrics), \
+             patch("backend.models.registry.all_models", return_value=[running_model]):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8003,
+                "strengthProfile": "balanced",
+                "gpuMemoryUtilization": 0.7,
+            }))
+
+        self.assertEqual(plan["tuning"]["gpuMemoryUtilization"], 0.7)
+        self.assertTrue(any("Main Model" in w and "out of" in w.lower() for w in plan["warnings"]))
+
+    def testWarsatGgufPlanAdvisesCpuOffloadWhenGpuIsAlmostFull(self):
+        # Coder-on-GPU + assistant-on-CPU is the pattern this feature exists
+        # to unlock: when the GPU is nearly full, a GGUF deploy should get an
+        # advisory nudge toward CPU offload instead of silently trying (and
+        # failing) to share the sliver of VRAM that's left.
+        running_model = {
+            "key": "fleet-coder-running",
+            "name": "Coder Model",
+            "container": "rasputin-coder-8001",
+            "port": 8001,
+            "role": "coder",
+            "managed": True,
+            "container_status": "running",
+        }
+        tight_gpu = [{
+            "index": 0, "name": "NVIDIA GeForce RTX 4090", "utilization": 90.0,
+            "memory_used_mb": 23000.0, "memory_total_mb": 24576.0, "temperature": 70.0,
+        }]
+        roomy_gpu = [{
+            "index": 0, "name": "NVIDIA GeForce RTX 4090", "utilization": 10.0,
+            "memory_used_mb": 2000.0, "memory_total_mb": 24576.0, "temperature": 40.0,
+        }]
+
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat.gpu_live_metrics_via_docker", return_value=tight_gpu), \
+             patch("backend.models.registry.all_models", return_value=[running_model]):
+            tight_plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/tiny-helper.gguf",
+                "hostPort": 8091,
+                "strengthProfile": "balanced",
+            }))
+        self.assertTrue(any("Coder Model" in w and "GPU Layers to 0" in w for w in tight_plan["warnings"]))
+
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat.gpu_live_metrics_via_docker", return_value=roomy_gpu), \
+             patch("backend.models.registry.all_models", return_value=[running_model]):
+            roomy_plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/tiny-helper.gguf",
+                "hostPort": 8091,
+                "strengthProfile": "balanced",
+            }))
+        self.assertFalse(any("GPU Layers to 0" in w for w in roomy_plan["warnings"]))
+
+    def testWarsatPlanFleetLogicNoOpsWithoutGpuData(self):
+        # CPU-only machines (or any environment where the GPU probe comes
+        # back empty) must plan exactly as before -- identical tuning, zero
+        # new warnings -- even though the fleet key itself is still present.
+        from backend import warsat as warsat_module
+
+        with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
+             patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat.gpu_live_metrics_via_docker", return_value=[]), \
+             patch("backend.models.registry.all_models", return_value=[]):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
+                "hostPort": 8004,
+                "strengthProfile": "balanced",
+            }))
+
+        self.assertEqual(
+            plan["tuning"]["gpuMemoryUtilization"],
+            warsat_module.STRENGTH_PROFILES["balanced"]["gpuMemoryUtilization"],
+        )
+        self.assertEqual(plan["fleet"], {"runningModels": [], "gpuFreeMb": None, "gpuTotalMb": None})
+        self.assertFalse(any(
+            "already running" in w or "GPU memory utilization was reduced" in w
+            for w in plan["warnings"]
+        ))
+
+    def testWarsatFleetRoutingResolvesCoderAndMainToDifferentLiveModels(self):
+        # Proves the simultaneous-use story end to end at the routing layer:
+        # a code task and a chat task must resolve to two different live
+        # models, not both collapsing onto whichever one happens to be
+        # "main". Isolated fake registry (not the shared persistent one) so
+        # this can't collide with the default "main-vllm" seed entry.
+        from backend.models import registry as model_registry
+
+        fake_registry = {
+            "models": [
+                {
+                    "key": "smoke-fleet-coder",
+                    "name": "Fleet Coder",
+                    "provider": "openai-compatible",
+                    "role": "coder",
+                    "base_url": "http://127.0.0.1:9601/v1",
+                    "model": "fleet-coder",
+                    "enabled": True,
+                    "managed": False,
+                    "runtime_status": "reachable",
+                },
+                {
+                    "key": "smoke-fleet-main",
+                    "name": "Fleet Main",
+                    "provider": "openai-compatible",
+                    "role": "main",
+                    "base_url": "http://127.0.0.1:9602/v1",
+                    "model": "fleet-main",
+                    "enabled": True,
+                    "managed": False,
+                    "runtime_status": "reachable",
+                },
+            ]
+        }
+
+        with patch("backend.models.registry._load", return_value=fake_registry), \
+             patch("backend.models.registry._save", lambda data: None):
+            coder_key = model_registry.key_for_task("coder", "")
+            main_key = model_registry.key_for_task("main", "")
+
+        self.assertEqual(coder_key, "smoke-fleet-coder")
+        self.assertEqual(main_key, "smoke-fleet-main")
+        self.assertNotEqual(coder_key, main_key)
+
     def testWarsatApprovedDeployStreamsPullProgress(self):
         # Approved deploys answer as NDJSON. When the image is not cached the
         # pull must emit progress lines so the UI never looks hung during a
