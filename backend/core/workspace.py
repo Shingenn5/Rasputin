@@ -800,10 +800,62 @@ def get_active():
     }
 
 
+def _unsafe_workspace_root(target):
+    # A workspace root must be a project folder -- never a drive/system/home root.
+    # In native mode this path becomes the agent's file-tool scope and, once
+    # trusted, its shell cwd/scope, so a broad root here is a broad blast radius.
+    # Rejects the drive root, the home dir, the Rasputin data dir, and anything
+    # inside the Windows / Program Files (or POSIX system) trees. Fails open on
+    # unexpected paths so it can never wrongly block a legitimate project folder.
+    try:
+        if len(target.parts) <= 1:
+            return "a drive or filesystem root"
+
+        def _r(p):
+            try:
+                return p.resolve()
+            except Exception:
+                return p
+
+        exact = []
+        home = os.environ.get("USERPROFILE")
+        if home:
+            exact.append(Path(home))
+        try:
+            dd = data_dir()
+            exact.extend([dd, dd.parent])  # data dir + %LOCALAPPDATA%\Rasputin
+        except Exception:
+            pass
+        for s in exact:
+            if target == _r(s):
+                return f"a protected location ({s})"
+
+        subtree = []
+        for var in ("WINDIR", "SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+            v = os.environ.get(var)
+            if v:
+                subtree.append(Path(v))
+        if os.name != "nt":
+            # POSIX-only: on Windows these resolve to drive-relative paths (e.g.
+            # Path("/") -> C:\) and would falsely flag every folder on C:.
+            for p in ("/etc", "/usr", "/bin", "/sbin", "/root", "/boot", "/var", "/lib"):
+                subtree.append(Path(p))
+        for s in subtree:
+            sr = _r(s)
+            if target == sr or sr in target.parents:
+                return f"inside a protected system location ({s})"
+    except Exception:
+        return None
+    return None
+
+
 def add(path=".", name=None, permission_profile=None):
     target = _root_from_value(path)
     if not target.exists() or not target.is_dir():
         raise ValueError("workspace must be an existing folder")
+    unsafe = _unsafe_workspace_root(target)
+    if unsafe:
+        raise ValueError(f"refusing to use {unsafe} as a workspace root -- choose a project folder")
     data = _load()
     existing = workspace_for_path(target)
     if existing and _abs(existing) == target:

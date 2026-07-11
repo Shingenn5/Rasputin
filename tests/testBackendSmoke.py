@@ -67,7 +67,9 @@ def minimal_pdf_bytes(text):
 class BackendSmokeTests(unittest.TestCase):
     def setUp(self):
         main.app.dependency_overrides[current_user] = lambda: {"username": "test", "role": "admin"}
-        self.client = TestClient(main.app, raise_server_exceptions=False)
+        # base_url must be loopback: main.py's native origin/host guard rejects a
+        # non-loopback Host (TestClient's default is "testserver").
+        self.client = TestClient(main.app, base_url="http://127.0.0.1", raise_server_exceptions=False)
 
     def tearDown(self):
         main.app.dependency_overrides.clear()
