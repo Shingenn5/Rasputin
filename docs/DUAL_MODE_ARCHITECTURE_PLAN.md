@@ -229,8 +229,8 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 
 - [x] `rasputin.ps1 start -Native` (and `rasputin.sh --native`): venv bootstrap from
       `requirements.txt`, uvicorn launch, env defaults, port conflict check — **(Medium)**
-- [~] Path audit (partial — native boot validated end-to-end for core paths; WarSat/model
-      discovery paths not yet exercised natively; formal contract doc TODO): no code path assumes `/app/...` container layout when `WRAPPER_RUNTIME` is
+- [x] Path audit **DONE** — all 9 `WRAPPER_RUNTIME` branches inventoried + verified native; contract
+      written in [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md). No code path assumes `/app/...` container layout when `WRAPPER_RUNTIME` is
       native; inventory every `WRAPPER_RUNTIME` branch and document the contract — **(Medium)**
 - [x] **DONE** — off by default (confirmed) + loud native startup warning/audit when enabled.
       Decide + implement the `localhost_bypass_enabled()` default for native mode (recommend:
@@ -240,10 +240,11 @@ no SQLite file is ever again read through Docker Desktop file sharing.
       Host/foreign Origin → 403, legit → ok; Docker gated off). Reject cross-origin browser requests in native mode: native mode is a real localhost HTTP
       server any browser tab can reach, so add an `Origin`/`Host` allowlist check (a webpage must
       not be able to drive the API even with the bypass off) — **(Medium, security-sensitive)** (G7)
-- [ ] WarSat from the host: verify deploy/status/logs/discovery against Docker Desktop from a
-      native wrapper; `_discovery_hosts()` already returns `127.0.0.1` natively — confirm
-      endpoints, health probes, and the fleet VRAM probe (`gpu_live_metrics_via_docker`) all
-      work without `host.docker.internal` — **(Medium)** (G6)
+- [x] WarSat from the host **DONE (code-path level)** — verified natively: `_discovery_hosts()` →
+      `['127.0.0.1']`, `_endpoint_for()` → host binding (not `host.docker.internal`),
+      `gpu_live_metrics_via_docker()` → `[]` no-crash, model URLs stay loopback. Native drives
+      Docker via the host `docker` CLI. A full GPU deploy is env-gated (hardware) and left to a
+      live run — **(Medium)** (G6)
 - [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
       Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
