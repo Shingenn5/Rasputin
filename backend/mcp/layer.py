@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import re
+import signal
+import subprocess
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -46,6 +48,41 @@ SHELL_DENY_PATTERNS = [
 
 def _safe_shell_env():
     return {key: os.environ[key] for key in SAFE_SHELL_ENV_KEYS if key in os.environ}
+
+
+_WINDOWS = os.name == "nt"
+
+
+def _shell_spawn_kwargs():
+    # Put the shell in its own group/session so the whole process tree can be
+    # torn down on timeout. On Windows we kill the tree with `taskkill /T`; on
+    # POSIX we signal the process group.
+    if _WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+async def _kill_process_tree(proc):
+    # `proc.kill()` terminates only the direct child (the shell) on Windows,
+    # orphaning anything it spawned; on POSIX it misses the process group.
+    # Kill the whole tree instead so a timed-out command leaves nothing behind.
+    pid = getattr(proc, "pid", None)
+    if pid is not None:
+        try:
+            if _WINDOWS:
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/F", "/T", "/PID", str(pid),
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(killer.wait(), timeout=10)
+            else:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception:
+            pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
 
 
 def _parse_git_status_porcelain(text):
@@ -518,6 +555,7 @@ class McpLayer:
             env=_safe_shell_env(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **_shell_spawn_kwargs(),
         )
 
         lines = []
@@ -554,8 +592,11 @@ class McpLayer:
             exit_code = await asyncio.wait_for(proc.wait(), timeout=5)
         except asyncio.TimeoutError:
             timed_out = True
-            proc.kill()
-            await proc.wait()
+            await _kill_process_tree(proc)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
 
         output = "\n".join(lines)
         audit.log("shell_exec_done", {"command": command, "exit_code": exit_code, "timed_out": timed_out, "truncated": truncated})
