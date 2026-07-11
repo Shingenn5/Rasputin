@@ -457,12 +457,30 @@ def _validate_mount_host_path(raw):
     return raw
 
 
+def is_native():
+    return os.environ.get("WRAPPER_RUNTIME") != "docker"
+
+
 def mount_plan(host_path, name=None, read_only=True):
     raw = str(host_path or "").strip()
     if not raw:
         raise ValueError("host folder path is required")
     raw = _validate_mount_host_path(raw)
     display = name or Path(raw).name or "Mounted Folder"
+    if is_native():
+        # Native has no container: the host folder is directly usable, so there
+        # is nothing to bind-mount and nothing to restart. Approving registers
+        # the host path as-is (the mount-request subsystem is Docker-only).
+        return {
+            "display_name": display,
+            "host_path": raw,
+            "container_path": raw,
+            "read_only": bool(read_only),
+            "is_mounted": True,
+            "requires_restart": False,
+            "compose_volume": "",
+            "message": "Folder is directly accessible in native mode -- approve to start using it.",
+        }
     target = f"/app/workspace/mounted/{_slug(display)}"
     return {
         "display_name": display,
@@ -523,6 +541,17 @@ def save_mount_request(host_path, name=None, read_only=True):
     Rasputin restarts without this exact host_path re-submitted. Only
     remove_mount_request (an explicit user action) may delete an entry."""
     plan = mount_plan(host_path, name, read_only)
+    if is_native():
+        # No bind mount, compose override, or restart natively: register the host
+        # folder as a workspace directly. Nothing is stored in mount_requests, so
+        # the pending-mounts panel stays empty in native mode.
+        public = approve(plan["host_path"], plan["display_name"], read_only)
+        plan = dict(plan)
+        plan["compose_written"] = False
+        plan["compose_file"] = ""
+        plan["registered"] = True
+        plan["workspace"] = public
+        return plan
     data = _load()
     requests = data.setdefault("mount_requests", [])
     # Idempotent by host path: re-approving the same folder (or a UI retry)

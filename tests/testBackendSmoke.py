@@ -2806,13 +2806,16 @@ class BackendSmokeTests(unittest.TestCase):
             "readOnly": True,
         }))
         self.assertIn("readOnly", approved)
-        plan = self.assertOk(self.client.post("/api/workspace/mount-plan", json={
-            "hostPath": "C:/Users/example/Documents",
-            "name": "Documents",
-            "readOnly": True,
-        }))
+        mount_body = {"hostPath": "C:/Users/example/Documents", "name": "Documents", "readOnly": True}
+        # Docker mode: mounting a host folder needs a compose restart.
+        with patch.dict(os.environ, {"WRAPPER_RUNTIME": "docker"}):
+            plan = self.assertOk(self.client.post("/api/workspace/mount-plan", json=mount_body))
         self.assertTrue(plan["requiresRestart"])
         self.assertTrue(plan["readOnly"])
+        # Native mode: the folder is directly accessible, so no mount/restart.
+        with patch.dict(os.environ, {"WRAPPER_RUNTIME": "native"}):
+            native_plan = self.assertOk(self.client.post("/api/workspace/mount-plan", json=mount_body))
+        self.assertFalse(native_plan["requiresRestart"])
 
     def testWorkspaceMountApplyRequiresDockerControl(self):
         with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
