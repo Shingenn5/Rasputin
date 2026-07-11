@@ -245,6 +245,18 @@ no SQLite file is ever again read through Docker Desktop file sharing.
       `gpu_live_metrics_via_docker()` → `[]` no-crash, model URLs stay loopback. Native drives
       Docker via the host `docker` CLI. A full GPU deploy is env-gated (hardware) and left to a
       live run — **(Medium)** (G6)
+
+## Status log (cont.)
+
+- 2026-07-11 — **Phase 2 backend complete.** Root-safety guard rejects drive/home/system roots +
+  the data dir (`_unsafe_workspace_root`, POSIX dirs gated to non-Windows to avoid `Path('/')→C:\`
+  false-positives). Native workspace approval registers host paths directly — `mount_plan` returns
+  `requires_restart=False`, `save_mount_request` calls `approve()` instead of writing a compose
+  override, so the pending-mounts panel + restart badges are empty in native with no frontend
+  change. Docker flow unchanged; smoke exercises mount-plan in both runtimes (96 OK). Also fixed a
+  Phase-1 middleware regression (TestClient loopback base_url). Remaining Phase 2: frontend copy +
+  fully hiding the mount panel in native, the Docker mount-approve auto-register gap, and a
+  Playwright E2E. Next big one: **Phase 3 — host-toolchain sandboxed shell (the isolation model)**.
 - [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
       Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
@@ -259,19 +271,24 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 
 *Serves G2. The mount subsystem stops being load-bearing.*
 
-- [ ] Native mode: approving a workspace = validating + registering a host path directly; no
+- [x] **DONE (backend)** — Native mode: approving a workspace = validating + registering a host path directly; no
       mount request, no restart. Reuse the existing approval/trust flow unchanged — **(Medium)**
-- [ ] Root-safety validation in `workspace.add()` (`workspace.py:801` currently checks only
+- [x] **DONE** — `_unsafe_workspace_root()` rejects drive/home/system roots + data dir; verified.
+      Root-safety validation in `workspace.add()` (`workspace.py:801` currently checks only
       exists + is_dir): reject or require a hard, typed confirmation for drive roots (`C:\`),
       `%USERPROFILE%` itself, `%WINDIR%`, `%ProgramFiles%`/`%ProgramFiles(x86)%`, and the Rasputin
       data dir — a project folder is a subdirectory, never a system location. Prevents a one-click
       misapproval of the whole disk from becoming the shell's blast radius — **(Easy)** (G7)
-- [ ] Gate the mount-request subsystem (pending-mounts panel, compose volume generation,
-      restart-needed badges) to Docker mode only; native UI never shows it — **(Medium)**
+- [~] **Backend DONE** (native writes no mount-request / no compose override / requires_restart=False,
+      so the pending panel + restart badges are empty in native without frontend changes); frontend
+      panel-hiding + copy still TODO. Gate the mount-request subsystem (pending-mounts panel, compose
+      volume generation, restart-needed badges) to Docker mode only; native UI never shows it — **(Medium)**
 - [ ] Close the mount-approve auto-register gap *in Docker mode* while in there (open register
       item), or explicitly re-file it — **(Easy)**
 - [ ] UI copy: workspace flow describes the native path plainly ("choose a folder") — **(Easy)**
-- [ ] Test: native workspace approve → browse → index → trusted-mode gating, end to end,
+- [~] Backend-verified (mount-plan both modes, direct register, no compose override, root-safety
+      through mount-apply; smoke 96 OK); full UI E2E (browse→index→trusted gating via Playwright)
+      still TODO. Test: native workspace approve → browse → index → trusted-mode gating, end to end,
       no mount tables touched — **(Medium)**
 
 **Definition of done:** in native mode, opening a new project is: pick folder → approve →
