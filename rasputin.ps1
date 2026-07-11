@@ -1,8 +1,9 @@
 param(
     [Parameter(Position=0)]
     [string]$Command = "help",
-    
-    [switch]$EnableWarSat
+
+    [switch]$EnableWarSat,
+    [switch]$Native
 )
 
 $ErrorActionPreference = 'Stop'
@@ -146,7 +147,47 @@ function Stop-Rasputin {
     Write-Host "Rasputin stopped." -ForegroundColor Green
 }
 
-function Migrate-Data {
+function Start-Native {
+    # Native (no-Docker) launch: venv bootstrap + uvicorn. Runtime data goes to
+    # %LOCALAPPDATA%\Rasputin\data (a fresh instance) unless RASPUTIN_DATA_DIR is
+    # set. Serves the prebuilt frontend\ exactly as the container does.
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Write-Host "Python 3 is required on PATH for native mode." -ForegroundColor Red
+        exit 1
+    }
+
+    $venv = Join-Path $PSScriptRoot ".venv"
+    $vpy = Join-Path $venv "Scripts\python.exe"
+    if (-not (Test-Path $vpy)) {
+        Write-Host "Creating .venv and installing dependencies (first run only)..." -ForegroundColor Cyan
+        python -m venv $venv
+        & $vpy -m pip install --quiet --upgrade pip
+        & $vpy -m pip install --quiet -r (Join-Path $PSScriptRoot "requirements.txt")
+    }
+
+    $port = if ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
+    if (Get-NetTCPConnection -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue) {
+        Write-Host "Port $port is already in use -- the Docker instance is probably running." -ForegroundColor Red
+        Write-Host "Free it with '.\rasputin.ps1 stop', or pick another port:" -ForegroundColor Yellow
+        Write-Host "    `$env:WRAPPER_PORT=8788; .\rasputin.ps1 start -Native" -ForegroundColor Yellow
+        exit 1
+    }
+
+    if (-not (Test-Path (Join-Path $PSScriptRoot "frontend\index.html"))) {
+        Write-Host "No prebuilt frontend found (frontend\index.html). Build once with: npm ci; npm run build" -ForegroundColor Yellow
+    }
+
+    $env:HOST = "127.0.0.1"
+    $env:PORT = "$port"
+    Remove-Item Env:\WRAPPER_RUNTIME -ErrorAction SilentlyContinue   # native, not docker
+
+    Write-Host ""
+    Write-Host "Starting Rasputin (native) at http://127.0.0.1:$port" -ForegroundColor Green
+    Write-Host "On a fresh data dir the first-boot admin credentials print in the log below. Ctrl+C stops." -ForegroundColor Gray
+    & $vpy (Join-Path $PSScriptRoot "server.py")
+}
+
+function Invoke-DataMigration {
     # One-time move of existing bind-mount data into the named volume that
     # docker-compose.yml now uses. Idempotent and copy-never-move: your .\data
     # directory is left fully intact so you can always roll back.
@@ -189,14 +230,15 @@ function Migrate-Data {
 Show-Header
 
 switch ($Command.ToLower()) {
-    "start" { Start-Rasputin }
+    "start" { if ($Native) { Start-Native } else { Start-Rasputin } }
     "stop" { Stop-Rasputin }
     "credentials" { Test-DockerEnv; Get-Credentials }
     "reset-password" { Test-DockerEnv; Reset-Password }
-    "migrate-data" { Migrate-Data }
+    "migrate-data" { Invoke-DataMigration }
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
-        Write-Host "  .\rasputin.ps1 start             - Starts Rasputin in the background"
+        Write-Host "  .\rasputin.ps1 start             - Starts Rasputin (Docker) in the background"
+        Write-Host "  .\rasputin.ps1 start -Native     - Starts Rasputin natively (no Docker; venv + uvicorn)"
         Write-Host "  .\rasputin.ps1 start -EnableWarSat - Starts Rasputin with Docker Control layer"
         Write-Host "  .\rasputin.ps1 stop              - Stops all Rasputin containers"
         Write-Host "  .\rasputin.ps1 credentials       - Fetches your login credentials"
