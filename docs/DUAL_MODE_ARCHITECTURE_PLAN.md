@@ -277,6 +277,27 @@ no SQLite file is ever again read through Docker Desktop file sharing.
   frontend builds clean. Next: **Stage 3.3 — dedicated low-privilege sandbox account + workspace
   ACL + run-as (Job Object), which needs a one-time elevated provisioning step on the operator's
   machine.**
+- 2026-07-11 — **Phase 3, Stage 3.3 first-pass (authoring + de-risk; NOT yet run).** Two findings
+  changed the plan before writing system-changing code:
+  (a) **pywin32 is unnecessary** — a stdlib-only ctypes POC proved the manual pipe-capture path
+  (`CreatePipe` + drain threads + `GetExitCodeProcess`) captures stdout/stderr/exit-code correctly.
+  That path is required because `CreateProcessWithLogonW` bypasses asyncio's pipe plumbing; the
+  whole run-as surface (advapi32 logon, kernel32 Job Objects) is reachable via ctypes, so no new
+  dependency and no dependency-install in the elevated step.
+  (b) **§10-Q1 logon-rights fork resolved to "defer":** `CreateProcessWithLogonW` does an
+  interactive-type logon, so denying `SeDenyInteractiveLogonRight` (design §3.1) would break the
+  primary mechanism. A standard user already has exactly the right it needs, so the **first-pass
+  provision script touches logon rights zero**; deny-logon hardening waits on the first-run
+  validation that picks the final mechanism.
+  Authored `scripts/Provision-Sandbox.ps1` (idempotent create/repair/`-Remove`/`-Status`): standard
+  `Rasputin_sbx` user, 40-char random password stored DPAPI-CurrentUser (owner-SID recorded so the
+  backend refuses a cross-user credential), best-effort SID-scoped egress block. Parse-clean;
+  `-Status` verified (reports the native `sandbox.cred` path). **Three unknowns (job-nesting via
+  seclogon §9-T5, per-user firewall WFP scoping §9-T6, logon-rights) are all resolved by the first
+  elevated run** — the script isolates them and defaults safe. **CHECKPOINT: creating the account +
+  firewall + stored credential is a system change needing the operator's elevated go-ahead. Blocked
+  on that; the run-as integration (`backend/core/sandbox_exec.py`) is authored right after, since
+  its logon/job/firewall behavior can only be verified once the account exists.**
 - [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
       Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
