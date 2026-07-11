@@ -8,12 +8,13 @@ from backend.engine import output
 from backend.rag import graph as graphify
 from backend.rag import vector as rag
 from backend.core import runtime_store as store
+from backend.core.datadir import data_dir
 
 from .models import ArchiveItem, ArchiveRetentionRule
 from .service import ArchiveService
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 ARCHIVE_FILE = DATA_DIR / "archive_sessions.json"
 _lock = Lock()
 

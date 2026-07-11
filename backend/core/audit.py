@@ -3,8 +3,10 @@ import time
 from pathlib import Path
 from threading import Lock
 
+from backend.core.datadir import data_dir
+
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 AUDIT_FILE = DATA_DIR / "audit.jsonl"
 SECURITY_FILE = DATA_DIR / "security.json"
 

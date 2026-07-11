@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from .models import ArchiveItem, ArchiveRetentionRule
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = ROOT / "data" / "archive.sqlite3"
+DB_PATH = data_dir() / "archive.sqlite3"
 
 def _get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -15,9 +15,10 @@ from backend.core import security as security
 from backend.mcp import tools as tool_relay
 from backend.core import runtime_store as store
 from backend.core.response import AppError
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 REGISTRY_FILE = DATA_DIR / "mcp_relays.json"
 _lock = Lock()
 _processes = {}

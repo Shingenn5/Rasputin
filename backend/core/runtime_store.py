@@ -6,12 +6,14 @@ import uuid
 from pathlib import Path
 from threading import RLock
 
+from backend.core.datadir import data_dir
+
 ROOT = Path(__file__).resolve().parents[1]
 # RASPUTIN_DATA_DIR redirects all runtime storage (sqlite + kv). The test
 # suite sets it to a temp dir so test runs stop polluting the live dev data
 # (each smoke run used to permanently register its fixture workspaces,
 # sessions, and tasks in backend/data/rasputin.db).
-DATA_DIR = Path(os.environ.get("RASPUTIN_DATA_DIR") or (ROOT / "data"))
+DATA_DIR = data_dir()
 DB_FILE = DATA_DIR / "rasputin.db"
 
 _lock = RLock()

@@ -7,8 +7,10 @@ import uuid
 from pathlib import Path
 from threading import Lock
 
+from backend.core.datadir import data_dir
+
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 DB_PATH = DATA_DIR / "trials.sqlite3"
 
 _lock = Lock()

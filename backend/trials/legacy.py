@@ -28,9 +28,10 @@ from backend.models import registry as model_registry
 from backend.core import preferences
 from backend.core import runtime_store as rts
 from .models import ROUTABLE_MODES
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 TRIALS_FILE = DATA_DIR / "trials.json"
 _lock = Lock()
 

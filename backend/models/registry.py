@@ -16,9 +16,10 @@ from backend.core import security as security
 from backend.core import workspace
 from backend.core.response import AppError
 from backend.warsat.providers import get_provider
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 REGISTRY_FILE = DATA_DIR / "models.json"
 MODEL_ROLES = ["main", "planner", "executor", "coder", "researcher", "summarizer", "memory", "embeddings", "helper", "test"]
 

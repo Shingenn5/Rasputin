@@ -5,12 +5,14 @@ import time
 from pathlib import Path
 from threading import Lock
 
+from backend.core.datadir import data_dir
+
 ROOT = Path(__file__).resolve().parents[2]
 # RASPUTIN_DATA_DIR (shared with runtime_store.py) redirects file-based
 # workspace state during native test/verification runs, so they stop writing
 # workspace.json / the generated compose override into the real repo's data/
 # folder. Unset in every shipped compose file, so production is unaffected.
-DATA_DIR = Path(os.environ.get("RASPUTIN_DATA_DIR") or (ROOT / "data"))
+DATA_DIR = data_dir()
 WORKSPACE_FILE = DATA_DIR / "workspace.json"
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".pytest_cache"}
 PREVIEW_EXTENSIONS = {

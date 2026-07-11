@@ -7,9 +7,10 @@ from pathlib import Path
 import httpx
 
 from backend.core import audit as audit
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 CACHE_FILE = DATA_DIR / "models_dev_catalog.json"
 HF_SEARCH_CACHE_FILE = DATA_DIR / "hf_search_cache.json"
 MODELS_DEV_URL = os.environ.get("MODELS_DEV_API_URL", "https://models.dev/api.json")

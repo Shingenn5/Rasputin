@@ -5,9 +5,10 @@ from pathlib import Path
 
 from backend.core import audit as audit
 from backend.core import runtime_store as store
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 SKILLS_DIR = DATA_DIR / "skills"
 
 BUILTINS = {

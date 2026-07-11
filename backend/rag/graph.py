@@ -9,9 +9,10 @@ from threading import Lock
 
 from backend.core import workspace
 from backend.rag import vector as rag
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 GRAPH_FILE = DATA_DIR / "graph.json"
 GRAPH_VERSION = 3
 

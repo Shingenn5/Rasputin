@@ -2,9 +2,10 @@ from pathlib import Path
 from threading import Lock
 
 from backend.core import runtime_store as store
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 PREFERENCES_FILE = DATA_DIR / "preferences.json"
 PREFERENCES_KEY = "userPreferences"
 

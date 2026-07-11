@@ -8,9 +8,10 @@ from threading import Lock
 
 from backend.core import audit as audit
 from backend.core import approvals as approvals
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 CONFIG_FILE = DATA_DIR / "telegram.json"
 
 _lock = Lock()

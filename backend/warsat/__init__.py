@@ -16,10 +16,11 @@ from backend.core import runtime_store as store
 from backend.models import registry as model_registry
 from backend.core import security
 from backend.core.response import AppError
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PROTOCOL_DIR = ROOT / "backend" / "warsat" / "protocols"
-DATA_DIR = ROOT / "data" / "warsat"
+DATA_DIR = data_dir() / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
 MODELS_DIR = ROOT / "models"
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("WARSAT_DEPLOY_TIMEOUT", "1800"))

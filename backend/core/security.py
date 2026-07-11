@@ -4,9 +4,10 @@ from threading import Lock
 from urllib.parse import urlparse
 
 from backend.core import runtime_store as store
+from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = data_dir()
 SECURITY_FILE = DATA_DIR / "security.json"
 
 _lock = Lock()
