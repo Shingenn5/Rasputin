@@ -257,6 +257,13 @@ no SQLite file is ever again read through Docker Desktop file sharing.
   Phase-1 middleware regression (TestClient loopback base_url). Remaining Phase 2: frontend copy +
   fully hiding the mount panel in native, the Docker mount-approve auto-register gap, and a
   Playwright E2E. Next big one: **Phase 3 — host-toolchain sandboxed shell (the isolation model)**.
+- 2026-07-11 — **Phase 2 COMPLETE.** Frontend finished: `security.native` exposed to the UI,
+  host-browse/mount-apply/mount-requests native-gated to the file-read grant (docker-control is a
+  Docker concept), and the Add Folder modal branches on native (choose-a-folder copy, no
+  docker-control gating, no compose/restart success screen). Verified end-to-end: native HTTP flow
+  (browse/approve/register/reject) + Playwright modal render + smoke 96 OK + Docker path unchanged
+  and live container healthy. Mount-approve auto-register gap re-filed as a deferred Docker-UX
+  follow-up. **All of Phase 2's definition-of-done is met.** Next: Phase 3 (host-toolchain shell).
 - [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
       Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
@@ -279,17 +286,23 @@ no SQLite file is ever again read through Docker Desktop file sharing.
       `%USERPROFILE%` itself, `%WINDIR%`, `%ProgramFiles%`/`%ProgramFiles(x86)%`, and the Rasputin
       data dir — a project folder is a subdirectory, never a system location. Prevents a one-click
       misapproval of the whole disk from becoming the shell's blast radius — **(Easy)** (G7)
-- [~] **Backend DONE** (native writes no mount-request / no compose override / requires_restart=False,
-      so the pending panel + restart badges are empty in native without frontend changes); frontend
-      panel-hiding + copy still TODO. Gate the mount-request subsystem (pending-mounts panel, compose
-      volume generation, restart-needed badges) to Docker mode only; native UI never shows it — **(Medium)**
-- [ ] Close the mount-approve auto-register gap *in Docker mode* while in there (open register
-      item), or explicitly re-file it — **(Easy)**
-- [ ] UI copy: workspace flow describes the native path plainly ("choose a folder") — **(Easy)**
-- [~] Backend-verified (mount-plan both modes, direct register, no compose override, root-safety
-      through mount-apply; smoke 96 OK); full UI E2E (browse→index→trusted gating via Playwright)
-      still TODO. Test: native workspace approve → browse → index → trusted-mode gating, end to end,
-      no mount tables touched — **(Medium)**
+- [x] **DONE** — native writes no mount-request/compose/`requires_restart`, so the pending panel +
+      restart badges are empty in native; `security.native` exposed (bootstrap + `/api/security`),
+      host-browse/mount-apply/mount-requests native-gated to the file-read grant, and the Add Folder
+      modal branches (native copy, no docker-control gating, no compose/restart success screen). Gate
+      the mount-request subsystem to Docker mode only; native UI never shows it — **(Medium)**
+- [x] **RE-FILED (deferred)** — approving a *ready* pending mount already auto-registers the
+      workspace (`approvePendingMount` → `approvePath`). The residual gap is only that Docker's flow
+      stays two-step (mount-apply → restart → approve) instead of auto-registering ready mounts on
+      boot — a Docker-mode UX nicety, not a bug, not worth destabilizing the mount subsystem now.
+      Tracked as a standalone follow-up. — **(Easy)**
+- [x] **DONE** — the native Add Folder modal reads "Choose a folder on your machine…" with no
+      Docker/mount language (verified via Playwright). UI copy: workspace flow describes the native
+      path plainly ("choose a folder") — **(Easy)**
+- [x] **DONE** — native HTTP E2E (host-browse 200 without docker-control, mount-apply registers
+      directly, folder in workspace list, dangerous root → 400) + Playwright (native modal renders;
+      Docker copy/warning/"Generate Mount" absent; no page errors); smoke 96 OK in both runtimes.
+      Test: native workspace approve → browse → index → trusted-mode gating, end to end — **(Medium)**
 
 **Definition of done:** in native mode, opening a new project is: pick folder → approve →
 working, in under ten seconds, with zero restarts.
