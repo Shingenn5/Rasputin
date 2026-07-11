@@ -80,6 +80,11 @@ def _security_headers(response, request_id):
 @app.on_event("startup")
 async def startup():
     auth.bootstrap()
+    if auth.localhost_bypass_enabled() and os.environ.get("WRAPPER_RUNTIME") != "docker":
+        _warn = ("RASPUTIN_LOCALHOST_BYPASS is ENABLED in native mode -- any local process or a "
+                 "DNS-rebinding page is treated as admin with NO login. Unset it outside dev.")
+        print("\n" + "!" * 76 + "\nSECURITY: " + _warn + "\n" + "!" * 76 + "\n", flush=True)
+        audit.log("localhost_bypass_enabled_native_warning", {"message": _warn})
     memory_store.init_memory()
     skill_store.init_skills()
     telegram.start_polling()
@@ -99,9 +104,47 @@ async def startup():
 LONG_INDEX_PATHS = {"/api/rag/ingest", "/api/graph/build"}
 
 
+# --- Native-mode origin/host hardening (defense-in-depth) ----------------------
+# The session cookie is already SameSite=Strict + HttpOnly + host-only, so the
+# browser blocks cross-site CSRF outright. These checks add depth for two narrow
+# cases: DNS-rebinding, and RASPUTIN_LOCALHOST_BYPASS (which grants admin to any
+# loopback caller with no cookie). Enforced ONLY in native mode -- the Docker
+# path binds behind the bridge gateway, cannot trigger the bypass, and is already
+# verified, so it stays untouched. Set RASPUTIN_ALLOWED_HOSTS (comma list) to
+# widen for server mode. Origin-less requests (curl, SSE, server-to-server) are
+# never rejected.
+from urllib.parse import urlsplit as _urlsplit
+
+_LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+
+
+def _allowed_hostnames():
+    extra = os.environ.get("RASPUTIN_ALLOWED_HOSTS", "")
+    return _LOOPBACK_HOSTNAMES | {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
+def _origin_host_reject(request: Request):
+    if os.environ.get("WRAPPER_RUNTIME") == "docker":
+        return None
+    allowed = _allowed_hostnames()
+    host = (request.url.hostname or "").lower()  # port-stripped
+    if host and host not in allowed:
+        return "host_not_allowed"
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        origin = request.headers.get("origin")
+        if origin:
+            oh = (_urlsplit(origin).hostname or "").lower()
+            if oh and oh not in allowed:
+                return "origin_not_allowed"
+    return None
+
+
 @app.middleware("http")
 async def production_headers(request: Request, call_next):
     request_id = str(uuid.uuid4())[:12]
+    reject = _origin_host_reject(request)
+    if reject:
+        return _security_headers(fail("forbidden_request", f"request blocked: {reject}", 403), request_id)
     timeout = float(os.environ.get("RASPUTIN_REQUEST_TIMEOUT", "90"))
     try:
         if request.url.path == "/api/events":

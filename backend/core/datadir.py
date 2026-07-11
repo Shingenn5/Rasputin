@@ -19,10 +19,18 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 def data_dir() -> Path:
     override = os.environ.get("RASPUTIN_DATA_DIR")
     if override:
-        return Path(override)
-    if os.environ.get("WRAPPER_RUNTIME") == "docker":
-        return _REPO_ROOT / "data"
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        return Path(local_app_data) / "Rasputin" / "data"
-    return _REPO_ROOT / "data"
+        path = Path(override)
+    elif os.environ.get("WRAPPER_RUNTIME") == "docker":
+        path = _REPO_ROOT / "data"
+    else:
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        path = (Path(local_app_data) / "Rasputin" / "data") if local_app_data else (_REPO_ROOT / "data")
+    # The native default (%LOCALAPPDATA%\Rasputin\data) is nested, so its parent
+    # may not exist on a fresh machine. Ensure the full path -- callers rely on
+    # data_dir() returning a directory they can immediately write to. parents=True
+    # is the fix for the old single-level `mkdir(exist_ok=True)` assumption.
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return path
