@@ -26,7 +26,7 @@ these, it doesn't belong in this track.
   "restart-needed" badges.
 - **G3 — The agent works on the real machine.** Coding tasks run the operator's actual
   toolchain — their `npm`, their Python env, their git — not a container's approximation of it.
-  This is the structural gap between Rasputin and the CLI agents it competes with.
+  This is the structural gap between Rasputin and the CLI agents it competes with. 
 - **G4 — Reliability by construction.** The two failure classes that have repeatedly cost us
   sessions — SQLite-over-bind-mount flakiness and Docker Desktop file-sharing I/O — are
   eliminated by architecture, not worked around.
@@ -73,6 +73,81 @@ these, it doesn't belong in this track.
   gateway), but in a native run on `127.0.0.1` it CAN fire. Phase 1 must decide its default
   before native mode is promoted to first-class. (G7)
 
+## Execution isolation model — the decision that bounds an agent's blast radius
+
+*Added 2026-07-10 after a fallout review of Phases 2–3. This is the load-bearing security
+decision of the whole track; every phase below inherits it. The concern it answers: as work
+moves off the throwaway container and onto the operator's real machine, how far can an automated
+model's **mistake** reach, and what actually keeps it contained.*
+
+**The reframe.** "Native wrapper" and "sandboxed shell" are *separate* decisions. Phases 0–2
+make the *wrapper* run natively (G1/G2/G4/G5) regardless of how the agent's shell is isolated.
+Only Phase 3's `shell_exec` runs arbitrary commands, so only it needs a box. We therefore run
+**the wrapper native, the agent's shell in a sandbox** — not native-everything.
+
+**What is and isn't already contained (verified against code, 2026-07-10):**
+
+- The structured file tools — `fs_read/list/tree/write/patch/move/mkdir` — are hard-confined:
+  every one resolves the target with `.resolve()` and rejects anything outside the workspace
+  root (`_safe()`, `backend/mcp/layer.py:136`). `..`, absolute paths, and symlinks/junctions are
+  all defeated because resolution happens *before* the containment check. A mistaken *file-tool*
+  call cannot escape the approved folder. This is a real wall and stays one.
+- `shell_exec` (`backend/mcp/layer.py:500`) is the one arbitrary-execution path and it is **not**
+  confined: `cwd` is only a starting directory; an absolute path or `cd` ignores it. Its only
+  current guard, `SHELL_DENY_PATTERNS` (`layer.py:37`), is a six-regex lexical filter whose own
+  comment says "this is not a security boundary." It misses
+  `Remove-Item C:\Windows\System32 -Recurse -Force`, `del /s /q ...`, and any indirection through
+  `bash -c` / `python -c`. Today this is safe **only** because the command runs inside the
+  throwaway container. Phase 3 removes that container — so Phase 3 must replace the container's
+  wall with a new one, not with better regexes.
+
+**The decision — how the shell is boxed in each mode:**
+
+- **Native (workstation) mode:** `shell_exec` runs under a **dedicated low-privilege local
+  sandbox account**, inside a **Job Object** (whole-process-tree kill on timeout), with the
+  workspace granted to that account by ACL and **network denied by default**, and any access
+  violation **failing closed into an approval prompt** rather than a silent success. Rationale:
+  this is the only isolation that satisfies G1 (one-command install), G3 (the operator's real,
+  machine-installed toolchain), and G5 (never requires Docker Desktop) *at once*. Against the
+  risk we actually care about — *accidental* destruction — it is effective by construction:
+  Windows' own ACLs already deny a separate non-admin principal any access to `System32`,
+  `Program Files`, and other users' profiles, and we additionally deny it the operator's own
+  profile outside the workspace. A mistaken `rm -rf` / `Remove-Item` of a system path returns
+  *Access Denied* instead of executing. Stated honestly: this is a **strong guardrail against
+  accidents and low-privilege mistakes, not an airtight wall against a determined adversary**
+  (Microsoft does not treat integrity levels / restricted tokens as a security boundary) — which
+  is the correct tradeoff for a single-operator desktop tool whose threat is fumble-fingers, not
+  a hostile human at the keyboard.
+- **Server (Docker Engine) mode:** `shell_exec` runs in a disposable workspace-only container
+  with no host networking — the same model Codex and Claude Code use on Linux. This is a hard
+  wall and is the right tool where Docker is already present.
+- **Opt-in hardened native:** operators who want a VM-grade wall on the workstation can enable
+  WSL2- or container-backed shell execution. It is *offered, not required*, so G5 holds for
+  everyone who doesn't opt in.
+
+The lexical deny-list is demoted to a **UX nicety** — a fast, friendly "are you sure?" on obvious
+foot-guns — never the boundary.
+
+**Capability split (so convenience never silently grants execution).** Today a single `trusted`
+flag (`workspace.py:886`) both auto-approves file edits *and* satisfies the `shell_exec` gate
+(`layer.py:507`). Natively that means "stop nagging me about edits" would also mean "run
+unattended host shell." Phase 3/4 split these: `trusted` keeps auto-approving edits; a *separate*
+per-workspace `allow_host_shell` flag (plus a per-exec confirmation) is required before any
+command runs on the host.
+
+**Toolchain caveat (recorded, not hand-waved).** Machine-wide installs (Node/Python/git in
+`Program Files`, on the system PATH) are visible to the sandbox account automatically. A
+*per-user* toolchain (nvm-windows, a user-local venv) is not, and must be granted read/execute to
+the sandbox account at setup — a provisioning step Phase 3 owns.
+
+**Two limits the sandbox does not remove (so we don't over-trust it):**
+
+- It does not protect the workspace *itself*: `rm -rf .` inside the approved folder still deletes
+  the project. Mitigation is git + the copy-never-move discipline, not isolation.
+- Fallout is not only files: a mistaken `curl | sh`, a typosquatted `pip install`, or
+  exfiltration of the workspace are all fallout, stopped only by **network-deny-by-default** —
+  which is therefore first-class here, not a footnote.
+
 ## Difficulty legend
 
 Same scale as the coding-agent checklist: **Easy** (config/wiring), **Medium** (real work, one
@@ -85,17 +160,44 @@ what it takes to *verify*, not just write.
 
 *Serves G4 directly; prerequisite for everything else. Small and shippable alone.*
 
-- [ ] Docker mode: replace the `./data` bind mount with a named volume in
-      `docker-compose.yml` (and the test/gui-test compose variants) — **(Easy)**
-- [ ] `rasputin.ps1 migrate-data`: one-time copy of existing `./data` contents into the named
-      volume, idempotent, with a clear "already migrated" message — **(Medium)**
-- [ ] Native mode: default `RASPUTIN_DATA_DIR` to `%LOCALAPPDATA%\Rasputin\data` when unset and
-      not running in Docker (`WRAPPER_RUNTIME` check); repo `./data` remains an explicit
-      override for dev — **(Easy)**
-- [ ] Grep-audit: every module that touches the data dir goes through the shared resolver —
-      no residual hardcoded `ROOT / "data"` (the `workspace.py` lesson of 2026-07-06) — **(Easy)**
+> **Finding (2026-07-10, during the resolver sweep) — the data dir was SPLIT in two.**
+> Modules resolved `ROOT` inconsistently: `backend/core/{auth,audit,security,preferences,telegram,
+> runtime_store}`, `models/*`, `rag/*`, `engine/output`, `archive/__init__`, `mcp/skills` used
+> `parents[1]` → `/app/backend/data` (host `./data/wrapper/`, incl. **`rasputin.db`, `auth.json`,
+> `security.json`**), while `workspace`, `warsat`, `relay`, `trials`, `archive/service` used
+> `parents[2]` → `/app/data` (host `./data/`). `docker-compose.yml` mounts BOTH
+> (`./data:/app/data` and `./data/wrapper:/app/backend/data`). The shared resolver unifies all of
+> them onto one dir — correct end-state — but this means **migrate-data must CONSOLIDATE
+> `./data/wrapper/` into `./data/` before any Docker rebuild/cutover**, or the app boots blind to
+> existing auth/registry/chats. The resolver change is therefore safe on-disk but MUST NOT be
+> deployed (image rebuilt) until the consolidation + compose change below land together.
+>
+> **Empirical data-location map (measured 2026-07-10) — the migration MUST honor this.** Data is
+> currently scattered across THREE host dirs from parents[1]/[2] × docker/native runs over time.
+> Colliding filenames (`rasputin.db`, `audit.jsonl`, `memory`, `models_dev_catalog.json`,
+> `warmind-context`) exist in more than one. The LIVE copies are the Docker-written ones under
+> `./data/wrapper/`; the others are stale orphans. For `rasputin.db`:
+> `./data/wrapper/rasputin.db` = **762 MB, modified today, has `-wal`/`-shm` (LIVE)**;
+> `./backend/data/rasputin.db` = 2.3 MB, 07-06 (stale native); `./data/rasputin.db` = 425 KB,
+> 06-19 (stale orphan). Consolidation rule: for any collision, **`./data/wrapper/` wins**; pull
+> non-colliding top-level files (`auth.json`, `security.json`, `workspace.json`, `warsat/`,
+> `mcp_relays.json`, `archive.sqlite3`, `trials.*`, `preferences.json`, …) from `./data/`; treat
+> `./backend/data/` and the stale root DBs as archive-only. The 762 MB live DB also warrants a
+> `VACUUM`/blob audit (cf. the 327 MB KV blob noted in the baseline) — separate task, flagged.
+
+- [x] Native mode default + shared resolver — **DONE 2026-07-10.** New `backend/core/datadir.py`
+      `data_dir()` (RASPUTIN_DATA_DIR → `WRAPPER_RUNTIME=docker`/`<repo>/data` → native
+      `%LOCALAPPDATA%\Rasputin\data` → fallback); all 21 call sites across 19 modules routed
+      through it. `rg 'ROOT / "data"'` in caller modules returns empty; backend smoke = 96 tests OK.
+- [ ] Docker mode: drop BOTH current data mounts and replace with a single named volume
+      (`rasputin-data:/app/data`) in `docker-compose.yml` (and the test/gui-test variants) —
+      the `./data/wrapper:/app/backend/data` mount is now dead and must be removed — **(Easy)**
+- [ ] `rasputin.ps1 migrate-data`: one-time, idempotent, copy-never-move consolidation of
+      **both** `./data/*` and `./data/wrapper/*` into the named volume (via a helper container),
+      flagging any filename collision loudly instead of overwriting; clear "already migrated"
+      message keyed off a marker/`rasputin.db` presence — **(Medium, now higher-stakes)**
 - [ ] Test: fresh boot with empty named volume bootstraps cleanly; migration preserves auth,
-      registry, sessions — **(Medium)**
+      registry, sessions, chats — **(Medium)**
 - [ ] Validation: backend smoke green in both modes; live Docker boot + login after migration
 
 **Definition of done:** `docker compose down`/`up` cycles cannot produce SQLite flakiness, and
@@ -112,6 +214,9 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 - [ ] Decide + implement the `localhost_bypass_enabled()` default for native mode (recommend:
       off by default, opt-in env flag; real auth shipped 07-07 and reset flow exists, so the
       bypass is no longer needed for recoverability) — **(Medium, security-sensitive)** (G7)
+- [ ] Reject cross-origin browser requests in native mode: native mode is a real localhost HTTP
+      server any browser tab can reach, so add an `Origin`/`Host` allowlist check (a webpage must
+      not be able to drive the API even with the bypass off) — **(Medium, security-sensitive)** (G7)
 - [ ] WarSat from the host: verify deploy/status/logs/discovery against Docker Desktop from a
       native wrapper; `_discovery_hosts()` already returns `127.0.0.1` natively — confirm
       endpoints, health probes, and the fleet VRAM probe (`gpu_live_metrics_via_docker`) all
@@ -130,6 +235,11 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 
 - [ ] Native mode: approving a workspace = validating + registering a host path directly; no
       mount request, no restart. Reuse the existing approval/trust flow unchanged — **(Medium)**
+- [ ] Root-safety validation in `workspace.add()` (`workspace.py:801` currently checks only
+      exists + is_dir): reject or require a hard, typed confirmation for drive roots (`C:\`),
+      `%USERPROFILE%` itself, `%WINDIR%`, `%ProgramFiles%`/`%ProgramFiles(x86)%`, and the Rasputin
+      data dir — a project folder is a subdirectory, never a system location. Prevents a one-click
+      misapproval of the whole disk from becoming the shell's blast radius — **(Easy)** (G7)
 - [ ] Gate the mount-request subsystem (pending-mounts panel, compose volume generation,
       restart-needed badges) to Docker mode only; native UI never shows it — **(Medium)**
 - [ ] Close the mount-approve auto-register gap *in Docker mode* while in there (open register
@@ -145,10 +255,17 @@ working, in under ten seconds, with zero restarts.
 
 *Serves G3. Coordinates with coding-agent plan Stage 6 — do this before or with it.*
 
-- [ ] `shell_exec` on native Windows: shell selection (PowerShell vs cmd), process-tree
-      termination on timeout (kill children, not just the parent), minimal-env construction,
+- [ ] `shell_exec` on native Windows: shell selection (PowerShell vs cmd), **process-tree
+      termination on timeout (Job Object / `taskkill /T /F` — `proc.kill()` at `layer.py:557`
+      terminates only the parent on Windows, orphaning children)**, minimal-env construction,
       output caps — same guarantees as the Linux path — **(Hard)**
-- [ ] Deny-list review for Windows-equivalent catastrophic patterns — **(Medium)**
+- [ ] **Implement the native isolation model (see "Execution isolation model" above):** run
+      `shell_exec` under the dedicated low-privilege sandbox account inside a Job Object, with the
+      workspace ACL-granted, network denied by default, and boundary violations failing closed
+      into an approval prompt. This replaces the deny-list-as-boundary; keep `SHELL_DENY_PATTERNS`
+      only as a UX foot-gun hint — **(Very Hard)** (G7)
+- [ ] Provisioning: create/repair the sandbox account and workspace ACLs at setup; grant any
+      per-user toolchain dir read/execute to that account (machine-wide installs work already) — **(Hard)**
 - [ ] Git tools against host git (path forms, `safe.directory` not needed natively,
       CRLF/UTF-8 as encountered) — **(Easy)**
 - [ ] Trusted-workspace + approval gating verified identical in native mode (audit rows,
@@ -165,6 +282,10 @@ test suite with the operator's real toolchain — the Stage 6 test loop gets the
 
 - [ ] Skills sandbox: isolated bridge network + explicit allowlist instead of
       `--network host`; update THREAT_MODEL §6.2 to RESOLVED with the design — **(Medium)**
+- [ ] Capability split: introduce a per-workspace `allow_host_shell` flag distinct from
+      `trusted`, so auto-approving file edits never implicitly grants unattended host shell; gate
+      `shell_exec` on it plus a per-exec confirmation (`layer.py:507` today keys off `trusted`
+      alone) — **(Medium, security-sensitive)** (G7)
 - [ ] Sandbox works identically whether the wrapper is native or containerized — **(Medium)**
 - [ ] Watch item (not a commitment): Docker Sandboxes (`sbx`) microVM prototype for skills
       isolation once its beta stabilizes and licensing is understood — **(env-blocked)**
@@ -201,7 +322,17 @@ on a server — and neither mentions Docker Desktop.
   until the operator deletes it.
 - **Native localhost bypass (Phase 1)** — promoting native mode without deciding this would
   quietly disable auth for native users. *Mitigation:* explicitly scheduled, default-off
-  recommendation recorded above.
+  recommendation recorded above; plus an `Origin`/`Host` allowlist so a browser tab can't drive
+  the API regardless.
+- **Shell isolation is a guardrail, not a wall (Phase 3)** — the dedicated-account/ACL model
+  stops *accidental* machine-wide damage but is not proof against a determined adversary, and it
+  does not protect the workspace's own contents. *Mitigation:* scope it honestly (the threat is
+  operator/model mistakes on a single-user desktop), keep network-deny-by-default as first-class,
+  rely on git + copy-never-move for in-workspace safety, and offer opt-in container/WSL2 for
+  anyone wanting a hard wall.
+- **Over-broad workspace root (Phase 2)** — one-click approval of `C:\` or `%USERPROFILE%` would
+  make the whole disk the shell's cwd/scope. *Mitigation:* root-safety validation in
+  `workspace.add()` rejecting system/home/drive roots.
 
 ## Overall success criteria — check when ALL are true
 
@@ -217,3 +348,9 @@ on a server — and neither mentions Docker Desktop.
 
 - 2026-07-10 — Plan authored and direction approved (staged dual-mode over full cutover and
   all-Docker modernization). No phases started.
+- 2026-07-10 — Fallout review folded in: added the "Execution isolation model" section
+  (dedicated low-privilege sandbox account + Job Object + workspace ACLs + network-deny +
+  fail-closed escalation for native shell; disposable container for server mode; deny-list
+  demoted to UX). Added root-safety validation (Phase 2), Origin/CSRF check (Phase 1),
+  `allow_host_shell` capability split (Phase 4), and hardened the process-tree-kill item
+  (Phase 3). Beginning execution at Phase 0.
