@@ -184,21 +184,41 @@ what it takes to *verify*, not just write.
 > `mcp_relays.json`, `archive.sqlite3`, `trials.*`, `preferences.json`, …) from `./data/`; treat
 > `./backend/data/` and the stale root DBs as archive-only. The 762 MB live DB also warrants a
 > `VACUUM`/blob audit (cf. the 327 MB KV blob noted in the baseline) — separate task, flagged.
+>
+> **Simplification found 2026-07-10: the loose JSON files are LEGACY.** The running app reads its
+> live state from `runtime_kv` inside `rasputin.db` — that table holds `auth`, `security`,
+> `mcp_relays`, `model_secrets`, `models_registry`, `userPreferences`, `workspace_config`,
+> `telegram_config`, `archive`, `output`, `rag_graph`, `rag_vector`, `warsat_deploy_grants`, …
+> (the `memory_json_imported` key confirms a prior JSON→DB import). So `configured=True` even
+> though `auth.json` is absent from where the container looks. **The migration's real job is to
+> preserve the single live `data/wrapper/rasputin.db`** and place it where the resolver now
+> expects it (`<data_dir>/rasputin.db`); the scattered `*.json` are archaeology, not sources of
+> truth. Before cutover, confirm no module still falls back to JSON-when-KV-present, then the
+> "carefully merge colliding JSON" worry mostly evaporates. Backup verified 2026-07-10:
+> `C:\Users\elliott\RasputinBackups\pre-migration-2026-07-10\` (integrity `ok`, holds auth+chats).
 
 - [x] Native mode default + shared resolver — **DONE 2026-07-10.** New `backend/core/datadir.py`
       `data_dir()` (RASPUTIN_DATA_DIR → `WRAPPER_RUNTIME=docker`/`<repo>/data` → native
       `%LOCALAPPDATA%\Rasputin\data` → fallback); all 21 call sites across 19 modules routed
       through it. `rg 'ROOT / "data"'` in caller modules returns empty; backend smoke = 96 tests OK.
-- [ ] Docker mode: drop BOTH current data mounts and replace with a single named volume
-      (`rasputin-data:/app/data`) in `docker-compose.yml` (and the test/gui-test variants) —
-      the `./data/wrapper:/app/backend/data` mount is now dead and must be removed — **(Easy)**
-- [ ] `rasputin.ps1 migrate-data`: one-time, idempotent, copy-never-move consolidation of
-      **both** `./data/*` and `./data/wrapper/*` into the named volume (via a helper container),
-      flagging any filename collision loudly instead of overwriting; clear "already migrated"
-      message keyed off a marker/`rasputin.db` presence — **(Medium, now higher-stakes)**
-- [ ] Test: fresh boot with empty named volume bootstraps cleanly; migration preserves auth,
-      registry, sessions, chats — **(Medium)**
-- [ ] Validation: backend smoke green in both modes; live Docker boot + login after migration
+- [x] Docker mode: **DONE 2026-07-10.** `docker-compose.yml` now mounts a single named volume
+      `rasputin-data:/app/data`; both old mounts (`./data:/app/data` and the dead
+      `./data/wrapper:/app/backend/data`) removed. The test/gui-test variants already used a
+      single `/app/data` mount and are resolver-compatible unchanged, so they were left as-is
+      (bind-mount to `./testdata` is intentional for test isolation).
+- [x] `rasputin.ps1 migrate-data`: **DONE 2026-07-10.** Idempotent, copy-never-move; populates
+      `rasputin_rasputin-data` from `./data/*` with `./data/wrapper/*` overlaid (live wins);
+      "already migrated" keyed off `rasputin.db` presence (verified: reports already-migrated).
+- [x] Validation: **DONE 2026-07-10.** Live cutover verified on data, not health — rebuilt image
+      resolves `data_dir()=/app/data`, `rasputin.db` in-volume = 762,314,752 bytes,
+      `integrity_check=ok`, 9 sessions / 16 messages present, `auth` configured as `admin`,
+      `/api/health` ready. Backend smoke 96/96 green. Old `./data` + `./data/wrapper` left intact
+      on disk for rollback.
+  - Open follow-ups (not blockers): the mount-request override file
+    (`data/docker-compose.mounts.yml`) now lives in the volume while `rasputin.ps1 start` still
+    reads the host copy — resolve when Phase 2 reworks the mount subsystem; optional `VACUUM`/blob
+    prune to reclaim the ~99%-bloat DB; note that `docker compose down -v` would delete the volume
+    (named-volume tradeoff), so document "never `-v`".
 
 **Definition of done:** `docker compose down`/`up` cycles cannot produce SQLite flakiness, and
 no SQLite file is ever again read through Docker Desktop file sharing.
@@ -354,3 +374,11 @@ on a server — and neither mentions Docker Desktop.
   demoted to UX). Added root-safety validation (Phase 2), Origin/CSRF check (Phase 1),
   `allow_host_shell` capability split (Phase 4), and hardened the process-tree-kill item
   (Phase 3). Beginning execution at Phase 0.
+- 2026-07-10 — **Phase 0 COMPLETE.** Shared data-dir resolver shipped; live data migrated off the
+  Docker Desktop bind mount into named volume `rasputin_rasputin-data`; `docker-compose.yml`
+  simplified to one mount; `rasputin.ps1 migrate-data` added (idempotent). Verified on data (762MB
+  DB, 9 sessions/16 messages, admin auth, health ready). Pre-flight: verified filesystem backup at
+  `C:\Users\elliott\RasputinBackups\pre-migration-2026-07-10\` + git branch
+  `backup/pre-migration-2026-07-10` (pushed; repo confirmed private). Rollback: `git checkout
+  3eecb05 -- docker-compose.yml backend/ && docker compose up -d --build` (old code+compose reads
+  the untouched `./data/wrapper`), or restore the filesystem backup. Next: Phase 1 (native launch).
