@@ -264,6 +264,19 @@ no SQLite file is ever again read through Docker Desktop file sharing.
   (browse/approve/register/reject) + Playwright modal render + smoke 96 OK + Docker path unchanged
   and live container healthy. Mount-approve auto-register gap re-filed as a deferred Docker-UX
   follow-up. **All of Phase 2's definition-of-done is met.** Next: Phase 3 (host-toolchain shell).
+- 2026-07-11 — **Phase 3, Stage 3.1 COMPLETE** (commit 38f34b6). `shell_exec` timeout now kills
+  the whole process tree, not just the parent: Windows `taskkill /F /T /PID` (bounded 10s wait),
+  POSIX `os.killpg` on the session group; children spawn in a new process group
+  (`CREATE_NEW_PROCESS_GROUP` / `start_new_session`) so a timed-out command can't orphan workers.
+- 2026-07-11 — **Phase 3, Stage 3.2 COMPLETE** (commit 3b9d580). Capability split landed early
+  (was filed under Phase 4): host command execution is now a per-workspace `allow_host_shell`
+  opt-in *distinct from* Trusted Dev Mode. Trusting a folder auto-approves file writes + local git
+  but no longer grants unattended host shell; `shell_exec` gates on `allow_host_shell`, exposed via
+  `POST /api/workspace/host-shell` (file-write cap required, audited) with a separate UI toggle +
+  strong-warning modal. Smoke proves trusted-alone is refused, then Host Shell unlocks it (96 OK);
+  frontend builds clean. Next: **Stage 3.3 — dedicated low-privilege sandbox account + workspace
+  ACL + run-as (Job Object), which needs a one-time elevated provisioning step on the operator's
+  machine.**
 - [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
       Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
@@ -311,10 +324,9 @@ working, in under ten seconds, with zero restarts.
 
 *Serves G3. Coordinates with coding-agent plan Stage 6 — do this before or with it.*
 
-- [ ] `shell_exec` on native Windows: shell selection (PowerShell vs cmd), **process-tree
-      termination on timeout (Job Object / `taskkill /T /F` — `proc.kill()` at `layer.py:557`
-      terminates only the parent on Windows, orphaning children)**, minimal-env construction,
-      output caps — same guarantees as the Linux path — **(Hard)**
+- [x] `shell_exec` on native Windows: **process-tree termination on timeout DONE (Stage 3.1,
+      38f34b6)** — `taskkill /F /T` + new process group. Remaining for this line: shell selection
+      (PowerShell vs cmd), minimal-env construction, output caps — same guarantees as Linux — **(Hard)**
 - [ ] **Implement the native isolation model (see "Execution isolation model" above):** run
       `shell_exec` under the dedicated low-privilege sandbox account inside a Job Object, with the
       workspace ACL-granted, network denied by default, and boundary violations failing closed
@@ -338,10 +350,10 @@ test suite with the operator's real toolchain — the Stage 6 test loop gets the
 
 - [ ] Skills sandbox: isolated bridge network + explicit allowlist instead of
       `--network host`; update THREAT_MODEL §6.2 to RESOLVED with the design — **(Medium)**
-- [ ] Capability split: introduce a per-workspace `allow_host_shell` flag distinct from
-      `trusted`, so auto-approving file edits never implicitly grants unattended host shell; gate
-      `shell_exec` on it plus a per-exec confirmation (`layer.py:507` today keys off `trusted`
-      alone) — **(Medium, security-sensitive)** (G7)
+- [x] Capability split: per-workspace `allow_host_shell` flag distinct from `trusted` — **DONE
+      early in Phase 3, Stage 3.2 (3b9d580).** `shell_exec` gates on `allow_host_shell`; toggle +
+      strong-warning modal in the UI. (Per-exec confirmation deferred — the deny-list + audit +
+      the coming sandbox account are the layered controls.) — **(Medium, security-sensitive)** (G7)
 - [ ] Sandbox works identically whether the wrapper is native or containerized — **(Medium)**
 - [ ] Watch item (not a commitment): Docker Sandboxes (`sbx`) microVM prototype for skills
       isolation once its beta stabilizes and licensing is understood — **(env-blocked)**
