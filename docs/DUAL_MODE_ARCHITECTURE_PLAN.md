@@ -227,24 +227,29 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 
 *Serves G1, G5, G6. Foundation phase — nothing user-visible changes yet.*
 
-- [ ] `rasputin.ps1 start -Native` (and `rasputin.sh --native`): venv bootstrap from
+- [x] `rasputin.ps1 start -Native` (and `rasputin.sh --native`): venv bootstrap from
       `requirements.txt`, uvicorn launch, env defaults, port conflict check — **(Medium)**
-- [ ] Path audit: no code path assumes `/app/...` container layout when `WRAPPER_RUNTIME` is
+- [~] Path audit (partial — native boot validated end-to-end for core paths; WarSat/model
+      discovery paths not yet exercised natively; formal contract doc TODO): no code path assumes `/app/...` container layout when `WRAPPER_RUNTIME` is
       native; inventory every `WRAPPER_RUNTIME` branch and document the contract — **(Medium)**
-- [ ] Decide + implement the `localhost_bypass_enabled()` default for native mode (recommend:
+- [x] **DONE** — off by default (confirmed) + loud native startup warning/audit when enabled.
+      Decide + implement the `localhost_bypass_enabled()` default for native mode (recommend:
       off by default, opt-in env flag; real auth shipped 07-07 and reset flow exists, so the
       bypass is no longer needed for recoverability) — **(Medium, security-sensitive)** (G7)
-- [ ] Reject cross-origin browser requests in native mode: native mode is a real localhost HTTP
+- [x] **DONE** — native-gated Host + Origin allowlist in `backend/main.py` (verified: evil
+      Host/foreign Origin → 403, legit → ok; Docker gated off). Reject cross-origin browser requests in native mode: native mode is a real localhost HTTP
       server any browser tab can reach, so add an `Origin`/`Host` allowlist check (a webpage must
       not be able to drive the API even with the bypass off) — **(Medium, security-sensitive)** (G7)
 - [ ] WarSat from the host: verify deploy/status/logs/discovery against Docker Desktop from a
       native wrapper; `_discovery_hosts()` already returns `127.0.0.1` natively — confirm
       endpoints, health probes, and the fleet VRAM probe (`gpu_live_metrics_via_docker`) all
       work without `host.docker.internal` — **(Medium)** (G6)
-- [ ] Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
+- [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
+      Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
-- [ ] Test: native boot on a clean data dir passes the same smoke suite; WarSat plan/deploy
-      dry-run paths behave identically — **(Medium)**
+- [x] Test: native boot on a clean data dir verified (health, auth, static serving, security
+      enforcement); also fixed **Bug A** — `data_dir()` now `mkdir(parents=True)` so the nested
+      native default is created on fresh machines. WarSat plan/deploy dry-run parity still TODO — **(Medium)**
 
 **Definition of done:** a developer with Python + Docker Desktop can run
 `.\rasputin.ps1 start -Native` and get a fully working Rasputin, WarSat included, with real auth.
@@ -382,3 +387,11 @@ on a server — and neither mentions Docker Desktop.
   `backup/pre-migration-2026-07-10` (pushed; repo confirmed private). Rollback: `git checkout
   3eecb05 -- docker-compose.yml backend/ && docker compose up -d --build` (old code+compose reads
   the untouched `./data/wrapper`), or restore the filesystem backup. Next: Phase 1 (native launch).
+- 2026-07-10 — **Phase 1 mostly complete.** Shipped `rasputin.ps1 start -Native` (venv + uvicorn +
+  port-conflict check), native-gated Host/Origin hardening + `localhost_bypass` native warning
+  (`backend/main.py`), native frontend serving, and fixed Bug A (native `%LOCALAPPDATA%` data dir
+  now created with `parents=True`). Verified: native enforcement (evil Host / foreign Origin →
+  403, legit ok, Bug A dir created) and Docker regression (rebuilt, gated off, 9 sessions + admin
+  auth intact). Remaining: WarSat-from-host verification (G6) and a formal `WRAPPER_RUNTIME` path-
+  audit contract doc. Verification gotcha logged: a stale native server on :8899 silently
+  intercepted early smoke requests — always confirm the boot bound its port before trusting curls.
