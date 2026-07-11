@@ -541,8 +541,11 @@ class McpLayer:
             raise ValueError("command is required")
         base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
         item = workspace.workspace_for_path(base)
-        if not item or not item.get("trusted"):
-            raise PermissionError("shell execution requires Trusted Dev Mode to be enabled for this workspace")
+        if not item or not item.get("allow_host_shell"):
+            raise PermissionError(
+                "host shell execution requires this workspace's Host Shell capability to be enabled "
+                "(a separate opt-in from Trusted Dev Mode)"
+            )
         for pattern in SHELL_DENY_PATTERNS:
             if pattern.search(command):
                 raise PermissionError("command blocked by shell safety guardrail")

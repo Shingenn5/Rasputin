@@ -22,6 +22,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  Terminal,
   X
 } from "lucide-react";
 import { Modal, Button, Form, Table, Spinner, Badge, Alert, Card } from "react-bootstrap";
@@ -40,6 +41,7 @@ export function WorkspacesView({
   approvePath,
   selectWorkspace,
   setWorkspaceTrust,
+  setWorkspaceHostShell,
   loadWorkspaceRoots,
   previewMount,
   requestMount,
@@ -101,6 +103,10 @@ export function WorkspacesView({
   const [showTrustModal, setShowTrustModal] = useState(false);
   const [trustBusy, setTrustBusy] = useState(false);
 
+  // Host Shell capability state (distinct opt-in from Trusted Dev Mode)
+  const [showShellModal, setShowShellModal] = useState(false);
+  const [shellBusy, setShellBusy] = useState(false);
+
   const activeName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const activePath = workspace.absolutePath || workspace.activePath || ".";
   const activeId = workspace.activeId || workspace.active_id;
@@ -108,6 +114,7 @@ export function WorkspacesView({
   const activeReadOnly = activeWorkspaceInfo.readOnly ?? activeWorkspaceInfo.read_only;
   const activeIndexed = activeWorkspaceInfo.indexed;
   const activeTrusted = Boolean(activeWorkspaceInfo.trusted);
+  const activeHostShell = Boolean(activeWorkspaceInfo.allowHostShell ?? activeWorkspaceInfo.allow_host_shell);
   // Native mode has no container: folders are registered directly, so the
   // mount/compose/restart affordances and the docker-control grant don't apply.
   const native = Boolean(security?.native);
@@ -355,6 +362,37 @@ export function WorkspacesView({
     }
   }
 
+  // --- Host Shell capability ---
+  function handleShellToggleClick() {
+    if (!activeId) return;
+    if (activeHostShell) {
+      revokeShell();
+    } else {
+      setShowShellModal(true);
+    }
+  }
+
+  async function confirmEnableShell() {
+    if (!setWorkspaceHostShell || !activeId) return;
+    setShellBusy(true);
+    try {
+      await setWorkspaceHostShell(activeId, true);
+      setShowShellModal(false);
+    } finally {
+      setShellBusy(false);
+    }
+  }
+
+  async function revokeShell() {
+    if (!setWorkspaceHostShell || !activeId) return;
+    setShellBusy(true);
+    try {
+      await setWorkspaceHostShell(activeId, false);
+    } finally {
+      setShellBusy(false);
+    }
+  }
+
   async function copyMountVolume() {
     if (!mountPlan?.composeVolume) return;
     try {
@@ -455,13 +493,33 @@ export function WorkspacesView({
             disabled={!activeId || trustBusy}
             aria-pressed={activeTrusted}
             aria-label={activeTrusted ? "Trusted Dev Mode is on for this workspace. Click to revoke." : "Trusted Dev Mode is off for this workspace. Click to enable."}
-            title={activeTrusted ? "Shell, file writes, and git run without per-action approval here. Click to revoke." : "Enable to let the agent run shell, write files, and use git here without per-action approval."}
+            title={activeTrusted ? "File writes and git run without per-action approval here. Click to revoke." : "Enable to let the agent write files and use git here without per-action approval."}
           >
             <strong style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               {activeTrusted ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
               {activeTrusted ? "On" : "Off"}
             </strong>
             <small>Trusted Dev Mode</small>
+          </button>
+          <button
+            type="button"
+            className="w2-header-stat"
+            style={{
+              cursor: activeId ? "pointer" : "default",
+              border: activeHostShell ? "1px solid var(--ras-danger, #dc2626)" : "1px solid transparent",
+              background: "transparent",
+            }}
+            onClick={handleShellToggleClick}
+            disabled={!activeId || shellBusy}
+            aria-pressed={activeHostShell}
+            aria-label={activeHostShell ? "Host Shell is on for this workspace. Click to revoke." : "Host Shell is off for this workspace. Click to enable."}
+            title={activeHostShell ? "The agent can run shell commands on your machine in this folder. Click to revoke." : "Enable to let the agent run shell commands on your real machine in this folder."}
+          >
+            <strong style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              {activeHostShell ? <AlertTriangle size={14} /> : <Terminal size={14} />}
+              {activeHostShell ? "On" : "Off"}
+            </strong>
+            <small>Host Shell</small>
           </button>
         </div>
       </div>
@@ -1019,11 +1077,12 @@ export function WorkspacesView({
         </Modal.Header>
         <Modal.Body>
           <p>
-            This grants Rasputin unattended shell execution, file writes, and local git
-            operations inside <strong>{activeName || "this workspace"}</strong> — no approval
-            click per action, the same way you'd use your own terminal in this folder.
+            This grants Rasputin unattended file writes and local git operations inside{" "}
+            <strong>{activeName || "this workspace"}</strong> — no approval click per action,
+            the same way you'd edit files yourself in this folder.
           </p>
           <ul className="text-muted small" style={{ listStyle: "disc", paddingLeft: "1.25rem" }}>
+            <li>Running shell commands on your machine is a <strong>separate</strong> opt-in (Host Shell) — trust alone does not grant it.</li>
             <li>Every action is still fully logged in the audit trail.</li>
             <li>Actions that leave this machine (like <code>git push</code>) still require approval.</li>
             <li>Privacy Lock and remote model routing are unaffected.</li>
@@ -1033,6 +1092,36 @@ export function WorkspacesView({
             <Button variant="light" onClick={() => setShowTrustModal(false)} disabled={trustBusy}>Cancel</Button>
             <Button variant="warning" onClick={confirmEnableTrust} disabled={trustBusy}>
               {trustBusy ? <Spinner size="sm" /> : "Enable Trusted Dev Mode"}
+            </Button>
+          </div>
+        </Modal.Body>
+      </Modal>
+
+      {/* Host Shell capability confirm modal */}
+      <Modal show={showShellModal} onHide={() => setShowShellModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title className="d-flex align-items-center">
+            <AlertTriangle className="me-2 text-danger" size={22} />
+            Enable Host Shell
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>
+            This lets the agent run <strong>shell commands on your real machine</strong> inside{" "}
+            <strong>{activeName || "this workspace"}</strong> without an approval click per command.
+            It is the highest-privilege capability Rasputin has — treat it like handing the agent
+            your terminal.
+          </p>
+          <ul className="text-muted small" style={{ listStyle: "disc", paddingLeft: "1.25rem" }}>
+            <li>Commands run with your account's permissions and can touch files, install software, and reach the network.</li>
+            <li>A safety guardrail blocks obviously destructive commands, but it is not a full sandbox.</li>
+            <li>Only enable this for folders whose work you actively trust and are watching.</li>
+            <li>Every command is logged in the audit trail, and you can revoke this in one click.</li>
+          </ul>
+          <div className="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+            <Button variant="light" onClick={() => setShowShellModal(false)} disabled={shellBusy}>Cancel</Button>
+            <Button variant="danger" onClick={confirmEnableShell} disabled={shellBusy}>
+              {shellBusy ? <Spinner size="sm" /> : "Enable Host Shell"}
             </Button>
           </div>
         </Modal.Body>

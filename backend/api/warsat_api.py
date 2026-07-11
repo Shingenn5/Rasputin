@@ -466,6 +466,10 @@ class WorkspaceTrustIn(CamelModel):
     workspace_id: str
     trusted: bool
 
+class WorkspaceHostShellIn(CamelModel):
+    workspace_id: str
+    enabled: bool
+
 class WorkspaceBrowseIn(CamelModel):
     root_id: str | None = None
     path: str | None = None
@@ -627,6 +631,14 @@ async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(current_user)):
     security.require("allow_file_write")
     item = workspace.set_trusted(req.workspace_id, req.trusted)
     audit.log("workspace_trust_changed", {"workspace_id": req.workspace_id, "trusted": req.trusted})
+    return ok(item)
+
+@workspace_router.post("/workspace/host-shell")
+
+async def workspace_host_shell(req: WorkspaceHostShellIn, _user=Depends(current_user)):
+    security.require("allow_file_write")
+    item = workspace.set_host_shell(req.workspace_id, req.enabled)
+    audit.log("workspace_host_shell_changed", {"workspace_id": req.workspace_id, "enabled": req.enabled})
     return ok(item)
 
 @workspace_router.post("/workspace/select")

@@ -130,6 +130,7 @@ def _public_item(item):
         "indexed": bool(item.get("indexed", False)),
         "last_used": item.get("last_used"),
         "trusted": bool(item.get("trusted", False)),
+        "allow_host_shell": bool(item.get("allow_host_shell", False)),
     }
 
 
@@ -913,6 +914,7 @@ def add(path=".", name=None, permission_profile=None):
         "indexed": False,
         "last_used": None,
         "trusted": False,
+        "allow_host_shell": False,
     }
     data.setdefault("workspaces", []).append(item)
     _save(data)
@@ -976,6 +978,21 @@ def set_trusted(workspace_ref, trusted=True):
 def is_trusted(path):
     item = workspace_for_path(_root_from_value(path))
     return bool(item and item.get("trusted"))
+
+
+def set_host_shell(workspace_ref, enabled=True):
+    # Host command execution is a capability distinct from Trusted Dev Mode:
+    # trusting a folder auto-approves file edits, but must NOT silently grant
+    # unattended shell on the real machine. This is the separate opt-in.
+    data, item = _find(workspace_ref)
+    item["allow_host_shell"] = bool(enabled)
+    _save(data)
+    return _public_item(item)
+
+
+def is_host_shell_allowed(path):
+    item = workspace_for_path(_root_from_value(path))
+    return bool(item and item.get("allow_host_shell"))
 
 
 def _safe_child(target):

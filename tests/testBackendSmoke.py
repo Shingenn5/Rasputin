@@ -2936,9 +2936,23 @@ class BackendSmokeTests(unittest.TestCase):
                             "workspace_path": tmp,
                         }))
 
+                # Trusted (edits auto-approved) is NOT enough for host shell --
+                # the capability is a separate opt-in (the Phase-3 split).
                 self.assertOk(self.client.post("/api/workspace/trust", json={
                     "workspaceId": workspace_id,
                     "trusted": True,
+                }))
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                    with self.assertRaises(PermissionError):
+                        asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": "echo should-not-run",
+                            "workspace_path": tmp,
+                        }))
+
+                # Enabling the separate Host Shell capability unlocks it.
+                self.assertOk(self.client.post("/api/workspace/host-shell", json={
+                    "workspaceId": workspace_id,
+                    "enabled": True,
                 }))
 
                 marker = "rasputin-shell-smoke-ok"

@@ -1098,8 +1098,23 @@ export function App() {
       await loadWorkspaceRoots(workspace.activePath);
       setGlobalStatus(
         trusted
-          ? "Trusted Dev Mode enabled. Shell, file writes, and git run without per-action approval in this workspace."
+          ? "Trusted Dev Mode enabled. File writes and git run without per-action approval in this workspace."
           : "Trusted Dev Mode revoked for this workspace."
+      );
+    } catch (error) {
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function setWorkspaceHostShell(workspaceId, enabled) {
+    try {
+      await postJson("/api/workspace/host-shell", { workspaceId, enabled });
+      setWorkspace(await api("/api/workspace"));
+      await loadWorkspaceRoots(workspace.activePath);
+      setGlobalStatus(
+        enabled
+          ? "Host Shell enabled. The agent can run commands on your machine in this workspace."
+          : "Host Shell disabled for this workspace."
       );
     } catch (error) {
       setGlobalStatus(error.message);
@@ -1788,6 +1803,7 @@ export function App() {
         approvePath={approvePath}
         selectWorkspace={selectWorkspace}
         setWorkspaceTrust={setWorkspaceTrust}
+        setWorkspaceHostShell={setWorkspaceHostShell}
         models={models}
         modeModelOverrides={modeModelOverrides}
         setModeModelOverride={setModeModelOverride}
