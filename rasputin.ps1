@@ -146,6 +146,46 @@ function Stop-Rasputin {
     Write-Host "Rasputin stopped." -ForegroundColor Green
 }
 
+function Migrate-Data {
+    # One-time move of existing bind-mount data into the named volume that
+    # docker-compose.yml now uses. Idempotent and copy-never-move: your .\data
+    # directory is left fully intact so you can always roll back.
+    Test-DockerEnv
+    $volume = "rasputin_rasputin-data"
+    Write-Host "Migrating Rasputin data into named volume '$volume'..." -ForegroundColor Cyan
+
+    docker volume inspect $volume 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        docker run --rm -v "${volume}:/dest" python:3.12-slim test -f /dest/rasputin.db 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Already migrated: '$volume' already contains rasputin.db. Nothing to do." -ForegroundColor Green
+            return
+        }
+    } else {
+        docker volume create $volume | Out-Null
+    }
+
+    if (-not (Test-Path "data")) {
+        Write-Host "No .\data directory to migrate - the empty volume is ready for a fresh start." -ForegroundColor Yellow
+        return
+    }
+
+    # The old layout split runtime data: the LIVE store lived under .\data\wrapper
+    # (mounted to /app/backend/data). Copy top-level files, then overlay wrapper\
+    # so the live copies win any name collision.
+    Write-Host "Copying existing data (source .\data is preserved)..." -ForegroundColor Cyan
+    docker run --rm -v "${volume}:/dest" -v "${PWD}\data:/src:ro" python:3.12-slim sh -c 'set -e; cd /src; for f in *; do [ "$f" = wrapper ] || cp -a "$f" /dest/; done; if [ -d /src/wrapper ]; then cp -a /src/wrapper/. /dest/; fi; rm -rf /dest/wrapper; echo done'
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Migration copy failed - the volume may be incomplete. Investigate before starting." -ForegroundColor Red
+        return
+    }
+
+    $size = docker run --rm -v "${volume}:/dest" python:3.12-slim stat -c "%s" /dest/rasputin.db 2>$null
+    Write-Host ""
+    Write-Host "Migration complete. rasputin.db in volume: $size bytes." -ForegroundColor Green
+    Write-Host "Start with '.\rasputin.ps1 start', confirm login + chats, then you may archive .\data\wrapper." -ForegroundColor Gray
+}
+
 Show-Header
 
 switch ($Command.ToLower()) {
@@ -153,6 +193,7 @@ switch ($Command.ToLower()) {
     "stop" { Stop-Rasputin }
     "credentials" { Test-DockerEnv; Get-Credentials }
     "reset-password" { Test-DockerEnv; Reset-Password }
+    "migrate-data" { Migrate-Data }
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin in the background"
@@ -160,6 +201,7 @@ switch ($Command.ToLower()) {
         Write-Host "  .\rasputin.ps1 stop              - Stops all Rasputin containers"
         Write-Host "  .\rasputin.ps1 credentials       - Fetches your login credentials"
         Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
+        Write-Host "  .\rasputin.ps1 migrate-data      - Moves existing .\data into the named volume (idempotent)"
         Write-Host ""
     }
 }

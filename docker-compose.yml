@@ -20,11 +20,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/app/data
-      # Live runtime store (SQLite, security config, memory). Without this
-      # mount every rebuild silently discarded settings, chats, and model
-      # registrations baked into the previous container.
-      - ./data/wrapper:/app/backend/data
+      # Runtime store (SQLite + KV state) lives in a named volume, OFF the Docker
+      # Desktop bind mount -- fixes the SQLite-over-bind-mount flakiness (G4) and
+      # unifies the former split ./data + ./data/wrapper into one location.
+      # Migrate existing bind-mount data with: .\rasputin.ps1 migrate-data
+      - rasputin-data:/app/data
       - ./workspace:/app/workspace
       - ./models:/app/models:ro
     restart: "no"
@@ -46,3 +46,8 @@ services:
     volumes:
       - ./data/searxng:/etc/searxng
     restart: "no"
+
+volumes:
+  # Wrapper runtime store. Populated on existing installs by `rasputin.ps1
+  # migrate-data`; auto-created empty (fresh bootstrap) on new installs.
+  rasputin-data:
