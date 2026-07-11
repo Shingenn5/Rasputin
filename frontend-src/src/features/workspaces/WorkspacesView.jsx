@@ -108,6 +108,9 @@ export function WorkspacesView({
   const activeReadOnly = activeWorkspaceInfo.readOnly ?? activeWorkspaceInfo.read_only;
   const activeIndexed = activeWorkspaceInfo.indexed;
   const activeTrusted = Boolean(activeWorkspaceInfo.trusted);
+  // Native mode has no container: folders are registered directly, so the
+  // mount/compose/restart affordances and the docker-control grant don't apply.
+  const native = Boolean(security?.native);
   
   const entries = workspaceBrowse?.entries || [];
   const currentRoot = workspaceBrowse?.root || {};
@@ -259,7 +262,7 @@ export function WorkspacesView({
 
   // Load host starting points (project folder, home, drive) when the picker opens.
   useEffect(() => {
-    if (!showAddModal || !security?.allowDockerControl) return;
+    if (!showAddModal || (!native && !security?.allowDockerControl)) return;
     postJson("/api/workspace/host-browse", {})
       .then((data) => {
         setHostRoots(data.roots || []);
@@ -822,12 +825,14 @@ export function WorkspacesView({
           {!mountSuccess ? (
             <Form onSubmit={handleAddFolderSubmit}>
               <p className="text-muted mb-4">
-                Grant Rasputin access to a local directory. Since Rasputin runs in a Docker container, it cannot access your files unless you explicitly approve and mount them here.
+                {native
+                  ? "Choose a folder on your machine to give Rasputin access to. It is registered directly -- no mount or restart needed."
+                  : "Grant Rasputin access to a local directory. Since Rasputin runs in a Docker container, it cannot access your files unless you explicitly approve and mount them here."}
               </p>
               
               <Form.Group className="mb-4">
                 <Form.Label className="fw-semibold">Pick a folder</Form.Label>
-                {security?.allowDockerControl && hostRoots.length > 0 && (
+                {(native || security?.allowDockerControl) && hostRoots.length > 0 && (
                   <div className="d-flex flex-wrap gap-2 mb-2">
                     {hostRoots.map((root) => (
                       <Button
@@ -943,7 +948,7 @@ export function WorkspacesView({
 
               {mountStatus && <Alert variant="danger">{mountStatus}</Alert>}
 
-              {!security?.allowDockerControl && (
+              {!native && !security?.allowDockerControl && (
                 <div className="alert alert-warning d-flex align-items-center mb-0">
                   <Lock size={16} className="me-2" /> Docker control is disabled in Safety Settings. You cannot auto-mount folders.
                 </div>
@@ -951,8 +956,8 @@ export function WorkspacesView({
 
               <div className="d-flex justify-content-end mt-4 pt-3 border-top">
                 <Button variant="light" className="me-2" onClick={resetMountModal}>Cancel</Button>
-                <Button type="submit" variant="primary" disabled={isMounting || !mountHostPath || !security?.allowDockerControl}>
-                  {isMounting ? <Spinner size="sm" /> : "Approve & Generate Mount"}
+                <Button type="submit" variant="primary" disabled={isMounting || !mountHostPath || (!native && !security?.allowDockerControl)}>
+                  {isMounting ? <Spinner size="sm" /> : (native ? "Approve Folder" : "Approve & Generate Mount")}
                 </Button>
               </div>
             </Form>
@@ -962,29 +967,39 @@ export function WorkspacesView({
                 <Check size={40} className="text-success" />
               </div>
               <h4 className="fw-bold mb-3">Folder Approved Successfully!</h4>
-              <p className="text-muted mb-4 px-4">
-                The folder has been added to your approved list. <br/>
-                <strong>Important:</strong> Because Rasputin is dockerized, you must restart the container with the newly generated volume mapping for the files to be accessible.
-              </p>
-              
-              <div className="bg-body-tertiary p-3 rounded mb-4 text-start font-monospace small position-relative border">
-                <div className="text-muted mb-2 fw-bold font-sans">Docker Compose Volume Line:</div>
-                <div className="user-select-all text-break">{mountPlan?.composeVolume}</div>
-                <Button 
-                  variant="outline-secondary" 
-                  size="sm" 
-                  className="position-absolute top-0 end-0 m-2"
-                  onClick={copyMountVolume}
-                >
-                  {copied ? <Check size={14}/> : <Copy size={14}/>}
-                </Button>
-              </div>
+              {native ? (
+                <p className="text-muted mb-4 px-4">
+                  The folder is registered and ready to use right now — no mount or restart needed.
+                  You can approve any subfolder as its own workspace from the explorer (hover a
+                  folder and click the shield).
+                </p>
+              ) : (
+                <>
+                  <p className="text-muted mb-4 px-4">
+                    The folder has been added to your approved list. <br/>
+                    <strong>Important:</strong> Because Rasputin is dockerized, you must restart the container with the newly generated volume mapping for the files to be accessible.
+                  </p>
 
-              <p className="text-muted small px-4">
-                Tip: after the restart you can approve any subfolder of this mount as its own
-                workspace straight from the explorer — hover a folder and click the shield.
-                No extra mounts or restarts needed.
-              </p>
+                  <div className="bg-body-tertiary p-3 rounded mb-4 text-start font-monospace small position-relative border">
+                    <div className="text-muted mb-2 fw-bold font-sans">Docker Compose Volume Line:</div>
+                    <div className="user-select-all text-break">{mountPlan?.composeVolume}</div>
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      className="position-absolute top-0 end-0 m-2"
+                      onClick={copyMountVolume}
+                    >
+                      {copied ? <Check size={14}/> : <Copy size={14}/>}
+                    </Button>
+                  </div>
+
+                  <p className="text-muted small px-4">
+                    Tip: after the restart you can approve any subfolder of this mount as its own
+                    workspace straight from the explorer — hover a folder and click the shield.
+                    No extra mounts or restarts needed.
+                  </p>
+                </>
+              )}
 
               <Button variant="primary" size="lg" onClick={resetMountModal} className="px-5">
                 Done

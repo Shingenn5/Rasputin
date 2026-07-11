@@ -246,7 +246,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "rag_stats": rag.stats(),
         "workspace": workspace.get_active(),
         "graph_stats": graphify.stats(),
-        "security": security.load(),
+        "security": {**security.load(), "native": workspace.is_native()},
         "audit": {"events": audit.recent(100)},
         "output": output.get_config(),
         "preferences": preferences.load(),
@@ -274,7 +274,7 @@ async def setup_status(_user=Depends(current_user)):
 @system_router.get("/security")
 
 async def security_get(_user=Depends(current_user)):
-    return ok(security.load())
+    return ok({**security.load(), "native": workspace.is_native()})
 
 @system_router.post("/security")
 

@@ -552,9 +552,13 @@ async def workspace_approve(req: WorkspaceApproveIn, _user=Depends(current_user)
 @workspace_router.post("/workspace/host-browse")
 
 async def workspace_host_browse(req: HostBrowseIn, _user=Depends(current_user)):
-    # Same grant as mount-apply: picking a host folder to mount is only
-    # possible when the wrapper may drive Docker, and every listing is audited.
-    security.require("allow_docker_control")
+    # Docker mode gates host browsing behind docker-control (mounting drives
+    # Docker). Native has no container -- browsing the host FS to pick a project
+    # folder is a plain, audited read, so it uses the file-read grant instead.
+    if workspace.is_native():
+        security.require("allow_file_read")
+    else:
+        security.require("allow_docker_control")
     if not req.path:
         return ok(host_fs.roots())
     listing = host_fs.browse(req.path)
@@ -569,7 +573,10 @@ async def workspace_mount_plan(req: WorkspaceMountIn, _user=Depends(current_user
 @workspace_router.post("/workspace/mount-apply")
 
 async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(current_user)):
-    security.require("allow_docker_control")
+    if workspace.is_native():
+        security.require("allow_file_read")
+    else:
+        security.require("allow_docker_control")
     plan = workspace.save_mount_request(req.host_path, req.name, req.read_only)
     audit.log("workspace_mount_requested", plan)
     return ok(plan)
@@ -577,7 +584,8 @@ async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(current_use
 @workspace_router.get("/workspace/mount-requests")
 
 async def workspace_mount_requests_get(_user=Depends(current_user)):
-    security.require("allow_docker_control")
+    if not workspace.is_native():
+        security.require("allow_docker_control")
     return ok(workspace.list_mount_requests())
 
 @workspace_router.post("/workspace/mount-requests/remove")
