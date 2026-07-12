@@ -212,4 +212,4 @@ npm run preview:gui
 
 ---
 
-*For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) and [Frontend Planning](docs/FRONTEND_REDESIGN_PLAN.md) documents.*
+*For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) (frontend stack in §4) and the [UI/UX Plan](docs/UI_UX_PLAN.md).*

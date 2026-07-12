@@ -144,66 +144,63 @@ This avoids the old white-screen problem where the browser could reuse stale `/s
 
 ## 4. Frontend Stack
 
-Current stack:
+**This section is the canonical description of the frontend stack. If another doc
+contradicts it (several older UI planning docs say "no Tailwind" or "vanilla JS"),
+this section is correct and they are stale.** Authoritative source: root `package.json`
++ `vite.config.mjs`.
+
+Current stack (all actually installed and used):
 
 ```text
-React
-Vite
-React-Bootstrap
-Bootstrap CSS from npm
-React Query
-React Markdown
-rehype-sanitize
-lucide-react
-Playwright
+Framework      React 18 + Vite 6   (built from frontend-src/ into frontend/)
+State / data   zustand (client state) · @tanstack/react-query (server data)
+Styling        HYBRID of three layers — see below:
+                 1. Tailwind CSS v4   (@tailwindcss/vite plugin + `@import "tailwindcss"`)
+                 2. React-Bootstrap / Bootstrap 5 CSS   (component primitives)
+                 3. --ras-* / --cc-* design tokens   (11-theme system, app layout/surfaces)
+UI libs        lucide-react (icons) · framer-motion (motion) · recharts (charts)
+               react-markdown + rehype-sanitize (markdown)
+Class utils    clsx · tailwind-merge · class-variance-authority
+Heavy features pyodide (in-browser Python) · pdfjs-dist (PDF)
+Fonts          @fontsource/rajdhani
+Testing        Playwright (npm run testUi)
 ```
 
-Installed packages are listed in:
+Installed packages are the source of truth — see root `package.json` / `package-lock.json`.
+Do NOT reintroduce a "no Tailwind" or "vanilla JS only" rule; React + Vite + Tailwind are the
+real stack. (Rationalizing the three styling layers into a cleaner primary system is a known
+cleanup goal — see `docs/UI_UX_PLAN.md`.)
 
-```text
-package.json
-package-lock.json
-```
+### Styling: a three-layer hybrid (the honest picture)
 
-### Why Bootstrap Adds CSS
+Rasputin's styling is genuinely three systems coexisting. Knowing which does what avoids fighting them:
 
-Bootstrap components work through CSS classes like:
+1. **Tailwind CSS v4** — wired via the `@tailwindcss/vite` plugin (`vite.config.mjs`:
+   `plugins:[react(), tailwindcss()]`) and pulled in with `@import "tailwindcss";` at the top of
+   `frontend-src/src/styles/theme.css`. Utility classes (`flex`, `gap-*`, `px-*`, `rounded-*`, …)
+   are used across components (~hundreds of usages). Tailwind v4 needs no `tailwind.config.js` —
+   it configures from CSS.
+2. **React-Bootstrap / Bootstrap 5** — component primitives (`Button`, `Card`, `Modal`, `Form`,
+   `Nav`, `Table`, …) rendered as React components; Bootstrap's CSS (`bootstrap/dist/css/
+   bootstrap.min.css`) backs the `btn`/`card`/`form-control` classes they emit.
+3. **The `--ras-*` / `--cc-*` design-token system** — the 11-theme engine and Rasputin-specific
+   layout, spacing, and surfaces, in `frontend-src/src/styles/` (`theme.css`, `rasputin.css`,
+   `dashboard.css`). Themes are applied via a root attribute/inline script in `index.html`.
 
-```text
-btn
-card
-form-control
-row
-col
-badge
-accordion
-list-group
-```
+**CONVENTION (decided 2026-07-12): consolidate toward Tailwind v4 + the design tokens as the ONE
+primary system.** Three overlapping systems is a maintainability + consistency smell (a big part of
+why the UI can "feel like a prototype"), so:
 
-Those classes need CSS definitions to mean anything.
+- **New and changed components use Tailwind utilities + `--ras-*`/`--cc-*` tokens** (tokens exposed
+  as CSS variables Tailwind reads). Do **not** add new `react-bootstrap` usages.
+- **`react-bootstrap` / Bootstrap CSS is now legacy** — retire it incrementally as components get
+  touched during the UI/UX work (`docs/UI_UX_PLAN.md`), keeping it only where a component is still
+  pulling real weight and hasn't been migrated yet.
+- The `--ras-*`/`--cc-*` token system stays — it's the theme engine; we build Tailwind *on top of*
+  it, not instead of it.
 
-Rasputin imports Bootstrap CSS from the local npm package:
-
-```text
-bootstrap/dist/css/bootstrap.min.css
-```
-
-This keeps dependency warnings out of the normal Vite build while preserving React-Bootstrap component styling. Rasputin-specific layout, spacing, themes, and Warmind-style surfaces live in:
-
-```text
-frontend-src/src/styles/rasputin.css
-```
-- transitions
-- utilities
-- utilities
-
-Rasputin-specific CSS is in:
-
-```text
-frontend-src/src/styles/rasputin.css
-```
-
-That file should stay small. It handles layout and product-specific polish, not generic button/form/card styling.
+This is a direction, executed incrementally (not a big-bang rewrite); the migration happens through
+the polish phases, verified in the running app.
 
 ## 5. Frontend Source Structure
 
