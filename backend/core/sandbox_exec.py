@@ -139,7 +139,9 @@ def load_sandbox_credential(cred_path=None):
     if not path.exists():
         raise SandboxNotProvisioned(f"no sandbox credential at {path} — run scripts/Provision-Sandbox.ps1")
     try:
-        record = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig tolerates the BOM that PowerShell 5.1's Set-Content -Encoding UTF8
+        # prepends (the provision script writes this file), and reads clean UTF-8 too.
+        record = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise SandboxNotProvisioned(f"sandbox credential at {path} is unreadable: {exc}") from exc
 

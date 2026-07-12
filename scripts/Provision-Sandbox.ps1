@@ -130,7 +130,7 @@ if ($acct) {
     Write-Host "Repaired existing account '$AccountName' (password rotated)."
 } else {
     New-LocalUser -Name $AccountName -Password $secure -FullName "Rasputin Sandbox" `
-        -Description "Low-privilege account Rasputin uses to run host shell commands. Do not use interactively." `
+        -Description "Rasputin low-privilege sandbox account" `
         -PasswordNeverExpires -UserMayNotChangePassword | Out-Null
     Write-Host "Created account '$AccountName'."
 }
@@ -169,9 +169,12 @@ $record = [ordered]@{
     createdAt = (Get-Date).ToString("o")
 }
 $credPath = Join-Path $DataDir $CredFileName
-$record | ConvertTo-Json | Set-Content -Path $credPath -Encoding UTF8
-# Lock the file down to the caller only.
-icacls $credPath /inheritance:r /grant:r ("{0}:(F)" -f $callerSid) | Out-Null
+# Write BOM-less UTF-8: PS 5.1's Set-Content -Encoding UTF8 prepends a BOM that
+# trips strict UTF-8 JSON readers. The backend reads utf-8-sig as a belt too.
+[System.IO.File]::WriteAllText($credPath, ($record | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+# Lock the file down to the caller only. icacls needs a '*' prefix to treat the
+# argument as a SID rather than an account name.
+icacls $credPath /inheritance:r /grant:r ("*{0}:(F)" -f $callerSid) | Out-Null
 # Scrub the plaintext from this session's memory promptly.
 $plain = $null; $bytes = $null; [System.GC]::Collect()
 Write-Host "Wrote $credPath (owner-only ACL; plaintext held only in this elevated session, now cleared)."
