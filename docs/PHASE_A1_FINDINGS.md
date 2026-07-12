@@ -261,10 +261,18 @@ work. **The agent loop is not the blocker.**
   one (`--enable-auto-tool-choice --tool-call-parser <parser>`); with none, tool flags are omitted
   and the chat engine's degradation handles the resulting tool-less runtime. Unit-verified: default
   emits no flags, an explicit parser is emitted + sanitized to `[a-z0-9_-]`. Committed.
-- **B. Deploy a genuinely tool-capable model** (e.g. Qwen2.5-Instruct / a Hermes model) with its
-  matching parser — needed to prove end-to-end with a *real* model (needs user hardware). The
-  deploy path accepts `toolCallParser` now; a UI field for it (frontend deploy form) and/or a
-  per-catalog-model parser hint are the remaining niceties so it's not an API-only setting.
+- **B. ✅ DONE — proven end-to-end with a real tool-capable model (2026-07-12).** Deployed
+  **Qwen/Qwen2.5-3B-Instruct** through WarSat on the isolated instance with `toolCallParser=hermes`.
+  Verified: the generated `docker run` carried `--enable-auto-tool-choice --tool-call-parser hermes`
+  (my fix, through the real plan/deploy path); container came up healthy on `127.0.0.1:8001`; a
+  plain chat returned "42" with **no 400**; and a `mode=code` agentic task logged
+  `started → tool: rag_search → plan made → tool: rag_search → executed → done` — **the real Qwen
+  model emitted tool calls in both planning and execution phases, vLLM's hermes parser extracted
+  them, and Rasputin executed the tool and fed results back.** (Result text was empty only because
+  this instance's RAG index is unpopulated; the tool *executed* — that's the proof.) Also required
+  adding `tool_call_parser` to `WarsatPlanIn` (the API model stripped it). Committed (`3c26a25`,
+  `100a905`). **Remaining nicety:** a deploy-form field for the parser (frontend) + optional
+  per-catalog-model parser hint, so it isn't API-only.
 - **C. (lower priority)** Guard the silent no-op: when tools were unavailable and an execution phase
   returns prose with empty `tool_calls`, surface "tools unavailable — ran as plain chat" instead of
   reporting the prose as a completed task (`agent.py:890`). Lower priority now the loop is proven.
