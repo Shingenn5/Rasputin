@@ -3004,6 +3004,69 @@ class BackendSmokeTests(unittest.TestCase):
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 
+    @unittest.skipUnless(os.name == "nt", "sandbox account is a Windows-only mechanism")
+    def testSandboxCredentialGuardRoundTrip(self):
+        # The credential layer that gates run-as: a DPAPI blob written for THIS
+        # Windows user loads back; one written for another user is refused. This
+        # verifies the ownerSid guard + CurrentUser decrypt without needing a real
+        # Rasputin_sbx account (we round-trip DPAPI as ourselves).
+        import base64
+        import ctypes
+        from ctypes import wintypes
+        from backend.core import sandbox_exec
+
+        def _dpapi_protect(data):
+            crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+            class DATA_BLOB(ctypes.Structure):
+                _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+            crypt32.CryptProtectData.argtypes = [
+                ctypes.POINTER(DATA_BLOB), ctypes.c_wchar_p, ctypes.POINTER(DATA_BLOB),
+                ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(DATA_BLOB),
+            ]
+            crypt32.CryptProtectData.restype = wintypes.BOOL
+            buf_in = ctypes.create_string_buffer(data, len(data))
+            blob_in = DATA_BLOB(len(data), ctypes.cast(buf_in, ctypes.POINTER(ctypes.c_char)))
+            blob_out = DATA_BLOB()
+            if not crypt32.CryptProtectData(ctypes.byref(blob_in), None, None, None, None, 0x1, ctypes.byref(blob_out)):
+                raise OSError(ctypes.get_last_error(), "CryptProtectData failed")
+            try:
+                return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+            finally:
+                kernel32.LocalFree(blob_out.pbData)
+
+        sid = sandbox_exec._current_user_sid()
+        self.assertTrue(sid and sid.startswith("S-1-"))
+        password = "S3cr3t-Test-Pass!-éç"  # non-ascii, to exercise utf-8
+        blob64 = base64.b64encode(_dpapi_protect(password.encode("utf-8"))).decode()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cred = Path(tmp) / "sandbox.cred"
+
+            # Missing -> not provisioned.
+            self.assertFalse(sandbox_exec.sandbox_provisioned(cred))
+
+            # Correct owner -> loads and is provisioned.
+            cred.write_text(json.dumps({
+                "account": "Rasputin_sbx", "sid": "S-1-5-21-acct",
+                "ownerSid": sid, "dpapi": blob64, "scope": "CurrentUser",
+            }), encoding="utf-8")
+            account, secret = sandbox_exec.load_sandbox_credential(cred)
+            self.assertEqual(account, "Rasputin_sbx")
+            self.assertEqual(secret, password)
+            self.assertTrue(sandbox_exec.sandbox_provisioned(cred))
+
+            # Different owner SID -> refused (the standard-user auto-provision case).
+            cred.write_text(json.dumps({
+                "account": "Rasputin_sbx", "sid": "S-1-5-21-acct",
+                "ownerSid": "S-1-5-21-9-9-9-9", "dpapi": blob64, "scope": "CurrentUser",
+            }), encoding="utf-8")
+            with self.assertRaises(sandbox_exec.SandboxCredentialMismatch):
+                sandbox_exec.load_sandbox_credential(cred)
+            self.assertFalse(sandbox_exec.sandbox_provisioned(cred))
+
     def testGitToolsRespectTrustAndParseStructuredOutput(self):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
