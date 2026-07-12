@@ -227,6 +227,44 @@ Chosen approach: **Both**, but scoped to what's correct (per advisor pressure-te
   **model-specific**, and a mismatched parser silently corrupts tool parsing for every other vLLM
   deploy. So "Both" resolves to **client-side now + server-side per-deploy when a tool-capable model
   (e.g. a Hermes/Qwen tool model) is deployed with its matching parser.** Handed back to the user.
-- **Status:** uncommitted (commit only when asked). Files touched: `backend/models/providers.py`
-  (added `import re`, `_TOOLS_UNSUPPORTED`, `_http_error_body`, `_parse_context_limit`,
-  `_build_chat_payload`; rewrote `chat_sync`).
+- **Status:** committed on `codex/agentic-coding-loop-v1` (`3c653c1`). Files touched:
+  `backend/models/providers.py` (added `import re`, `_TOOLS_UNSUPPORTED`, `_http_error_body`,
+  `_parse_context_limit`, `_build_chat_payload`; rewrote `chat_sync`).
+
+### AGENTIC EXECUTION — the loop works; the gap is model+parser (2026-07-12)
+
+**Diagnostic:** to separate "does the agent loop work" from "can a small local model tool-call,"
+I pointed Rasputin at a **controllable mock** that emits a valid streaming OpenAI `tool_call` for
+`rag_search` on turn 1, then final text once it sees a `role:tool` result. Ran a `mode=code`
+(agentic) task.
+
+**Result — the plan→execute tool loop is fully functional.** Task `9297f546` logs:
+`started → tool: rag_search → plan made → tool: rag_search → executed → done`. Mock request log
+confirms the round-trip in **both** planning and execution phases: turn 1 `roles=[user]` → emit
+tool_call; turn 2 `roles=[user, assistant, tool]` → tool result fed back → final text. So Rasputin
+correctly **parses streaming tool_calls, executes the real tool (`mcp.call_tool`), appends the
+result, and re-prompts** — `_stream_openai` + `_finalize_tool_calls` + the `governed_chat` loop all
+work. **The agent loop is not the blocker.**
+
+**So agentic execution fails with the user's vLLM for exactly two model-layer reasons:**
+1. The model must emit valid tool calls → needs a genuinely **tool-capable** model. Phi-3.5-mini
+   (3.8B) isn't a reliable tool-caller.
+2. vLLM must run with the **matching `--tool-call-parser`**. Today `warsat/__init__.py:744`
+   **hardcodes `hermes`** for every vLLM deploy — wrong for non-Hermes models (silently mis-parses
+   their tool calls) — and the user's *running* container predates that line entirely (it has no
+   tool flags at all, hence the 400 the client fix now absorbs).
+
+**Remaining work to make agentic execution real (well-scoped now):**
+- **A. ✅ DONE — vLLM `--tool-call-parser` is now model-configurable** (`warsat/__init__.py`).
+  Replaced the hardcoded global `hermes` with a sanitized, opt-in per-deploy `toolCallParser`
+  (`_tool_call_parser` + a `_build_tuning` field): a parser is emitted only when the deploy sets
+  one (`--enable-auto-tool-choice --tool-call-parser <parser>`); with none, tool flags are omitted
+  and the chat engine's degradation handles the resulting tool-less runtime. Unit-verified: default
+  emits no flags, an explicit parser is emitted + sanitized to `[a-z0-9_-]`. Committed.
+- **B. Deploy a genuinely tool-capable model** (e.g. Qwen2.5-Instruct / a Hermes model) with its
+  matching parser — needed to prove end-to-end with a *real* model (needs user hardware). The
+  deploy path accepts `toolCallParser` now; a UI field for it (frontend deploy form) and/or a
+  per-catalog-model parser hint are the remaining niceties so it's not an API-only setting.
+- **C. (lower priority)** Guard the silent no-op: when tools were unavailable and an execution phase
+  returns prose with empty `tool_calls`, surface "tools unavailable — ran as plain chat" instead of
+  reporting the prose as a completed task (`agent.py:890`). Lower priority now the loop is proven.

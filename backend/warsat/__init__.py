@@ -593,6 +593,17 @@ def _choice_value(payload, names, choices, default=""):
     return value if value in choices else default
 
 
+def _tool_call_parser(payload):
+    """The vLLM --tool-call-parser for this deploy, or "" for none.
+
+    Tool calling only parses correctly when the parser matches THIS model's
+    output format (hermes / mistral / llama3_json / ...); a mismatched parser
+    silently corrupts every tool call. So it is per-model and opt-in, not a
+    global default. Sanitized to safe CLI-token characters."""
+    raw = str(_payload_get(payload, "toolCallParser", "tool_call_parser", default="") or "").strip().lower()
+    return re.sub(r"[^a-z0-9_-]", "", raw)
+
+
 def _build_tuning(payload, protocol, strength):
     profile = STRENGTH_PROFILES[_safe_strength(strength)]
     # llama.cpp's --parallel splits -c (total context) evenly across that
@@ -617,6 +628,7 @@ def _build_tuning(payload, protocol, strength):
         "quantization": _choice_value(payload, ["quantization"], QUANTIZATION_CHOICES, ""),
         "kvCacheDtype": _choice_value(payload, ["kvCacheDtype", "kv_cache_dtype"], KV_CACHE_CHOICES, "auto"),
         "swapSpaceGb": _int_value(payload, ["swapSpaceGb", "swap_space_gb"], 0, 0, 1024),
+        "toolCallParser": _tool_call_parser(payload),
     }
 
 
@@ -739,9 +751,17 @@ def _runtime_arguments(protocol, tuning):
             args.extend(["--max-num-seqs", str(tuning["maxNumSeqs"])])
         if tuning.get("swapSpaceGb"):
             args.extend(["--swap-space", str(tuning["swapSpaceGb"])])
-        # Rasputin's engine always sends tool definitions with chat requests;
-        # without these, vLLM returns 400 on every tool-enabled chat call.
-        args.extend(["--enable-auto-tool-choice", "--tool-call-parser", "hermes"])
+        # Rasputin's engine sends tool definitions with chat requests, but tool
+        # calling only works when vLLM runs a --tool-call-parser matching THIS
+        # model's output format; a mismatched parser silently corrupts tool
+        # calls. So enable it only when a parser is chosen for the deploy
+        # (per-model, opt-in). With no parser, vLLM would 400 on tool-bearing
+        # requests -- the chat engine handles that by dropping tools and
+        # retrying (see providers.chat_sync), so conversational chat still works
+        # and only agentic tool-execution is unavailable on such a deploy.
+        parser = (tuning.get("toolCallParser") or "").strip()
+        if parser:
+            args.extend(["--enable-auto-tool-choice", "--tool-call-parser", parser])
     elif protocol.get("modelFormat") == "gguf":
         args = _strip_option(args, ["-c", "--ctx-size", "--ctx_size", "-ngl", "--n-gpu-layers", "--threads", "-b", "--batch-size", "--parallel"])
         args.extend(["-c", str(tuning["contextWindow"])])
