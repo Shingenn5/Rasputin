@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -590,13 +591,31 @@ def _apply_reasoning(payload, provider, model, reasoning):
     return payload
 
 
-def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=None, reasoning="auto"):
-    provider = provider_key(model.get("provider"))
-    stream = on_delta is not None
-    url = chat_url(model, stream=stream)
-    if not url:
-        raise AppError("model_base_url_missing", "Model has no base URL to send chat requests to.", 400)
-    security.require_local_url(url)
+# Model keys whose local runtime rejected a request carrying tool definitions.
+# Populated at runtime the first time such a request 400s, so subsequent calls
+# skip tools instead of paying the failed round-trip again. In-process only;
+# re-detected after a restart, which is cheap.
+_TOOLS_UNSUPPORTED = set()
+
+
+def _http_error_body(exc):
+    try:
+        return exc.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+def _parse_context_limit(body):
+    """Pull the context length from a vLLM-style 400 ('max_tokens=N cannot be
+    greater than max_model_len=...=M') so we can clamp max_tokens and retry.
+    Returns the int limit, or None if the body isn't that error."""
+    if not body or "max_model_len" not in body:
+        return None
+    match = re.search(r"max_model_len[^\d]*(\d+)", body)
+    return int(match.group(1)) if match else None
+
+
+def _build_chat_payload(provider, model, messages, max_tokens, temperature, tools, stream, reasoning):
     if provider == "anthropic":
         payload = _anthropic_payload(model, messages, max_tokens, temperature, tools)
         headers = _anthropic_headers(model)
@@ -617,12 +636,64 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
         streamer = _stream_openai
         payload["stream"] = stream
     _apply_reasoning(payload, provider, model, reasoning)
+    return payload, headers, parser, streamer
 
-    if stream:
-        text, tool_calls = streamer(url, payload, headers, on_delta)
+
+def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=None, reasoning="auto"):
+    provider = provider_key(model.get("provider"))
+    stream = on_delta is not None
+    url = chat_url(model, stream=stream)
+    if not url:
+        raise AppError("model_base_url_missing", "Model has no base URL to send chat requests to.", 400)
+    security.require_local_url(url)
+
+    # Local runtimes are less forgiving than hosted APIs: a vLLM server started
+    # without --enable-auto-tool-choice rejects any request carrying tools, and
+    # llama.cpp/vLLM reject max_tokens > the model's context. Rather than fail
+    # the whole chat, degrade for local runtimes only (remote APIs untouched):
+    # drop tools / clamp max_tokens and retry once, remembering per model that
+    # tools are unsupported so later calls skip them. Dropping tools turns an
+    # agentic turn into a plain reply — fine for conversational chat, but note
+    # the agentic tool loop cannot actually execute tools on such a runtime.
+    local_like = not is_api_provider(model)
+    model_key = model.get("key")
+    cur_tools = None if (local_like and tools and model_key in _TOOLS_UNSUPPORTED) else tools
+    cur_max = max_tokens
+
+    first_error = None
+    text, tool_calls = None, None
+    for _ in range(3):
+        payload, headers, parser, streamer = _build_chat_payload(
+            provider, model, messages, cur_max, temperature, cur_tools, stream, reasoning
+        )
+        try:
+            if stream:
+                text, tool_calls = streamer(url, payload, headers, on_delta)
+            else:
+                data = _request_json(url, "POST", payload, headers, 60)
+                text, tool_calls = parser(data)
+            break
+        except urllib.error.HTTPError as exc:
+            if first_error is None:
+                first_error = exc
+            if not (local_like and exc.code == 400):
+                raise
+            body = _http_error_body(exc)
+            if cur_tools:
+                # Any 400 while tools are present: the runtime can't accept them.
+                if model_key:
+                    _TOOLS_UNSUPPORTED.add(model_key)
+                cur_tools = None
+                continue
+            limit = _parse_context_limit(body)
+            if limit and cur_max > limit:
+                cur_max = limit
+                continue
+            raise first_error
     else:
-        data = _request_json(url, "POST", payload, headers, 60)
-        text, tool_calls = parser(data)
+        if first_error is not None:
+            raise first_error
+
     if not text and not tool_calls:
         raise AppError("model_response_empty", "Provider returned no text or tool response.", 502)
     return text, tool_calls
