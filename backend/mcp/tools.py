@@ -423,13 +423,13 @@ TOOL_DEFINITIONS = [
     {
         "id": "shell_exec",
         "display_name": "Shell Execution",
-        "description": "Runs a shell command with cwd pinned to the workspace root. Only executes when the resolved workspace has Trusted Dev Mode enabled; otherwise the call is rejected outright.",
+        "description": "Runs a shell command with cwd pinned to the workspace root. Requires this workspace's Host Shell capability (a separate opt-in from Trusted Dev Mode); otherwise rejected. On Windows the default interpreter is PowerShell — use ';' or '-and' rather than '&&' unless PowerShell 7 (pwsh) is installed; pass shell='cmd' for cmd.exe syntax.",
         "category": "System",
         "risk": "approval_required",
         "permission_flag": "allow_shell_execution",
         "enabled": True,
         "implemented": True,
-        "approval_behavior": "trusted_workspace_required",
+        "approval_behavior": "host_shell_capability_required",
         "timeout_seconds": 120,
         "output_summary_policy": "command_and_exit_code_only",
         "input_schema": {
@@ -438,6 +438,7 @@ TOOL_DEFINITIONS = [
                 "command": {"type": "string"},
                 "workspace_path": {"type": "string"},
                 "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 600},
+                "shell": {"type": "string", "enum": ["auto", "powershell", "cmd", "bash"]},
             },
             "required": ["command"],
         },

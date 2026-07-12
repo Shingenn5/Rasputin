@@ -62,6 +62,27 @@ def _shell_spawn_kwargs():
     return {"start_new_session": True}
 
 
+def _resolve_shell_invocation(command, shell):
+    """Return ('exec', [program, *args]) to run via create_subprocess_exec,
+    or ('shell', command) to run via create_subprocess_shell (OS default shell).
+    Windows default is PowerShell (pwsh if present, else Windows PowerShell);
+    POSIX default is unchanged (/bin/sh via create_subprocess_shell)."""
+    choice = (shell or "auto").strip().lower()
+    if not _WINDOWS:
+        # POSIX: keep existing behavior exactly. Honor an explicit bash request.
+        if choice == "bash" and shutil.which("bash"):
+            return ("exec", ["bash", "-lc", command])
+        return ("shell", command)
+    # Windows:
+    if choice == "cmd":
+        return ("shell", command)  # create_subprocess_shell uses cmd.exe via COMSPEC
+    if choice in ("auto", "powershell", "pwsh", "ps"):
+        exe = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        return ("exec", [exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command])
+    # Unknown value -> safest default is the OS default shell.
+    return ("shell", command)
+
+
 async def _kill_process_tree(proc):
     # `proc.kill()` terminates only the direct child (the shell) on Windows,
     # orphaning anything it spawned; on POSIX it misses the process group.
@@ -534,7 +555,7 @@ class McpLayer:
     async def model_health(self, key="dry-run", _task_id=None, _tool_call_id=None):
         return await asyncio.to_thread(model_registry.test_model, key)
 
-    async def shell_exec(self, command, workspace_path=None, timeout_seconds=120, _task_id=None, _tool_call_id=None, _on_log=None):
+    async def shell_exec(self, command, workspace_path=None, timeout_seconds=120, shell=None, _task_id=None, _tool_call_id=None, _on_log=None):
         security.require("allow_shell_execution")
         command = str(command or "").strip()
         if not command:
@@ -550,16 +571,27 @@ class McpLayer:
             if pattern.search(command):
                 raise PermissionError("command blocked by shell safety guardrail")
         timeout = max(5, min(int(timeout_seconds or 120), 600))
-        audit.log("shell_exec", {"command": command, "cwd": str(base), "timeout": timeout})
+        audit.log("shell_exec", {"command": command, "cwd": str(base), "timeout": timeout, "shell": shell})
 
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            cwd=str(base),
-            env=_safe_shell_env(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            **_shell_spawn_kwargs(),
-        )
+        mode, spec = _resolve_shell_invocation(command, shell)
+        if mode == "exec":
+            proc = await asyncio.create_subprocess_exec(
+                *spec,
+                cwd=str(base),
+                env=_safe_shell_env(),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                **_shell_spawn_kwargs(),
+            )
+        else:
+            proc = await asyncio.create_subprocess_shell(
+                spec,
+                cwd=str(base),
+                env=_safe_shell_env(),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                **_shell_spawn_kwargs(),
+            )
 
         lines = []
         total_chars = 0

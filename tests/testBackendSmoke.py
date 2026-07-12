@@ -2965,6 +2965,25 @@ class BackendSmokeTests(unittest.TestCase):
                 self.assertIn(marker, result["output"])
                 self.assertFalse(result["timed_out"])
 
+                # Revoking Host Shell mid-session blocks shell_exec again, even
+                # though the workspace is still trusted and the flag is still on.
+                self.assertOk(self.client.post("/api/workspace/host-shell", json={
+                    "workspaceId": workspace_id,
+                    "enabled": False,
+                }))
+                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                    with self.assertRaises(PermissionError):
+                        asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": "echo should-not-run",
+                            "workspace_path": tmp,
+                        }))
+
+                # Re-enable so the remaining guardrail/timeout assertions still run.
+                self.assertOk(self.client.post("/api/workspace/host-shell", json={
+                    "workspaceId": workspace_id,
+                    "enabled": True,
+                }))
+
                 # A soft-guardrail-blocked command is rejected even when trusted.
                 with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
                     with self.assertRaises(PermissionError):
@@ -2994,7 +3013,7 @@ class BackendSmokeTests(unittest.TestCase):
             subprocess.run(["git", "add", "."], cwd=tmp, check=True)
             subprocess.run(["git", "commit", "-q", "-m", "initial commit"], cwd=tmp, check=True)
             with open(Path(tmp) / "README.md", "a", encoding="utf-8") as handle:
-                handle.write("world\n")
+                handle.write("wörld — café\n")
 
             approved = self.assertOk(self.client.post("/api/workspace/approve", json={
                 "path": tmp,
@@ -3008,7 +3027,7 @@ class BackendSmokeTests(unittest.TestCase):
 
                 diff = asyncio.run(McpLayer().call_tool("git_diff", {"workspace_path": tmp}))
                 self.assertEqual(len(diff["hunks"]), 1)
-                self.assertIn("+world", diff["hunks"][0]["hunks"][0]["lines"])
+                self.assertIn("+wörld — café", diff["hunks"][0]["hunks"][0]["lines"])
 
                 log = asyncio.run(McpLayer().call_tool("git_log", {"workspace_path": tmp, "limit": 5}))
                 self.assertEqual(len(log["commits"]), 1)
