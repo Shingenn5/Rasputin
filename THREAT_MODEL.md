@@ -122,9 +122,12 @@ and assume it covers all agent-executed code. It covers one of two
 surfaces:
 
 **Skills** (`backend/core/sandbox.py`, `run_skill_in_sandbox`): each run is
-a fresh `docker run -i --rm rasputin-sandbox python /sandbox/wrapper.py`,
-destroyed after. No host filesystem bind mount. **Known weakness:** it runs
-with `--network host` (see §6.2) rather than an isolated bridge network.
+a fresh `docker run -i --rm --network none rasputin-sandbox python
+/sandbox/wrapper.py`, destroyed after. No host filesystem bind mount, **no
+network** (§6.2 RESOLVED). The skill reaches host tools over a private
+stdio RPC, not HTTP — so the container has no path to the host network,
+the LAN, or the internet. Residual surface: the tool callback still runs
+host tools with the backend's privileges (see §6.2).
 
 **`shell_exec` / git tools** (`backend/mcp/layer.py`): run via
 `asyncio.create_subprocess_shell`/`create_subprocess_exec` directly in
@@ -189,16 +192,27 @@ so this bypass is a native-dev convenience only and simply never fires in
 the primary deployment mode. That's intentional (conservative), not a gap,
 but don't extend it to trust proxy headers without real thought.
 
-### 6.2 — MEDIUM — Skills sandbox shares the host network namespace
+### 6.2 — RESOLVED 2026-07-12 — Skills sandbox no longer has network
 
-`run_skill_in_sandbox` (`backend/core/sandbox.py:24`) launches the
-ephemeral skill container with `--network host`. Code the agent wrote and
-is running as a "Skill" can therefore reach anything the host machine can
-reach on the network — not just Rasputin's own sandbox API. The comment in
-the code (`# Use host network so it can reach localhost if running
-natively`) explains why, but an isolated bridge network with an explicit
-published port back to Rasputin would remove the need for full host
-networking.
+`run_skill_in_sandbox` previously used `--network host`, so agent-written
+skill code could reach anything the host could reach. It now runs with
+**`--network none`**: the skill calls host tools over a private
+**newline-delimited JSON RPC on stdio** (stdout=container→host, stdin=host→
+container) instead of an HTTP callback. With no network interface, the
+container cannot reach the host's network namespace, the LAN, the internet,
+or link-local endpoints — by construction, not by policy. Verified
+end-to-end: a skill's outbound request fails, multi-call tool round-trips
+work, and large (>64KB) tool results stream intact.
+
+**Scope — what this does NOT solve.** The tool callback remains a
+host-privilege surface: a skill can still ask the host to run any tool over
+the RPC, and those tools (file writes, git, etc.) execute with the backend's
+privileges as the operator. Only `shell_exec` among them is itself
+sandboxed (as `Rasputin_sbx`, Phase 3). Skill-issued tool calls are not
+separately allowlisted — a pre-existing property carried over unchanged from
+the HTTP design, tracked as future hardening, not part of this fix. The old
+`/api/sandbox/call-tool` route + `SANDBOX_SECRET_TOKEN` are now unreachable
+dead code (safe to remove).
 
 ### 6.3 — Sandboxing is otherwise an open design problem, not solved here
 

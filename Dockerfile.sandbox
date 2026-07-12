@@ -2,8 +2,8 @@ FROM python:3.12-alpine
 
 WORKDIR /sandbox
 
-# We will need requests to act as the API client
-RUN pip install --no-cache-dir requests
+# No third-party deps: skills reach host tools over a private stdio RPC (the
+# container runs with --network none), so the old `requests` HTTP client is gone.
 
 # Create a non-root user for executing scripts securely
 RUN addgroup -S sandboxgroup && adduser -S sandboxuser -G sandboxgroup

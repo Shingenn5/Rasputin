@@ -1,52 +1,80 @@
 import asyncio
-import os
-import uuid
-import secrets
-from pathlib import Path
+import json
 
-# Note: In production, the token should be consistent or regenerated dynamically and passed to the host app as well.
-# For now, we will assume SANDBOX_SECRET_TOKEN is set in the host environment, and we pass it down.
-# If it's not set, we generate a random one and set it in the host's os.environ so the API can validate it.
-if not os.environ.get("SANDBOX_SECRET_TOKEN"):
-    os.environ["SANDBOX_SECRET_TOKEN"] = secrets.token_hex(16)
+# §6.2 RESOLVED: skill containers run with NO network (`--network none`) instead of
+# `--network host`. The skill reaches host tools over a private stdio RPC, not HTTP,
+# so it can't touch the host's network namespace, the LAN, or the internet. (The tool
+# callback itself remains a host-privilege surface — see THREAT_MODEL §6.2.)
+
+# Tool results can be large (a workspace preview alone is up to ~128KB), so raise the
+# asyncio stream buffer well past its 64KB default or readline() would raise on a big frame.
+_STREAM_LIMIT = 16 * 1024 * 1024
+
 
 async def run_skill_in_sandbox(skill_name, skill_code, objective, plan, log):
+    from backend.mcp import relay as mcp_relay
+
     log(f"Starting sandbox for {skill_name}...")
-    
-    token = os.environ.get("SANDBOX_SECRET_TOKEN")
-    
-    # We must determine the API URL. If running inside Docker (WRAPPER_RUNTIME=docker),
-    # the host is reachable at host.docker.internal. Otherwise, localhost or 127.0.0.1.
-    # The default in client.py is host.docker.internal:8787/api/sandbox.
-    
     cmd = [
         "docker", "run", "-i", "--rm",
-        "--network", "host", # Use host network so it can reach localhost if running natively
-        "-e", f"SANDBOX_SECRET_TOKEN={token}",
-        "-e", f"RASPUTIN_API_URL={os.environ.get('RASPUTIN_API_URL', 'http://127.0.0.1:8787/api/sandbox')}",
+        "--network", "none",  # no host network / no egress; tools come over stdio
         "rasputin-sandbox",
-        "python", "/sandbox/wrapper.py", objective, plan
+        "python", "/sandbox/wrapper.py",
     ]
-    
-    process = await asyncio.create_subprocess_exec(
+    proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.PIPE,
+        limit=_STREAM_LIMIT,
     )
-    
-    stdout, stderr = await process.communicate(input=skill_code.encode("utf-8"))
-    
-    out_text = stdout.decode("utf-8")
-    err_text = stderr.decode("utf-8")
-    
-    if err_text:
-        log(f"Sandbox stderr:\n{err_text}")
-        
-    if "---RESULT---" in out_text:
-        parts = out_text.split("---RESULT---")
-        if parts[0].strip():
-            log(f"Sandbox stdout:\n{parts[0].strip()}")
-        return parts[-1].strip()
-        
-    return out_text.strip()
+
+    async def drain_logs():
+        while True:
+            line = await proc.stderr.readline()
+            if not line:
+                break
+            log(f"[sandbox] {line.decode('utf-8', 'replace').rstrip()}")
+
+    logs_task = asyncio.create_task(drain_logs())
+    result = None
+    try:
+        # 1. Send the skill code + task as the first stdin frame.
+        proc.stdin.write((json.dumps({
+            "type": "init", "code": skill_code, "objective": objective, "plan": plan,
+        }) + "\n").encode("utf-8"))
+        await proc.stdin.drain()
+
+        # 2. Service tool-call requests until the skill returns its result.
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            try:
+                msg = json.loads(line.decode("utf-8"))
+            except ValueError:
+                log(f"[sandbox] ignoring non-JSON stdout: {line[:200]!r}")
+                continue
+
+            kind = msg.get("type")
+            if kind == "tool_call":
+                try:
+                    data = await mcp_relay.call_tool(msg["tool_id"], msg.get("args") or {})
+                    resp = {"type": "tool_result", "ok": True, "data": data}
+                    payload = json.dumps(resp)
+                except Exception as exc:  # tool failure OR non-serializable result
+                    payload = json.dumps({"type": "tool_result", "ok": False, "error": str(exc)})
+                proc.stdin.write((payload + "\n").encode("utf-8"))
+                await proc.stdin.drain()
+            elif kind == "result":
+                result = msg.get("result")
+                break
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        await proc.wait()
+        await logs_task
+
+    return result
