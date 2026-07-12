@@ -353,8 +353,17 @@ working, in under ten seconds, with zero restarts.
       workspace ACL-granted, network denied by default, and boundary violations failing closed
       into an approval prompt. This replaces the deny-list-as-boundary; keep `SHELL_DENY_PATTERNS`
       only as a UX foot-gun hint — **(Very Hard)** (G7)
-- [ ] Provisioning: create/repair the sandbox account and workspace ACLs at setup; grant any
-      per-user toolchain dir read/execute to that account (machine-wide installs work already) — **(Hard)**
+- [ ] Provisioning — **elevation-on-demand, not a manual checkpoint.** On the first Host Shell
+      enable (or native startup self-heal), the backend runs `Provision-Sandbox.ps1 -Status`
+      (no elevation) and, if unprovisioned/broken, raises ONE UAC prompt via
+      `Start-Process -Verb RunAs` to create/repair the account + credential + firewall. `-Verb RunAs`
+      elevates the same user, which is exactly what the DPAPI-CurrentUser credential needs. The
+      per-workspace ACL grant (`icacls <ws> /grant Rasputin_sbx:(OI)(CI)M`) needs **no** elevation —
+      verified: a folder's owner can rewrite its DACL unelevated — so enabling Host Shell on each
+      workspace stays silent. Only the one-time account/firewall creation costs a single consent
+      click (later absorbed into the installer's own elevation, Phase 5). We deliberately keep that
+      one UAC consent: automating it away (disabled UAC, SYSTEM scheduled task, stored admin creds)
+      would dismantle the blast-radius protection this phase exists to build — **(Hard)**
 - [ ] Git tools against host git (path forms, `safe.directory` not needed natively,
       CRLF/UTF-8 as encountered) — **(Easy)**
 - [ ] Trusted-workspace + approval gating verified identical in native mode (audit rows,
@@ -390,8 +399,13 @@ test suite with the operator's real toolchain — the Stage 6 test loop gets the
 - [ ] Server mode: publish the wrapper image (GHCR) + reference compose for Docker Engine
       hosts — the team-SKU install becomes a two-line compose file — **(Medium)**
 - [ ] Update channel / version surfacing in the UI — **(Medium)**
-- [ ] Blocking business prerequisite tracked outside this plan: LICENSE + CLA decision (repo is
-      currently public with no license) — **(decision, not code)**
+- [ ] Business prerequisite tracked outside this plan, gating public distribution only: LICENSE +
+      CLA decision. Repo is private with no license — not a current exposure. **Goal is to turn
+      Rasputin into a company (not necessarily sell the software itself)**, so the model must
+      preserve commercial viability — avoid a permissive OSS license (MIT/Apache/BSD) that lets a
+      competitor host/resell it. Viable: hosted/SaaS (AGPL core + paid hosting), open-core,
+      source-available (BSL/Elastic 2.0/PolyForm), or dual-license; a CLA is load-bearing if
+      outside contributions are accepted — **(decision, not code)**
 
 **Definition of done:** "install Rasputin" is one command/download on a workstation, two lines
 on a server — and neither mentions Docker Desktop.
