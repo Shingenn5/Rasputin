@@ -36,6 +36,7 @@ class WarsatPlanIn(CamelModel):
     quantization: str | None = None
     kv_cache_dtype: str | None = None
     swap_space_gb: int | None = None
+    tool_call_parser: str | None = None
     memory_limit_gb: int | None = None
     cpu_limit: float | None = None
     shm_size_gb: int | None = None
