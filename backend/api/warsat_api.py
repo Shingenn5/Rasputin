@@ -5,12 +5,14 @@ from backend import trials
 from backend import warsat
 from backend.core import workspace
 from backend.core import host_fs
+from backend.core import sandbox_exec
 from backend.core import audit
 from backend.core import security
 from backend.core.response import ok, fail, camelize, AppError, _camel_code
 from fastapi.responses import StreamingResponse
 import asyncio
 import json
+import os
 
 router = APIRouter()
 
@@ -637,6 +639,21 @@ async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(current_user)):
 
 async def workspace_host_shell(req: WorkspaceHostShellIn, _user=Depends(current_user)):
     security.require("allow_file_write")
+    # Native Windows: enabling Host Shell needs the low-privilege sandbox account.
+    # Auto-provision it on demand (one UAC prompt); fail closed if that doesn't
+    # complete rather than enabling a capability the sandbox can't back.
+    if req.enabled and os.name == "nt" and workspace.is_native():
+        provisioned = await asyncio.to_thread(sandbox_exec.ensure_provisioned)
+        if not provisioned:
+            try:
+                await asyncio.to_thread(sandbox_exec.load_sandbox_credential)
+            except sandbox_exec.SandboxCredentialMismatch as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            except sandbox_exec.SandboxNotProvisioned:
+                raise HTTPException(status_code=400, detail=(
+                    "Host Shell needs a one-time elevated setup, but it did not complete "
+                    "(the elevation prompt may have been declined). Try again, or run "
+                    "scripts/Provision-Sandbox.ps1 as administrator."))
     item = workspace.set_host_shell(req.workspace_id, req.enabled)
     audit.log("workspace_host_shell_changed", {"workspace_id": req.workspace_id, "enabled": req.enabled})
     return ok(item)

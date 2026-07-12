@@ -26,6 +26,8 @@ from backend.core.datadir import data_dir
 _WINDOWS = os.name == "nt"
 CRED_FILENAME = "sandbox.cred"
 DEFAULT_ACCOUNT = "Rasputin_sbx"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_PROVISION_SCRIPT = _REPO_ROOT / "scripts" / "Provision-Sandbox.ps1"
 
 
 class SandboxError(Exception):
@@ -192,6 +194,35 @@ def sandbox_account_name(cred_path=None):
     except (OSError, ValueError):
         return None
     return record.get("account")
+
+
+def ensure_provisioned(timeout=180):
+    """Make sure the sandbox account exists, raising ONE UAC prompt to run the
+    provision script if it doesn't. Returns True iff provisioned afterward.
+
+    Windows-only; blocking — call via asyncio.to_thread. `Start-Process -Verb RunAs`
+    elevates the SAME user, so the DPAPI-CurrentUser credential stays decryptable by
+    this (unelevated) backend. Declining the prompt (or a standard-user cross-account
+    elevation, caught by the ownerSid guard) leaves it unprovisioned and returns False;
+    the caller must then fail closed and NOT enable Host Shell.
+    """
+    if not _WINDOWS:
+        return False
+    if sandbox_provisioned():
+        return True
+    if not _PROVISION_SCRIPT.exists():
+        return False
+    inner = (
+        "Start-Process -Verb RunAs -Wait -FilePath 'powershell' -ArgumentList "
+        "'-NoProfile','-ExecutionPolicy','Bypass','-File','{}'".format(_PROVISION_SCRIPT)
+    )
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", inner],
+                       timeout=timeout, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass  # declined UAC throws; fall through to the authoritative re-check
+    return sandbox_provisioned()
 
 
 # --------------------------------------------------------------------------- #

@@ -588,13 +588,26 @@ class McpLayer:
             command_line = subprocess.list2cmdline(r_spec if r_mode == "exec" else ["cmd.exe", "/c", command])
             result = await asyncio.to_thread(
                 sandbox_exec.run_as_sandbox, command_line, str(base), timeout, MAX_SHELL_OUTPUT_CHARS)
+            # Fail-closed reporting: a denial outside the workspace surfaces as a clear
+            # boundary message, not a bare "Access is denied" errno the model can't read.
+            boundary_blocked = (
+                result["exit_code"] not in (0, None)
+                and "access is denied" in (result["output"] or "").lower()
+            )
+            output = result["output"]
+            if boundary_blocked:
+                output += (
+                    "\n\n[Sandbox boundary: this command was denied access outside the granted "
+                    "workspace. Host Shell runs as a low-privilege account confined to this folder — "
+                    "keep the work inside the workspace, or run it yourself if it must reach elsewhere.]"
+                )
             audit.log("shell_exec_done", {
-                "command": command, "exit_code": result["exit_code"],
-                "timed_out": result["timed_out"], "truncated": result["truncated"], "sandbox": True})
+                "command": command, "exit_code": result["exit_code"], "timed_out": result["timed_out"],
+                "truncated": result["truncated"], "sandbox": True, "boundary_blocked": boundary_blocked})
             return {
                 "command": command, "cwd": str(base),
                 "exit_code": result["exit_code"], "timed_out": result["timed_out"],
-                "output": result["output"], "truncated": result["truncated"],
+                "output": output, "truncated": result["truncated"], "boundary_blocked": boundary_blocked,
             }
 
         mode, spec = _resolve_shell_invocation(command, shell)

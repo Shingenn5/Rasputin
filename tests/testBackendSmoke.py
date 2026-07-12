@@ -2912,6 +2912,13 @@ class BackendSmokeTests(unittest.TestCase):
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 
     def testShellExecRequiresPermissionFlagAndTrustedWorkspace(self):
+        # Enabling Host Shell auto-provisions the sandbox account on native Windows,
+        # which raises a real UAC prompt. Stub that here so this test exercises the
+        # capability gate, not the elevation UX. shell_exec still sees the real
+        # sandbox_provisioned() (False in the isolated data dir) and fails closed.
+        prov = patch("backend.core.sandbox_exec.ensure_provisioned", return_value=True)
+        prov.start()
+        self.addCleanup(prov.stop)
         with tempfile.TemporaryDirectory() as tmp:
             approved = self.assertOk(self.client.post("/api/workspace/approve", json={
                 "path": tmp,
