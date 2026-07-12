@@ -17,6 +17,8 @@ it blind would risk rework (see docs/EXECUTION_PLAN.md, Step 3 design review).
 import base64
 import json
 import os
+import subprocess
+import threading
 from pathlib import Path
 
 from backend.core.datadir import data_dir
@@ -183,21 +185,193 @@ def sandbox_provisioned(cred_path=None):
 
 
 # --------------------------------------------------------------------------- #
-# Executor — DEFERRED until a real Rasputin_sbx exists (see module docstring)
+# Executor — run a command AS the sandbox account (Windows-only machinery)
 # --------------------------------------------------------------------------- #
-async def run_as_sandbox(command_line, cwd, timeout, shell=None):
-    """Run a command as the sandbox account and return the shell_exec result dict.
+if _WINDOWS:
+    import ctypes as _ct
+    from ctypes import wintypes as _wt
 
-    NOT YET IMPLEMENTED. Will use CreateProcessWithLogonW (ctypes/advapi32) with
-    CREATE_SUSPENDED|CREATE_NO_WINDOW|CREATE_NEW_PROCESS_GROUP and NULL env
-    (LOGON_WITH_PROFILE gives the account its own profile env), hand-rolled pipes
-    (POC-proven), a Job Object with KILL_ON_JOB_CLOSE as defense-in-depth, and
-    Stage 3.1's taskkill /F /T as the PRIMARY timeout tree-kill (the job assignment
-    can be no-op'd by the seclogon service, §9-T5). The whole blocking dance runs
-    via asyncio.to_thread with WaitForSingleObject as the sole finite timeout.
-    Built and verified against a real account after the one provisioning run.
+    _kernel32 = _ct.WinDLL("kernel32", use_last_error=True)
+    _advapi32 = _ct.WinDLL("advapi32", use_last_error=True)
+
+    _STARTF_USESTDHANDLES = 0x00000100
+    _CREATE_NO_WINDOW = 0x08000000
+    _CREATE_SUSPENDED = 0x00000004
+    _CREATE_NEW_PROCESS_GROUP = 0x00000200
+    _LOGON_WITH_PROFILE = 0x00000001
+    _HANDLE_FLAG_INHERIT = 0x00000001
+    _WAIT_TIMEOUT = 0x00000102
+    _JobObjectExtendedLimitInformation = 9
+    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+
+    class _SECURITY_ATTRIBUTES(_ct.Structure):
+        _fields_ = [("nLength", _wt.DWORD), ("lpSecurityDescriptor", _wt.LPVOID), ("bInheritHandle", _wt.BOOL)]
+
+    class _STARTUPINFO(_ct.Structure):
+        _fields_ = [
+            ("cb", _wt.DWORD), ("lpReserved", _wt.LPWSTR), ("lpDesktop", _wt.LPWSTR),
+            ("lpTitle", _wt.LPWSTR), ("dwX", _wt.DWORD), ("dwY", _wt.DWORD), ("dwXSize", _wt.DWORD),
+            ("dwYSize", _wt.DWORD), ("dwXCountChars", _wt.DWORD), ("dwYCountChars", _wt.DWORD),
+            ("dwFillAttribute", _wt.DWORD), ("dwFlags", _wt.DWORD), ("wShowWindow", _wt.WORD),
+            ("cbReserved2", _wt.WORD), ("lpReserved2", _ct.POINTER(_ct.c_byte)),
+            ("hStdInput", _wt.HANDLE), ("hStdOutput", _wt.HANDLE), ("hStdError", _wt.HANDLE),
+        ]
+
+    class _PROCESS_INFORMATION(_ct.Structure):
+        _fields_ = [("hProcess", _wt.HANDLE), ("hThread", _wt.HANDLE),
+                    ("dwProcessId", _wt.DWORD), ("dwThreadId", _wt.DWORD)]
+
+    class _IO_COUNTERS(_ct.Structure):
+        _fields_ = [(n, _ct.c_ulonglong) for n in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class _JOBOBJECT_BASIC_LIMIT_INFORMATION(_ct.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", _ct.c_longlong), ("PerJobUserTimeLimit", _ct.c_longlong),
+            ("LimitFlags", _wt.DWORD), ("MinimumWorkingSetSize", _ct.c_size_t),
+            ("MaximumWorkingSetSize", _ct.c_size_t), ("ActiveProcessLimit", _wt.DWORD),
+            ("Affinity", _ct.c_size_t), ("PriorityClass", _wt.DWORD), ("SchedulingClass", _wt.DWORD),
+        ]
+
+    class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(_ct.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION), ("IoInfo", _IO_COUNTERS),
+            ("ProcessMemoryLimit", _ct.c_size_t), ("JobMemoryLimit", _ct.c_size_t),
+            ("PeakProcessMemoryUsed", _ct.c_size_t), ("PeakJobMemoryUsed", _ct.c_size_t),
+        ]
+
+    _advapi32.CreateProcessWithLogonW.argtypes = [
+        _wt.LPCWSTR, _wt.LPCWSTR, _wt.LPCWSTR, _wt.DWORD, _wt.LPCWSTR, _wt.LPWSTR, _wt.DWORD,
+        _wt.LPVOID, _wt.LPCWSTR, _ct.POINTER(_STARTUPINFO), _ct.POINTER(_PROCESS_INFORMATION)]
+    _advapi32.CreateProcessWithLogonW.restype = _wt.BOOL
+    _kernel32.CreatePipe.argtypes = [
+        _ct.POINTER(_wt.HANDLE), _ct.POINTER(_wt.HANDLE), _ct.POINTER(_SECURITY_ATTRIBUTES), _wt.DWORD]
+    _kernel32.ReadFile.argtypes = [_wt.HANDLE, _wt.LPVOID, _wt.DWORD, _ct.POINTER(_wt.DWORD), _wt.LPVOID]
+    _kernel32.ReadFile.restype = _wt.BOOL
+    _kernel32.CreateJobObjectW.argtypes = [_wt.LPVOID, _wt.LPCWSTR]
+    _kernel32.CreateJobObjectW.restype = _wt.HANDLE
+    _kernel32.SetInformationJobObject.argtypes = [_wt.HANDLE, _ct.c_int, _wt.LPVOID, _wt.DWORD]
+    _kernel32.AssignProcessToJobObject.argtypes = [_wt.HANDLE, _wt.HANDLE]
+    _kernel32.TerminateJobObject.argtypes = [_wt.HANDLE, _wt.UINT]
+    _kernel32.ResumeThread.argtypes = [_wt.HANDLE]
+    _kernel32.WaitForSingleObject.argtypes = [_wt.HANDLE, _wt.DWORD]
+    _kernel32.GetExitCodeProcess.argtypes = [_wt.HANDLE, _ct.POINTER(_wt.DWORD)]
+
+    def _make_pipe():
+        sa = _SECURITY_ATTRIBUTES()
+        sa.nLength = _ct.sizeof(sa)
+        sa.bInheritHandle = True
+        read, write = _wt.HANDLE(), _wt.HANDLE()
+        if not _kernel32.CreatePipe(_ct.byref(read), _ct.byref(write), _ct.byref(sa), 0):
+            raise _ct.WinError(_ct.get_last_error())
+        _kernel32.SetHandleInformation(read, _HANDLE_FLAG_INHERIT, 0)  # our read end stays private
+        return read, write
+
+    def _drain(handle, sink, state):
+        buf = _ct.create_string_buffer(8192)
+        n = _wt.DWORD(0)
+        while _kernel32.ReadFile(handle, buf, 8192, _ct.byref(n), None) and n.value:
+            chunk = buf.raw[:n.value]
+            with state["lock"]:
+                if state["total"] < state["cap"]:
+                    take = min(len(chunk), state["cap"] - state["total"])
+                    sink.append(chunk[:take])
+                    state["total"] += take
+                    if take < len(chunk):
+                        state["truncated"] = True
+                else:
+                    state["truncated"] = True  # keep draining so the child never blocks
+
+    def _taskkill_tree(pid):
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        except Exception:
+            pass
+
+
+def run_as_sandbox(command_line, cwd, timeout, max_output_chars=20000):
+    """Run `command_line` AS the sandbox account; return a shell_exec-shaped dict.
+
+    Blocking (call via asyncio.to_thread). WaitForSingleObject is the SOLE finite
+    timeout for this path — do not wrap it in an outer asyncio timeout, since a
+    to_thread call can't be cancelled. Tree-kill on timeout is `taskkill /F /T`
+    (PRIMARY — the seclogon-created process may escape our Job Object, §9-T5); the
+    Job Object's KILL_ON_JOB_CLOSE is defense-in-depth. Env is NULL so the account
+    gets its own profile (LOGON_WITH_PROFILE) rather than the operator's PATH.
     """
-    raise NotImplementedError(
-        "run_as_sandbox is not implemented yet — provision the sandbox account first "
-        "(scripts/Provision-Sandbox.ps1), then this executor lands (EXECUTION_PLAN.md Step 3)."
-    )
+    if not _WINDOWS:
+        raise SandboxNotProvisioned("run_as_sandbox is a Windows-only mechanism")
+    account, password = load_sandbox_credential()  # raises SandboxNotProvisioned/Mismatch
+
+    out_r, out_w = _make_pipe()
+    err_r, err_w = _make_pipe()
+    si = _STARTUPINFO()
+    si.cb = _ct.sizeof(si)
+    si.dwFlags = _STARTF_USESTDHANDLES
+    si.hStdOutput, si.hStdError, si.hStdInput = out_w, err_w, None
+    pi = _PROCESS_INFORMATION()
+    cmd_buf = _ct.create_unicode_buffer(command_line)
+
+    created = _advapi32.CreateProcessWithLogonW(
+        account, ".", password, _LOGON_WITH_PROFILE, None, cmd_buf,
+        _CREATE_SUSPENDED | _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP,
+        None, cwd, _ct.byref(si), _ct.byref(pi))
+    password = None  # drop the secret reference as early as possible
+    if not created:
+        winerr = _ct.get_last_error()
+        for handle in (out_r, out_w, err_r, err_w):
+            _kernel32.CloseHandle(handle)
+        raise SandboxError(
+            f"CreateProcessWithLogonW failed (WinError {winerr}) — the sandbox account may be "
+            "removed or disabled; re-run scripts/Provision-Sandbox.ps1")
+
+    # Defense-in-depth Job Object (taskkill is the primary kill; this catches strays).
+    job = _kernel32.CreateJobObjectW(None, None)
+    if job:
+        info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        _kernel32.SetInformationJobObject(
+            job, _JobObjectExtendedLimitInformation, _ct.byref(info), _ct.sizeof(info))
+        _kernel32.AssignProcessToJobObject(job, pi.hProcess)  # may no-op via seclogon (§9-T5)
+
+    _kernel32.CloseHandle(out_w)  # parent must drop write ends so ReadFile sees EOF
+    _kernel32.CloseHandle(err_w)
+
+    state = {"total": 0, "truncated": False, "cap": max_output_chars, "lock": threading.Lock()}
+    out_chunks, err_chunks = [], []
+    threads = [
+        threading.Thread(target=_drain, args=(out_r, out_chunks, state)),
+        threading.Thread(target=_drain, args=(err_r, err_chunks, state)),
+    ]
+    for thread in threads:
+        thread.start()
+
+    _kernel32.ResumeThread(pi.hThread)  # start-draining-then-resume (avoids buffer deadlock)
+    waited = _kernel32.WaitForSingleObject(pi.hProcess, max(1, int(timeout)) * 1000)
+    timed_out = waited == _WAIT_TIMEOUT
+    if timed_out:
+        _taskkill_tree(pi.dwProcessId)              # PRIMARY tree kill
+        if job:
+            _kernel32.TerminateJobObject(job, 1)    # backup
+        _kernel32.WaitForSingleObject(pi.hProcess, 5000)
+
+    for thread in threads:
+        thread.join(timeout=5)
+
+    code = _wt.DWORD()
+    _kernel32.GetExitCodeProcess(pi.hProcess, _ct.byref(code))
+    exit_code = None if timed_out else code.value
+
+    for handle in (out_r, err_r, pi.hProcess, pi.hThread):
+        _kernel32.CloseHandle(handle)
+    if job:
+        _kernel32.CloseHandle(job)  # closing the job kills any stragglers (KILL_ON_JOB_CLOSE)
+
+    stdout = b"".join(out_chunks).decode("utf-8", "replace")
+    stderr = b"".join(err_chunks).decode("utf-8", "replace")
+    output = stdout if not stderr else (stdout + ("\n" if stdout else "") + stderr)
+    if state["truncated"]:
+        output += f"\n[output truncated at {max_output_chars} chars]"
+    return {"exit_code": exit_code, "timed_out": timed_out, "output": output, "truncated": state["truncated"]}

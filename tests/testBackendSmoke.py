@@ -3067,6 +3067,30 @@ class BackendSmokeTests(unittest.TestCase):
                 sandbox_exec.load_sandbox_credential(cred)
             self.assertFalse(sandbox_exec.sandbox_provisioned(cred))
 
+    @unittest.skipUnless(os.name == "nt", "sandbox account is a Windows-only mechanism")
+    def testRunAsSandboxExecutesAsAccount(self):
+        # Verifies the run-as executor end to end, but only where a real
+        # Rasputin_sbx has been provisioned (this dev box / a provisioned CI).
+        from backend.core import sandbox_exec
+        if not sandbox_exec.sandbox_provisioned():
+            self.skipTest("no provisioned Rasputin_sbx account on this machine")
+
+        work = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "Temp")
+
+        # Runs AS the sandbox account (not the operator), captures output, exit 0.
+        who = sandbox_exec.run_as_sandbox("cmd.exe /c whoami", work, 15)
+        self.assertEqual(who["exit_code"], 0)
+        self.assertIn("rasputin_sbx", who["output"].lower())
+        self.assertFalse(who["timed_out"])
+
+        # Non-zero exit propagates.
+        self.assertEqual(sandbox_exec.run_as_sandbox("cmd.exe /c exit 7", work, 15)["exit_code"], 7)
+
+        # A command that outlives its timeout is killed and reported, not left hanging.
+        slow = sandbox_exec.run_as_sandbox("cmd.exe /c ping -n 30 127.0.0.1", work, 3)
+        self.assertTrue(slow["timed_out"])
+        self.assertIsNone(slow["exit_code"])
+
     def testGitToolsRespectTrustAndParseStructuredOutput(self):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
