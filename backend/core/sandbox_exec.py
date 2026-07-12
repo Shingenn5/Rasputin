@@ -25,6 +25,7 @@ from backend.core.datadir import data_dir
 
 _WINDOWS = os.name == "nt"
 CRED_FILENAME = "sandbox.cred"
+DEFAULT_ACCOUNT = "Rasputin_sbx"
 
 
 class SandboxError(Exception):
@@ -181,6 +182,49 @@ def sandbox_provisioned(cred_path=None):
         load_sandbox_credential(cred_path)
         return True
     except SandboxNotProvisioned:
+        return False
+
+
+def sandbox_account_name(cred_path=None):
+    """The provisioned account name (read without decrypting), or None."""
+    try:
+        record = json.loads(_cred_path(cred_path).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    return record.get("account")
+
+
+# --------------------------------------------------------------------------- #
+# Workspace ACL — the one hole we open for the sandbox account (no elevation:
+# a folder's owner can rewrite its DACL). Grant on Host Shell enable so the
+# account can reach the workspace; revoke on disable so it can't.
+# --------------------------------------------------------------------------- #
+def grant_workspace_acl(path):
+    """Grant the sandbox account inherited Modify on a workspace tree. No-op
+    unless Windows + provisioned. Returns True if the grant was attempted."""
+    if not (_WINDOWS and sandbox_provisioned()):
+        return False
+    account = sandbox_account_name()
+    if not account:
+        return False
+    try:
+        subprocess.run(["icacls", str(path), "/grant", f"{account}:(OI)(CI)M"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+        return True
+    except Exception:
+        return False
+
+
+def revoke_workspace_acl(path):
+    """Remove the sandbox account's ACE from a workspace tree. No-op off Windows."""
+    if not _WINDOWS:
+        return False
+    account = sandbox_account_name() or DEFAULT_ACCOUNT
+    try:
+        subprocess.run(["icacls", str(path), "/remove", account],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+        return True
+    except Exception:
         return False
 
 

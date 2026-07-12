@@ -2956,14 +2956,28 @@ class BackendSmokeTests(unittest.TestCase):
                 }))
 
                 marker = "rasputin-shell-smoke-ok"
-                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
-                    result = asyncio.run(McpLayer().call_tool("shell_exec", {
-                        "command": f"echo {marker}",
-                        "workspace_path": tmp,
-                    }))
-                self.assertEqual(result["exit_code"], 0)
-                self.assertIn(marker, result["output"])
-                self.assertFalse(result["timed_out"])
+                if os.name == "nt":
+                    # Native Windows routes host shell through the Rasputin_sbx
+                    # account. This isolated test data dir has no provisioned
+                    # account, so it must FAIL CLOSED, not run as the operator.
+                    # (Real run-as execution is covered by
+                    # testRunAsSandboxExecutesAsAccount where an account exists.)
+                    with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                        with self.assertRaises(PermissionError):
+                            asyncio.run(McpLayer().call_tool("shell_exec", {
+                                "command": f"echo {marker}",
+                                "workspace_path": tmp,
+                            }))
+                else:
+                    # POSIX: direct execution (the container/host is the boundary).
+                    with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                        result = asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": f"echo {marker}",
+                            "workspace_path": tmp,
+                        }))
+                    self.assertEqual(result["exit_code"], 0)
+                    self.assertIn(marker, result["output"])
+                    self.assertFalse(result["timed_out"])
 
                 # Revoking Host Shell mid-session blocks shell_exec again, even
                 # though the workspace is still trusted and the flag is still on.
@@ -2978,13 +2992,14 @@ class BackendSmokeTests(unittest.TestCase):
                             "workspace_path": tmp,
                         }))
 
-                # Re-enable so the remaining guardrail/timeout assertions still run.
+                # Re-enable so the remaining guardrail assertion still runs.
                 self.assertOk(self.client.post("/api/workspace/host-shell", json={
                     "workspaceId": workspace_id,
                     "enabled": True,
                 }))
 
-                # A soft-guardrail-blocked command is rejected even when trusted.
+                # A soft-guardrail-blocked command is rejected pre-execution — the
+                # deny-pattern check runs before routing, on every platform.
                 with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
                     with self.assertRaises(PermissionError):
                         asyncio.run(McpLayer().call_tool("shell_exec", {
@@ -2992,15 +3007,17 @@ class BackendSmokeTests(unittest.TestCase):
                             "workspace_path": tmp,
                         }))
 
-                # A command that outlives its timeout is killed and reported, not left hanging.
-                with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
-                    timeout_result = asyncio.run(McpLayer().call_tool("shell_exec", {
-                        "command": "python -c \"import time; time.sleep(30)\"",
-                        "workspace_path": tmp,
-                        "timeout_seconds": 5,
-                    }))
-                self.assertTrue(timeout_result["timed_out"])
-                self.assertIsNone(timeout_result["exit_code"])
+                # POSIX: a command that outlives its timeout is killed and reported.
+                # (Windows timeout kill is covered by testRunAsSandboxExecutesAsAccount.)
+                if os.name != "nt":
+                    with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
+                        timeout_result = asyncio.run(McpLayer().call_tool("shell_exec", {
+                            "command": "python -c \"import time; time.sleep(30)\"",
+                            "workspace_path": tmp,
+                            "timeout_seconds": 5,
+                        }))
+                    self.assertTrue(timeout_result["timed_out"])
+                    self.assertIsNone(timeout_result["exit_code"])
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 

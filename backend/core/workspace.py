@@ -987,6 +987,20 @@ def set_host_shell(workspace_ref, enabled=True):
     data, item = _find(workspace_ref)
     item["allow_host_shell"] = bool(enabled)
     _save(data)
+    # Windows-native side effect: grant/revoke the sandbox account's access to this
+    # workspace tree so its run-as commands can reach it (and nothing else). Best
+    # effort + import-local to avoid a hard dependency on non-Windows / non-provisioned
+    # setups; the shell path fails closed if the grant didn't take.
+    try:
+        from backend.core import sandbox_exec
+        root = item.get("root")
+        if root:
+            if enabled:
+                sandbox_exec.grant_workspace_acl(root)
+            else:
+                sandbox_exec.revoke_workspace_acl(root)
+    except Exception:
+        pass
     return _public_item(item)
 
 

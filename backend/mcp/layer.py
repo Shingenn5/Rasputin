@@ -12,6 +12,7 @@ import shutil
 from backend.rag import vector as rag
 from backend.rag import graph as graphify
 from backend.core import workspace
+from backend.core import sandbox_exec
 from backend.core import audit as audit
 from backend.core import security as security
 from backend.core import leak_guard as leak_guard
@@ -572,6 +573,29 @@ class McpLayer:
                 raise PermissionError("command blocked by shell safety guardrail")
         timeout = max(5, min(int(timeout_seconds or 120), 600))
         audit.log("shell_exec", {"command": command, "cwd": str(base), "timeout": timeout, "shell": shell})
+
+        # Native Windows runs commands AS the low-privilege sandbox account (Rasputin_sbx),
+        # confined to this ACL-granted workspace — not as the operator. Docker/POSIX keep
+        # the direct path (the container or host provides the boundary there). If Host Shell
+        # is on but the sandbox isn't provisioned, fail closed rather than run unsandboxed.
+        if _WINDOWS and workspace.is_native():
+            if not sandbox_exec.sandbox_provisioned():
+                raise PermissionError(
+                    "Host Shell is enabled but the sandbox account isn't provisioned yet — "
+                    "re-enable Host Shell to set it up (or run scripts/Provision-Sandbox.ps1)."
+                )
+            r_mode, r_spec = _resolve_shell_invocation(command, shell)
+            command_line = subprocess.list2cmdline(r_spec if r_mode == "exec" else ["cmd.exe", "/c", command])
+            result = await asyncio.to_thread(
+                sandbox_exec.run_as_sandbox, command_line, str(base), timeout, MAX_SHELL_OUTPUT_CHARS)
+            audit.log("shell_exec_done", {
+                "command": command, "exit_code": result["exit_code"],
+                "timed_out": result["timed_out"], "truncated": result["truncated"], "sandbox": True})
+            return {
+                "command": command, "cwd": str(base),
+                "exit_code": result["exit_code"], "timed_out": result["timed_out"],
+                "output": result["output"], "truncated": result["truncated"],
+            }
 
         mode, spec = _resolve_shell_invocation(command, shell)
         if mode == "exec":
