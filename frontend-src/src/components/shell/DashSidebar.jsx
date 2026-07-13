@@ -250,19 +250,19 @@ export function DashSidebar({
         </nav>
 
         {/* Recent chats — reached by scrolling the shared region above */}
-        {expanded && taskAccess && sessions.length > 0 && (
+        {expanded && sessions.length > 0 && (
           <div className="mt-4 flex shrink-0 flex-col">
             <div className="flex shrink-0 items-center justify-between px-3 pb-2">
               <span className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
                 Recent Chats
               </span>
-              <button
+              {taskAccess && <button
                 type="button"
                 onClick={() => go("sessions")}
                 className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
               >
                 All
-              </button>
+              </button>}
             </div>
             <div className="flex flex-col gap-0.5">
               {sessions.map((s) => {
