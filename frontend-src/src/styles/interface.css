@@ -1814,17 +1814,52 @@ button.workspace-add-folder:focus-visible {
 .account-secret code { display: block; }
 .account-secret strong { font-size: 0.68rem; }
 .account-secret code { margin-top: 4px; color: var(--dash-text); font-size: 0.76rem; user-select: all; }
-.account-create-grid { display: grid; grid-template-columns: 1fr 1.2fr 0.8fr auto; align-items: end; gap: 9px; padding: 13px; border: 1px solid var(--dash-border); border-radius: 10px 3px 10px 3px; background: color-mix(in srgb, var(--dash-bg) 50%, var(--dash-panel)); }
-.account-create-grid label { display: flex; flex-direction: column; gap: 4px; }
-.account-create-grid label span { color: var(--dash-muted); font-size: 0.59rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
-.account-create-grid input,
-.account-create-grid select,
+.account-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.account-list-toolbar > span strong,
+.account-list-toolbar > span small { display: block; }
+.account-list-toolbar > span strong { color: var(--dash-text); font-size: 0.78rem; }
+.account-list-toolbar > span small { margin-top: 2px; color: var(--dash-muted); font-size: 0.62rem; }
+.account-add-trigger { display: inline-flex; min-height: 35px; align-items: center; gap: 7px; border: 1px solid color-mix(in srgb, var(--dash-accent) 44%, var(--dash-border)); border-radius: 8px 3px 8px 3px; padding: 0 12px; background: color-mix(in srgb, var(--dash-accent) 8%, var(--dash-panel)); color: var(--dash-accent); font-size: 0.68rem; font-weight: 750; }
+.account-add-trigger:hover:not(:disabled) { background: color-mix(in srgb, var(--dash-accent) 14%, var(--dash-panel)); transform: translateY(-1px); }
+.account-add-trigger:disabled { opacity: 0.45; }
+.account-create-panel { position: relative; display: flex; flex-direction: column; gap: 15px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--dash-accent) 32%, var(--dash-border)); border-radius: 14px 4px 14px 4px; padding: 16px; background: radial-gradient(circle at 100% 0, color-mix(in srgb, var(--dash-accent) 10%, transparent), transparent 32%), color-mix(in srgb, var(--dash-bg) 44%, var(--dash-panel)); box-shadow: 0 16px 38px color-mix(in srgb, #000 8%, transparent); animation: account-panel-arrive 180ms ease-out; }
+.account-create-panel::before { position: absolute; top: 0; left: 18px; width: 72px; height: 2px; background: var(--dash-accent); content: ""; box-shadow: 0 0 15px color-mix(in srgb, var(--dash-accent) 48%, transparent); }
+.account-create-heading { display: grid; grid-template-columns: 38px minmax(0, 1fr) 32px; align-items: center; gap: 10px; }
+.account-create-heading > span:nth-child(2) strong,
+.account-create-heading > span:nth-child(2) small { display: block; }
+.account-create-heading > span:nth-child(2) strong { color: var(--dash-text); font-size: 0.82rem; }
+.account-create-heading > span:nth-child(2) small { margin-top: 2px; color: var(--dash-muted); font-size: 0.64rem; }
+.account-create-icon { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid color-mix(in srgb, var(--dash-accent) 28%, transparent); border-radius: 10px 3px 10px 3px; background: color-mix(in srgb, var(--dash-accent) 9%, transparent); color: var(--dash-accent); }
+.account-create-heading button { width: 32px; min-height: 32px !important; padding: 0 !important; }
+.account-create-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.account-create-fields label { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.account-create-fields label > span,
+.account-role-picker legend { color: var(--dash-muted); font-size: 0.59rem; font-weight: 750; letter-spacing: 0.07em; text-transform: uppercase; }
+.account-create-fields label > small { color: var(--dash-muted); font-size: 0.61rem; }
+.account-role-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; border: 0; padding: 0; }
+.account-role-picker legend { grid-column: 1 / -1; margin-bottom: 1px; }
+.account-role-picker label { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 20px; align-items: center; gap: 8px; border: 1px solid var(--dash-border); border-radius: 9px 3px 9px 3px; padding: 10px; background: color-mix(in srgb, var(--dash-panel) 92%, transparent); cursor: pointer; }
+.account-role-picker label:hover,
+.account-role-picker label:focus-within,
+.account-role-picker label.is-selected { border-color: color-mix(in srgb, var(--dash-accent) 46%, transparent); background: color-mix(in srgb, var(--dash-accent) 7%, var(--dash-panel)); }
+.account-role-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.account-role-picker label > span strong,
+.account-role-picker label > span small { display: block; }
+.account-role-picker label > span strong { color: var(--dash-text); font-size: 0.7rem; }
+.account-role-picker label > span small { margin-top: 2px; color: var(--dash-muted); font-size: 0.58rem; line-height: 1.3; }
+.account-role-picker i { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid var(--dash-border-strong); border-radius: 50%; color: transparent; }
+.account-role-picker label.is-selected i { border-color: var(--dash-accent); background: var(--dash-accent); color: var(--dash-accent-contrast, #fff); }
+.account-create-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--dash-border); padding-top: 12px; }
+.account-create-actions > span { display: inline-flex; flex: 1; align-items: center; gap: 6px; color: var(--dash-muted); font-size: 0.62rem; }
+.account-create-actions > span svg { color: var(--ras-safe); }
+.account-create-fields input,
 .account-row select,
 .account-password-form input { min-height: 36px; padding: 0 9px; border: 1px solid var(--dash-border-strong); border-radius: 7px 3px 7px 3px; outline: 0; background: var(--dash-bg); color: var(--dash-text); font-size: 0.71rem; }
-.account-create-grid button,
+.account-create-fields input:focus { border-color: var(--dash-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dash-accent) 10%, transparent); }
+.account-create-panel button,
 .account-row button,
 .account-password-form button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid var(--dash-border-strong); border-radius: 7px 3px 7px 3px; background: var(--dash-panel); color: var(--dash-text); font-size: 0.68rem; }
-.account-create-grid button { border-color: var(--dash-accent); background: var(--dash-accent); color: #fff; }
+.account-create-actions button.is-primary { border-color: var(--dash-accent); background: var(--dash-accent); color: var(--dash-accent-contrast, #fff); box-shadow: 0 7px 18px color-mix(in srgb, var(--dash-accent) 16%, transparent); }
 .account-list { overflow: hidden; border: 1px solid var(--dash-border); border-radius: 11px 4px 11px 4px; }
 .account-row { display: grid; grid-template-columns: 38px minmax(120px, 1fr) 130px auto auto; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--dash-border); }
 .account-row:last-child { border-bottom: 0; }
@@ -1855,18 +1890,32 @@ button.workspace-add-folder:focus-visible {
 .workspace-access-matrix select { min-height: 32px; padding: 0 7px; border: 1px solid var(--dash-border); border-radius: 6px 2px 6px 2px; background: var(--dash-bg); color: var(--dash-text); font-size: 0.65rem; }
 
 @media (max-width: 900px) {
-  .account-create-grid,
+  .account-create-fields,
   .account-password-form { grid-template-columns: 1fr 1fr; }
+  .account-role-picker { grid-template-columns: 1fr; }
   .account-row { grid-template-columns: 38px minmax(100px, 1fr) 120px; }
   .account-row button { grid-column: auto; }
 }
 
 @media (max-width: 600px) {
   .settings-module-title { align-items: flex-start; flex-direction: column; }
-  .account-create-grid,
+  .account-list-toolbar { align-items: flex-start; }
+  .account-create-fields,
   .account-password-form,
   .account-row { grid-template-columns: 1fr; }
+  .account-create-actions { align-items: stretch; flex-direction: column; }
+  .account-create-actions > span { width: 100%; }
+  .account-create-actions button { width: 100%; }
   .account-avatar { display: none; }
+}
+
+@keyframes account-panel-arrive {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-create-panel { animation: none; }
 }
 
 /* --------------------------------------------------------------------------

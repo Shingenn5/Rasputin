@@ -514,15 +514,28 @@ This is safer than raw `dangerouslySetInnerHTML`.
 The full-page settings area:
 
 - General
-- Workspaces
+- Notifications
 - Models
-- Safety
-- Knowledge
-- Output
-- Appearance
-- Admin
+- Runtime
+- Resources
+- Security
+- Accounts
+- Audit
+- Diagnostics
+- Deployments
+- Integrations
+- About
 
 Raw/advanced model registry details are behind disclosures instead of being the normal path.
+
+The settings filter is navigation-only state. It resets whenever the active section changes and
+stays read-only until the operator explicitly focuses it; this prevents password managers and
+browser credential autofill from injecting account usernames into the filter when credential
+forms mount.
+
+Local account provisioning is collapsed by default and opens as a dedicated flow with an
+explicit role choice. Creating an account does not grant workspace access; workspace grants are
+managed separately after the account exists.
 
 ### TasksView.jsx
 

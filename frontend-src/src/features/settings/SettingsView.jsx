@@ -80,6 +80,7 @@ export function SettingsView(props) {
   const activeInspector = getInspectorText(activeSetting[0]);
   const ActiveIcon = iconMap[activeSetting[0]] || Settings2;
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchEditable, setSearchEditable] = useState(false);
   const loading = useSettingsStore((state) => state.loading);
 
   const visibleGroups = useMemo(() => {
@@ -103,6 +104,15 @@ export function SettingsView(props) {
       setSection(allowedSettings[0]?.[0] || "accounts");
     }
   }, [allowedSettings, section, setSection, view]);
+
+  // Section changes must always restore the full navigation rail. In
+  // particular, credential managers can mistake the first text-like control
+  // left behind after Accounts unmounts for a username field and inject
+  // "admin" into this filter.
+  useEffect(() => {
+    setSearchQuery("");
+    setSearchEditable(false);
+  }, [section]);
 
   return (
     <section className={`app-view settings-view tw ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
@@ -129,10 +139,22 @@ export function SettingsView(props) {
           <label className="settings-search">
             <Search size={16} aria-hidden="true" />
             <input
+              id="rasputin-settings-filter"
+              name="rasputin-settings-filter"
               type="search"
+              aria-label="Filter settings sections"
               placeholder="Find a setting"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              readOnly={!searchEditable}
+              onFocus={() => setSearchEditable(true)}
+              onBlur={() => setSearchEditable(false)}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck="false"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bwignore="true"
             />
             <kbd>/</kbd>
           </label>

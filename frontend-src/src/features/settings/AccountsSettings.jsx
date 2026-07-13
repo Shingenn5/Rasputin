@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, Check, KeyRound, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, Check, KeyRound, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
+
+const accountRoles = [
+  { id: "viewer", label: "Viewer", description: "Can sign in and use explicitly shared workspaces." },
+  { id: "member", label: "Member", description: "Standard operator access for day-to-day work." },
+  { id: "admin", label: "Administrator", description: "Full appliance configuration and user management." },
+];
 
 export function AccountsSettings({ session }) {
   const [users, setUsers] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
   const [status, setStatus] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [showCreateAccount, setShowCreateAccount] = useState(false);
+  const [newAccountRole, setNewAccountRole] = useState("member");
   const isAdmin = session?.role === "admin";
 
   async function refresh() {
@@ -24,11 +32,14 @@ export function AccountsSettings({ session }) {
 
   async function createAccount(event) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setStatus("Creating account…");
     try {
       await postJson("/api/auth/users", { username: form.get("username"), password: form.get("password"), role: form.get("role") });
-      event.currentTarget.reset();
+      formElement.reset();
+      setNewAccountRole("member");
+      setShowCreateAccount(false);
       setStatus("Account created. Access to workspaces must be granted separately.");
       await refresh();
     } catch (error) { setStatus(error.message); }
@@ -81,12 +92,59 @@ export function AccountsSettings({ session }) {
 
       {isAdmin && (
         <>
-          <form className="account-create-grid" onSubmit={createAccount}>
-            <label><span>Username</span><input name="username" required minLength="2" maxLength="48" autoComplete="off" /></label>
-            <label><span>Initial password</span><input name="password" type="password" required minLength="10" autoComplete="new-password" /></label>
-            <label><span>Appliance role</span><select name="role" defaultValue="member"><option value="member">Member</option><option value="viewer">Viewer</option><option value="admin">Administrator</option></select></label>
-            <button type="submit"><UserPlus size={16} /> Create account</button>
-          </form>
+          <div className="account-list-toolbar">
+            <span><strong>People on this appliance</strong><small>{users.length} local {users.length === 1 ? "account" : "accounts"}</small></span>
+            <button type="button" className="account-add-trigger" onClick={() => setShowCreateAccount(true)} disabled={showCreateAccount}>
+              <UserPlus size={15} /> Add user
+            </button>
+          </div>
+
+          {showCreateAccount && (
+            <form
+              className="account-create-panel"
+              onSubmit={createAccount}
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bwignore="true"
+            >
+              <div className="account-create-heading">
+                <span className="account-create-icon"><UserPlus size={19} /></span>
+                <span><strong>Provision a local user</strong><small>Create the identity first. Workspace access is assigned separately below.</small></span>
+                <button type="button" onClick={() => setShowCreateAccount(false)} aria-label="Close new user panel"><X size={17} /></button>
+              </div>
+
+              <div className="account-create-fields">
+                <label>
+                  <span>Username</span>
+                  <input name="username" required minLength="2" maxLength="48" placeholder="e.g. jordan" autoComplete="off" autoCapitalize="none" spellCheck="false" data-1p-ignore="true" />
+                  <small>Used to sign in to this Rasputin appliance.</small>
+                </label>
+                <label>
+                  <span>Initial password</span>
+                  <input name="password" type="password" required minLength="10" placeholder="10 characters minimum" autoComplete="new-password" data-1p-ignore="true" />
+                  <small>The user can replace it after their first sign-in.</small>
+                </label>
+              </div>
+
+              <fieldset className="account-role-picker">
+                <legend>Appliance role</legend>
+                {accountRoles.map((role) => (
+                  <label key={role.id} className={newAccountRole === role.id ? "is-selected" : ""}>
+                    <input type="radio" name="role" value={role.id} checked={newAccountRole === role.id} onChange={() => setNewAccountRole(role.id)} />
+                    <span><strong>{role.label}</strong><small>{role.description}</small></span>
+                    <i><Check size={13} /></i>
+                  </label>
+                ))}
+              </fieldset>
+
+              <div className="account-create-actions">
+                <span><ShieldCheck size={15} /> New users start with no workspace access.</span>
+                <button type="button" onClick={() => setShowCreateAccount(false)}>Cancel</button>
+                <button type="submit" className="is-primary"><UserPlus size={15} /> Create user</button>
+              </div>
+            </form>
+          )}
 
           <div className="account-list">
             {users.map((user) => (
