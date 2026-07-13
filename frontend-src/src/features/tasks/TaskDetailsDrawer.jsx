@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pause, Play, RefreshCw, Square, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
@@ -6,9 +6,12 @@ import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard } from "../knowledge/GraphEvidence.jsx";
 import { Skeleton, SkeletonText } from "../../components/Skeleton.jsx";
 import { Drawer } from "../../components/Drawer.jsx";
+import { postJson } from "../../api/client.js";
 
 const sections = [
   ["overview", "Overview"],
+  ["changes", "Changes"],
+  ["terminal", "Terminal"],
   ["seen", "What Rasputin Saw"],
   ["trace", "Plan And Trace"],
   ["logs", "Logs"],
@@ -58,6 +61,24 @@ export function TaskDetailsDrawer({
     [detail],
   );
 
+  // Keyboard-only tablist navigation (WCAG tablist pattern): arrows move between
+  // tabs and Home/End jump to the ends, moving focus with the selection. Mouse
+  // users click; neither input path is required over the other.
+  const handleTabKeyDown = (event) => {
+    const ids = sections.map(([id]) => id);
+    const idx = ids.indexOf(section);
+    let next = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = ids[(idx + 1) % ids.length];
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = ids[(idx - 1 + ids.length) % ids.length];
+    else if (event.key === "Home") next = ids[0];
+    else if (event.key === "End") next = ids[ids.length - 1];
+    if (next) {
+      event.preventDefault();
+      setSection(next);
+      requestAnimationFrame(() => document.getElementById(`task-detail-tab-${next}`)?.focus());
+    }
+  };
+
   return (
     <Drawer
       open={Boolean(taskId)}
@@ -102,7 +123,7 @@ export function TaskDetailsDrawer({
 
         {task && (
           <>
-            <nav className="task-details-tabs" role="tablist" aria-label="Task detail sections">
+            <nav className="task-details-tabs" role="tablist" aria-label="Task detail sections" onKeyDown={handleTabKeyDown}>
               {sections.map(([id, label]) => (
                 <button
                   key={id}
@@ -181,6 +202,18 @@ export function TaskDetailsDrawer({
                       <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{task.result || "No final result yet."}</ReactMarkdown>
                     </div>
                   </article>
+                </section>
+              )}
+
+              {section === "changes" && (
+                <section id="task-detail-panel-changes" role="tabpanel" aria-labelledby="task-detail-tab-changes" data-testid="task-details-changes">
+                  <ChangesPanel workspace={task.workspace} active={section === "changes"} />
+                </section>
+              )}
+
+              {section === "terminal" && (
+                <section id="task-detail-panel-terminal" role="tabpanel" aria-labelledby="task-detail-tab-terminal" data-testid="task-details-terminal">
+                  <TerminalPanel detail={detail} task={task} />
                 </section>
               )}
 
@@ -299,6 +332,189 @@ export function TaskDetailsDrawer({
           </>
         )}
     </Drawer>
+  );
+}
+
+function ChangesPanel({ workspace, active }) {
+  const [files, setFiles] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [diff, setDiff] = useState("");
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const loadStatus = useCallback(async () => {
+    if (!workspace) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await postJson("/api/workspace/git-status", { workspacePath: workspace });
+      const entries = (data?.entries || []).filter((entry) => entry.path);
+      setFiles(entries);
+      setSelected((prev) => (entries.some((entry) => entry.path === prev) ? prev : null));
+    } catch (err) {
+      setError(String(err.message || err));
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [workspace]);
+
+  useEffect(() => {
+    if (active && files === null) loadStatus();
+  }, [active, files, loadStatus]);
+
+  const openDiff = async (path) => {
+    setSelected(path);
+    setDiff("");
+    setDiffLoading(true);
+    setNotice("");
+    try {
+      const data = await postJson("/api/workspace/git-diff", { workspacePath: workspace, path });
+      setDiff(data?.stdout || "");
+    } catch (err) {
+      setNotice(String(err.message || err));
+    } finally {
+      setDiffLoading(false);
+    }
+  };
+
+  const revert = async (path) => {
+    setNotice("");
+    try {
+      const data = await postJson("/api/workspace/git-restore", { workspacePath: workspace, path });
+      if (data?.approvalId || data?.approval_id) {
+        setNotice(`Reverting ${path} needs approval (this workspace isn't trusted) — approve it in the Approvals tab, then retry.`);
+      } else if (data?.exitCode && data.exitCode !== 0) {
+        setNotice(`Could not revert ${path}: ${data.stderr || `git exited ${data.exitCode}`}`);
+      } else {
+        setNotice(`Reverted ${path}.`);
+        if (selected === path) {
+          setSelected(null);
+          setDiff("");
+        }
+        await loadStatus();
+      }
+    } catch (err) {
+      setNotice(`Could not revert ${path}: ${err.message || err}`);
+    }
+  };
+
+  if (files === null) {
+    return loading ? (
+      <div className="drawer-loading" role="status" aria-label="Loading changes">Loading changes…</div>
+    ) : (
+      <EmptyInline text="Open this tab to load the working-tree changes." />
+    );
+  }
+
+  return (
+    <div className="changes-panel" data-testid="task-changes">
+      <div className="section-row">
+        <p className="eyebrow">{files.length ? `${files.length} changed file${files.length === 1 ? "" : "s"}` : "Working-tree changes"}</p>
+        <button type="button" className="tiny-action" onClick={loadStatus} aria-label="Refresh changes">
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+      {error && <p className="drawer-error" role="alert">{error}</p>}
+      {notice && <p className="empty-inline" role="status" style={{ color: "var(--ras-primary, #bd4a28)" }}>{notice}</p>}
+      {!files.length && !error ? (
+        <EmptyInline text="No uncommitted changes in this workspace." />
+      ) : (
+        <>
+          <ul aria-label="Changed files" style={{ listStyle: "none", margin: "var(--sp-2, 8px) 0", padding: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
+            {files.map((entry) => {
+              const isModified = /[MR]/.test(entry.status || "");
+              return (
+                <li key={entry.path} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <button
+                    type="button"
+                    data-testid="changes-file"
+                    className="tiny-action"
+                    aria-pressed={selected === entry.path}
+                    onClick={() => openDiff(entry.path)}
+                    style={{ flex: 1, justifyContent: "flex-start", gap: "8px", fontWeight: selected === entry.path ? 700 : 500, borderColor: selected === entry.path ? "var(--ras-primary, #bd4a28)" : undefined }}
+                  >
+                    <span aria-hidden="true" style={statusStyle(entry.status)}>{entry.status || "?"}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.path}</span>
+                  </button>
+                  {isModified && (
+                    <button type="button" data-testid="changes-revert" className="tiny-action danger" aria-label={`Revert ${entry.path}`} onClick={() => revert(entry.path)}>
+                      Revert
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div tabIndex={0} data-testid="changes-diff" aria-label={selected ? `Diff for ${selected}` : "File diff"} style={{ outline: "none" }}>
+            {diffLoading ? (
+              <p className="empty-inline">Loading diff…</p>
+            ) : selected ? (
+              <DiffView text={diff} />
+            ) : (
+              <EmptyInline text="Select a file to view its diff." />
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function statusStyle(status) {
+  const value = (status || "").trim();
+  let color = "#8a8a8a";
+  if (/A|\?/.test(value)) color = "#3fb950";
+  else if (/D/.test(value)) color = "#f85149";
+  else if (/[MR]/.test(value)) color = "#d29922";
+  return { fontFamily: "var(--font-mono, monospace)", fontWeight: 700, minWidth: "1.6em", color };
+}
+
+function DiffView({ text }) {
+  if (!text) return <EmptyInline text="No textual diff (the file may be binary, newly added, or removed)." />;
+  const lines = text.split("\n");
+  return (
+    <pre className="log-box" aria-label="Unified diff" style={{ maxHeight: "48vh", overflow: "auto", padding: 0 }}>
+      {lines.map((line, index) => (
+        <div key={index} style={{ ...diffLineStyle(line), whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "0 8px" }}>
+          {line || " "}
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+function diffLineStyle(line) {
+  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ") || line.startsWith("index ")) {
+    return { color: "#8a8a8a", fontWeight: 600 };
+  }
+  if (line.startsWith("@@")) return { color: "#4aa3ff", background: "rgba(74,163,255,0.10)" };
+  if (line.startsWith("+")) return { color: "#3fb950", background: "rgba(63,185,80,0.14)" };
+  if (line.startsWith("-")) return { color: "#f85149", background: "rgba(248,81,73,0.14)" };
+  return {};
+}
+
+function TerminalPanel({ detail, task }) {
+  const shellCalls = (detail?.toolCalls || []).filter((tool) => tool.name === "shell_exec");
+  const live = task?.streamText;
+  if (!shellCalls.length && !live) {
+    return <EmptyInline text="No shell or test-command output for this task yet." />;
+  }
+  return (
+    <div className="terminal-panel" data-testid="task-terminal">
+      {shellCalls.map((tool) => (
+        <pre key={tool.id} className="log-box" style={{ marginBottom: "var(--sp-2, 8px)" }} aria-label="Shell command output">
+          <span style={{ color: "#3fb950" }}>$ {String((tool.argsRedacted || {}).command || "shell command").slice(0, 400)}</span>
+          {"\n"}
+          {summarizeDetail(tool.resultRedacted || {})}
+        </pre>
+      ))}
+      {live ? (
+        <pre className="log-box live-stream-text" data-testid="terminal-live" aria-label="Live output">{live}</pre>
+      ) : null}
+    </div>
   );
 }
 
