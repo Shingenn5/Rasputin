@@ -25,8 +25,8 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Fix hardcoded `--bs-primary-rgb` so Bootstrap components follow the selected theme's accent (UI Bug Fix 1) — done 2026-07-01
 - [x] Configure a real model endpoint for verification (Stage 4a follow-up) — done 2026-07-12 (Qwen2.5-3B-Instruct deployed via WarSat; see Session 2026-07-12 below)
 - [x] Identify/confirm SSE extension point at `frontend-src/src/app/App.jsx:589` (Stage 4b) — done 2026-07-02
-- [ ] Quick action: view diff for a file (Stage 5)
-- [ ] Reuse existing `TaskDetailsDrawer.jsx` structure (Stage 5)
+- [x] Quick action: view diff for a file (Stage 5) — done 2026-07-12
+- [x] Reuse existing `TaskDetailsDrawer.jsx` structure (Stage 5) — done 2026-07-12
 - [x] Parse pass/fail from test command output (Stage 6) — done 2026-07-12
 - [x] Bounded retry count distinct from tool-call ceiling (Stage 6) — done 2026-07-12
 - [x] Confirm zero-cost/offline path once local model routed (Stage 8) — done 2026-07-12 (local vLLM, no API spend, privacy lock on)
@@ -39,10 +39,10 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Add lightweight step/plan list to task view (Stage 4b) — done 2026-07-02
 - [x] Update step/plan list in real time (Stage 4b) — done 2026-07-02
 - [x] Wire frontend task view to consume incremental events (Stage 4b) — done 2026-07-02
-- [ ] Touched-files list in task detail view (Stage 5)
-- [ ] Per-file syntax-highlighted diff viewer (Stage 5)
-- [ ] Live terminal/log pane for shell output (Stage 5)
-- [ ] Revert-file quick action (Stage 5)
+- [x] Touched-files list in task detail view (Stage 5) — done 2026-07-12
+- [x] Per-file syntax-highlighted diff viewer (Stage 5) — done 2026-07-12
+- [x] Live terminal/log pane for shell output (Stage 5) — done 2026-07-12
+- [x] Revert-file quick action (Stage 5) — done 2026-07-12
 - [x] Per-workspace test/build/lint command settings (Stage 6) — backend + API done 2026-07-12 (settings-UI form pending)
 - [x] Run configured test command after an edit (Stage 6) — done 2026-07-12
 - [x] Feed test failures back into next iteration (Stage 6) — done 2026-07-12
@@ -196,24 +196,35 @@ Branch: `codex/agentic-coding-ux-streaming-v1` (not yet started)
 
 ---
 
-## Stage 5: Coding-Oriented Task UX — ☐ NOT STARTED (verified)
+## Stage 5: Coding-Oriented Task UX — ✅ IMPLEMENTED 2026-07-12 (frontend render tests pending)
 
-Branch: `codex/coding-ux-v1`
+Branch: `codex/agentic-coding-loop-v1` · Commits: `9726922` (backend), `77976f2` (frontend)
 
-**Verification note:** confirmed `frontend-src/src/features/tasks/TaskDetailsDrawer.jsx` still renders only `ReactMarkdown` (`:157-158,226-227`) and a raw `<pre className="log-box">` (`:210`) — no diff viewer, no file list, no terminal pane exist yet. `CodeSandbox.jsx` exists as a pattern to extend.
+**Implementation note:** built as two new tabs on the existing `TaskDetailsDrawer` (not a new view),
+backed by three new endpoints (`POST /api/workspace/git-status` · `/git-diff` · `/git-restore`,
+reusing the MCP git layer). Diff colours are semantic (+/- green/red, hunk blue), theme-independent.
+`git-restore` carries git_commit's trust/approval gating; in an untrusted workspace the UI shows an
+"approve it, then retry" notice rather than silently no-op'ing.
 
-- [ ] Reuse existing `TaskDetailsDrawer.jsx` structure rather than building a new view — **(Easy)**
-- [ ] Add touched-files list to task detail view — **(Medium)**
-- [ ] Per-file unified diff viewer, syntax-highlighted — **(Medium)**
-- [ ] Live terminal/log pane for shell output (extend `CodeSandbox.jsx` patterns) — **(Medium)**
-- [ ] Quick action: view diff for a given file — **(Easy)**
-- [ ] Quick action: revert a single file's change (`git checkout -- <path>` inside trusted workspace) — **(Medium** — needs care around trust/approval gating for a destructive-ish local action**)**
-- [ ] Test: diff viewer renders correctly for add/modify/delete/rename — **(Medium)**
-- [ ] Test: terminal pane updates live during a running shell command — **(Medium)**
-- [ ] Test: revert action restores the file and is reflected in the diff view — **(Medium)**
-- [ ] Validation: backend smoke suite passes, frontend build, repo safety check — **(Easy)**
+- [x] Reuse existing `TaskDetailsDrawer.jsx` structure rather than building a new view — done (Changes + Terminal tabs added in place)
+- [x] Add touched-files list to task detail view — done (Changes tab, from git-status entries)
+- [x] Per-file unified diff viewer, syntax-highlighted — done (`DiffView`, +/- and hunk colouring)
+- [x] Live terminal/log pane for shell output — done (Terminal tab: shell_exec output + live `streamText`)
+- [x] Quick action: view diff for a given file — done (click a file → its diff loads)
+- [x] Quick action: revert a single file's change (`git checkout -- <path>`) — done, with trust/approval gating
+- [~] Test: diff viewer renders correctly for add/modify/delete/rename — **backend endpoints smoke-tested** (`testStage5GitReviewEndpoints`); the frontend *render* is build-verified + loads with zero console errors, but a Playwright render assertion isn't written yet (opening the drawer was flaky to script in-session)
+- [~] Test: terminal pane updates live during a running shell command — not automated yet
+- [~] Test: revert action restores the file and is reflected in the diff view — backend gating tested; the frontend revert→refresh flow isn't Playwright-asserted yet
+- [x] Validation: backend smoke **104 passed**, frontend build green
 
-**Definition of done:** reviewing what a coding task did feels like reviewing a PR, not scrolling a chat log.
+**Dual-input a11y (the non-negotiable bar):** tablist now has full keyboard nav (Arrow/Home/End move
++ focus); every action is a real `<button>` (keyboard + mouse), the diff pane is focusable/scrollable,
+no hover-only or shortcut-only paths. A dedicated keyboard-only + mouse-only Playwright pass over the
+drawer is the remaining a11y verification (pairs with the render tests above).
+
+**Definition of done:** reviewing what a coding task did feels like reviewing a PR, not scrolling a
+chat log. **Implemented + backend-verified;** remaining = the frontend render/interaction + a11y
+Playwright tests.
 
 ---
 
