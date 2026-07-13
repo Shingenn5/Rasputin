@@ -1868,3 +1868,290 @@ button.workspace-add-folder:focus-visible {
   .account-row { grid-template-columns: 1fr; }
   .account-avatar { display: none; }
 }
+
+/* --------------------------------------------------------------------------
+   Product-wide cinematic view system
+   Every routed surface keeps its own layout, but shares depth, motion, and a
+   view-specific visual signature through AppShell's data-current-view hook.
+   -------------------------------------------------------------------------- */
+
+#appFrame {
+  --view-accent: var(--dash-accent);
+  --view-accent-2: color-mix(in srgb, var(--dash-accent) 60%, #ffffff);
+  --view-mark: "RX";
+}
+
+#appFrame[data-current-view="home"] { --view-accent: color-mix(in srgb, var(--dash-accent) 52%, #f59e0b); --view-accent-2: #fbbf24; }
+#appFrame[data-current-view="chat"] { --view-accent: color-mix(in srgb, var(--dash-accent) 42%, #22d3ee); --view-accent-2: #38bdf8; }
+#appFrame[data-current-view="workspaces"] { --view-accent: color-mix(in srgb, var(--dash-accent) 42%, #34d399); --view-accent-2: #a3e635; }
+#appFrame[data-current-view="activity"] { --view-accent: color-mix(in srgb, var(--dash-accent) 45%, #fb923c); --view-accent-2: #facc15; }
+#appFrame[data-current-view="models"] { --view-accent: color-mix(in srgb, var(--dash-accent) 38%, #a78bfa); --view-accent-2: #e879f9; }
+#appFrame[data-current-view="warsat"] { --view-accent: color-mix(in srgb, var(--dash-accent) 62%, #ef4444); --view-accent-2: #fb7185; }
+#appFrame[data-current-view="trials"] { --view-accent: color-mix(in srgb, var(--dash-accent) 36%, #d946ef); --view-accent-2: #818cf8; }
+#appFrame[data-current-view="archive"] { --view-accent: color-mix(in srgb, var(--dash-accent) 35%, #3b82f6); --view-accent-2: #22d3ee; }
+#appFrame[data-current-view="memory"] { --view-accent: color-mix(in srgb, var(--dash-accent) 35%, #14b8a6); --view-accent-2: #2dd4bf; }
+#appFrame[data-current-view="settings"] { --view-accent: var(--dash-accent); --view-accent-2: #fb923c; }
+#appFrame[data-current-view="agents"] { --view-accent: color-mix(in srgb, var(--dash-accent) 35%, #6366f1); --view-accent-2: #a78bfa; }
+#appFrame[data-current-view="sessions"] { --view-accent: color-mix(in srgb, var(--dash-accent) 35%, #0ea5e9); --view-accent-2: #38bdf8; }
+#appFrame[data-current-view="approvals"] { --view-accent: color-mix(in srgb, var(--dash-accent) 55%, #f43f5e); --view-accent-2: #fb923c; }
+#appFrame[data-current-view="skills"] { --view-accent: color-mix(in srgb, var(--dash-accent) 35%, #8b5cf6); --view-accent-2: #c084fc; }
+#appFrame[data-current-view="telegram"] { --view-accent: color-mix(in srgb, var(--dash-accent) 30%, #0284c7); --view-accent-2: #38bdf8; }
+#appFrame[data-current-view="schedules"] { --view-accent: color-mix(in srgb, var(--dash-accent) 46%, #eab308); --view-accent-2: #f59e0b; }
+#appFrame[data-current-view="audit"] { --view-accent: color-mix(in srgb, var(--dash-accent) 30%, #64748b); --view-accent-2: #94a3b8; }
+
+.dash-frame-main {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(900px 520px at 103% -8%, color-mix(in srgb, var(--view-accent) 11%, transparent), transparent 67%),
+    radial-gradient(620px 420px at 42% 112%, color-mix(in srgb, var(--view-accent-2) 4%, transparent), transparent 72%);
+  transition: background 420ms ease;
+}
+
+.dash-frame-main::before,
+.dash-frame-main::after {
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+}
+
+.dash-frame-main::before {
+  top: 8vh;
+  right: -180px;
+  width: 440px;
+  height: 440px;
+  border: 1px solid color-mix(in srgb, var(--view-accent) 15%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 58px color-mix(in srgb, var(--view-accent) 2.5%, transparent),
+    0 0 0 116px color-mix(in srgb, var(--view-accent) 1.6%, transparent),
+    inset 0 0 80px color-mix(in srgb, var(--view-accent) 3%, transparent);
+  animation: ras-orbit-drift 16s ease-in-out infinite alternate;
+}
+
+.dash-frame-main::after {
+  top: 0;
+  left: 18%;
+  width: 34%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--view-accent) 65%, transparent), transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--view-accent) 35%, transparent);
+  animation: ras-signal-sweep 5.5s ease-in-out infinite;
+}
+
+.ras-sidebar .ras-nav-item.is-active,
+.ras-sidebar .ras-nav-item[aria-current="page"] {
+  --sidebar-primary: var(--view-accent);
+}
+
+.ras-nav-active {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--view-accent) 18%, transparent), color-mix(in srgb, var(--view-accent) 4%, transparent)) !important;
+  border: 1px solid color-mix(in srgb, var(--view-accent) 18%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--view-accent) 78%, transparent);
+}
+
+.app-view.active {
+  position: relative;
+  min-height: 100%;
+  isolation: isolate;
+  animation: ras-view-arrive 420ms cubic-bezier(.2,.72,.2,1) both;
+}
+
+.app-view.active::before {
+  position: absolute;
+  top: clamp(58px, 8vw, 108px);
+  right: clamp(22px, 4vw, 70px);
+  z-index: -1;
+  width: clamp(120px, 16vw, 220px);
+  height: clamp(120px, 16vw, 220px);
+  border: 1px solid color-mix(in srgb, var(--view-accent) 14%, transparent);
+  border-radius: 44% 56% 48% 52%;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--view-accent) 8%, transparent) 0 4px, transparent 5px),
+    conic-gradient(from 25deg, transparent, color-mix(in srgb, var(--view-accent) 5%, transparent), transparent 30%, color-mix(in srgb, var(--view-accent-2) 4%, transparent), transparent 72%);
+  box-shadow:
+    0 0 0 22px color-mix(in srgb, var(--view-accent) 1.8%, transparent),
+    inset 0 0 48px color-mix(in srgb, var(--view-accent) 3%, transparent);
+  content: "";
+  opacity: 0.72;
+  pointer-events: none;
+  transform: rotate(-12deg);
+}
+
+.app-view.active::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 5;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 5%, var(--view-accent) 48%, var(--view-accent-2) 62%, transparent 95%);
+  background-size: 220% 100%;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--view-accent) 36%, transparent);
+  content: "";
+  opacity: 0.62;
+  pointer-events: none;
+  animation: ras-tracer 6s linear infinite;
+}
+
+.app-view.active > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app-view.active :is(h1, .settings-hero-copy h1, .workspace-hero-copy h1) {
+  text-wrap: balance;
+}
+
+.app-view.active :is(h1, .page-header h1) {
+  text-shadow: 0 12px 38px color-mix(in srgb, var(--view-accent) 12%, transparent);
+}
+
+.app-view.active :is(h1, .page-header h1)::selection,
+.app-view.active p::selection {
+  background: color-mix(in srgb, var(--view-accent) 28%, transparent);
+}
+
+.app-view.active :is(.glow-card, .w2-card, .w2-column, .settings-card, .message-card, .model-card, .trial-card) {
+  border-color: color-mix(in srgb, var(--view-accent) 10%, var(--dash-border)) !important;
+  box-shadow:
+    0 12px 34px color-mix(in srgb, #000 6%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 3.5%, transparent);
+}
+
+.app-view.active :is(.glow-card, .w2-card, .settings-card) {
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.app-view.active :is(.glow-card, .w2-card, .settings-card):hover {
+  border-color: color-mix(in srgb, var(--view-accent) 26%, var(--dash-border)) !important;
+  box-shadow:
+    0 18px 46px color-mix(in srgb, #000 9%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--view-accent) 5%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+.app-view.active :is(.w2-button.primary, button.bg-primary, .btn-primary) {
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--view-accent) 18%, transparent);
+}
+
+.app-view.active :is(input, textarea, select):focus {
+  border-color: color-mix(in srgb, var(--view-accent) 58%, var(--dash-border-strong)) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--view-accent) 10%, transparent) !important;
+}
+
+/* Legacy runtime routes receive the same production-grade command hero. */
+.ras-runtime-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 174px;
+  align-items: center;
+  gap: 24px;
+  margin: 18px 24px 0;
+  padding: 30px 34px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--view-accent) 24%, var(--dash-border));
+  border-radius: 22px 7px 22px 7px;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--view-accent) 12%, transparent), transparent 38%),
+    repeating-linear-gradient(90deg, transparent 0 58px, color-mix(in srgb, #fff 2.2%, transparent) 59px),
+    color-mix(in srgb, var(--dash-sidebar) 96%, var(--view-accent) 4%);
+  color: var(--dash-sidebar-text, #f6f1e8);
+  box-shadow: 0 22px 54px color-mix(in srgb, #000 16%, transparent);
+}
+
+.ras-runtime-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 49%, transparent);
+  font-family: var(--ras-font-mono);
+  font-size: 0.6rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ras-runtime-kicker i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--view-accent);
+  box-shadow: 0 0 13px var(--view-accent);
+  animation: ras-pulse 2.4s ease-in-out infinite;
+}
+
+.ras-runtime-hero h1 {
+  margin: 10px 0 4px;
+  color: inherit;
+  font-family: var(--ras-font-display);
+  font-size: clamp(2.35rem, 5vw, 4.2rem);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 0.92;
+}
+
+.ras-runtime-hero p {
+  max-width: 650px;
+  margin: 10px 0 0;
+  color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 56%, transparent) !important;
+  font-family: var(--ras-font-mono);
+  font-size: 0.68rem;
+}
+
+.ras-runtime-hero-side { position: relative; display: grid; min-width: 155px; place-items: center; }
+.ras-runtime-orbit { position: relative; display: grid; width: 122px; height: 122px; place-items: center; border: 1px solid color-mix(in srgb, var(--view-accent) 30%, transparent); border-radius: 50%; box-shadow: 0 0 0 20px color-mix(in srgb, var(--view-accent) 3%, transparent), inset 0 0 34px color-mix(in srgb, var(--view-accent) 5%, transparent); }
+.ras-runtime-orbit::before,
+.ras-runtime-orbit::after { position: absolute; border: 1px solid color-mix(in srgb, var(--view-accent) 20%, transparent); border-radius: 50%; content: ""; }
+.ras-runtime-orbit::before { width: 76px; height: 76px; }
+.ras-runtime-orbit::after { width: 18px; height: 18px; background: color-mix(in srgb, var(--view-accent) 12%, transparent); box-shadow: 0 0 24px color-mix(in srgb, var(--view-accent) 35%, transparent); }
+.ras-runtime-orbit i { position: absolute; top: 8px; left: 53px; width: 9px; height: 9px; border-radius: 50%; background: var(--view-accent); box-shadow: 0 0 13px var(--view-accent); transform-origin: 8px 53px; animation: ras-orbit-spin 7s linear infinite; }
+.ras-runtime-orbit b { width: 2px; height: 56px; background: linear-gradient(var(--view-accent-2), transparent); opacity: 0.36; transform: rotate(35deg); }
+.ras-runtime-action { position: absolute; right: 0; bottom: -18px; }
+
+.app-view.active > .task-dashboard {
+  padding-top: 22px;
+}
+
+@keyframes ras-view-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ras-tracer {
+  0% { background-position: 200% 0; opacity: 0.18; }
+  45%, 65% { opacity: 0.68; }
+  100% { background-position: -20% 0; opacity: 0.18; }
+}
+
+@keyframes ras-orbit-drift {
+  from { transform: translate3d(0, -10px, 0) rotate(-3deg); }
+  to { transform: translate3d(-28px, 30px, 0) rotate(7deg); }
+}
+
+@keyframes ras-signal-sweep {
+  0%, 100% { opacity: 0.15; transform: translateX(-22%); }
+  50% { opacity: 0.7; transform: translateX(72%); }
+}
+
+@keyframes ras-orbit-spin { to { transform: rotate(360deg); } }
+@keyframes ras-pulse { 0%, 100% { opacity: 0.45; transform: scale(0.82); } 50% { opacity: 1; transform: scale(1); } }
+
+@media (max-width: 760px) {
+  .app-view.active::before { top: 72px; right: 18px; width: 110px; height: 110px; }
+  .ras-runtime-hero { grid-template-columns: 1fr; min-height: 0; margin: 10px 10px 0; padding: 24px 21px; }
+  .ras-runtime-hero-side { display: none; }
+  .dash-frame-main::before { right: -300px; opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-view.active,
+  .app-view.active::after,
+  .dash-frame-main::before,
+  .dash-frame-main::after,
+  .ras-runtime-kicker i,
+  .ras-runtime-orbit i { animation: none !important; }
+}

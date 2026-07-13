@@ -187,7 +187,7 @@ export function TrialsView({
   const runningExperiments = experiments.filter(e => e.status === "running");
 
   return (
-    <section className="w2-layout app-view trials-view tw active" id="trialsView" data-app-view="trials">
+    <section className={`w2-layout app-view trials-view tw ${view === "trials" ? "active" : ""}`} id="trialsView" data-app-view="trials">
       <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Header ── */}

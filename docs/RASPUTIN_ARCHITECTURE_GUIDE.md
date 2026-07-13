@@ -202,6 +202,20 @@ why the UI can "feel like a prototype"), so:
 This is a direction, executed incrementally (not a big-bang rewrite); the migration happens through
 the polish phases, verified in the running app.
 
+### Routed-view visual identity contract
+
+The application shell exposes the current route as `data-current-view` on `#appFrame`, while each
+routed screen keeps its existing `data-app-view` marker. `frontend-src/src/styles/interface.css`
+uses those two stable attributes to give every tab its own accent palette, atmospheric background,
+active-navigation treatment, and arrival tracer without duplicating layout code inside each view.
+
+Keep this layer decorative and progressive: existing information architecture and interaction
+patterns remain authoritative, interactive elements must retain visible keyboard focus, and all
+ambient animation must be disabled by `prefers-reduced-motion`. Decorative pseudo-elements must not
+contain textual `content`, because generated text can leak into the accessibility tree; use empty,
+`aria-hidden` geometry or real semantic markup instead. Shared legacy runtime screens should use the
+`PageHeader` / `ras-runtime-hero` pattern rather than inventing a new page header per tab.
+
 ## 5. Frontend Source Structure
 
 The frontend is now split into modules:

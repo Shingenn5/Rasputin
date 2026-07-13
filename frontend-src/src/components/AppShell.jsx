@@ -20,7 +20,11 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
         </div>
       )}
       <div className="dash-aurora ras-atmosphere" aria-hidden="true"><i /></div>
-      <div className="dash-frame relative z-[1] flex h-dvh overflow-hidden text-foreground" id="appFrame">
+      <div
+        className="dash-frame relative z-[1] flex h-dvh overflow-hidden text-foreground"
+        id="appFrame"
+        data-current-view={sidebarProps?.view || "home"}
+      >
         <DashSidebar {...sidebarProps} mobileTriggerRef={mobileSidebarTriggerRef} />
         <main className="dash-frame-main min-w-0 flex-1 overflow-y-auto" id="mainContent" tabIndex="-1">
           {/* Sticky top stack: trusted-workspace banner (all breakpoints) + mobile topbar (< sm) share one sticky offset so they don't overlap on scroll */}
