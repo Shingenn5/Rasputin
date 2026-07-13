@@ -47,6 +47,21 @@ these, it doesn't belong in this track.
 - No new features riding along "while we're in there." Feature tracks (coding-agent Stages 5/6,
   WarSat enhancement tiers, business track) proceed separately.
 
+### 2026-07-13 server-mode extension: accounts and HTTPS
+
+The Docker server shape now supports simultaneous local users without changing the native
+daily-driver premise. Both modes use the same account/session implementation, but retain separate
+data stores unless `RASPUTIN_DATA_DIR` deliberately points them together. Personal chats, tasks,
+preferences, and memory are owner-scoped. Workspace access is explicit (viewer, contributor,
+developer, owner); appliance controls remain admin-only. This is one trusted appliance boundary,
+not independent encrypted tenants.
+
+Both modes can terminate HTTPS directly in Uvicorn. The repository helper invokes
+FiloSottile/mkcert, stores only generated leaf material in ignored `data/tls/`, and supplies it
+read-only to Docker. `-Lan` changes the bind address explicitly; the safe default remains loopback.
+Native mode derives its Host/Origin allowlist from the generated SAN list. Public deployment still
+requires a production certificate/reverse proxy rather than mkcert.
+
 ---
 
 ## Starting baseline (historical, verified 2026-07-10)

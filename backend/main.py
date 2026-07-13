@@ -10,13 +10,13 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.core.response import AppError, error_handler, fail, http_error_handler
 from backend.core import auth
-from backend.core import settings_api
 from backend.models import registry as model_registry
 from backend.rag import memory as memory_store
 from backend.mcp import skills as skill_store
 from backend.core import telegram
 from backend.core import audit
 from backend.api.core import router as core_router
+from backend.core import settings_api
 from backend.api.agent import router as agent_router
 from backend.api.warsat_api import router as warsat_router
 from backend.api.mcp_routes import router as mcp_api_router

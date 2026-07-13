@@ -122,7 +122,7 @@ class AgentHub:
     def __init__(self):
         store.init_db()
         self.tasks = {}
-        self.listeners = set()
+        self.listeners = {}
         self.mcp = McpLayer()
         self._memory_export_task = None
         self._loop = None
@@ -140,13 +140,16 @@ class AgentHub:
 
         def push_to_queues():
             dead = []
-            for q in list(self.listeners):
+            owner_id = getattr(task, "owner_id", "admin")
+            for q, listener_owner in list(self.listeners.items()):
+                if listener_owner != owner_id:
+                    continue
                 try:
                     q.put_nowait(data)
                 except Exception:
                     dead.append(q)
             for q in dead:
-                self.listeners.discard(q)
+                self.listeners.pop(q, None)
                 
         try:
             self._loop.call_soon_threadsafe(push_to_queues)
@@ -199,8 +202,8 @@ class AgentHub:
         with store._lock, store.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder,owner_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                   title=CASE
                     WHEN sessions.title IN ('New chat','Untitled chat','Rasputin session') THEN excluded.title
@@ -213,7 +216,7 @@ class AgentHub:
                   skill=excluded.skill,
                   updated_at=excluded.updated_at
                 """,
-                (task.session_id, title, "active", task.workspace, task.model, task.mode, task.skill, "", stamp, stamp, ""),
+                (task.session_id, title, "active", task.workspace, task.model, task.mode, task.skill, "", stamp, stamp, "", getattr(task, "owner_id", "admin")),
             )
             conn.commit()
 
@@ -259,8 +262,8 @@ class AgentHub:
         with store._lock, store.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO tasks(id,session_id,parent_id,objective,model,skill,mode,status,progress,result,workspace,permission_snapshot,paused,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO tasks(id,session_id,parent_id,objective,model,skill,mode,status,progress,result,workspace,permission_snapshot,paused,created_at,updated_at,owner_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET status=excluded.status, progress=excluded.progress, result=excluded.result, paused=excluded.paused, updated_at=excluded.updated_at
                 """,
                 (
@@ -279,6 +282,7 @@ class AgentHub:
                     1 if task.paused_requested or task.status == "paused" else 0,
                     task.created_at,
                     store.now(),
+                    getattr(task, "owner_id", "admin"),
                 ),
             )
             conn.commit()
@@ -287,13 +291,16 @@ class AgentHub:
         self._persist_task(task)
         data = {"task": self.snapshot_task(task)}
         dead = []
-        for q in self.listeners:
+        owner_id = getattr(task, "owner_id", "admin")
+        for q, listener_owner in list(self.listeners.items()):
+            if listener_owner != owner_id:
+                continue
             try:
                 await q.put(data)
             except Exception:
                 dead.append(q)
         for q in dead:
-            self.listeners.discard(q)
+            self.listeners.pop(q, None)
 
     def snapshot_task(self, task):
         return {
@@ -319,6 +326,7 @@ class AgentHub:
             "parentId": task.parent_id,
             "paused": task.paused_requested or task.status == "paused",
             "createdAt": task.created_at,
+            "ownerId": getattr(task, "owner_id", "admin"),
         }
 
     def _snapshot_from_db(self, row, include_details=True):
@@ -345,6 +353,7 @@ class AgentHub:
             "parentId": task["parent_id"],
             "paused": bool(task["paused"]),
             "createdAt": task["created_at"],
+            "ownerId": task.get("owner_id") or "admin",
         }
         if not include_details:
             return base
@@ -379,23 +388,26 @@ class AgentHub:
         })
         return base
 
-    def all_tasks(self, limit=100, include_details=False):
+    def all_tasks(self, limit=100, include_details=False, owner_id="admin"):
         store.init_db()
         limit = max(1, min(int(limit or 100), 500))
         with store._lock, store.connect() as conn:
-            rows = conn.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            rows = conn.execute("SELECT * FROM tasks WHERE owner_id=? ORDER BY created_at DESC LIMIT ?", (owner_id, limit)).fetchall()
         return [self._snapshot_from_db(row, include_details=include_details) for row in rows]
 
-    def get_task(self, task_id):
+    def get_task(self, task_id, owner_id="admin"):
         task = self.tasks.get(task_id)
-        if task:
+        if task and (owner_id is None or getattr(task, "owner_id", "admin") == owner_id):
             return self.snapshot_task(task)
         with store._lock, store.connect() as conn:
-            row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if owner_id is None:
+                row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            else:
+                row = conn.execute("SELECT * FROM tasks WHERE id=? AND owner_id=?", (task_id, owner_id)).fetchone()
         return self._snapshot_from_db(row) if row else None
 
-    def task_detail(self, task_id):
-        task = self.get_task(task_id)
+    def task_detail(self, task_id, owner_id="admin"):
+        task = self.get_task(task_id, owner_id)
         if not task:
             return None
         with store._lock, store.connect() as conn:
@@ -455,15 +467,15 @@ class AgentHub:
         data["result_redacted"] = store._loads(data.get("result_redacted"), {})
         return data
 
-    def sessions(self, limit=100):
+    def sessions(self, limit=100, owner_id="admin"):
         with store._lock, store.connect() as conn:
-            rows = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?", (max(1, min(int(limit), 500)),)).fetchall()
-            total = conn.execute("SELECT COUNT(*) AS count FROM sessions").fetchone()
+            rows = conn.execute("SELECT * FROM sessions WHERE owner_id=? ORDER BY updated_at DESC LIMIT ?", (owner_id, max(1, min(int(limit), 500)))).fetchall()
+            total = conn.execute("SELECT COUNT(*) AS count FROM sessions WHERE owner_id=?", (owner_id,)).fetchone()
         return {"sessions": [dict(row) for row in rows], "total": int(total["count"] if total else len(rows))}
 
-    def session(self, session_id):
+    def session(self, session_id, owner_id="admin"):
         with store._lock, store.connect() as conn:
-            row = conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+            row = conn.execute("SELECT * FROM sessions WHERE id=? AND owner_id=?", (session_id, owner_id)).fetchone()
             if not row:
                 raise ValueError("session missing")
             messages = conn.execute(
@@ -473,15 +485,15 @@ class AgentHub:
             tasks = conn.execute("SELECT * FROM tasks WHERE session_id=? ORDER BY created_at ASC", (session_id,)).fetchall()
         return {"session": dict(row), "messages": [dict(m) for m in messages], "tasks": [self._snapshot_from_db(t) for t in tasks]}
 
-    def create_session(self, title="New chat", workspace=".", model="dry-run", mode="chat", skill="general", folder=""):
+    def create_session(self, title="New chat", workspace=".", model="dry-run", mode="chat", skill="general", folder="", owner_id="admin"):
         stamp = store.now()
         session_id = store.new_id("sess")
         clean_title = str(title or "New chat").strip()[:140] or "New chat"
         with store._lock, store.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,folder,owner_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     session_id,
@@ -495,21 +507,24 @@ class AgentHub:
                     stamp,
                     stamp,
                     self._clean_folder_name(folder),
+                    owner_id,
                 ),
             )
             conn.commit()
-        return self.session(session_id)
+        return self.session(session_id, owner_id)
 
-    def chat_folders(self):
-        registry = store.get_kv("chat_folder_registry", [])
+    def chat_folders(self, owner_id="admin"):
+        registry = store.get_kv(f"chat_folder_registry:{owner_id}", [])
         if not isinstance(registry, list):
             registry = []
         with store._lock, store.connect() as conn:
             rows = conn.execute(
-                "SELECT folder, COUNT(*) AS session_count FROM sessions WHERE folder IS NOT NULL AND folder!='' GROUP BY folder"
+                "SELECT folder, COUNT(*) AS session_count FROM sessions WHERE owner_id=? AND folder IS NOT NULL AND folder!='' GROUP BY folder",
+                (owner_id,),
             ).fetchall()
             unfiled = conn.execute(
-                "SELECT COUNT(*) AS count FROM sessions WHERE folder IS NULL OR folder=''"
+                "SELECT COUNT(*) AS count FROM sessions WHERE owner_id=? AND (folder IS NULL OR folder='')",
+                (owner_id,),
             ).fetchone()
         counts = {str(row["folder"]): int(row["session_count"]) for row in rows}
         names = []
@@ -531,24 +546,25 @@ class AgentHub:
     def _clean_folder_name(self, name):
         return " ".join(str(name or "").split())[:80]
 
-    def create_chat_folder(self, name, color=""):
+    def create_chat_folder(self, name, color="", owner_id="admin"):
         cleaned = self._clean_folder_name(name)
         if not cleaned:
             raise ValueError("folder name is required")
-        registry = store.get_kv("chat_folder_registry", [])
+        registry_key = f"chat_folder_registry:{owner_id}"
+        registry = store.get_kv(registry_key, [])
         if not isinstance(registry, list):
             registry = []
         if cleaned.casefold() not in {str(item).casefold() for item in registry}:
             registry.append(cleaned)
-            store.set_kv("chat_folder_registry", registry)
-        return self.chat_folders()
+            store.set_kv(registry_key, registry)
+        return self.chat_folders(owner_id)
 
-    def assign_session_folder(self, session_id, folder=None):
+    def assign_session_folder(self, session_id, folder=None, owner_id="admin"):
         target_folder = self._clean_folder_name(folder)
         if target_folder.lower() in {"all", "unfiled"}:
             target_folder = ""
         with store._lock, store.connect() as conn:
-            session = conn.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+            session = conn.execute("SELECT id FROM sessions WHERE id=? AND owner_id=?", (session_id, owner_id)).fetchone()
             if not session:
                 raise ValueError("session missing")
             conn.execute(
@@ -557,8 +573,8 @@ class AgentHub:
             )
             conn.commit()
         if target_folder:
-            self.create_chat_folder(target_folder)
-        return self.session(session_id)
+            self.create_chat_folder(target_folder, owner_id=owner_id)
+        return self.session(session_id, owner_id)
 
     def recent_messages(self, session_id, limit=10):
         with store._lock, store.connect() as conn:
@@ -568,17 +584,20 @@ class AgentHub:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
-    async def subscribe(self):
+    async def subscribe(self, owner_id="admin"):
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
             pass
         q = asyncio.Queue()
-        self.listeners.add(q)
+        self.listeners[q] = owner_id
         return q
 
-    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat", session_id=None, reasoning="auto"):
+    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat", session_id=None, reasoning="auto", owner_id="admin"):
+        if session_id:
+            self.session(session_id, owner_id)
         task = AgentTask(objective, model, skill, workspace_path=workspace_path, mode=mode, session_id=session_id, reasoning=reasoning)
+        task.owner_id = owner_id
         self._wire(task)
         self.tasks[task.id] = task
         self._persist_task(task)
@@ -720,8 +739,8 @@ class AgentHub:
                 task.output("markdown", "Chat reply", reply)
                 task.progress = 100
                 task.status = "done"
-                memory.remember("session", {"objective": task.objective, "result": reply, "model": task.model})
-                memory.suggest_from_task(task.id, task.objective, reply, task.workspace)
+                memory.remember("session", {"objective": task.objective, "result": reply, "model": task.model}, task.owner_id)
+                memory.suggest_from_task(task.id, task.objective, reply, task.workspace, task.owner_id)
                 self._add_message(task.session_id, task.id, "assistant", reply)
                 await self.compact_session(task)
                 task.log("done")
@@ -749,8 +768,8 @@ class AgentHub:
                 task.output("markdown", "Task summary", reflection)
                 task.progress = 100
                 task.status = "done"
-                memory.remember("session", {"objective": task.objective, "result": reflection, "model": task.model})
-                memory.suggest_from_task(task.id, task.objective, reflection, task.workspace)
+                memory.remember("session", {"objective": task.objective, "result": reflection, "model": task.model}, task.owner_id)
+                memory.suggest_from_task(task.id, task.objective, reflection, task.workspace, task.owner_id)
                 self._add_message(task.session_id, task.id, "assistant", reflection)
                 await self.compact_session(task)
                 task.log("done")

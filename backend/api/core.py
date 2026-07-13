@@ -45,6 +45,18 @@ def current_user(request: Request):
         raise PermissionError("login required")
     return {"username": session.get("username"), "role": session.get("role")}
 
+
+def require_admin(user=Depends(current_user)):
+    if user.get("role") != "admin":
+        raise PermissionError("administrator access required")
+    return user
+
+
+def require_member(user=Depends(current_user)):
+    if user.get("role") not in {"admin", "member"}:
+        raise PermissionError("member access required")
+    return user
+
 hub = AgentHub()
 
 
@@ -58,6 +70,18 @@ class LoginIn(CamelModel):
 class PasswordChangeIn(CamelModel):
     current_password: str
     new_password: str
+
+class UserCreateIn(CamelModel):
+    username: str
+    password: str
+    role: str = "member"
+
+class UserUpdateIn(CamelModel):
+    role: str | None = None
+    enabled: bool | None = None
+
+class UserResetPasswordIn(CamelModel):
+    new_password: str | None = None
 
 @auth_router.get("/session")
 
@@ -77,7 +101,7 @@ async def auth_login(req: LoginIn, response: Response, request: Request):
         httponly=True,
         secure=auth.cookie_secure(),
         samesite="strict",
-        max_age=60 * 60 * 12,
+        max_age=auth.session_ttl_seconds(),
         path="/",
     )
     return ok(info)
@@ -98,6 +122,34 @@ async def auth_change_password(req: PasswordChangeIn, request: Request, user=Dep
         username = auth.load_public().get("username", "admin")
     return ok(auth.change_password(username, req.current_password, req.new_password))
 
+@auth_router.get("/users")
+async def auth_users(_user=Depends(require_admin)):
+    return ok({"users": auth.list_users()})
+
+@auth_router.post("/users")
+async def auth_users_create(req: UserCreateIn, user=Depends(require_admin)):
+    created = auth.create_user(req.username, req.password, req.role)
+    audit.log("auth_user_created_by_admin", {"username": created["username"], "role": created["role"]}, actor=user["username"])
+    return ok(created)
+
+@auth_router.patch("/users/{username}")
+async def auth_users_update(username: str, req: UserUpdateIn, user=Depends(require_admin)):
+    updated = auth.update_user(username, req.role, req.enabled)
+    audit.log("auth_user_updated_by_admin", {"username": username}, actor=user["username"])
+    return ok(updated)
+
+@auth_router.delete("/users/{username}")
+async def auth_users_delete(username: str, user=Depends(require_admin)):
+    if username == user.get("username"):
+        raise ValueError("you cannot delete your own account")
+    return ok(auth.delete_user(username))
+
+@auth_router.post("/users/{username}/reset-password")
+async def auth_users_reset_password(username: str, req: UserResetPasswordIn, user=Depends(require_admin)):
+    result = auth.reset_password(username, req.new_password)
+    audit.log("auth_password_reset_by_admin", {"username": username}, actor=user["username"])
+    return ok(result)
+
 system_router = APIRouter(prefix="/api", tags=["system"])
 
 
@@ -114,10 +166,10 @@ class ExportTaskIn(CamelModel):
 def _ui_preview_enabled():
     return str(os.environ.get("RASPUTIN_UI_PREVIEW", "")).strip().lower() in {"1", "true", "yes", "on"}
 
-def _setup_status():
+def _setup_status(username="admin", is_admin=True):
     auth_state = auth.load_public()
     security_state = security.load()
-    workspace_state = workspace.get_active()
+    workspace_state = workspace.get_active(username, is_admin)
     output_state = output.get_config()
     prefs = preferences.load()
     all_models = model_registry.all_models()
@@ -231,6 +283,8 @@ async def ui_config():
 @system_router.get("/ui/bootstrap")
 
 async def ui_bootstrap(_user=Depends(current_user)):
+    username = _user.get("username", "admin")
+    is_admin = _user.get("role") == "admin"
     try:
         warsat_runtime_state = await asyncio.to_thread(warsat.containers)
     except AppError:
@@ -240,36 +294,37 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "model_providers": model_providers.public_provider_options(),
         "model_catalog": model_catalog.catalog(refresh=False),
         "skills": skill_store.enabled_names(),
-        "tasks": hub.all_tasks(limit=80, include_details=False),
-        "memory": load_memory(),
-        "memory_review": memory_store.pending_review(),
+        "tasks": hub.all_tasks(limit=80, include_details=False, owner_id=username),
+        "memory": load_memory(username),
+        "memory_review": memory_store.pending_review(username),
         "rag_stats": rag.stats(),
-        "workspace": workspace.get_active(),
+        "workspace": workspace.get_active(username, is_admin),
         "graph_stats": graphify.stats(),
         "security": {**security.load(), "native": workspace.is_native()},
-        "audit": {"events": audit.recent(100)},
+        "audit": {"events": audit.recent(100) if is_admin else []},
         "output": output.get_config(),
-        "preferences": preferences.load(),
-        "sessions": hub.sessions(),
-        "approvals": approvals.list_approvals(),
+        "preferences": preferences.load(username),
+        "sessions": hub.sessions(owner_id=username),
+        "approvals": approvals.list_approvals() if is_admin else [],
         "skill_registry": skill_store.list_skills(),
         "telegram": telegram.public_config(),
         "schedules": schedules.list_schedules(),
         "warsat": {**warsat.list_protocols(), "runtimes": warsat_runtime_state},
-        "chat_folders": hub.chat_folders(),
+        "chat_folders": hub.chat_folders(username),
         "tools": tool_relay.catalog(),
         "mcp_relays": mcp_relay.servers(),
         "archive": archive.sessions(),
         "trials": trials.runs(),
-        "setup": _setup_status(),
+        "setup": _setup_status(username, is_admin),
         "ui_preview_enabled": _ui_preview_enabled(),
+        "account": {**_user, "can_administer": is_admin},
     })
 
 
 @system_router.get("/setup/status")
 
 async def setup_status(_user=Depends(current_user)):
-    return ok(_setup_status())
+    return ok(_setup_status(_user.get("username", "admin"), _user.get("role") == "admin"))
 
 @system_router.get("/security")
 
@@ -278,42 +333,42 @@ async def security_get(_user=Depends(current_user)):
 
 @system_router.post("/security")
 
-async def security_post(req: dict, _user=Depends(current_user)):
+async def security_post(req: dict, _user=Depends(require_admin)):
     return ok(security.save(req))
 
 @system_router.get("/preferences")
 
 async def preferences_get(_user=Depends(current_user)):
-    return ok(preferences.load())
+    return ok(preferences.load(_user.get("username")))
 
 @system_router.post("/preferences")
 
 async def preferences_post(req: dict, _user=Depends(current_user)):
-    return ok(preferences.save(req))
+    return ok(preferences.save(req, _user.get("username")))
 
 @system_router.get("/audit")
 
-async def audit_get(limit: int = 100, _user=Depends(current_user)):
+async def audit_get(limit: int = 100, _user=Depends(require_admin)):
     return ok({"events": audit.recent(limit)})
 
 @system_router.get("/approvals")
 
-async def approvals_get(status: str | None = None, limit: int = 100, _user=Depends(current_user)):
+async def approvals_get(status: str | None = None, limit: int = 100, _user=Depends(require_admin)):
     return ok(approvals.list_approvals(status, limit))
 
 @system_router.post("/approvals/{approval_id}/approve")
 
-async def approvals_approve(approval_id: str, _user=Depends(current_user)):
+async def approvals_approve(approval_id: str, _user=Depends(require_admin)):
     return ok(approvals.approve(approval_id))
 
 @system_router.post("/approvals/{approval_id}/deny")
 
-async def approvals_deny(approval_id: str, _user=Depends(current_user)):
+async def approvals_deny(approval_id: str, _user=Depends(require_admin)):
     return ok(approvals.deny(approval_id))
 
 @system_router.post("/approvals/{approval_id}/expire")
 
-async def approvals_expire(approval_id: str, _user=Depends(current_user)):
+async def approvals_expire(approval_id: str, _user=Depends(require_admin)):
     return ok(approvals.expire(approval_id))
 
 @system_router.get("/integrations/telegram")
@@ -323,17 +378,17 @@ async def telegram_get(_user=Depends(current_user)):
 
 @system_router.post("/integrations/telegram/configure")
 
-async def telegram_configure(req: TelegramConfigIn, _user=Depends(current_user)):
+async def telegram_configure(req: TelegramConfigIn, _user=Depends(require_admin)):
     return ok(telegram.configure(req.bot_token, req.allowed_chat_id, req.enabled, req.redaction_mode))
 
 @system_router.post("/integrations/telegram/test")
 
-async def telegram_test(_user=Depends(current_user)):
+async def telegram_test(_user=Depends(require_admin)):
     return ok(telegram.test_message())
 
 @system_router.post("/integrations/telegram/disable")
 
-async def telegram_disable(_user=Depends(current_user)):
+async def telegram_disable(_user=Depends(require_admin)):
     return ok(telegram.disable())
 
 @system_router.get("/output")
@@ -343,27 +398,29 @@ async def output_get(_user=Depends(current_user)):
 
 @system_router.post("/output")
 
-async def output_post(req: dict, _user=Depends(current_user)):
+async def output_post(req: dict, _user=Depends(require_admin)):
     security.require("allow_file_write")
     return ok(output.save_config(req))
 
 @system_router.post("/output/export-task")
 
-async def output_export_task(req: ExportTaskIn, _user=Depends(current_user)):
+async def output_export_task(req: ExportTaskIn, _user=Depends(require_member)):
     security.require("allow_file_write")
-    task = hub.get_task(req.task_id)
+    task = hub.get_task(req.task_id, _user["username"])
+    if not task:
+        raise AppError("task_not_found", "Task was not found.", 404)
     return ok(output.export_markdown(task, req.folder))
 
 @system_router.get("/events")
 
 async def events(request: Request, _user=Depends(current_user)):
     from fastapi.responses import StreamingResponse
-    q = await hub.subscribe()
+    q = await hub.subscribe(_user.get("username", "admin"))
 
     async def gen():
         while True:
             if await request.is_disconnected():
-                hub.listeners.discard(q)
+                hub.listeners.pop(q, None)
                 break
             try:
                 data = await q.get()
@@ -433,7 +490,7 @@ async def models(_user=Depends(current_user)):
 
 @models_router.post("/models/download")
 
-async def start_model_download(req: ModelDownloadReq, _user=Depends(current_user)):
+async def start_model_download(req: ModelDownloadReq, _user=Depends(require_admin)):
     state = model_acquisition.start_download(req.modelId)
     return ok(state)
 
@@ -460,7 +517,7 @@ async def model_catalog_get(fit: bool = False, _user=Depends(current_user)):
 
 @models_router.post("/model-catalog/refresh")
 
-async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=Depends(current_user)):
+async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=Depends(require_admin)):
     return ok(model_catalog.catalog(refresh=True, force=bool(req.force if req else False)))
 
 @models_router.get("/model-catalog/search")
@@ -479,52 +536,52 @@ async def model_catalog_detail(model_id: str, _user=Depends(current_user)):
 
 @models_router.post("/model-registry/upsert")
 
-async def model_registry_upsert(req: ModelIn, _user=Depends(current_user)):
+async def model_registry_upsert(req: ModelIn, _user=Depends(require_admin)):
     return ok(model_registry.upsert(req.model_dump()))
 
 @models_router.post("/model-registry/import-gguf")
 
-async def model_registry_import_gguf(req: GgufImportIn, _user=Depends(current_user)):
+async def model_registry_import_gguf(req: GgufImportIn, _user=Depends(require_admin)):
     return ok(model_registry.import_gguf(req.model_dump()))
 
 @models_router.post("/model-registry/scan-gguf")
 
-async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(current_user)):
+async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(require_admin)):
     return ok(model_registry.scan_gguf(req.root if req else None))
 
 @models_router.post("/model-registry/start")
 
-async def model_registry_start(req: ModelKeyIn, _user=Depends(current_user)):
+async def model_registry_start(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.start_model(req.key))
 
 @models_router.post("/model-registry/stop")
 
-async def model_registry_stop(req: ModelKeyIn, _user=Depends(current_user)):
+async def model_registry_stop(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.stop_model(req.key))
 
 @models_router.post("/model-registry/test")
 
-async def model_registry_test(req: ModelKeyIn, _user=Depends(current_user)):
+async def model_registry_test(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.test_model(req.key))
 
 @models_router.post("/model-registry/discover")
 
-async def model_registry_discover(req: ModelKeyIn, _user=Depends(current_user)):
+async def model_registry_discover(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.discover_model(req.key))
 
 @models_router.post("/model-registry/repair")
 
-async def model_registry_repair(req: ModelKeyIn, _user=Depends(current_user)):
+async def model_registry_repair(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.repair_model(req.key))
 
 @models_router.post("/model-registry/logs")
 
-async def model_registry_logs(req: ModelLogsIn, _user=Depends(current_user)):
+async def model_registry_logs(req: ModelLogsIn, _user=Depends(require_admin)):
     return ok(model_registry.logs_model(req.key, req.limit))
 
 @models_router.post("/model-registry/delete")
 
-async def model_registry_delete(req: ModelKeyIn, _user=Depends(current_user)):
+async def model_registry_delete(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.delete_model(req.key))
 
 router.include_router(auth_router)

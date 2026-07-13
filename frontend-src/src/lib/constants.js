@@ -14,6 +14,7 @@ export const settingsItems = [
   ["general", "General", "platform defaults"],
   ["runtime", "Runtime", "system limits"],
   ["security", "Security", "keys & secrets"],
+  ["accounts", "Accounts", "users & access"],
   ["models", "Models", "AI governance"],
   ["deployments", "Deployments", "WarSat rules"],
   ["integrations", "Integrations", "external systems"],

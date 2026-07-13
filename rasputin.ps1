@@ -4,6 +4,8 @@ param(
 
     [switch]$EnableWarSat,
     [switch]$Native,
+    [switch]$Lan,
+    [string[]]$TlsName = @(),
     [ValidateRange(0, 65535)]
     [int]$Port = 0
 )
@@ -94,7 +96,14 @@ function Start-Rasputin {
     }
 
     $port = if ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
-    $url = "http://127.0.0.1:$port"
+    $tlsCert = Join-Path $PSScriptRoot "data\tls\rasputin.pem"
+    $tlsKey = Join-Path $PSScriptRoot "data\tls\rasputin-key.pem"
+    $https = (Test-Path $tlsCert) -and (Test-Path $tlsKey)
+    $env:RASPUTIN_HTTPS = if ($https) { "1" } else { "0" }
+    if ($Lan) { $env:WRAPPER_BIND = "0.0.0.0" }
+    $scheme = if ($https) { "https" } else { "http" }
+    $browserHost = if ($Lan -and $https) { $env:COMPUTERNAME } else { "localhost" }
+    $url = "${scheme}://${browserHost}:$port"
 
     Write-Host "Starting Rasputin on $url" -ForegroundColor Cyan
 
@@ -152,7 +161,7 @@ function Stop-Rasputin {
 }
 
 function Start-Native {
-    param([int]$RequestedPort = 0)
+    param([int]$RequestedPort = 0, [switch]$AllowLan)
 
     # Native (no-Docker) launch: venv bootstrap + uvicorn. Runtime data goes to
     # %LOCALAPPDATA%\Rasputin\data (a fresh instance) unless RASPUTIN_DATA_DIR is
@@ -194,14 +203,63 @@ function Start-Native {
         Write-Host "No prebuilt frontend found (frontend\index.html). Build once with: npm ci; npm run build" -ForegroundColor Yellow
     }
 
-    $env:HOST = "127.0.0.1"
+    $tlsDir = Join-Path $PSScriptRoot "data\tls"
+    $tlsCert = Join-Path $tlsDir "rasputin.pem"
+    $tlsKey = Join-Path $tlsDir "rasputin-key.pem"
+    $https = (Test-Path $tlsCert) -and (Test-Path $tlsKey)
+    $env:HOST = if ($AllowLan) { "0.0.0.0" } else { "127.0.0.1" }
     $env:PORT = "$port"
     Remove-Item Env:\WRAPPER_RUNTIME -ErrorAction SilentlyContinue   # native, not docker
+    if ($https) {
+        $env:RASPUTIN_HTTPS = "1"
+        $env:RASPUTIN_TLS_CERT_FILE = $tlsCert
+        $env:RASPUTIN_TLS_KEY_FILE = $tlsKey
+        $hostsFile = Join-Path $tlsDir "hosts.txt"
+        if (Test-Path $hostsFile) {
+            $env:RASPUTIN_ALLOWED_HOSTS = ((Get-Content $hostsFile) -join ",")
+        }
+    } else {
+        Remove-Item Env:\RASPUTIN_HTTPS -ErrorAction SilentlyContinue
+        Remove-Item Env:\RASPUTIN_TLS_CERT_FILE -ErrorAction SilentlyContinue
+        Remove-Item Env:\RASPUTIN_TLS_KEY_FILE -ErrorAction SilentlyContinue
+    }
 
+    $scheme = if ($https) { "https" } else { "http" }
+    $browserHost = if ($AllowLan -and $https) { $env:COMPUTERNAME } else { "localhost" }
     Write-Host ""
-    Write-Host "Starting Rasputin (native) at http://127.0.0.1:$port" -ForegroundColor Green
+    Write-Host "Starting Rasputin (native) at ${scheme}://${browserHost}:$port" -ForegroundColor Green
     Write-Host "On a fresh data dir the first-boot admin credentials print in the log below. Ctrl+C stops." -ForegroundColor Gray
     & $vpy (Join-Path $PSScriptRoot "server.py")
+}
+
+function Setup-Https {
+    $pythonPath = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+    $pythonArgs = @()
+    if (-not (Test-Path $pythonPath)) {
+        $python = Get-Command python -ErrorAction SilentlyContinue
+        if ($python) {
+            $pythonPath = $python.Source
+        } else {
+            $python = Get-Command py -ErrorAction SilentlyContinue
+            if ($python) {
+                $pythonPath = $python.Source
+                $pythonArgs = @("-3")
+            } else {
+                $pythonPath = $null
+            }
+        }
+    }
+    if (-not $pythonPath) {
+        Write-Host "Python 3 is required to run the HTTPS setup helper." -ForegroundColor Red
+        exit 1
+    }
+    $certArgs = @((Join-Path $PSScriptRoot "scripts\setup_https.py"), "--output-dir", (Join-Path $PSScriptRoot "data\tls"))
+    foreach ($name in $TlsName) { $certArgs += @("--name", $name) }
+    & $pythonPath @pythonArgs @certArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Host ""
+    Write-Host "HTTPS is ready. Restart Rasputin to use it." -ForegroundColor Green
+    Write-Host "For other LAN devices, install mkcert's rootCA.pem on each device; never copy rootCA-key.pem." -ForegroundColor Yellow
 }
 
 function Invoke-DataMigration {
@@ -249,7 +307,7 @@ Show-Header
 switch ($Command.ToLower()) {
     "start" {
         if ($Native) {
-            Start-Native -RequestedPort $Port
+            Start-Native -RequestedPort $Port -AllowLan:$Lan
         } else {
             if ($Port -gt 0) {
                 Write-Host "-Port is a native daily-driver option. Use -Native, or set WRAPPER_PORT for Docker mode." -ForegroundColor Red
@@ -262,15 +320,18 @@ switch ($Command.ToLower()) {
     "credentials" { Test-DockerEnv; Get-Credentials }
     "reset-password" { Test-DockerEnv; Reset-Password }
     "migrate-data" { Invoke-DataMigration }
+    "setup-https" { Setup-Https }
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin (Docker) in the background"
-        Write-Host "  .\rasputin.ps1 start -Native [-Port 8788] - Starts the native daily driver (venv + uvicorn)"
+        Write-Host "  .\rasputin.ps1 start -Native [-Port 8788] [-Lan] - Starts the native daily driver"
+        Write-Host "  .\rasputin.ps1 start -Lan        - Publishes Docker mode on the LAN (use HTTPS)"
         Write-Host "  .\rasputin.ps1 start -EnableWarSat - Starts Rasputin with Docker Control layer"
         Write-Host "  .\rasputin.ps1 stop              - Stops all Rasputin containers"
         Write-Host "  .\rasputin.ps1 credentials       - Reads the original generated login from current container logs"
         Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
         Write-Host "  .\rasputin.ps1 migrate-data      - Moves existing .\data into the named volume (idempotent)"
+        Write-Host "  .\rasputin.ps1 setup-https [-TlsName rasputin.home,192.168.1.10] - Creates a trusted mkcert certificate"
         Write-Host ""
     }
 }

@@ -1,4 +1,5 @@
 import json
+import json
 import os
 import sqlite3
 import time
@@ -58,6 +59,16 @@ def init_db():
               key TEXT PRIMARY KEY,
               value TEXT NOT NULL,
               updated_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS auth_sessions (
+              id TEXT PRIMARY KEY,
+              token_hash TEXT NOT NULL UNIQUE,
+              username TEXT NOT NULL,
+              role TEXT NOT NULL,
+              created_at REAL NOT NULL,
+              last_seen REAL NOT NULL,
+              expires_at REAL NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS sessions (
@@ -210,6 +221,26 @@ def init_db():
         }
         if "folder" not in session_columns:
             conn.execute("ALTER TABLE sessions ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+        if "owner_id" not in session_columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
+
+        task_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if "owner_id" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
+
+        approval_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(approvals)").fetchall()
+        }
+        if "owner_id" not in approval_columns:
+            conn.execute("ALTER TABLE approvals ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
+
+        memory_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(memory_items)").fetchall()
+        }
+        if "owner_id" not in memory_columns:
+            conn.execute("ALTER TABLE memory_items ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
             
         messages_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()
@@ -278,6 +309,22 @@ def init_db():
             )
         except sqlite3.OperationalError:
             pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_owner_updated ON sessions(owner_id, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_owner_created ON tasks(owner_id, created_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token_hash)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(username)")
+        conn.commit()
+
+
+def claim_legacy_ownership(username):
+    """Assign pre-multi-user records to the appliance's original administrator."""
+    owner = str(username or "admin").strip() or "admin"
+    init_db()
+    with _lock, connect() as conn:
+        conn.execute("UPDATE sessions SET owner_id=? WHERE owner_id IS NULL OR owner_id=''", (owner,))
+        conn.execute("UPDATE tasks SET owner_id=? WHERE owner_id IS NULL OR owner_id=''", (owner,))
+        conn.execute("UPDATE approvals SET owner_id=? WHERE owner_id IS NULL OR owner_id=''", (owner,))
+        conn.execute("UPDATE memory_items SET owner_id=? WHERE owner_id IS NULL OR owner_id=''", (owner,))
         conn.commit()
 
 

@@ -136,6 +136,8 @@ Then, launch the manager:
 The `rasputin` manager supports the following commands:
 - `start` : Builds and runs Rasputin in the background.
 - `start -Native [-Port 8788]` *(Windows)* : Runs the wrapper natively in the foreground; runtime data uses `%LOCALAPPDATA%` by default. `-Port` applies only to native mode.
+- `start -Native [-Port 8788] [-Lan]` *(Windows)* : Add `-Lan` to listen on the host network after configuring HTTPS.
+- `setup-https [-TlsName name,address]` *(Windows)* : Uses the installed `mkcert` executable to create a locally trusted leaf certificate under ignored `data/tls/`.
 - `start -EnableWarSat` : Runs Rasputin with the Docker Control layer enabled (allowing it to deploy local models).
 - `stop` : Safely tears down the containers.
 - `credentials` : Reads the original generated login from current container logs, if that line still exists.
@@ -146,6 +148,39 @@ The first-run password is generated only when a fresh data store creates its adm
 or log loss even though the account persists. In that case run `.\rasputin.ps1 reset-password`.
 On macOS/Linux use `docker compose exec rasputin-wrapper python -m backend.tools.reset_password`.
 For native mode, use `python -m backend.tools.reset_password` against that instance's data dir.
+
+### Local accounts and simultaneous users
+
+An administrator can create multiple local accounts in **Settings → Accounts**. Accounts are
+stored in the appliance's local data store; login sessions are persistent, revocable, hashed
+server-side records. Each user gets private chats, tasks, preferences, and memory. Approved
+workspaces are shared only through explicit viewer/contributor/developer/owner membership. Models,
+security policy, WarSat, providers, and platform settings remain appliance-wide and admin-only.
+This is a single-appliance account model, not SaaS tenant isolation: the machine administrator
+still controls the data directory and process.
+
+### Trusted local HTTPS with mkcert
+
+Rasputin integrates with the official [mkcert project](https://github.com/FiloSottile/mkcert) for
+development and private-LAN certificates. Install `mkcert` first (on Windows, `choco install
+mkcert` or `scoop bucket add extras; scoop install mkcert`), then run:
+
+```powershell
+# localhost + loopback + this computer's hostname
+.\rasputin.ps1 setup-https
+
+# Include every DNS name/IP other devices will use
+.\rasputin.ps1 setup-https -TlsName rasputin.home,192.168.1.25
+
+# Docker server or native daily driver, reachable on the LAN
+.\rasputin.ps1 start -Lan
+.\rasputin.ps1 start -Native -Port 8788 -Lan
+```
+
+The launcher detects `data/tls/rasputin.pem` and `rasputin-key.pem`, enables TLS, and marks session
+cookies Secure. For another device to trust the site, install the **public** mkcert `rootCA.pem` on
+that device. Never copy or share `rootCA-key.pem`. mkcert is for local/private use; use a publicly
+trusted certificate and reverse proxy for an Internet-facing deployment.
 
 ### Advanced Docker Profiles (Manual Mode)
 - **RAG Vector Database:** `docker compose --profile rag up --build`
@@ -172,7 +207,7 @@ Remove-Item Env:\RASPUTIN_DATA_DIR -ErrorAction SilentlyContinue
 .\rasputin.ps1 start -Native -Port 8788
 ```
 
-Open the two instances with these exact hostnames:
+Without HTTPS, open the two instances with these exact hostnames:
 
 - Docker: `http://127.0.0.1:8787`
 - Native: `http://localhost:8788`

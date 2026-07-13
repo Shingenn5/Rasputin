@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from backend.api.core import CamelModel, current_user, hub
+from backend.api.core import CamelModel, current_user, require_admin, require_member, hub
 from backend import archive
 from backend import trials
 from backend import warsat
@@ -7,6 +7,7 @@ from backend.core import workspace
 from backend.core import host_fs
 from backend.core import sandbox_exec
 from backend.core import audit
+from backend.core import auth
 from backend.core import security
 from backend.core.response import ok, fail, camelize, AppError, _camel_code
 from fastapi.responses import StreamingResponse
@@ -76,12 +77,12 @@ async def warsat_hardware(_user=Depends(current_user)):
 
 @warsat_router.post("/plan")
 
-async def warsat_plan(req: WarsatPlanIn, _user=Depends(current_user)):
+async def warsat_plan(req: WarsatPlanIn, _user=Depends(require_admin)):
     return ok(await asyncio.to_thread(warsat.make_plan, req.model_dump()))
 
 @warsat_router.post("/deploy")
 
-async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
+async def warsat_deploy(req: WarsatDeployIn, _user=Depends(require_admin)):
     # Deploys that will actually execute (fresh approval in hand, or a prior
     # approval grant for the identical deployment) pull images and boot
     # containers, which can take minutes: stream NDJSON progress so the UI
@@ -114,17 +115,17 @@ async def warsat_deploy(req: WarsatDeployIn, _user=Depends(current_user)):
 
 @warsat_router.post("/logs")
 
-async def warsat_logs(req: WarsatContainerIn, _user=Depends(current_user)):
+async def warsat_logs(req: WarsatContainerIn, _user=Depends(require_admin)):
     return ok(await asyncio.to_thread(warsat.logs, req.container_name, req.limit))
 
 @warsat_router.post("/stop")
 
-async def warsat_stop(req: WarsatContainerIn, _user=Depends(current_user)):
+async def warsat_stop(req: WarsatContainerIn, _user=Depends(require_admin)):
     return ok(await asyncio.to_thread(warsat.stop, req.container_name, req.approval_id))
 
 @warsat_router.post("/restart")
 
-async def warsat_restart(req: WarsatContainerIn, _user=Depends(current_user)):
+async def warsat_restart(req: WarsatContainerIn, _user=Depends(require_admin)):
     return ok(await asyncio.to_thread(warsat.restart, req.container_name, req.approval_id))
 
 @warsat_router.get("/discover")
@@ -141,7 +142,7 @@ class WarsatImportDiscoveredIn(CamelModel):
 
 @warsat_router.post("/import-discovered")
 
-async def warsat_import_discovered(req: WarsatImportDiscoveredIn, _user=Depends(current_user)):
+async def warsat_import_discovered(req: WarsatImportDiscoveredIn, _user=Depends(require_admin)):
     """Register a discovered container model endpoint into the model registry."""
     return ok(await asyncio.to_thread(
         warsat.import_discovered,
@@ -530,51 +531,59 @@ class WorkspaceMutationPreviewIn(CamelModel):
     content: str | None = None
     max_items: int = 40
 
+class WorkspaceMemberIn(CamelModel):
+    workspace_id: str
+    username: str
+    role: str | None = None
+
 @workspace_router.get("/workspace")
 
 async def workspace_get(_user=Depends(current_user)):
-    return ok(workspace.get_active())
+    return ok(workspace.get_active(_user["username"], _user["role"] == "admin"))
 
 @workspace_router.get("/workspaces")
 
 async def workspaces_get(_user=Depends(current_user)):
-    return ok(workspace.all_workspaces())
+    return ok(workspace.all_workspaces(_user["username"], _user["role"] == "admin"))
 
 @workspace_router.get("/workspace/roots")
 
 async def workspace_roots(_user=Depends(current_user)):
     security.require("allow_file_read")
-    return ok(workspace.approved_roots())
+    return ok(workspace.approved_roots(_user["username"], _user["role"] == "admin"))
 
 @workspace_router.post("/workspace/browse")
 
 async def workspace_browse(req: WorkspaceBrowseIn, _user=Depends(current_user)):
     security.require("allow_file_read")
+    workspace.require_user_access(req.root_id or req.path or ".", _user["username"], "viewer", _user["role"] == "admin")
     return ok(workspace.browse(req.root_id, req.path))
 
 @workspace_router.post("/workspace/preview-file")
 
 async def workspace_preview_file(req: WorkspacePreviewIn, _user=Depends(current_user)):
     security.require("allow_file_read")
+    workspace.require_user_access(req.root_id or req.path, _user["username"], "viewer", _user["role"] == "admin")
     return ok(workspace.preview_file(req.root_id, req.path, req.max_bytes))
 
 @workspace_router.post("/workspace/search")
 
 async def workspace_search(req: WorkspaceSearchIn, _user=Depends(current_user)):
     security.require("allow_file_read")
+    workspace.require_user_access(req.root_id or req.path or ".", _user["username"], "viewer", _user["role"] == "admin")
     return ok(workspace.search_files(req.root_id, req.path, req.query, req.max_results, req.include_content))
 
 @workspace_router.post("/workspace/approve")
 
-async def workspace_approve(req: WorkspaceApproveIn, _user=Depends(current_user)):
+async def workspace_approve(req: WorkspaceApproveIn, _user=Depends(require_admin)):
     security.require("allow_file_read")
-    item = workspace.approve(req.path, req.name, req.read_only)
+    item = workspace.approve(req.path, req.name, req.read_only, _user["username"])
     audit.log("workspace_approved", {"path": req.path, "name": req.name, "read_only": req.read_only})
     return ok(item)
 
 @workspace_router.post("/workspace/host-browse")
 
-async def workspace_host_browse(req: HostBrowseIn, _user=Depends(current_user)):
+async def workspace_host_browse(req: HostBrowseIn, _user=Depends(require_admin)):
     # Docker mode gates host browsing behind docker-control (mounting drives
     # Docker). Native has no container -- browsing the host FS to pick a project
     # folder is a plain, audited read, so it uses the file-read grant instead.
@@ -590,12 +599,12 @@ async def workspace_host_browse(req: HostBrowseIn, _user=Depends(current_user)):
 
 @workspace_router.post("/workspace/mount-plan")
 
-async def workspace_mount_plan(req: WorkspaceMountIn, _user=Depends(current_user)):
+async def workspace_mount_plan(req: WorkspaceMountIn, _user=Depends(require_admin)):
     return ok(workspace.mount_plan(req.host_path, req.name, req.read_only))
 
 @workspace_router.post("/workspace/mount-apply")
 
-async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(current_user)):
+async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(require_admin)):
     if workspace.is_native():
         security.require("allow_file_read")
     else:
@@ -606,14 +615,14 @@ async def workspace_mount_apply(req: WorkspaceMountIn, _user=Depends(current_use
 
 @workspace_router.get("/workspace/mount-requests")
 
-async def workspace_mount_requests_get(_user=Depends(current_user)):
+async def workspace_mount_requests_get(_user=Depends(require_admin)):
     if not workspace.is_native():
         security.require("allow_docker_control")
     return ok(workspace.list_mount_requests())
 
 @workspace_router.post("/workspace/mount-requests/remove")
 
-async def workspace_mount_requests_remove(req: MountRequestRemoveIn, _user=Depends(current_user)):
+async def workspace_mount_requests_remove(req: MountRequestRemoveIn, _user=Depends(require_admin)):
     security.require("allow_docker_control")
     result = workspace.remove_mount_request(req.host_path)
     audit.log("workspace_mount_request_removed", {"hostPath": req.host_path})
@@ -621,8 +630,9 @@ async def workspace_mount_requests_remove(req: MountRequestRemoveIn, _user=Depen
 
 @workspace_router.post("/workspace/mutation-preview")
 
-async def workspace_mutation_preview(req: WorkspaceMutationPreviewIn, _user=Depends(current_user)):
+async def workspace_mutation_preview(req: WorkspaceMutationPreviewIn, _user=Depends(require_member)):
     security.require("allow_file_read")
+    workspace.require_user_access(req.workspace_path or ".", _user["username"], "developer", _user["role"] == "admin")
     plan = workspace.mutation_preview(req.kind, req.workspace_path, req.path, req.source, req.target, req.content, req.max_items)
     audit.log("workspace_mutation_preview", {
         "kind": plan["kind"],
@@ -634,19 +644,19 @@ async def workspace_mutation_preview(req: WorkspaceMutationPreviewIn, _user=Depe
 
 @workspace_router.post("/workspace/add")
 
-async def workspace_add(req: WorkspaceIn, _user=Depends(current_user)):
+async def workspace_add(req: WorkspaceIn, _user=Depends(require_admin)):
     security.require("allow_file_read")
     profile = {"read": True, "write": not bool(req.read_only), "reorganize": False}
-    return ok(workspace.add(req.path, req.name, profile))
+    return ok(workspace.add(req.path, req.name, profile, _user["username"]))
 
 @workspace_router.post("/workspace/remove")
 
-async def workspace_remove(req: WorkspaceRemoveIn, _user=Depends(current_user)):
+async def workspace_remove(req: WorkspaceRemoveIn, _user=Depends(require_admin)):
     return ok(workspace.remove(req.workspace_id))
 
 @workspace_router.post("/workspace/trust")
 
-async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(current_user)):
+async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(require_admin)):
     security.require("allow_file_write")
     item = workspace.set_trusted(req.workspace_id, req.trusted)
     audit.log("workspace_trust_changed", {"workspace_id": req.workspace_id, "trusted": req.trusted})
@@ -654,7 +664,7 @@ async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(current_user)):
 
 @workspace_router.post("/workspace/commands")
 
-async def workspace_commands(req: WorkspaceCommandsIn, _user=Depends(current_user)):
+async def workspace_commands(req: WorkspaceCommandsIn, _user=Depends(require_admin)):
     # Store per-workspace test/build/lint commands. Configuring them is a plain
     # settings write; actually running them stays gated by allow_shell_execution
     # + the workspace's separate Host Shell capability (see engine test-loop).
@@ -664,26 +674,29 @@ async def workspace_commands(req: WorkspaceCommandsIn, _user=Depends(current_use
 
 @workspace_router.post("/workspace/git-status")
 
-async def workspace_git_status(req: WorkspaceGitIn, _user=Depends(current_user)):
+async def workspace_git_status(req: WorkspaceGitIn, _user=Depends(require_member)):
+    workspace.require_user_access(req.workspace_path or ".", _user["username"], "developer", _user["role"] == "admin")
     # Touched-files list for the review UI (git status --porcelain, parsed).
     return ok(await hub.mcp.git_status(workspace_path=req.workspace_path))
 
 @workspace_router.post("/workspace/git-diff")
 
-async def workspace_git_diff(req: WorkspaceGitIn, _user=Depends(current_user)):
+async def workspace_git_diff(req: WorkspaceGitIn, _user=Depends(require_member)):
+    workspace.require_user_access(req.workspace_path or ".", _user["username"], "developer", _user["role"] == "admin")
     # Unified diff for a file (or the whole workspace when path is omitted).
     return ok(await hub.mcp.git_diff(workspace_path=req.workspace_path, path=req.path, staged=req.staged))
 
 @workspace_router.post("/workspace/git-restore")
 
-async def workspace_git_restore(req: WorkspaceGitRestoreIn, _user=Depends(current_user)):
+async def workspace_git_restore(req: WorkspaceGitRestoreIn, _user=Depends(require_member)):
+    workspace.require_user_access(req.workspace_path or ".", _user["username"], "developer", _user["role"] == "admin")
     # Revert a file's uncommitted changes. Destructive -> gated like git_commit
     # (trusted workspace bypasses approval; otherwise returns an approval preview).
     return ok(await hub.mcp.git_restore(req.path, workspace_path=req.workspace_path, approval_id=req.approval_id))
 
 @workspace_router.post("/workspace/host-shell")
 
-async def workspace_host_shell(req: WorkspaceHostShellIn, _user=Depends(current_user)):
+async def workspace_host_shell(req: WorkspaceHostShellIn, _user=Depends(require_admin)):
     security.require("allow_file_write")
     # Native Windows: enabling Host Shell needs the low-privilege sandbox account.
     # Auto-provision it on demand (one UAC prompt); fail closed if that doesn't
@@ -708,13 +721,22 @@ async def workspace_host_shell(req: WorkspaceHostShellIn, _user=Depends(current_
 
 async def workspace_select(req: WorkspaceIn, _user=Depends(current_user)):
     security.require("allow_file_read")
-    return ok(workspace.select(req.path))
+    return ok(workspace.select(req.path, _user["username"], _user["role"] == "admin"))
 
 @workspace_router.post("/workspace/list")
 
 async def workspace_list(req: WorkspaceIn, _user=Depends(current_user)):
     security.require("allow_file_read")
+    workspace.require_user_access(req.path, _user["username"], "viewer", _user["role"] == "admin")
     return ok(workspace.list_dirs(req.path))
+
+@workspace_router.post("/workspace/members")
+async def workspace_member_set(req: WorkspaceMemberIn, _user=Depends(require_admin)):
+    if not any(user["username"] == req.username and user["enabled"] for user in auth.list_users()):
+        raise ValueError("unknown or disabled user")
+    item = workspace.set_member(req.workspace_id, req.username, req.role)
+    audit.log("workspace_membership_changed", {"workspace_id": req.workspace_id, "username": req.username, "role": req.role}, actor=_user["username"])
+    return ok(item)
 
 archive_router = APIRouter(prefix="/api/archive", tags=["archive"])
 

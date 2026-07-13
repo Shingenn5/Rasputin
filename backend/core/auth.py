@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 from pathlib import Path
@@ -27,6 +28,9 @@ _sessions = {}
 _failed_logins = {}
 _boot_password = None
 
+ALLOWED_ROLES = {"admin", "member", "viewer"}
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{1,47}$")
+
 
 def _hash_password(password, salt=None):
     salt = salt or secrets.token_bytes(16)
@@ -44,10 +48,60 @@ def _verify(password, salt, expected):
     return hmac.compare_digest(actual, expected_bytes)
 
 
+def _token_hash(token):
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+
+def _normalize_auth_data(data):
+    data = dict(data or {})
+    users = []
+    changed = data.get("version") != 2
+    for raw in data.get("users", []):
+        user = dict(raw or {})
+        username = str(user.get("username") or "").strip()
+        if not username:
+            continue
+        role = str(user.get("role") or "member").lower()
+        if role not in ALLOWED_ROLES:
+            role = "member"
+            changed = True
+        if "id" not in user:
+            user["id"] = f"usr_{hashlib.sha256(username.casefold().encode()).hexdigest()[:16]}"
+            changed = True
+        if "enabled" not in user:
+            user["enabled"] = True
+            changed = True
+        user["username"] = username
+        user["role"] = role
+        users.append(user)
+    data["version"] = 2
+    data["users"] = users
+    return data, changed
+
+
+def _claim_legacy_user_data(username):
+    store.claim_legacy_ownership(username)
+    from backend.core import workspace
+    workspace.claim_legacy_membership(username)
+    for source, target in (
+        ("userPreferences", f"userPreferences:{username}"),
+        ("chat_folder_registry", f"chat_folder_registry:{username}"),
+    ):
+        if store.get_kv(target) is None:
+            legacy = store.get_kv(source)
+            if legacy is not None:
+                store.set_kv(target, legacy)
+
+
 def bootstrap():
     global _boot_password
     data = store.get_kv("auth")
     if data:
+        data, changed = _normalize_auth_data(data)
+        if changed:
+            store.set_kv("auth", data)
+        if data.get("users"):
+            _claim_legacy_user_data(data["users"][0].get("username", "admin"))
         return load_public()
         
     DATA_DIR.mkdir(exist_ok=True)
@@ -55,7 +109,10 @@ def bootstrap():
         with _lock:
             try:
                 data = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+                data, _ = _normalize_auth_data(data)
                 store.set_kv("auth", data)
+                if data.get("users"):
+                    _claim_legacy_user_data(data["users"][0].get("username", "admin"))
                 return load_public()
             except Exception:
                 pass
@@ -64,12 +121,14 @@ def bootstrap():
     password = os.environ.get("RASPUTIN_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
     hashed = _hash_password(password)
     data = {
-        "version": 1,
+        "version": 2,
         "created_at": time.time(),
         "users": [
             {
                 "username": username,
+                "id": f"usr_{hashlib.sha256(username.casefold().encode()).hexdigest()[:16]}",
                 "role": "admin",
+                "enabled": True,
                 "salt": hashed["salt"],
                 "password_hash": hashed["hash"],
             }
@@ -77,6 +136,7 @@ def bootstrap():
     }
     with _lock:
         store.set_kv("auth", data)
+        _claim_legacy_user_data(username)
     if not os.environ.get("RASPUTIN_ADMIN_PASSWORD"):
         _boot_password = password
         print("")
@@ -108,9 +168,97 @@ def load_public():
         "configured": True,
         "username": user.get("username", "admin"),
         "role": user.get("role", "admin"),
+        "user_count": len(data.get("users", [])),
         "localhost_bypass": localhost_bypass_enabled(),
         "test_bypass": test_bypass_enabled(),
     }
+
+
+def list_users():
+    data = load()
+    return [
+        {
+            "id": user.get("id"),
+            "username": user.get("username"),
+            "role": user.get("role", "member"),
+            "enabled": bool(user.get("enabled", True)),
+            "created_at": user.get("created_at"),
+            "password_changed_at": user.get("password_changed_at"),
+        }
+        for user in data.get("users", [])
+    ]
+
+
+def create_user(username, password, role="member"):
+    username = str(username or "").strip()
+    role = str(role or "member").strip().lower()
+    if not _USERNAME_RE.fullmatch(username):
+        raise ValueError("username must be 2-48 characters using letters, numbers, dot, dash, or underscore")
+    if len(str(password or "")) < 10:
+        raise ValueError("password must be at least 10 characters")
+    if role not in ALLOWED_ROLES:
+        raise ValueError("role must be admin, member, or viewer")
+    data = load()
+    if any(str(user.get("username", "")).casefold() == username.casefold() for user in data.get("users", [])):
+        raise ValueError("username already exists")
+    hashed = _hash_password(password)
+    user = {
+        "id": store.new_id("usr"),
+        "username": username,
+        "role": role,
+        "enabled": True,
+        "salt": hashed["salt"],
+        "password_hash": hashed["hash"],
+        "created_at": time.time(),
+    }
+    data.setdefault("users", []).append(user)
+    with _lock:
+        store.set_kv("auth", data)
+    audit.log("auth_user_created", {"username": username, "role": role})
+    return next(item for item in list_users() if item["username"] == username)
+
+
+def update_user(username, role=None, enabled=None):
+    data = load()
+    user = next((item for item in data.get("users", []) if item.get("username") == username), None)
+    if not user:
+        raise ValueError("unknown user")
+    if role is not None:
+        role = str(role).strip().lower()
+        if role not in ALLOWED_ROLES:
+            raise ValueError("role must be admin, member, or viewer")
+        if user.get("role") == "admin" and role != "admin" and sum(1 for item in data["users"] if item.get("role") == "admin" and item.get("enabled", True)) <= 1:
+            raise ValueError("cannot demote the last enabled administrator")
+        user["role"] = role
+    if enabled is not None:
+        enabled = bool(enabled)
+        if user.get("role") == "admin" and not enabled and sum(1 for item in data["users"] if item.get("role") == "admin" and item.get("enabled", True)) <= 1:
+            raise ValueError("cannot disable the last enabled administrator")
+        user["enabled"] = enabled
+    with _lock:
+        store.set_kv("auth", data)
+    revoke_user_sessions(username)
+    audit.log("auth_user_updated", {"username": username, "role": user.get("role"), "enabled": user.get("enabled", True)})
+    return next(item for item in list_users() if item["username"] == username)
+
+
+def delete_user(username):
+    data = load()
+    user = next((item for item in data.get("users", []) if item.get("username") == username), None)
+    if not user:
+        raise ValueError("unknown user")
+    if user.get("role") == "admin" and sum(1 for item in data["users"] if item.get("role") == "admin" and item.get("enabled", True)) <= 1:
+        raise ValueError("cannot delete the last enabled administrator")
+    data["users"] = [item for item in data["users"] if item.get("username") != username]
+    with store._lock, store.connect() as conn:
+        owned = conn.execute("SELECT COUNT(*) AS count FROM sessions WHERE owner_id=?", (username,)).fetchone()
+    if owned and int(owned["count"]):
+        raise ValueError("disable users with existing data instead of deleting them")
+    with _lock:
+        store.set_kv("auth", data)
+    revoke_user_sessions(username)
+    audit.log("auth_user_deleted", {"username": username})
+    return {"deleted": True, "username": username}
 
 
 def localhost_bypass_enabled():
@@ -157,6 +305,18 @@ def _prune_sessions():
     for token, session in list(_sessions.items()):
         if now - float(session.get("created_at", now)) > ttl:
             _sessions.pop(token, None)
+    with store._lock, store.connect() as conn:
+        conn.execute("DELETE FROM auth_sessions WHERE expires_at<=?", (now,))
+        conn.commit()
+
+
+def revoke_user_sessions(username):
+    for token, session in list(_sessions.items()):
+        if session.get("username") == username:
+            _sessions.pop(token, None)
+    with store._lock, store.connect() as conn:
+        conn.execute("DELETE FROM auth_sessions WHERE username=?", (username,))
+        conn.commit()
 
 
 def _check_login_rate(username, client):
@@ -188,26 +348,37 @@ def _clear_login_failures(username, client):
 
 
 def cookie_secure():
-    return os.environ.get("RASPUTIN_COOKIE_SECURE", "0").lower() in {"1", "true", "yes"}
+    explicit = os.environ.get("RASPUTIN_COOKIE_SECURE")
+    if explicit is not None:
+        return explicit.lower() in {"1", "true", "yes"}
+    return os.environ.get("RASPUTIN_HTTPS", "0").lower() in {"1", "true", "yes", "on"}
 
 
 def login(username, password, client="local"):
     _check_login_rate(username, client)
     data = load()
     user = next((u for u in data.get("users", []) if u.get("username") == username), None)
-    if not user or not _verify(password, user.get("salt", ""), user.get("password_hash", "")):
+    if not user or not user.get("enabled", True) or not _verify(password, user.get("salt", ""), user.get("password_hash", "")):
         _record_login_failure(username, client)
         audit.log("auth_login_failed", {"username": username}, actor=username or "unknown")
         raise PermissionError("invalid username or password")
     _clear_login_failures(username, client)
     token = secrets.token_urlsafe(32)
+    created_at = time.time()
+    expires_at = created_at + session_ttl_seconds()
     with _lock:
         _prune_sessions()
         _sessions[token] = {
             "username": user.get("username"),
             "role": user.get("role", "admin"),
-            "created_at": time.time(),
+            "created_at": created_at,
         }
+        with store._lock, store.connect() as conn:
+            conn.execute(
+                "INSERT INTO auth_sessions(id,token_hash,username,role,created_at,last_seen,expires_at) VALUES(?,?,?,?,?,?,?)",
+                (store.new_id("auths"), _token_hash(token), user.get("username"), user.get("role", "admin"), created_at, created_at, expires_at),
+            )
+            conn.commit()
     audit.log("auth_login", {"username": user.get("username")}, actor=user.get("username"))
     return token, {"username": user.get("username"), "role": user.get("role", "admin")}
 
@@ -217,6 +388,9 @@ def logout(token):
         session = _sessions.pop(token, None)
         if session:
             audit.log("auth_logout", {"username": session.get("username")}, actor=session.get("username", "local-user"))
+        with store._lock, store.connect() as conn:
+            conn.execute("DELETE FROM auth_sessions WHERE token_hash=?", (_token_hash(token),))
+            conn.commit()
     return {"logged_out": True}
 
 
@@ -236,6 +410,7 @@ def change_password(username, current_password, new_password):
         user["password_changed_at"] = time.time()
         with _lock:
             store.set_kv("auth", data)
+        revoke_user_sessions(username)
         audit.log("auth_password_changed", {"username": username}, actor=username)
         return {"changed": True, "username": username}
     raise ValueError("user missing")
@@ -266,7 +441,7 @@ def reset_password(username=None, new_password=None):
     user["password_changed_at"] = time.time()
     with _lock:
         store.set_kv("auth", data)
-        _sessions.clear()
+    revoke_user_sessions(username)
     audit.log("auth_password_reset", {"username": username}, actor=username)
     return {"username": username, "password": new_password}
 
@@ -275,8 +450,21 @@ def session_info(token):
     _prune_sessions()
     session = _sessions.get(token)
     if not session:
+        with store._lock, store.connect() as conn:
+            row = conn.execute(
+                "SELECT username,role,created_at,expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>?",
+                (_token_hash(token), time.time()),
+            ).fetchone()
+            if row:
+                session = dict(row)
+                _sessions[token] = session
+    if not session:
         return None
-    session["last_seen"] = time.time()
+    now = time.time()
+    session["last_seen"] = now
+    with store._lock, store.connect() as conn:
+        conn.execute("UPDATE auth_sessions SET last_seen=? WHERE token_hash=?", (now, _token_hash(token)))
+        conn.commit()
     return {
         "authenticated": True,
         "username": session.get("username"),
@@ -291,7 +479,9 @@ def public_session(token=None, client_host=""):
     if test_bypass_enabled():
         return {"authenticated": True, "username": "admin", "role": "admin"}
     if localhost_bypass_enabled() and client_host in _LOOPBACK_HOSTS:
-        return {"authenticated": True, "username": "admin", "role": "admin"}
+        public = load_public()
+        if public.get("user_count", 1) == 1:
+            return {"authenticated": True, "username": public.get("username", "admin"), "role": "admin"}
     if token:
         info = session_info(token)
         if info:

@@ -24,6 +24,7 @@ MAX_PREVIEW_BYTES = 128 * 1024
 MAX_SEARCH_FILE_BYTES = 256 * 1024
 
 _lock = Lock()
+WORKSPACE_ROLES = {"viewer": 1, "contributor": 2, "developer": 3, "owner": 4}
 
 
 def _slug(text):
@@ -132,7 +133,56 @@ def _public_item(item):
         "trusted": bool(item.get("trusted", False)),
         "allow_host_shell": bool(item.get("allow_host_shell", False)),
         "commands": dict(item.get("commands") or {}),
+        "members": dict(item.get("members") or {}),
     }
+
+
+def claim_legacy_membership(username):
+    """Make the original administrator owner of pre-ACL workspaces."""
+    data = _load()
+    changed = False
+    for item in data.get("workspaces", []):
+        if not isinstance(item.get("members"), dict) or not item.get("members"):
+            item["members"] = {username: "owner"}
+            changed = True
+    if changed:
+        _save(data)
+
+
+def access_role(workspace_ref, username, is_admin=False):
+    if is_admin:
+        return "owner"
+    try:
+        _, item = _find(workspace_ref)
+    except ValueError:
+        item = workspace_for_path(workspace_ref)
+    if not item:
+        return None
+    return (item.get("members") or {}).get(username)
+
+
+def require_user_access(workspace_ref, username, minimum="viewer", is_admin=False):
+    role = access_role(workspace_ref, username, is_admin)
+    if not role or WORKSPACE_ROLES.get(role, 0) < WORKSPACE_ROLES.get(minimum, 1):
+        raise PermissionError(f"workspace {minimum} access required")
+    return role
+
+
+def set_member(workspace_ref, username, role=None):
+    data, item = _find(workspace_ref)
+    members = dict(item.get("members") or {})
+    if role is None:
+        members.pop(username, None)
+    else:
+        role = str(role).lower()
+        if role not in WORKSPACE_ROLES:
+            raise ValueError("workspace role must be viewer, contributor, developer, or owner")
+        members[username] = role
+    if not any(value == "owner" for value in members.values()):
+        raise ValueError("a workspace must retain at least one owner")
+    item["members"] = members
+    _save(data)
+    return _public_item(item)
 
 
 def _is_relative_to(child, parent):
@@ -211,11 +261,13 @@ def _root_entry(root_id, name, path, mounted=True):
     }
 
 
-def approved_roots():
+def approved_roots(username=None, is_admin=False):
     data = _load()
     roots = []
     seen = set()
     for item in data.get("workspaces", []):
+        if username and not is_admin and not (item.get("members") or {}).get(username):
+            continue
         root = _abs(item)
         if root in seen or not root.exists():
             continue
@@ -234,7 +286,7 @@ def approved_roots():
             "trusted": public["trusted"],
         })
     workspace_dir = _workspace_dir()
-    if workspace_dir.exists() and workspace_dir not in seen:
+    if (not username or is_admin) and workspace_dir.exists() and workspace_dir not in seen:
         roots.append(_root_entry("workspace-folder", "Workspace Folder", workspace_dir))
     return {"roots": roots}
 
@@ -444,9 +496,9 @@ def search_files(root_id=None, path=None, query="", max_results=40, include_cont
     }
 
 
-def approve(path, name=None, read_only=True):
+def approve(path, name=None, read_only=True, owner_username=None):
     profile = {"read": True, "write": not bool(read_only), "reorganize": False}
-    return add(path, name or _display_name(path), profile)
+    return add(path, name or _display_name(path), profile, owner_username)
 
 
 def _validate_mount_host_path(raw):
@@ -745,11 +797,14 @@ def mutation_preview(kind, workspace_path=".", path=None, source=None, target=No
     }
 
 
-def all_workspaces():
+def all_workspaces(username=None, is_admin=False):
     data = _load()
+    items = data.get("workspaces", [])
+    if username and not is_admin:
+        items = [item for item in items if (item.get("members") or {}).get(username)]
     return {
-        "active_id": data.get("active_id", "project-root"),
-        "workspaces": [_public_item(w) for w in data.get("workspaces", [])],
+        "active_id": (data.get("active_by_user") or {}).get(username, data.get("active_id", "project-root")),
+        "workspaces": [_public_item(w) for w in items],
     }
 
 
@@ -816,10 +871,13 @@ def rel_path(path):
     return str(target)
 
 
-def get_active():
+def get_active(username=None, is_admin=False):
     data = _load()
-    active_id = data.get("active_id") or "project-root"
-    item = next((w for w in data.get("workspaces", []) if w.get("id") == active_id), data.get("workspaces", [])[0])
+    visible = data.get("workspaces", []) if (not username or is_admin) else [w for w in data.get("workspaces", []) if (w.get("members") or {}).get(username)]
+    if not visible:
+        return {"active_id": None, "active_path": None, "active_name": "No workspace access", "absolute_path": None, "root": str(ROOT), "workspaces": []}
+    active_id = (data.get("active_by_user") or {}).get(username, data.get("active_id") or "project-root")
+    item = next((w for w in visible if w.get("id") == active_id), visible[0])
     root = _abs(item)
     return {
         "active_id": item.get("id"),
@@ -827,7 +885,7 @@ def get_active():
         "active_name": item.get("name") or item.get("id"),
         "absolute_path": str(root),
         "root": str(ROOT),
-        "workspaces": [_public_item(w) for w in data.get("workspaces", [])],
+        "workspaces": [_public_item(w) for w in visible],
     }
 
 
@@ -881,7 +939,7 @@ def _unsafe_workspace_root(target):
     return None
 
 
-def add(path=".", name=None, permission_profile=None):
+def add(path=".", name=None, permission_profile=None, owner_username=None):
     target = _root_from_value(path)
     if not target.exists() or not target.is_dir():
         raise ValueError("workspace must be an existing folder")
@@ -917,13 +975,14 @@ def add(path=".", name=None, permission_profile=None):
         "last_used": None,
         "trusted": False,
         "allow_host_shell": False,
+        "members": {owner_username: "owner"} if owner_username else {},
     }
     data.setdefault("workspaces", []).append(item)
     _save(data)
     return _public_item(item)
 
 
-def select(path):
+def select(path, username=None, is_admin=False):
     data = _load()
     try:
         _, item = _find(path)
@@ -943,10 +1002,15 @@ def select(path):
         add(resolved, name=resolved_name, permission_profile=_read_only_profile())
         data = _load()
         _, item = _find(resolved)
+    if username:
+        require_user_access(item.get("id"), username, "viewer", is_admin)
     item["last_used"] = time.time()
-    data["active_id"] = item.get("id")
+    if username:
+        data.setdefault("active_by_user", {})[username] = item.get("id")
+    else:
+        data["active_id"] = item.get("id")
     _save(data)
-    return get_active()
+    return get_active(username, is_admin)
 
 
 def remove(workspace_id):

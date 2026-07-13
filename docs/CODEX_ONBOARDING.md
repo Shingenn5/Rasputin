@@ -73,6 +73,16 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
   `python -m backend.tools.reset_password`).
 - UI verification patterns (Playwright + testids + isolated server) live in
   `.claude/skills/verify/SKILL.md`.
+- **Accounts are local and multi-user** (2026-07-13). `backend/core/auth.py` persists appliance
+  users plus hashed, restart-safe login sessions. Chats/tasks/preferences/memory are owner-scoped;
+  workspaces use viewer/contributor/developer/owner membership. Appliance-wide models, security,
+  settings, providers, approvals, and WarSat mutations require the `admin` role. The original
+  administrator automatically inherits pre-migration records and workspaces.
+- **HTTPS delegates certificate trust to mkcert.** `scripts/setup_https.py` invokes the installed
+  official `mkcert` binary; `rasputin.ps1 setup-https` writes only the leaf certificate/key and SAN
+  list to ignored `data/tls/`. `server.py` enables Uvicorn TLS only when `RASPUTIN_HTTPS=1` and both
+  paths exist. Never copy mkcert's `rootCA-key.pem`; mkcert certificates are not a public-Internet
+  deployment strategy.
 
 ## 4. Hard rules (apply to every change)
 

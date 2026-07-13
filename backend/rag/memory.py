@@ -68,17 +68,17 @@ def init_memory():
     export_markdown()
 
 
-def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, status="saved", source_task_id=None, export=True):
+def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, status="saved", source_task_id=None, export=True, owner_id="admin"):
     kind = _normalize_kind(kind)
     item_id = store.new_id("mem")
     stamp = store.now()
     with store._lock, store.connect() as conn:
         conn.execute(
             """
-            INSERT INTO memory_items(id,kind,scope,workspace_id,content,sensitive,status,source_task_id,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO memory_items(id,kind,scope,workspace_id,content,sensitive,status,source_task_id,created_at,updated_at,owner_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (item_id, kind, scope, workspace_id, _text(content), int(bool(sensitive)), status, source_task_id, stamp, stamp),
+            (item_id, kind, scope, workspace_id, _text(content), int(bool(sensitive)), status, source_task_id, stamp, stamp, owner_id),
         )
         try:
             conn.execute(
@@ -97,13 +97,13 @@ def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, 
     })
     if status == "saved" and export:
         export_markdown()
-    return get_item(item_id)
+    return get_item(item_id, owner_id)
 
 
-def get_item(item_id):
+def get_item(item_id, owner_id="admin"):
     store.init_db()
     with store._lock, store.connect() as conn:
-        row = conn.execute("SELECT * FROM memory_items WHERE id=?", (item_id,)).fetchone()
+        row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
     return _public(row)
 
 
@@ -116,63 +116,63 @@ def _public(row):
     return data
 
 
-def list_items(status="saved", limit=200):
+def list_items(status="saved", limit=200, owner_id="admin"):
     init_memory()
     with store._lock, store.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM memory_items WHERE status=? ORDER BY updated_at DESC LIMIT ?",
-            (status, max(1, min(int(limit), 500))),
+            "SELECT * FROM memory_items WHERE status=? AND owner_id=? ORDER BY updated_at DESC LIMIT ?",
+            (status, owner_id, max(1, min(int(limit), 500))),
         ).fetchall()
     return [_public(row) for row in rows]
 
 
-def pending_review():
-    return {"items": list_items("pending", 200)}
+def pending_review(owner_id="admin"):
+    return {"items": list_items("pending", 200, owner_id)}
 
 
-def approve_item(item_id):
+def approve_item(item_id, owner_id="admin"):
     stamp = store.now()
     with store._lock, store.connect() as conn:
-        row = conn.execute("SELECT * FROM memory_items WHERE id=?", (item_id,)).fetchone()
+        row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
         if not row:
             raise ValueError("memory item missing")
-        conn.execute("UPDATE memory_items SET status='saved', updated_at=? WHERE id=?", (stamp, item_id))
+        conn.execute("UPDATE memory_items SET status='saved', updated_at=? WHERE id=? AND owner_id=?", (stamp, item_id, owner_id))
         conn.commit()
     audit.log("memory_item_approved", {"id": item_id})
     export_markdown()
-    return get_item(item_id)
+    return get_item(item_id, owner_id)
 
 
-def reject_item(item_id):
+def reject_item(item_id, owner_id="admin"):
     stamp = store.now()
     with store._lock, store.connect() as conn:
-        row = conn.execute("SELECT * FROM memory_items WHERE id=?", (item_id,)).fetchone()
+        row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
         if not row:
             raise ValueError("memory item missing")
-        conn.execute("UPDATE memory_items SET status='rejected', updated_at=? WHERE id=?", (stamp, item_id))
+        conn.execute("UPDATE memory_items SET status='rejected', updated_at=? WHERE id=? AND owner_id=?", (stamp, item_id, owner_id))
         conn.commit()
     audit.log("memory_item_rejected", {"id": item_id})
-    return get_item(item_id)
+    return get_item(item_id, owner_id)
 
 
-def suggest_from_task(task_id, objective, result, workspace_id=None):
+def suggest_from_task(task_id, objective, result, workspace_id=None, owner_id="admin"):
     lower = f"{objective}\n{result}".lower()
     if any(word in lower for word in ["prefer", "always", "never", "remember"]):
         return add_item("preference", {
             "source": "task_review",
             "objective": objective[:500],
             "note": result[:1000],
-        }, status="pending", source_task_id=task_id, sensitive=True)
+        }, status="pending", source_task_id=task_id, sensitive=True, owner_id=owner_id)
     if result:
         return add_item("workflow_lesson", {
             "source": "task_review",
             "objective": objective[:500],
             "summary": result[:1000],
-        }, workspace_id=workspace_id, status="pending", source_task_id=task_id)
+        }, workspace_id=workspace_id, status="pending", source_task_id=task_id, owner_id=owner_id)
     return None
 
 
-def search(query, limit=10):
+def search(query, limit=10, owner_id="admin"):
     init_memory()
     query = str(query or "").strip()
     if not query:
@@ -184,23 +184,23 @@ def search(query, limit=10):
                 SELECT m.*, bm25(memory_fts) AS score
                 FROM memory_fts
                 JOIN memory_items m ON m.id = memory_fts.id
-                WHERE memory_fts MATCH ? AND m.status='saved'
+                WHERE memory_fts MATCH ? AND m.status='saved' AND m.owner_id=?
                 ORDER BY score LIMIT ?
                 """,
-                (query, max(1, min(int(limit), 50))),
+                (query, owner_id, max(1, min(int(limit), 50))),
             ).fetchall()
         except Exception:
             rows = conn.execute(
-                "SELECT *, 0 AS score FROM memory_items WHERE status='saved' AND content LIKE ? ORDER BY updated_at DESC LIMIT ?",
-                (f"%{query}%", max(1, min(int(limit), 50))),
+                "SELECT *, 0 AS score FROM memory_items WHERE status='saved' AND owner_id=? AND content LIKE ? ORDER BY updated_at DESC LIMIT ?",
+                (owner_id, f"%{query}%", max(1, min(int(limit), 50))),
             ).fetchall()
     items = [_public(row) for row in rows]
     return {"query": query, "items": items}
 
 
-def load_memory():
+def load_memory(owner_id="admin"):
     init_memory()
-    items = list_items("saved", 500)
+    items = list_items("saved", 500, owner_id)
     prefs = {}
     facts = []
     sessions = []
@@ -218,26 +218,26 @@ def load_memory():
     return {"prefs": prefs, "facts": facts[-250:], "sessions": sessions[-100:]}
 
 
-def save_memory(data):
+def save_memory(data, owner_id="admin"):
     if not isinstance(data, dict):
-        return load_memory()
+        return load_memory(owner_id)
     for key, value in (data.get("prefs") or {}).items():
-        add_item("preference", {"key": key, "value": value})
+        add_item("preference", {"key": key, "value": value}, owner_id=owner_id)
     for value in data.get("facts") or []:
-        add_item("fact", value)
+        add_item("fact", value, owner_id=owner_id)
     for value in data.get("sessions") or []:
-        add_item("session", value)
-    return load_memory()
+        add_item("session", value, owner_id=owner_id)
+    return load_memory(owner_id)
 
 
-def remember(kind, value):
+def remember(kind, value, owner_id="admin"):
     kind = _normalize_kind(kind)
     if kind == "preference" and isinstance(value, dict):
         for key, pref in value.items():
-            add_item("preference", {"key": key, "value": pref})
+            add_item("preference", {"key": key, "value": pref}, owner_id=owner_id)
     else:
-        add_item(kind, value)
-    return load_memory()
+        add_item(kind, value, owner_id=owner_id)
+    return load_memory(owner_id)
 
 
 def export_markdown():

@@ -4,11 +4,14 @@ set -e
 cd "$(dirname "$0")"
 
 ENABLE_WARSAT=0
+ALLOW_LAN=0
 COMMAND="help"
 
 for arg in "$@"; do
     if [ "$arg" == "-EnableWarSat" ]; then
         ENABLE_WARSAT=1
+    elif [ "$arg" == "-Lan" ] || [ "$arg" == "--lan" ]; then
+        ALLOW_LAN=1
     elif [ "$COMMAND" == "help" ]; then
         COMMAND="$arg"
     fi
@@ -73,7 +76,17 @@ start_rasputin() {
     done
 
     PORT="${WRAPPER_PORT:-8787}"
-    URL="http://127.0.0.1:$PORT"
+    if [ -f "data/tls/rasputin.pem" ] && [ -f "data/tls/rasputin-key.pem" ]; then
+        export RASPUTIN_HTTPS=1
+        SCHEME=https
+    else
+        export RASPUTIN_HTTPS=0
+        SCHEME=http
+    fi
+    if [ "$ALLOW_LAN" -eq 1 ]; then
+        export WRAPPER_BIND=0.0.0.0
+    fi
+    URL="$SCHEME://localhost:$PORT"
 
     echo -e "\033[0;36mStarting Rasputin on $URL\033[0m"
 
@@ -119,6 +132,16 @@ start_rasputin() {
     fi
 }
 
+setup_https() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "Python 3 is required to run the HTTPS setup helper."
+        exit 1
+    fi
+    python3 scripts/setup_https.py --output-dir data/tls
+    echo "HTTPS is ready. Restart Rasputin to use it."
+    echo "Install rootCA.pem on other LAN devices; never copy rootCA-key.pem."
+}
+
 stop_rasputin() {
     check_docker
     echo -e "\033[0;36mStopping Rasputin...\033[0m"
@@ -139,12 +162,17 @@ case "$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')" in
         check_docker
         get_credentials
         ;;
+    setup-https)
+        setup_https
+        ;;
     *)
         echo -e "\033[0;36mUsage:\033[0m"
         echo "  ./rasputin.sh start             - Starts Rasputin in the background"
         echo "  ./rasputin.sh start -EnableWarSat - Starts Rasputin with Docker Control layer"
         echo "  ./rasputin.sh stop              - Stops all Rasputin containers"
         echo "  ./rasputin.sh credentials       - Fetches your login credentials"
+        echo "  ./rasputin.sh setup-https       - Creates a trusted local certificate with mkcert"
+        echo "  ./rasputin.sh start --lan       - Publishes Docker mode on the LAN (use HTTPS)"
         echo ""
         ;;
 esac

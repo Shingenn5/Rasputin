@@ -40,11 +40,11 @@ export function LoginShell({ onSubmit, status }) {
               </div>
             </header>
 
-            <p className="login-form-intro">Sign in with the local administrator account for this Rasputin runtime.</p>
+            <p className="login-form-intro">Sign in with your local account for this Rasputin runtime.</p>
 
             <label className="login-field" htmlFor="loginUsername">
               <span>Username</span>
-              <input id="loginUsername" name="username" defaultValue="admin" autoComplete="username" spellCheck="false" />
+              <input id="loginUsername" name="username" autoComplete="username" spellCheck="false" autoFocus />
             </label>
 
             <label className="login-field" htmlFor="loginPassword">

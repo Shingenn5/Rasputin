@@ -1742,6 +1742,7 @@ export function App() {
         go={go}
         openTaskDetails={openTaskDetails}
         security={security}
+        session={session}
         selectedModelObject={selectedModelObject}
         objective={objective}
         setObjective={setObjective}
@@ -1974,6 +1975,7 @@ export function App() {
       />
       <SettingsView
         view={view}
+        session={session}
         section={settingsSection}
         setSection={(section) => go("settings", section)}
         models={models}

@@ -1798,3 +1798,73 @@ button.workspace-add-folder:focus-visible {
   .settings-view::before,
   .workspaces-view::before { animation: none !important; }
 }
+
+/* Local account administration */
+.accounts-settings { display: flex; flex-direction: column; gap: 14px; }
+.settings-module-title { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--dash-border); }
+.settings-module-title > div,
+.account-password-form > div { display: flex; align-items: center; gap: 11px; }
+.settings-module-title h3 { margin: 0; font-family: var(--ras-font-display); font-size: 1.25rem; }
+.settings-module-title p,
+.account-password-form small { display: block; margin: 1px 0 0; color: var(--dash-muted); font-size: 0.67rem; }
+.account-current { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--ras-safe) 25%, var(--dash-border)); border-radius: 99px; color: var(--ras-safe); font-size: 0.66rem; }
+.account-status { padding: 9px 11px; border-left: 2px solid var(--dash-accent); background: color-mix(in srgb, var(--dash-accent) 6%, transparent); color: var(--dash-text); font-size: 0.7rem; }
+.account-secret { display: flex; gap: 10px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--ras-warn) 30%, var(--dash-border)); border-radius: 9px 3px 9px 3px; background: color-mix(in srgb, var(--ras-warn) 7%, transparent); color: var(--ras-warn); }
+.account-secret strong,
+.account-secret code { display: block; }
+.account-secret strong { font-size: 0.68rem; }
+.account-secret code { margin-top: 4px; color: var(--dash-text); font-size: 0.76rem; user-select: all; }
+.account-create-grid { display: grid; grid-template-columns: 1fr 1.2fr 0.8fr auto; align-items: end; gap: 9px; padding: 13px; border: 1px solid var(--dash-border); border-radius: 10px 3px 10px 3px; background: color-mix(in srgb, var(--dash-bg) 50%, var(--dash-panel)); }
+.account-create-grid label { display: flex; flex-direction: column; gap: 4px; }
+.account-create-grid label span { color: var(--dash-muted); font-size: 0.59rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; }
+.account-create-grid input,
+.account-create-grid select,
+.account-row select,
+.account-password-form input { min-height: 36px; padding: 0 9px; border: 1px solid var(--dash-border-strong); border-radius: 7px 3px 7px 3px; outline: 0; background: var(--dash-bg); color: var(--dash-text); font-size: 0.71rem; }
+.account-create-grid button,
+.account-row button,
+.account-password-form button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid var(--dash-border-strong); border-radius: 7px 3px 7px 3px; background: var(--dash-panel); color: var(--dash-text); font-size: 0.68rem; }
+.account-create-grid button { border-color: var(--dash-accent); background: var(--dash-accent); color: #fff; }
+.account-list { overflow: hidden; border: 1px solid var(--dash-border); border-radius: 11px 4px 11px 4px; }
+.account-row { display: grid; grid-template-columns: 38px minmax(120px, 1fr) 130px auto auto; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--dash-border); }
+.account-row:last-child { border-bottom: 0; }
+.account-avatar { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid color-mix(in srgb, var(--dash-accent) 24%, var(--dash-border)); border-radius: 9px 3px 9px 3px; background: color-mix(in srgb, var(--dash-accent) 7%, transparent); color: var(--dash-accent); font-family: var(--ras-font-mono); font-size: 0.66rem; font-weight: 700; }
+.account-identity strong,
+.account-identity small { display: block; }
+.account-identity strong { font-size: 0.76rem; }
+.account-identity small { color: var(--dash-muted); font-size: 0.61rem; }
+.account-row button.is-danger { color: var(--ras-danger); }
+.account-row button:disabled { opacity: 0.42; }
+.account-password-form { display: grid; grid-template-columns: minmax(190px, 1fr) 1fr 1.2fr auto; align-items: center; gap: 9px; padding: 13px; border: 1px solid var(--dash-border); border-radius: 10px 3px 10px 3px; }
+.account-password-form strong { display: block; font-size: 0.72rem; }
+.workspace-access-matrix { overflow: hidden; border: 1px solid var(--dash-border); border-radius: 11px 4px 11px 4px; }
+.workspace-access-heading { display: flex; align-items: center; gap: 10px; padding: 12px 13px; border-bottom: 1px solid var(--dash-border); background: color-mix(in srgb, var(--dash-accent) 5%, var(--dash-panel)); }
+.workspace-access-heading strong,
+.workspace-access-heading small { display: block; }
+.workspace-access-heading strong { font-size: 0.75rem; }
+.workspace-access-heading small { margin-top: 1px; color: var(--dash-muted); font-size: 0.62rem; }
+.workspace-access-matrix article { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 11px 13px; border-bottom: 1px solid var(--dash-border); }
+.workspace-access-matrix article:last-child { border-bottom: 0; }
+.workspace-access-matrix article > div { min-width: 150px; flex: 1; }
+.workspace-access-matrix article > div strong,
+.workspace-access-matrix article > div small { display: block; }
+.workspace-access-matrix article > div strong { font-size: 0.72rem; }
+.workspace-access-matrix article > div small { max-width: 220px; overflow: hidden; color: var(--dash-muted); font-family: var(--ras-font-mono); font-size: 0.57rem; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-access-matrix label { display: flex; min-width: 120px; flex-direction: column; gap: 3px; }
+.workspace-access-matrix label span { color: var(--dash-muted); font-size: 0.57rem; }
+.workspace-access-matrix select { min-height: 32px; padding: 0 7px; border: 1px solid var(--dash-border); border-radius: 6px 2px 6px 2px; background: var(--dash-bg); color: var(--dash-text); font-size: 0.65rem; }
+
+@media (max-width: 900px) {
+  .account-create-grid,
+  .account-password-form { grid-template-columns: 1fr 1fr; }
+  .account-row { grid-template-columns: 38px minmax(100px, 1fr) 120px; }
+  .account-row button { grid-column: auto; }
+}
+
+@media (max-width: 600px) {
+  .settings-module-title { align-items: flex-start; flex-direction: column; }
+  .account-create-grid,
+  .account-password-form,
+  .account-row { grid-template-columns: 1fr; }
+  .account-avatar { display: none; }
+}

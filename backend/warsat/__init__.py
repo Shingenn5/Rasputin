@@ -389,8 +389,10 @@ def _docker_info_checks(docker_path, docker_version):
         "Docker CLI is available to this runtime.",
         {"path": "docker"},
     ))
-    version = docker_version.get("Client", {}).get("Version") or docker_version.get("Client", {}).get("Platform", {}).get("Name")
-    server_version = docker_version.get("Server", {}).get("Version")
+    client = docker_version.get("Client") or {}
+    server = docker_version.get("Server") or {}
+    version = client.get("Version") or (client.get("Platform") or {}).get("Name")
+    server_version = server.get("Version")
     detected["dockerClientVersion"] = version or ""
     detected["dockerServerVersion"] = server_version or ""
     daemon_ok = bool(server_version)

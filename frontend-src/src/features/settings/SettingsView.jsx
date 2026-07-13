@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Stethoscope,
   Upload,
+  Users,
 } from "lucide-react";
 import { GeneralSettings } from "./GeneralSettings.jsx";
 import { settingsItems } from "../../lib/constants.js";
@@ -32,11 +33,13 @@ import { NotificationSettings } from "./NotificationSettings.jsx";
 import { AuditSettings } from "./AuditSettings.jsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.jsx";
 import { AboutSettings } from "./AboutSettings.jsx";
+import { AccountsSettings } from "./AccountsSettings.jsx";
 
 const iconMap = {
   general: Settings2,
   runtime: Activity,
   security: ShieldCheck,
+  accounts: Users,
   models: BrainCircuit,
   deployments: Rocket,
   integrations: Plug,
@@ -50,7 +53,7 @@ const iconMap = {
 const settingGroups = [
   { label: "Experience", ids: ["general", "notifications"] },
   { label: "Intelligence", ids: ["models", "runtime", "resources"] },
-  { label: "Governance", ids: ["security", "audit", "diagnostics"] },
+  { label: "Governance", ids: ["security", "accounts", "audit", "diagnostics"] },
   { label: "Platform", ids: ["deployments", "integrations", "about"] },
 ];
 
@@ -66,8 +69,14 @@ export function SettingsView(props) {
     testingMode,
     updateTestingMode,
     security,
+    session,
   } = props;
-  const activeSetting = settingsItems.find(([id]) => id === section) || settingsItems[0];
+  const isAdmin = session?.role === "admin";
+  const allowedSettings = useMemo(
+    () => isAdmin ? settingsItems : settingsItems.filter(([id]) => ["accounts", "about"].includes(id)),
+    [isAdmin],
+  );
+  const activeSetting = allowedSettings.find(([id]) => id === section) || allowedSettings[0] || settingsItems[0];
   const activeInspector = getInspectorText(activeSetting[0]);
   const ActiveIcon = iconMap[activeSetting[0]] || Settings2;
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,16 +87,22 @@ export function SettingsView(props) {
     return settingGroups
       .map((group) => ({
         ...group,
-        items: settingsItems.filter(([id, label, small]) =>
+        items: allowedSettings.filter(([id, label, small]) =>
           group.ids.includes(id) && (!query || `${label} ${small}`.toLowerCase().includes(query))
         ),
       }))
       .filter((group) => group.items.length > 0);
-  }, [searchQuery]);
+  }, [allowedSettings, searchQuery]);
 
   useEffect(() => {
-    if (view === "settings") loadSettings();
-  }, [view]);
+    if (view === "settings" && isAdmin) loadSettings();
+  }, [isAdmin, view]);
+
+  useEffect(() => {
+    if (view === "settings" && !allowedSettings.some(([id]) => id === section)) {
+      setSection(allowedSettings[0]?.[0] || "accounts");
+    }
+  }, [allowedSettings, section, setSection, view]);
 
   return (
     <section className={`app-view settings-view tw ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
@@ -102,11 +117,11 @@ export function SettingsView(props) {
           <div><span>Models</span><strong>{models?.length || 0} ready</strong></div>
           <div><span>Guardrails</span><strong className="is-safe">Enforced</strong></div>
         </div>
-        <div className="settings-hero-actions" aria-label="Configuration actions">
+        {isAdmin && <div className="settings-hero-actions" aria-label="Configuration actions">
           <button type="button" onClick={() => importSettings({})} disabled={loading}><Upload size={15} /> Import</button>
           <button type="button" onClick={exportSettings} disabled={loading}><Download size={15} /> Export</button>
           <button type="button" className="is-danger" onClick={() => restoreDefaults("all")} disabled={loading}><RefreshCw size={15} /> Reset</button>
-        </div>
+        </div>}
       </header>
 
       <div className="settings-control-grid">
@@ -169,6 +184,7 @@ export function SettingsView(props) {
             {section === "general" && <GeneralSettings setTheme={setTheme} testingMode={testingMode} updateTestingMode={updateTestingMode} />}
             {section === "runtime" && <RuntimeSettings />}
             {section === "security" && <SecuritySettings />}
+            {section === "accounts" && <AccountsSettings session={session} />}
             {section === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
             {section === "deployments" && <DeploymentSettings />}
             {section === "integrations" && <IntegrationSettings />}
@@ -189,6 +205,7 @@ function getInspectorText(section) {
     general: { desc: "Tune the application experience and the defaults every new session inherits.", validation: "Live type and range checks", impact: "Changes the interface and session defaults", deps: ["Archive", "Workspaces"] },
     runtime: { desc: "Balance speed, stability, and resource use for local task execution.", validation: "Resource limits and numeric bounds", impact: "Can affect new and running tasks", deps: ["WarSat"] },
     security: { desc: "Control authentication, secrets, approvals, and agent access boundaries.", validation: "Key and policy integrity checks", impact: "May end sessions or revoke capabilities", deps: ["All subsystems"] },
+    accounts: { desc: "Manage local identities, appliance roles, and account lifecycle.", validation: "Unique usernames and strong local passwords", impact: "Controls who can sign in and administer the appliance", deps: ["Security", "Workspaces"] },
     models: { desc: "Register intelligence providers and choose how work routes between them.", validation: "Provider and model availability", impact: "Changes inference routing", deps: ["Runtime", "Tasks"] },
     deployments: { desc: "Define how isolated WarSat workers are created and operated.", validation: "Container deployment schema", impact: "Applies to newly created workers", deps: ["WarSat", "Models"] },
     integrations: { desc: "Connect Rasputin to the external services that extend your workflow.", validation: "Endpoint and credential checks", impact: "Changes available external actions", deps: ["Security"] },

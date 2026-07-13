@@ -13,15 +13,16 @@ current code before relying on them; this system moves fast.
 
 ## 1. Operating assumption
 
-Rasputin is built to run **on one operator's own machine, for that operator**.
-Nearly every design decision downstream of this document assumes a single
-trusted human is sitting at the keyboard (or SSH'd into their own box) and
-that the thing to defend against is *content*, not *the operator*:
+Rasputin is built to run as **one locally administered appliance**. It may now
+serve several authenticated local users simultaneously, but the machine/data
+directory administrator remains the ultimate trust boundary. Account isolation
+protects users from accidental cross-account access through the application;
+it is not cryptographic tenant isolation from the host administrator.
 
 - Web pages, RAG'd files, and tool output the agent fetches on the
   operator's behalf may contain adversarial text ("ignore previous
   instructions...") — this is an active, in-scope threat (see §3).
-- The operator themself is not an adversary. Trusted Dev Mode (§4),
+- The appliance administrator themself is not an adversary. Trusted Dev Mode (§4),
   Privacy Lock, and the approval system all exist to let the *operator*
   control what an *agentic loop running on their behalf* can do — not to
   protect Rasputin from someone who already has legitimate access to it.
@@ -30,6 +31,11 @@ that the thing to defend against is *content*, not *the operator*:
   actually enforce this as of 2026-07-07. Before that date this was
   enforced only by network topology (don't expose the port); don't assume
   that's still the only backstop without re-reading §6.1.
+- Private chats, tasks, preferences, memory, and login sessions carry an owner.
+  Workspaces have explicit membership roles. Appliance-wide settings, model
+  control, security, approvals, and WarSat mutations require an administrator.
+  Archive/trials and host filesystem access remain trusted appliance surfaces,
+  not hard multi-tenant boundaries.
 
 ## 2. Roles & permission flags
 

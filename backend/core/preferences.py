@@ -51,7 +51,7 @@ def _coerce(data):
         merged["theme"] = "rasputin-light"
     if merged["activeView"] not in {"home", "workspaces", "activity", "agents", "sessions", "tasks", "approvals", "memory", "skills", "telegram", "schedules", "models", "warsat", "settings", "audit"}:
         merged["activeView"] = "home"
-    if merged["activeSettingsSection"] not in {"general", "workspaces", "safety", "knowledge", "output", "appearance", "admin"}:
+    if merged["activeSettingsSection"] not in {"general", "workspaces", "accounts", "safety", "knowledge", "output", "appearance", "admin"}:
         merged["activeSettingsSection"] = "general"
     try:
         merged["subagents"] = max(0, min(int(merged["subagents"]), 4))
@@ -73,24 +73,46 @@ def _coerce(data):
     return merged
 
 
-def load():
-    data = store.get_kv(PREFERENCES_KEY)
+def _key(username):
+    return f"{PREFERENCES_KEY}:{str(username or 'admin').strip() or 'admin'}"
+
+
+def load(username="admin"):
+    key = _key(username)
+    data = store.get_kv(key)
     if isinstance(data, dict):
         return _coerce(data)
 
+    # Existing installations had one global preference document. The original
+    # administrator inherits it; every later account starts from safe defaults.
+    if username == "admin":
+        legacy_kv = store.get_kv(PREFERENCES_KEY)
+        if isinstance(legacy_kv, dict):
+            data = _coerce(legacy_kv)
+            store.set_kv(key, data)
+            return data
+
     legacy = _load_legacy_json()
     data = _coerce(legacy or defaults())
-    store.set_kv(PREFERENCES_KEY, data)
+    store.set_kv(key, data)
     return data
 
 
-def save(payload):
-    current = load()
+def save(payload, username="admin"):
+    current = load(username)
     if isinstance(payload, dict):
         current.update({k: payload[k] for k in defaults() if k in payload})
     data = _coerce(current)
     with _lock:
-        store.set_kv(PREFERENCES_KEY, data)
+        store.set_kv(_key(username), data)
+        # Keep the legacy compatibility view current on single-user installs.
+        # It is no longer read once multiple accounts exist.
+        try:
+            from backend.core import auth
+            if auth.load_public().get("user_count", 1) == 1:
+                store.set_kv(PREFERENCES_KEY, data)
+        except Exception:
+            pass
     return data
 
 

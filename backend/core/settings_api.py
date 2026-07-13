@@ -1,12 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 import copy
 import logging
 
 from backend.core import runtime_store as store
 from backend.core import security as core_security
+from backend.api.core import require_admin
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
 
 class SettingUpdate(BaseModel):
     key: str
@@ -109,11 +111,11 @@ def _apply_dynamic_settings(domain: str, key: str, value: any):
             print(f"Set root logger level to {level_name}")
 
 @router.get("")
-def get_all_settings():
+def get_all_settings(_user=Depends(require_admin)):
     return _get_hydrated_settings()
 
 @router.post("/{domain}")
-def update_setting(domain: str, data: SettingUpdate):
+def update_setting(domain: str, data: SettingUpdate, _user=Depends(require_admin)):
     # Security enforcement flags must land in the core security config —
     # writing them only to platform_settings would leave the toggle cosmetic
     # while warsat/mcp keep enforcing the old value.
@@ -136,20 +138,20 @@ def update_setting(domain: str, data: SettingUpdate):
     return {"updatedSettings": all_settings[domain]}
 
 @router.post("/validate/{domain}")
-def validate_setting(domain: str, data: dict):
+def validate_setting(domain: str, data: dict, _user=Depends(require_admin)):
     return {"valid": True}
 
 @router.get("/export")
-def export_settings():
+def export_settings(_user=Depends(require_admin)):
     return _get_hydrated_settings()
 
 @router.post("/import")
-def import_settings(data: dict):
+def import_settings(data: dict, _user=Depends(require_admin)):
     store.set_kv("platform_settings", data)
     return {"success": True}
 
 @router.post("/restore")
-def restore_defaults(data: dict):
+def restore_defaults(data: dict, _user=Depends(require_admin)):
     domain = data.get("domain", "all")
     if domain == "all":
         store.set_kv("platform_settings", {})
@@ -161,13 +163,13 @@ def restore_defaults(data: dict):
     return {"success": True}
 
 @router.get("/diagnostics")
-def run_diagnostics(category: str = "all"):
+def run_diagnostics(category: str = "all", _user=Depends(require_admin)):
     return {"status": "ok", "category": category}
 
 @router.post("/integrations/test")
-def test_integration(data: dict):
+def test_integration(data: dict, _user=Depends(require_admin)):
     return {"success": True}
 
 @router.post("/security/rotate")
-def rotate_security(data: dict):
+def rotate_security(data: dict, _user=Depends(require_admin)):
     return {"success": True}

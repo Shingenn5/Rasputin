@@ -1,10 +1,11 @@
 import asyncio
 
 from fastapi import APIRouter, Depends
-from backend.api.core import CamelModel, current_user, hub
+from backend.api.core import CamelModel, current_user, require_admin, require_member, hub
 from backend.core import audit
 from backend.core import schedules
 from backend.core import security
+from backend.core import workspace
 from backend.core.response import ok, AppError
 from backend.mcp import skills as skill_store
 from backend.rag import graph as graphify
@@ -36,37 +37,39 @@ class SessionCreateIn(CamelModel):
 @sessions_router.get("/sessions")
 
 async def sessions_get(limit: int = 100, _user=Depends(current_user)):
-    return ok(hub.sessions(limit))
+    return ok(hub.sessions(limit, _user["username"]))
 
 @sessions_router.post("/sessions")
 
-async def sessions_create(req: SessionCreateIn, _user=Depends(current_user)):
-    detail = hub.create_session(req.title, req.workspace, req.model, req.mode, req.skill, req.folder)
+async def sessions_create(req: SessionCreateIn, _user=Depends(require_member)):
+    workspace_ref = req.workspace or workspace.get_active(_user["username"], _user["role"] == "admin").get("active_path") or "."
+    workspace.require_user_access(workspace_ref, _user["username"], "viewer", _user["role"] == "admin")
+    detail = hub.create_session(req.title, workspace_ref, req.model, req.mode, req.skill, req.folder, _user["username"])
     audit.log("session_created", {"session_id": detail["session"]["id"], "title": detail["session"]["title"]})
     return ok(detail)
 
 @sessions_router.get("/sessions/{session_id}")
 
 async def session_get(session_id: str, _user=Depends(current_user)):
-    return ok(hub.session(session_id))
+    return ok(hub.session(session_id, _user["username"]))
 
 @sessions_router.get("/chat-folders")
 
 async def chat_folders_get(_user=Depends(current_user)):
-    return ok(hub.chat_folders())
+    return ok(hub.chat_folders(_user["username"]))
 
 @sessions_router.post("/chat-folders")
 
-async def chat_folders_post(req: ChatFolderIn, _user=Depends(current_user)):
+async def chat_folders_post(req: ChatFolderIn, _user=Depends(require_member)):
     audit.log("chat_folder_created", {"name": req.name})
-    return ok(hub.create_chat_folder(req.name, req.color or ""))
+    return ok(hub.create_chat_folder(req.name, req.color or "", _user["username"]))
 
 @sessions_router.post("/sessions/{session_id}/folder")
 
-async def session_folder_post(session_id: str, req: SessionFolderIn, _user=Depends(current_user)):
+async def session_folder_post(session_id: str, req: SessionFolderIn, _user=Depends(require_member)):
     folder = req.folder if req.folder is not None else req.folder_id
     audit.log("session_folder_changed", {"session_id": session_id, "folder": folder})
-    return ok(hub.assign_session_folder(session_id, folder))
+    return ok(hub.assign_session_folder(session_id, folder, _user["username"]))
 
 tasks_router = APIRouter(prefix="/api", tags=["tasks", "schedules"])
 
@@ -89,34 +92,42 @@ class ScheduleIn(CamelModel):
 
 @tasks_router.post("/tasks")
 
-async def create_task(req: TaskIn, _user=Depends(current_user)):
-    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), req.workspace_path, req.mode, req.session_id, reasoning=req.reasoning)
+async def create_task(req: TaskIn, _user=Depends(require_member)):
+    workspace_ref = req.workspace_path or workspace.get_active(_user["username"], _user["role"] == "admin").get("active_path") or "."
+    workspace.require_user_access(workspace_ref, _user["username"], "contributor", _user["role"] == "admin")
+    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), workspace_ref, req.mode, req.session_id, reasoning=req.reasoning, owner_id=_user["username"])
     return ok(hub.snapshot_task(task))
 
 @tasks_router.post("/tasks/{task_id}/cancel")
 
-async def cancel_task(task_id: str, _user=Depends(current_user)):
+async def cancel_task(task_id: str, _user=Depends(require_member)):
+    if not hub.get_task(task_id, _user["username"]):
+        raise AppError("task_not_found", "Task was not found.", 404)
     return ok(await hub.cancel(task_id))
 
 @tasks_router.post("/tasks/{task_id}/pause")
 
-async def pause_task(task_id: str, _user=Depends(current_user)):
+async def pause_task(task_id: str, _user=Depends(require_member)):
+    if not hub.get_task(task_id, _user["username"]):
+        raise AppError("task_not_found", "Task was not found.", 404)
     return ok(await hub.pause(task_id))
 
 @tasks_router.post("/tasks/{task_id}/resume")
 
-async def resume_task(task_id: str, _user=Depends(current_user)):
+async def resume_task(task_id: str, _user=Depends(require_member)):
+    if not hub.get_task(task_id, _user["username"]):
+        raise AppError("task_not_found", "Task was not found.", 404)
     return ok(await hub.resume(task_id))
 
 @tasks_router.get("/tasks")
 
 async def tasks(limit: int = 100, details: bool = False, _user=Depends(current_user)):
-    return ok(hub.all_tasks(limit=limit, include_details=details))
+    return ok(hub.all_tasks(limit=limit, include_details=details, owner_id=_user["username"]))
 
 @tasks_router.get("/tasks/{task_id}")
 
 async def task_detail(task_id: str, _user=Depends(current_user)):
-    detail = hub.task_detail(task_id)
+    detail = hub.task_detail(task_id, None if _user.get("role") == "admin" else _user["username"])
     if not detail:
         raise AppError("task_not_found", "Task was not found.", 404)
     return ok(detail)
@@ -128,7 +139,7 @@ async def schedules_get(_user=Depends(current_user)):
 
 @tasks_router.post("/schedules")
 
-async def schedules_create(req: ScheduleIn, _user=Depends(current_user)):
+async def schedules_create(req: ScheduleIn, _user=Depends(require_admin)):
     return ok(schedules.create(req.name, req.prompt, req.interval_seconds, req.enabled))
 
 skills_router = APIRouter(prefix="/api/skills", tags=["skills"])
@@ -151,12 +162,12 @@ async def skills(_user=Depends(current_user)):
 
 @skills_router.post("/create-from-session")
 
-async def skills_create_from_session(req: SkillFromSessionIn, _user=Depends(current_user)):
+async def skills_create_from_session(req: SkillFromSessionIn, _user=Depends(require_admin)):
     return ok(skill_store.create_from_session(req.session_id, req.name, req.save))
 
 @skills_router.post("/import")
 
-async def skills_import(req: SkillImportIn, _user=Depends(current_user)):
+async def skills_import(req: SkillImportIn, _user=Depends(require_admin)):
     return ok(skill_store.import_skill(req.name, req.content, req.metadata or {}))
 
 @skills_router.get("/{name}")
@@ -166,12 +177,12 @@ async def skills_get(name: str, _user=Depends(current_user)):
 
 @skills_router.post("/{name}/enable")
 
-async def skills_enable(name: str, _user=Depends(current_user)):
+async def skills_enable(name: str, _user=Depends(require_admin)):
     return ok(skill_store.set_enabled(name, True))
 
 @skills_router.post("/{name}/disable")
 
-async def skills_disable(name: str, _user=Depends(current_user)):
+async def skills_disable(name: str, _user=Depends(require_admin)):
     return ok(skill_store.set_enabled(name, False))
 
 memory_router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -192,31 +203,31 @@ class MemoryReviewIn(CamelModel):
 @memory_router.get("")
 
 async def memory(_user=Depends(current_user)):
-    return ok(load_memory())
+    return ok(load_memory(_user["username"]))
 
 @memory_router.post("")
 
 async def add_memory(req: MemoryIn, _user=Depends(current_user)):
-    return ok(remember(req.kind, req.value))
+    return ok(remember(req.kind, req.value, _user["username"]))
 
 @memory_router.get("/review")
 
 async def memory_review(_user=Depends(current_user)):
-    return ok(memory_store.pending_review())
+    return ok(memory_store.pending_review(_user["username"]))
 
 @memory_router.post("/review")
 
 async def memory_review_decide(req: MemoryReviewIn, _user=Depends(current_user)):
     if req.action == "approve":
-        return ok(memory_store.approve_item(req.id))
+        return ok(memory_store.approve_item(req.id, _user["username"]))
     if req.action in {"deny", "reject"}:
-        return ok(memory_store.reject_item(req.id))
+        return ok(memory_store.reject_item(req.id, _user["username"]))
     raise ValueError("memory review action must be approve or reject")
 
 @memory_router.post("/search")
 
 async def memory_search(req: MemorySearchIn, _user=Depends(current_user)):
-    return ok(memory_store.search(req.query, req.limit))
+    return ok(memory_store.search(req.query, req.limit, _user["username"]))
 
 rag_router = APIRouter(prefix="/api", tags=["rag", "graph"])
 

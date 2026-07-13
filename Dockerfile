@@ -37,7 +37,7 @@ RUN mkdir -p /app/data /app/workspace /app/models
 EXPOSE 8787
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/health', timeout=3).read()"
+  CMD python -c "import os,ssl,urllib.request; s='https' if os.getenv('RASPUTIN_HTTPS','0').lower() in ('1','true','yes','on') else 'http'; urllib.request.urlopen(s+'://127.0.0.1:8787/api/health', timeout=3, context=ssl._create_unverified_context() if s == 'https' else None).read()"
 
 CMD ["python", "-u", "server.py"]
 
