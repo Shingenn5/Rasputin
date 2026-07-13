@@ -946,6 +946,23 @@ class AgentHub:
                     })
 
                 if not tool_calls:
+                    # Local chat runtimes may reject a tools-bearing request;
+                    # providers.chat_sync deliberately retries without tools so
+                    # ordinary conversation still works. In an execution phase,
+                    # however, accepting the resulting prose as "done" is a
+                    # dangerous silent no-op: no requested tool could have run.
+                    # Fail the task visibly and preserve an inspectable trace.
+                    if phase == "execution" and tools and model_providers.tools_unavailable(model_key):
+                        message = (
+                            f"Tools are unavailable for model '{model_key}'. Its local runtime rejected "
+                            "tool definitions, so this agentic task stopped instead of treating a plain "
+                            "chat response as completed work. Redeploy the model with its matching tool-call "
+                            "parser or choose a tool-capable model."
+                        )
+                        task.seen("tools_unavailable", {"model": model_key, "phase": phase})
+                        task.log(message)
+                        self._finish_step(task, phase_step, "error")
+                        raise RuntimeError(message)
                     if test_cmd and test_edited and test_reopens < test_budget:
                         outcome = await self._run_workspace_test(task, test_cmd)
                         if outcome is not None and not outcome[0]:

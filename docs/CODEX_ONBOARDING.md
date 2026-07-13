@@ -28,7 +28,7 @@ or any OpenAI-compatible endpoint) through the host Docker socket.
 
 **Stack:** FastAPI backend (`server.py` + `backend/`), React + Vite frontend
 (`frontend-src/` source → `frontend/` build output), SQLite storage, Docker for model
-containers and sandboxed skills. Python 3.11, Node with root-level `package.json`.
+containers and sandboxed skills. Python 3.12, Node with root-level `package.json`.
 
 ## 2. Repo map
 
@@ -43,7 +43,7 @@ containers and sandboxed skills. Python 3.11, Node with root-level `package.json
 | `backend/core/workspace.py` | Workspace registry incl. per-workspace test/build/lint commands |
 | `frontend-src/src/` | React source — **the only frontend you edit** |
 | `frontend/` | Vite build output — **never hand-edit** |
-| `tests/testBackendSmoke.py` | The backend suite (unittest; ~104 tests, all passing) |
+| `tests/testBackendSmoke.py` | The backend suite (unittest; 107 test methods; environment-dependent sandbox tests may skip) |
 | `tests/ui/`, `playwright.config.mjs` | Playwright UI tests |
 | `docs/` | Plans and findings — see §6 for which ones are current |
 | `THREAT_MODEL.md` | **Read before any security-adjacent change** |
@@ -62,8 +62,9 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
 # App: http://127.0.0.1:8899/#chat   (hash routes: #home, #chat, #models, #settings/...)
 ```
 
-- `RASPUTIN_DATA_DIR` redirects all sqlite/kv storage; without it you touch the real
-  `backend/data`. Always set it for test instances.
+- `RASPUTIN_DATA_DIR` redirects all sqlite/kv storage; without it native mode uses
+  `%LOCALAPPDATA%\Rasputin\data` and Docker uses its `/app/data` named volume. Always set an
+  isolated override for test instances.
 - **Auth is real** (no longer stubbed — fixed 2026-07-07). Log in via
   `POST /api/auth/login`; the session is an httponly `rasputin_session` cookie. First-run
   admin credentials are printed to the server console. Some older docs (root
@@ -114,12 +115,17 @@ work). Position:
   Playwright render/interaction tests for those tabs and the keyboard-only/mouse-only passes
   are not written yet — the drawer only opens from an ACTIVE task ("Open Details",
   `TasksView.jsx:263,374`).
+- **Tool-less agentic runs now fail visibly:** conversational chat still retries without tools when
+  a local runtime rejects them, but an execution phase records `tools_unavailable` and stops as an
+  error instead of reporting plain prose as completed work. The model catalog now supplies the
+  conservative, non-binding `toolCallParserHint=hermes` for the proven Qwen2.5/vLLM family; parser
+  selection remains opt-in per deploy.
 
 **Open queue (roughly in order):** Stage 5 render/a11y Playwright tests → Stage 6 settings-UI
 form (per-workspace command entry) → daily-driver UI fixes (theme-picker init bug
 `GeneralSettings.jsx:85`, save toast, Button dedup `ModelsView.jsx:43-44`, mode-switch→STOPPED
-foot-gun) → deploy-form `tool_call_parser` field + catalog hints → real file-editing coding
-task on a coder model (e.g. Qwen2.5-Coder).
+foot-gun) → deploy-form `tool_call_parser` field consuming the catalog hint → real file-editing
+coding task on a coder model (e.g. Qwen2.5-Coder).
 
 ## 6. Doc freshness map
 
@@ -128,10 +134,12 @@ task on a coder model (e.g. Qwen2.5-Coder).
 | `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` | **Current** — the working plan; honest `[~]` markers |
 | `docs/PHASE_A1_FINDINGS.md` | Current — audit + real-model findings |
 | `docs/ROADMAP.md` | Mostly current; its "Status" block predates A1 completion (says A1 is next — it's done) |
-| `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | Current — canonical frontend stack (§4) |
+| `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | §4 is current/canonical; later backend path maps still contain pre-package-layout names |
 | `ONBOARDING.md` (root) | Good general architecture intro, but §5's "auth is a no-op" is **stale** |
 | `CLAUDE_HANDOVER.md` | **Stale** (old `claude-ui` branch era) — ignore |
-| `.claude/skills/verify/SKILL.md` | Patterns valid; its "auth is stubbed" note is **stale** |
+| `docs/REMAINING_WORK.md` | **Stale** — predates completion of sandbox-account execution and `--network none` |
+| `docs/CURRENT_BASELINE.md` | **Stale** — June baseline; useful history, not current direction |
+| `.agents/skills/verify/SKILL.md`, `.claude/skills/verify/SKILL.md` | Current — isolated native verification with real-auth login/cookie flow |
 
 ## 7. Working with Elliott
 

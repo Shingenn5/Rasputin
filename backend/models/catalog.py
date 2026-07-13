@@ -61,6 +61,22 @@ RUNTIMES = [
     {"id": "apiOnly", "label": "API only", "input": "Provider API registration"},
 ]
 
+
+def _tool_call_parser_hint(model_id, protocol_id):
+    """Return a conservative, non-binding vLLM parser recommendation.
+
+    Parser selection remains opt-in at deployment because a wrong parser can
+    silently corrupt tool calls. Only families proven through Rasputin's real
+    deploy path belong here; unknown models intentionally return None.
+    """
+    if protocol_id != "vllmCudaOpenai":
+        return None
+    collapsed = re.sub(r"[^a-z0-9]+", "", str(model_id or "").lower())
+    if "qwen25" in collapsed:
+        return "hermes"
+    return None
+
+
 CURATED_DEPLOYABLE = [
     {
         "id": "Qwen/Qwen2.5-Coder-7B-Instruct",
@@ -211,6 +227,7 @@ def _normalize_item(provider_id, provider, model_id, model, source="models.dev")
     limit = model.get("limit") or {}
     if isinstance(limit, dict):
         context = limit.get("context") or limit.get("input")
+    recommended_protocol = runtime_options[0]["protocolId"]
     return {
         "id": f"{provider_id}/{model_id}" if provider_id and "/" not in str(model_id) else str(model_id),
         "modelId": str(model_id),
@@ -223,7 +240,8 @@ def _normalize_item(provider_id, provider, model_id, model, source="models.dev")
         "parameterCountB": params,
         "vramEstimateGb": _vram_estimate(params),
         "recommendedProfile": "small" if purpose == "fast" else "balanced",
-        "recommendedProtocol": runtime_options[0]["protocolId"],
+        "recommendedProtocol": recommended_protocol,
+        "toolCallParserHint": _tool_call_parser_hint(model_id, recommended_protocol),
         "runtimeOptions": runtime_options,
         "deployable": runtime_options[0]["protocolId"] != "apiOnly",
         "apiOnly": runtime_options[0]["protocolId"] == "apiOnly",
@@ -246,6 +264,7 @@ def _curated_items():
             "apiOnly": False,
             "source": "rasputin-curated",
             "sourceUrl": "",
+            "toolCallParserHint": _tool_call_parser_hint(model["id"], protocol),
         }
         items.append(item)
     return items
@@ -272,6 +291,15 @@ def _hardware_vram_gb(hardware=None):
 
 def _fit_item(item, hardware=None):
     item = dict(item)
+    # Cached catalogs created before parser hints were introduced still pass
+    # through fit scoring on every read, so enrich them here as well as during
+    # normalization. This makes the API change effective without a forced
+    # network refresh or cache migration.
+    if "toolCallParserHint" not in item:
+        item["toolCallParserHint"] = _tool_call_parser_hint(
+            item.get("modelId") or item.get("id"),
+            item.get("recommendedProtocol"),
+        )
     blocked = []
     reasons = []
     score = 50
@@ -484,6 +512,7 @@ def _normalize_hf_model(hf_model):
     if not runtime_options:
         runtime_options.append({"protocolId": "apiOnly", "label": "Register as provider API"})
 
+    recommended_protocol = runtime_options[0]["protocolId"]
     return {
         "id": model_id,
         "modelId": model_id,
@@ -496,7 +525,8 @@ def _normalize_hf_model(hf_model):
         "parameterCountB": params,
         "vramEstimateGb": _vram_estimate(params),
         "recommendedProfile": "small" if purpose == "fast" else "balanced",
-        "recommendedProtocol": runtime_options[0]["protocolId"],
+        "recommendedProtocol": recommended_protocol,
+        "toolCallParserHint": _tool_call_parser_hint(model_id, recommended_protocol),
         "runtimeOptions": runtime_options,
         "deployable": runtime_options[0]["protocolId"] != "apiOnly",
         "apiOnly": runtime_options[0]["protocolId"] == "apiOnly",

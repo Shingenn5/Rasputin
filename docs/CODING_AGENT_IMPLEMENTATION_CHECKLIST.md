@@ -280,7 +280,7 @@ What's actually still missing (the real remaining gap):
 
 ---
 
-## Stage 8 (Differentiator): Local-Model Coding Routes via WarSat — ☐ NOT STARTED (verified, with a head start noted)
+## Stage 8 (Differentiator): Local-Model Coding Routes via WarSat — ◐ FUNCTIONALLY IMPLEMENTED (file-edit validation pending)
 
 Branch: extends existing Warsat fit-scoring work
 
@@ -296,7 +296,7 @@ Branch: extends existing Warsat fit-scoring work
 
 ---
 
-## Stage 9 (Differentiator): Coding-Task Trials — ☐ NOT STARTED (verified, with a head start noted)
+## Stage 9 (Differentiator): Coding-Task Trials — ✅ COMPLETE (2026-07-01)
 
 Branch: extends existing Trials feature (`docs/STAGED_IMPLEMENTATION_BACKLOG.md`)
 
@@ -445,17 +445,18 @@ Pointer Gestures.)
 - [ ] **Deploy-form tool-call-parser field** — the backend/API accept `toolCallParser` now, but the
   Warsat deploy form has no field for it, so enabling tool-calling for a model is currently API-only.
   Add a parser input (with a "none / disable tools" option) to the deploy UI. **(Easy–Medium)**
-- [ ] **Per-catalog-model parser hint** — auto-suggest the right parser for known tool-capable
-  catalog models (e.g. Qwen2.5 → `hermes`) so the field is prefilled, not guessed. **(Medium)**
-- [ ] **Surface tool-unavailable state** — when a deploy has no parser and the engine drops tools
-  (Fix 1), an agentic task returns prose with empty `tool_calls` and `governed_chat` reports it as
-  "done" (`agent.py:890`) — a silent no-op. Show "tools unavailable on this model — ran as plain
-  chat" so a degraded run doesn't look like success. **(Medium)**
+- [~] **Per-catalog-model parser hint** — backend catalog metadata now emits the conservative,
+  non-binding `toolCallParserHint=hermes` for the proven Qwen2.5/vLLM family (including cached
+  catalog entries). The deploy GUI still needs to prefill its parser field from that hint. **(GUI pending)**
+- [x] **Surface tool-unavailable state** — done in the engine: when a local runtime rejects tools,
+  conversational chat may still degrade, but an execution phase records `tools_unavailable`, marks
+  the phase step errored, and stops the task instead of accepting tool-less prose as completed work.
+  Regression coverage verifies both provider fallback and the agentic fail-visible path.
 - [ ] **Per-workspace test/build/lint command settings form** — Stage 6's backend + `POST
   /api/workspace/commands` are done; add a UI (per-workspace settings) to set these commands so
   the edit→test→fix loop is configurable without an API call. **(Medium)**
-- [ ] Stage 5 (*Coding-Oriented Task UX* above) is the rest of the coding-agent UI/UX — diff viewer,
-  touched-files list, live terminal pane. Still ☐ NOT STARTED.
+- [~] Stage 5 (*Coding-Oriented Task UX* above) is implemented (diff viewer, touched-files list,
+  live terminal pane); frontend render/interaction plus keyboard-only/mouse-only Playwright passes remain.
 
 ### B. Daily-driver UI/UX track (from the Phase A1 audit — full detail in `docs/PHASE_A1_FINDINGS.md`)
 The app was launched + audited 2026-07-12: shell/routing/auth/theming/chat are solid and polished

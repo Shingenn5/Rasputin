@@ -273,6 +273,7 @@ work. **The agent loop is not the blocker.**
   adding `tool_call_parser` to `WarsatPlanIn` (the API model stripped it). Committed (`3c26a25`,
   `100a905`). **Remaining nicety:** a deploy-form field for the parser (frontend) + optional
   per-catalog-model parser hint, so it isn't API-only.
-- **C. (lower priority)** Guard the silent no-op: when tools were unavailable and an execution phase
-  returns prose with empty `tool_calls`, surface "tools unavailable — ran as plain chat" instead of
-  reporting the prose as a completed task (`agent.py:890`). Lower priority now the loop is proven.
+- **C. ✅ DONE (2026-07-13)** Guard the silent no-op: provider fallback remains available for plain
+  conversation, but an execution phase now records `tools_unavailable`, marks its step errored, and
+  stops instead of reporting tool-less prose as completed work. Backend regression coverage exercises
+  the provider fallback signal and the fail-visible agent path.

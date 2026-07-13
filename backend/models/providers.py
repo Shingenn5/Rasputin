@@ -598,6 +598,21 @@ def _apply_reasoning(payload, provider, model, reasoning):
 _TOOLS_UNSUPPORTED = set()
 
 
+def tools_unavailable(model_or_key):
+    """Return whether this process has observed a local runtime reject tools.
+
+    The flag is learned from an actual tools-bearing HTTP 400, not inferred from
+    model names or runtime types. Conversational chat may still degrade to a
+    plain reply, while agentic execution uses this signal to fail visibly
+    instead of reporting tool-less prose as completed work.
+    """
+    if isinstance(model_or_key, dict):
+        model_key = model_or_key.get("key")
+    else:
+        model_key = model_or_key
+    return bool(model_key and model_key in _TOOLS_UNSUPPORTED)
+
+
 def _http_error_body(exc):
     try:
         return exc.read().decode("utf-8", "replace")

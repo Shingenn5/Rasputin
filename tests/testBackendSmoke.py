@@ -219,6 +219,10 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertGreaterEqual(catalog["deployableCount"], 1)
         deployable = next(item for item in catalog["items"] if item["deployable"])
         self.assertIn("recommendedProtocol", deployable)
+        qwen_coder = next(item for item in catalog["items"] if item["modelId"] == "Qwen/Qwen2.5-Coder-7B-Instruct")
+        self.assertEqual(qwen_coder["toolCallParserHint"], "hermes")
+        mistral = next(item for item in catalog["items"] if item["modelId"] == "mistralai/Mistral-7B-Instruct-v0.3")
+        self.assertIsNone(mistral["toolCallParserHint"])
 
         with patch("backend.models.catalog._fetch_models_dev", return_value={
             "test-provider": {
@@ -1436,6 +1440,39 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(captured["body"]["stream"])
         # Local runtimes run without auth — no Authorization header demanded.
         self.assertNotIn("Authorization", captured["headers"])
+
+    def testProviderTracksLocalToolRejectionWhileKeepingPlainChatFallback(self):
+        model = {
+            "key": "tool-less-local",
+            "provider": "vllm",
+            "base_url": "http://127.0.0.1:8000/v1",
+            "model": "local-main",
+        }
+        payloads = []
+
+        def fake_request(url, method, payload, headers, timeout):
+            payloads.append(payload)
+            if len(payloads) == 1:
+                raise urllib.error.HTTPError(url, 400, "tools unsupported", {}, None)
+            return {"choices": [{"message": {"content": "plain reply", "tool_calls": []}}]}
+
+        model_providers._TOOLS_UNSUPPORTED.discard(model["key"])
+        try:
+            with patch("backend.models.providers._request_json", side_effect=fake_request):
+                text, tool_calls = model_providers.chat_sync(
+                    model,
+                    [{"role": "user", "content": "hello"}],
+                    64,
+                    0,
+                    tools=[{"id": "fs_read", "input_schema": {"type": "object", "properties": {}}}],
+                )
+            self.assertEqual(text, "plain reply")
+            self.assertEqual(tool_calls, [])
+            self.assertIn("tools", payloads[0])
+            self.assertNotIn("tools", payloads[1])
+            self.assertTrue(model_providers.tools_unavailable(model))
+        finally:
+            model_providers._TOOLS_UNSUPPORTED.discard(model["key"])
 
     def testProviderStreamingAssemblesTextAndToolCalls(self):
         from backend.models import providers as model_providers
@@ -3430,6 +3467,34 @@ class BackendSmokeTests(unittest.TestCase):
             result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
         self.assertIn("time budget", result)
         self.assertTrue(any("time budget exceeded" in line for line in task.logs))
+
+    def testGovernedChatFailsWhenLocalRuntimeDroppedRequiredTools(self):
+        hub = agent.AgentHub()
+
+        async def plain_chat_after_tool_rejection(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            return "I would edit the file now.", []
+
+        sections = [context_governor.section("task", "Task", "edit the file", required=True, priority=0)]
+        task = agent.AgentTask("fix the bug", "local-coder", "general", mode="code", workspace_path=".")
+        hub._persist_session(task)
+        hub.phase_model = lambda _task, _role: "local-coder"
+        model_providers._TOOLS_UNSUPPORTED.add("local-coder")
+        try:
+            with patch("backend.engine.agent._chat", plain_chat_after_tool_rejection):
+                with self.assertRaisesRegex(RuntimeError, "Tools are unavailable"):
+                    asyncio.run(hub.governed_chat(
+                        task,
+                        "execution",
+                        "coder",
+                        sections,
+                        tools=[{"id": "fs_patch"}],
+                    ))
+        finally:
+            model_providers._TOOLS_UNSUPPORTED.discard("local-coder")
+
+        self.assertTrue(any(item["kind"] == "tools_unavailable" for item in task.trace))
+        self.assertTrue(any("stopped instead" in line for line in task.logs))
+        self.assertEqual(task.steps[-1]["status"], "error")
 
     # ---- Stage 6: edit -> test -> fix loop ----
 
