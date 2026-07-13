@@ -49,6 +49,9 @@ TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
     ".json", ".csv", ".yml", ".yaml", ".toml", ".ini", ".cfg",
 }
+# File-mutating tools whose successful execution means the workspace actually
+# changed, so the Stage 6 test loop should re-run the configured test command.
+FILE_MUTATING_TOOLS = {"fs_write", "fs_patch", "fs_move"}
 WORKSPACE_CONTEXT_TERMS = (
     "file", "files", "folder", "folders", "directory", "directories", "workspace",
     "codebase", "repo", "repository", "project", "read my", "inspect", "scan",
@@ -766,6 +769,49 @@ class AgentHub:
             return {"max_attempts": 80, "max_seconds": 900}
         return {"max_attempts": 15, "max_seconds": 180}
 
+    def _test_loop_budget(self, task):
+        # How many edit -> test -> fix reopens to attempt before giving up.
+        # Distinct from _tool_loop_budget's tool-call ceiling; the reopens run
+        # inside the same governed_chat loop, so they share its wall-clock budget
+        # (they never get a fresh one) -- this is what keeps the test loop
+        # "within Stage 4 budget".
+        return 3
+
+    def _parse_test_result(self, result):
+        # Exit code is the reliable pass/fail signal (no fragile output scraping);
+        # the trailing output is what the model gets to fix on the next attempt.
+        if not isinstance(result, dict):
+            return False, "The test command did not return a result."
+        if result.get("timed_out"):
+            return False, "The test command timed out.\n" + (result.get("output") or "")[-2000:]
+        exit_code = result.get("exit_code")
+        output = (result.get("output") or "")[-3000:]
+        return exit_code == 0, f"exit code: {exit_code}\n{output}"
+
+    async def _run_workspace_test(self, task, test_cmd):
+        # Runs the workspace's configured test command via shell_exec (same
+        # trust / allow_shell_execution gating as any shell tool). Returns
+        # (passed, summary), or None when it couldn't run -- logged + traced so
+        # "why didn't my tests run" is inspectable, never silent.
+        try:
+            result = await self.mcp.call_tool(
+                "shell_exec",
+                {"command": test_cmd, "workspace_path": task.workspace, "_task_id": task.id},
+                on_log=task.log,
+            )
+        except PermissionError:
+            task.log("test command configured but shell execution is not permitted here; skipping test loop")
+            task.seen("test_skipped", {"reason": "shell_not_permitted"})
+            return None
+        except Exception as exc:
+            task.log(f"test command failed to launch: {exc}")
+            task.seen("test_skipped", {"reason": "launch_error"})
+            return None
+        passed, summary = self._parse_test_result(result)
+        task.seen("test_run", {"passed": passed, "command": test_cmd})
+        task.log(f"workspace tests {'passed' if passed else 'failed'}")
+        return passed, summary
+
     def _bound_tool_loop_messages(self, task, model_key, messages, keep_recent=6, min_archive_chars=500):
         total_tokens = sum(context_governor.estimate_tokens(m.get("content")) for m in messages)
         if not context_governor.needs_compaction(model_key, total_tokens):
@@ -869,6 +915,18 @@ class AgentHub:
         on_delta = self._stream_delta_handler(task)
         phase_step = self._add_step(task, "phase", phase)
 
+        # Stage 6 test loop: after the model finishes editing in a code-mode
+        # execution phase, run the workspace's configured test command; on
+        # failure feed the output back and reopen for a fix -- all inside this
+        # same loop so the reopens share the one wall-clock budget rather than
+        # each getting a fresh one. Bounded separately from the tool-call ceiling.
+        test_cmd = None
+        if phase == "execution" and task.mode == "code":
+            test_cmd = (workspace.get_workspace_commands(task.workspace) or {}).get("test")
+        test_edited = False
+        test_reopens = 0
+        test_budget = self._test_loop_budget(task)
+
         try:
             for attempt in range(max_attempts):
                 if time.time() - started_at > max_seconds:
@@ -888,6 +946,21 @@ class AgentHub:
                     })
 
                 if not tool_calls:
+                    if test_cmd and test_edited and test_reopens < test_budget:
+                        outcome = await self._run_workspace_test(task, test_cmd)
+                        if outcome is not None and not outcome[0]:
+                            test_reopens += 1
+                            test_edited = False
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "The workspace test command is still failing after your changes "
+                                    f"(fix attempt {test_reopens}/{test_budget}). Fix the code so the "
+                                    "tests pass, then stop.\n\n" + outcome[1]
+                                ),
+                            })
+                            task.log(f"tests failing — reopening execution to fix (attempt {test_reopens}/{test_budget})")
+                            continue
                     self._finish_step(task, phase_step, "done")
                     return text
 
@@ -908,6 +981,10 @@ class AgentHub:
                             )
                         })
                         self._finish_step(task, step, "done")
+                        if tc["name"] in FILE_MUTATING_TOOLS and not (
+                            isinstance(result, dict) and result.get("approval_id")
+                        ):
+                            test_edited = True
                     except Exception as exc:
                         task.log(f"tool error: {exc}")
                         messages.append({

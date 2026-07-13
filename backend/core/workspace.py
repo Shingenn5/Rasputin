@@ -131,6 +131,7 @@ def _public_item(item):
         "last_used": item.get("last_used"),
         "trusted": bool(item.get("trusted", False)),
         "allow_host_shell": bool(item.get("allow_host_shell", False)),
+        "commands": dict(item.get("commands") or {}),
     }
 
 
@@ -978,6 +979,30 @@ def set_trusted(workspace_ref, trusted=True):
 def is_trusted(path):
     item = workspace_for_path(_root_from_value(path))
     return bool(item and item.get("trusted"))
+
+
+def set_workspace_commands(workspace_ref, test=None, build=None, lint=None):
+    # Per-workspace test/build/lint commands the operator configures once per
+    # repo. Stored on the workspace record alongside trusted/host_shell; a
+    # value of "" clears that command, None leaves it unchanged.
+    data, item = _find(workspace_ref)
+    commands = dict(item.get("commands") or {})
+    for key, value in (("test", test), ("build", build), ("lint", lint)):
+        if value is None:
+            continue
+        text = str(value).strip()[:2000]
+        if text:
+            commands[key] = text
+        else:
+            commands.pop(key, None)
+    item["commands"] = commands
+    _save(data)
+    return _public_item(item)
+
+
+def get_workspace_commands(path):
+    item = workspace_for_path(_root_from_value(path))
+    return dict((item or {}).get("commands") or {})
 
 
 def set_host_shell(workspace_ref, enabled=True):

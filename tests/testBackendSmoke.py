@@ -2658,32 +2658,47 @@ class BackendSmokeTests(unittest.TestCase):
         })
         self.assertEqual(plan["healthUrl"], "http://127.0.0.1:8001/v1/models")
 
-    def testWarsatRuntimeArgumentsAddsToolCallSupportOnceForVllm(self):
-        # Rasputin's engine always sends tool definitions with chat requests;
-        # without --enable-auto-tool-choice / --tool-call-parser, vLLM
-        # returns 400 on every tool-enabled chat call against a Warsat vLLM
-        # deploy.
+    def testWarsatVllmToolCallParserIsOptInPerDeploy(self):
+        # Tool calling only parses correctly with a --tool-call-parser matching
+        # THIS model's output format, so it is opt-in per deploy, not a global
+        # default (a mismatched global parser silently corrupts tool calls).
+        # Without a chosen parser vLLM gets no tool flags -- the chat engine then
+        # degrades gracefully (drops tools, retries); with one, flags are added
+        # exactly once.
         from backend import warsat as warsat_module
 
         vllm_protocol = {"runtime": "vllm", "modelFormat": "huggingface"}
-        tuning = warsat_module._build_tuning({}, vllm_protocol, "balanced")
-        args = warsat_module._runtime_arguments(vllm_protocol, tuning)
-        self.assertEqual(args.count("--enable-auto-tool-choice"), 1)
-        self.assertEqual(args.count("--tool-call-parser"), 1)
-        self.assertEqual(args[args.index("--tool-call-parser") + 1], "hermes")
 
-        # A protocol whose defaultArguments already ship the flags (even with
-        # a different parser value) must not end up with duplicates -- the
-        # last word wins and stays singular.
-        vllm_protocol_with_defaults = {
+        # No parser configured -> no tool flags.
+        tuning_none = warsat_module._build_tuning({}, vllm_protocol, "balanced")
+        args_none = warsat_module._runtime_arguments(vllm_protocol, tuning_none)
+        self.assertNotIn("--enable-auto-tool-choice", args_none)
+        self.assertNotIn("--tool-call-parser", args_none)
+
+        # Parser configured -> flags added exactly once, with that parser
+        # (sanitized to safe CLI-token chars).
+        tuning_hermes = warsat_module._build_tuning({"toolCallParser": "Hermes!!"}, vllm_protocol, "balanced")
+        self.assertEqual(tuning_hermes["toolCallParser"], "hermes")
+        args_hermes = warsat_module._runtime_arguments(vllm_protocol, tuning_hermes)
+        self.assertEqual(args_hermes.count("--enable-auto-tool-choice"), 1)
+        self.assertEqual(args_hermes.count("--tool-call-parser"), 1)
+        self.assertEqual(args_hermes[args_hermes.index("--tool-call-parser") + 1], "hermes")
+
+        # A protocol whose defaultArguments already ship flags: they're stripped,
+        # then re-added only when a parser is configured (no duplicates, and the
+        # deploy's chosen parser wins over the protocol default).
+        vllm_with_defaults = {
             "runtime": "vllm",
             "modelFormat": "huggingface",
             "defaultArguments": ["--enable-auto-tool-choice", "--tool-call-parser", "mistral"],
         }
-        args_with_defaults = warsat_module._runtime_arguments(vllm_protocol_with_defaults, tuning)
-        self.assertEqual(args_with_defaults.count("--enable-auto-tool-choice"), 1)
-        self.assertEqual(args_with_defaults.count("--tool-call-parser"), 1)
-        self.assertEqual(args_with_defaults[args_with_defaults.index("--tool-call-parser") + 1], "hermes")
+        args_stripped = warsat_module._runtime_arguments(vllm_with_defaults, tuning_none)
+        self.assertNotIn("--enable-auto-tool-choice", args_stripped)
+        self.assertNotIn("--tool-call-parser", args_stripped)
+        args_redeployed = warsat_module._runtime_arguments(vllm_with_defaults, tuning_hermes)
+        self.assertEqual(args_redeployed.count("--enable-auto-tool-choice"), 1)
+        self.assertEqual(args_redeployed.count("--tool-call-parser"), 1)
+        self.assertEqual(args_redeployed[args_redeployed.index("--tool-call-parser") + 1], "hermes")
 
         # A GGUF protocol never gets vLLM-only flags.
         gguf_protocol = {"runtime": "llama.cpp", "modelFormat": "gguf"}
@@ -3415,6 +3430,117 @@ class BackendSmokeTests(unittest.TestCase):
             result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
         self.assertIn("time budget", result)
         self.assertTrue(any("time budget exceeded" in line for line in task.logs))
+
+    # ---- Stage 6: edit -> test -> fix loop ----
+
+    def _run_stage6_execution(self, shell_results, commands=None, clock=None):
+        """Drive governed_chat's code-mode execution phase with a model that
+        alternates fs_patch (edit) then 'done', and a scripted shell_exec (the
+        test command) result sequence. Returns (result, task, shell_call_count)."""
+        from contextlib import ExitStack
+        hub = agent.AgentHub()
+        state = {"chat": 0, "shell": 0}
+
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            state["chat"] += 1
+            if state["chat"] % 2 == 1:
+                return "", [{"id": f"c{state['chat']}", "name": "fs_patch", "args": {"path": "x.py"}}]
+            return "final answer", []
+
+        async def fake_call_tool(name, args, on_log=None):
+            if name == "shell_exec":
+                res = shell_results[min(state["shell"], len(shell_results) - 1)]
+                state["shell"] += 1
+                if isinstance(res, BaseException):
+                    raise res
+                return res
+            return {"output": "ok"}
+
+        hub.mcp.call_tool = fake_call_tool
+        sections = [context_governor.section("task", "Task", "fix it", required=True, priority=0)]
+        task = agent.AgentTask("fix the bug", "dry-run", "general", mode="code", workspace_path=".")
+        hub._persist_session(task)
+        cmds = {"test": "run-tests"} if commands is None else commands
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("backend.engine.agent._chat", scripted_chat))
+            stack.enter_context(patch("backend.core.workspace.get_workspace_commands", lambda p: dict(cmds)))
+            if clock is not None:
+                stack.enter_context(patch("backend.engine.agent.time.time", clock))
+            result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
+        return result, task, state["shell"]
+
+    def testStage6TestLoopReopensOnFailureThenStopsOnPass(self):
+        result, task, shell_calls = self._run_stage6_execution(
+            shell_results=[{"exit_code": 1, "output": "1 failed"}, {"exit_code": 0, "output": "ok"}])
+        self.assertEqual(result, "final answer")
+        self.assertEqual(shell_calls, 2)  # test ran, failed, re-ran, passed
+        self.assertEqual(sum(1 for l in task.logs if "reopening execution to fix" in l), 1)
+
+    def testStage6TestLoopPassFirstRunNoReopen(self):
+        result, task, shell_calls = self._run_stage6_execution(
+            shell_results=[{"exit_code": 0, "output": "ok"}])
+        self.assertEqual(result, "final answer")
+        self.assertEqual(shell_calls, 1)
+        self.assertFalse(any("reopening execution to fix" in l for l in task.logs))
+
+    def testStage6TestLoopStopsAtRetryBudget(self):
+        # Always fails -> reopens capped at the 3-attempt budget, then returns
+        # (the retry budget is distinct from the 80 tool-call ceiling).
+        result, task, shell_calls = self._run_stage6_execution(
+            shell_results=[{"exit_code": 1, "output": "still failing"}])
+        self.assertEqual(result, "final answer")
+        self.assertEqual(shell_calls, 3)
+        self.assertEqual(sum(1 for l in task.logs if "reopening execution to fix" in l), 3)
+
+    def testStage6TestLoopTimeBudgetHaltsReopens(self):
+        # Always fails; a fake clock crosses the 900s budget. Because the reopens
+        # run inside the same loop (not a fresh budget each), the wall-clock check
+        # halts them instead of looping forever.
+        c = {"t": 1000.0}
+
+        def clock():
+            c["t"] += 250.0
+            return c["t"]
+
+        result, task, shell_calls = self._run_stage6_execution(
+            shell_results=[{"exit_code": 1, "output": "fail"}], clock=clock)
+        # An always-failing test would reopen forever if reopens got a fresh
+        # budget; the shared wall-clock budget halts the loop instead.
+        self.assertIn("time budget", result)
+
+    def testStage6TestLoopSkipsWhenNoCommandOrShellDenied(self):
+        # No configured command -> shell never invoked.
+        result, task, shell_calls = self._run_stage6_execution(
+            shell_results=[{"exit_code": 0}], commands={})
+        self.assertEqual(result, "final answer")
+        self.assertEqual(shell_calls, 0)
+        # Shell execution denied -> skipped with an inspectable reason, no reopen loop.
+        result2, task2, shell2 = self._run_stage6_execution(
+            shell_results=[PermissionError("allow_shell_execution is disabled")])
+        self.assertEqual(result2, "final answer")
+        self.assertTrue(any("not permitted" in l for l in task2.logs))
+        self.assertFalse(any("reopening execution to fix" in l for l in task2.logs))
+
+    def testStage6WorkspaceCommandsApiRoundtrip(self):
+        from backend.core import workspace as workspace_mod
+        target = main.ROOT / "workspace" / f"stage6-cmds-{runtime_store.new_id('s6')[-6:]}"
+        target.mkdir(parents=True, exist_ok=True)
+        approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": f"workspace/{target.name}",
+            "name": "Stage6 Commands Smoke",
+        }))
+        saved = self.assertOk(self.client.post("/api/workspace/commands", json={
+            "workspaceId": approved["id"], "test": "pytest -q", "build": "make", "lint": "ruff check .",
+        }))
+        self.assertEqual(saved["commands"]["test"], "pytest -q")
+        self.assertEqual(workspace_mod.get_workspace_commands(approved["root"]).get("test"), "pytest -q")
+        # "" clears one command, leaves the others.
+        cleared = self.assertOk(self.client.post("/api/workspace/commands", json={
+            "workspaceId": approved["id"], "test": "",
+        }))
+        self.assertNotIn("test", cleared["commands"])
+        self.assertEqual(cleared["commands"].get("build"), "make")
 
     def testGovernedChatPrependsUntrustedContentPolicyToEveryPhase(self):
         hub = agent.AgentHub()
