@@ -479,6 +479,16 @@ class WorkspaceCommandsIn(CamelModel):
     build: str | None = None
     lint: str | None = None
 
+class WorkspaceGitIn(CamelModel):
+    workspace_path: str | None = None
+    path: str | None = None
+    staged: bool = False
+
+class WorkspaceGitRestoreIn(CamelModel):
+    workspace_path: str | None = None
+    path: str
+    approval_id: str | None = None
+
 class WorkspaceBrowseIn(CamelModel):
     root_id: str | None = None
     path: str | None = None
@@ -651,6 +661,25 @@ async def workspace_commands(req: WorkspaceCommandsIn, _user=Depends(current_use
     item = workspace.set_workspace_commands(req.workspace_id, test=req.test, build=req.build, lint=req.lint)
     audit.log("workspace_commands_changed", {"workspace_id": req.workspace_id, "commands": item.get("commands")})
     return ok(item)
+
+@workspace_router.post("/workspace/git-status")
+
+async def workspace_git_status(req: WorkspaceGitIn, _user=Depends(current_user)):
+    # Touched-files list for the review UI (git status --porcelain, parsed).
+    return ok(await hub.mcp.git_status(workspace_path=req.workspace_path))
+
+@workspace_router.post("/workspace/git-diff")
+
+async def workspace_git_diff(req: WorkspaceGitIn, _user=Depends(current_user)):
+    # Unified diff for a file (or the whole workspace when path is omitted).
+    return ok(await hub.mcp.git_diff(workspace_path=req.workspace_path, path=req.path, staged=req.staged))
+
+@workspace_router.post("/workspace/git-restore")
+
+async def workspace_git_restore(req: WorkspaceGitRestoreIn, _user=Depends(current_user)):
+    # Revert a file's uncommitted changes. Destructive -> gated like git_commit
+    # (trusted workspace bypasses approval; otherwise returns an approval preview).
+    return ok(await hub.mcp.git_restore(req.path, workspace_path=req.workspace_path, approval_id=req.approval_id))
 
 @workspace_router.post("/workspace/host-shell")
 

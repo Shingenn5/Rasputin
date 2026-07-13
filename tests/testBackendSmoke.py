@@ -3542,6 +3542,31 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertNotIn("test", cleared["commands"])
         self.assertEqual(cleared["commands"].get("build"), "make")
 
+    # ---- Stage 5: git review endpoints (touched files / diff / revert) ----
+
+    def testStage5GitReviewEndpoints(self):
+        target = main.ROOT / "workspace" / f"stage5-git-{runtime_store.new_id('s5')[-6:]}"
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "note.txt").write_text("hello", encoding="utf-8")
+        approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": f"workspace/{target.name}", "name": "Stage5 Git Smoke", "readOnly": False,
+        }))
+        # Touched-files list: structured entries, no crash.
+        status = self.assertOk(self.client.post("/api/workspace/git-status", json={
+            "workspacePath": approved["root"]}))
+        self.assertIn("entries", status)
+        self.assertIsInstance(status["entries"], list)
+        # Per-file diff: structured hunks.
+        diff = self.assertOk(self.client.post("/api/workspace/git-diff", json={
+            "workspacePath": approved["root"]}))
+        self.assertIn("hunks", diff)
+        # Revert is destructive -> in a non-trusted workspace it returns an
+        # approval preview instead of touching the file.
+        preview = self.assertOk(self.client.post("/api/workspace/git-restore", json={
+            "workspacePath": approved["root"], "path": "note.txt"}))
+        self.assertTrue(preview.get("approvalId") or preview.get("approval_id"))
+        self.assertEqual((target / "note.txt").read_text(encoding="utf-8"), "hello")
+
     def testGovernedChatPrependsUntrustedContentPolicyToEveryPhase(self):
         hub = agent.AgentHub()
         seen_prompts = []

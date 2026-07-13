@@ -796,6 +796,38 @@ class McpLayer:
         audit.log("git_commit", {"cwd": str(base), "message_length": len(message), "trusted": trusted})
         return {"cwd": str(base), "message": message, **result}
 
+    async def git_restore(self, paths, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
+        # Discard local changes to tracked files (git checkout -- <path>). This
+        # is destructive (uncommitted edits are lost), so it carries the same
+        # write + trust + approval gating as git_add / git_commit.
+        security.require("allow_file_write")
+        base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
+        item = workspace.require_path_permission(base, "write")
+        trusted = bool(item.get("trusted"))
+        raw_paths = paths if isinstance(paths, list) else [paths]
+        raw_paths = [str(p).strip() for p in raw_paths if str(p or "").strip()]
+        if not raw_paths:
+            raise ValueError("at least one path is required")
+        rel_paths = []
+        for p in raw_paths:
+            target = self._safe(p, workspace_path)
+            rel_paths.append(str(target.relative_to(base)) if target != base else ".")
+        cfg = security.load()
+        if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
+            approvals.require_approved(approval_id, "git_restore")
+            approved = True
+        if cfg.get("approval_required_file_write", True) and not trusted and not approved:
+            preview = approvals.mutation_preview("git_restore", {
+                "paths": rel_paths,
+                "workspace": workspace_path or workspace.get_active()["active_path"],
+            }, task_id=_task_id, tool_call_id=_tool_call_id)
+            approved = await self._wait_for_approval(preview, "git_restore", _task_id)
+            if not approved:
+                return preview
+        result = await self._run_git(base, ["checkout", "--"] + rel_paths)
+        audit.log("git_restore", {"cwd": str(base), "paths": rel_paths, "trusted": trusted})
+        return {"cwd": str(base), "paths": rel_paths, **result}
+
 
 async def demo_tool_call():
     mcp = McpLayer()
