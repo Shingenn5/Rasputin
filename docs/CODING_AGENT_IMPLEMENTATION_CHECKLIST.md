@@ -27,8 +27,8 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Identify/confirm SSE extension point at `frontend-src/src/app/App.jsx:589` (Stage 4b) — done 2026-07-02
 - [ ] Quick action: view diff for a file (Stage 5)
 - [ ] Reuse existing `TaskDetailsDrawer.jsx` structure (Stage 5)
-- [ ] Parse pass/fail from test command output (Stage 6)
-- [ ] Bounded retry count distinct from tool-call ceiling (Stage 6)
+- [x] Parse pass/fail from test command output (Stage 6) — done 2026-07-12
+- [x] Bounded retry count distinct from tool-call ceiling (Stage 6) — done 2026-07-12
 - [x] Confirm zero-cost/offline path once local model routed (Stage 8) — done 2026-07-12 (local vLLM, no API spend, privacy lock on)
 - [x] Confirm role-pin takes effect immediately (Stage 9) — done 2026-07-01
 
@@ -43,9 +43,9 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [ ] Per-file syntax-highlighted diff viewer (Stage 5)
 - [ ] Live terminal/log pane for shell output (Stage 5)
 - [ ] Revert-file quick action (Stage 5)
-- [ ] Per-workspace test/build/lint command settings (Stage 6)
-- [ ] Run configured test command after an edit (Stage 6)
-- [ ] Feed test failures back into next iteration (Stage 6)
+- [x] Per-workspace test/build/lint command settings (Stage 6) — backend + API done 2026-07-12 (settings-UI form pending)
+- [x] Run configured test command after an edit (Stage 6) — done 2026-07-12
+- [x] Feed test failures back into next iteration (Stage 6) — done 2026-07-12
 - [x] Expose dedicated code-structure query tool to `code` mode with citations (Stage 7) — done 2026-07-01
 - [x] One-click route `code` mode to local model (Stage 8) — done 2026-07-01 (zero clicks: coder-role auto-suggestion + existing role routing)
 - [x] Specialize Trials for coding subtasks (Stage 9) — done 2026-07-01
@@ -217,23 +217,31 @@ Branch: `codex/coding-ux-v1`
 
 ---
 
-## Stage 6: Test-Loop Integration — ☐ NOT STARTED (verified)
+## Stage 6: Test-Loop Integration — ✅ BACKEND COMPLETE 2026-07-12 (settings UI pending)
 
-Branch: `codex/test-loop-v1`
+Branch: `codex/agentic-coding-loop-v1` · Commit: `0825a22`
 
-**Verification note:** no per-workspace test/build/lint command configuration or auto-run-after-edit logic exists anywhere in `backend/` today (only unrelated hit was Warsat's own deploy test-mode plumbing). Confirmed genuinely not started.
+**Implementation note:** the loop runs *inside* `governed_chat`'s existing tool loop (not a wrapper
+around `execute()`), so the reopens share its one wall-clock budget rather than each getting a fresh
+900s — this is what keeps it "within Stage 4 budget" — and they keep full edit-history context
+(matters for weak local models). Only fires after a real file-mutating tool (`fs_patch`/`fs_write`/
+`fs_move`), and skips loudly + inspectably (`task.log` + `task.seen("test_skipped", …)`) when no
+command is set or shell isn't permitted.
 
-- [ ] Per-workspace settings for test/build/lint commands (operator-configured once per repo) — **(Medium)**
-- [ ] In `code` mode, `execute()` (`backend/engine/agent.py:888` area) optionally runs configured test command after an edit — **(Medium)**
-- [ ] Parse pass/fail result from test command output — **(Easy)**
-- [ ] Feed failures back into the next planning iteration within Stage 4 budget — **(Medium)**
-- [ ] Bounded retry count distinct from the raw tool-call ceiling — **(Easy)**
-- [ ] Test: configured test command runs after an edit and result is captured — **(Medium)**
-- [ ] Test: a failing test feeds back into the next iteration's context — **(Medium)**
-- [ ] Test: retry ceiling stops the loop and reports the last failure clearly instead of looping forever — **(Medium)**
-- [ ] Validation: backend smoke suite passes, frontend build, repo safety check — **(Easy)**
+- [x] Per-workspace settings for test/build/lint commands (operator-configured once per repo) — **backend + API done** (`workspace.set_workspace_commands`/`get_workspace_commands`, `POST /api/workspace/commands`, surfaced in `_public_item`); **settings-UI form still pending** (belongs to the UI/UX pass, under the dual-input a11y bar)
+- [x] In `code` mode, execution runs the configured test command after an edit — done (`governed_chat`, gated on an actual file mutation)
+- [x] Parse pass/fail result from test command output — done (`_parse_test_result`, exit code; no fragile scraping)
+- [x] Feed failures back into the next iteration within Stage 4 budget — done (reopen injects the test output as a message and `continue`s the same loop)
+- [x] Bounded retry count distinct from the raw tool-call ceiling — done (`_test_loop_budget` = 3 reopens, separate from the 80 tool-call ceiling)
+- [x] Test: configured test command runs after an edit and result is captured — `testStage6TestLoopReopensOnFailureThenStopsOnPass`, `…PassFirstRunNoReopen`
+- [x] Test: a failing test feeds back into the next iteration's context — `testStage6TestLoopReopensOnFailureThenStopsOnPass`
+- [x] Test: retry ceiling stops the loop instead of looping forever — `testStage6TestLoopStopsAtRetryBudget` + `…TimeBudgetHaltsReopens`
+- [x] Validation: backend smoke **103 passed, 1 skipped** (incl. 6 new Stage 6 tests) 2026-07-12; frontend build n/a (no UI change yet)
 
-**Definition of done:** "fix this bug" can mean edit → test → see it fail → fix → test → pass, autonomously, inside one task.
+**Definition of done:** "fix this bug" can mean edit → test → see it fail → fix → test → pass,
+autonomously, inside one task. **Backend mechanics complete + tested;** a real end-to-end run needs
+the settings-UI form (or an API call) to set the command + a file-editing coder model (the open
+Stage 4a/8 validation).
 
 ---
 
@@ -432,6 +440,9 @@ Pointer Gestures.)
   (Fix 1), an agentic task returns prose with empty `tool_calls` and `governed_chat` reports it as
   "done" (`agent.py:890`) — a silent no-op. Show "tools unavailable on this model — ran as plain
   chat" so a degraded run doesn't look like success. **(Medium)**
+- [ ] **Per-workspace test/build/lint command settings form** — Stage 6's backend + `POST
+  /api/workspace/commands` are done; add a UI (per-workspace settings) to set these commands so
+  the edit→test→fix loop is configurable without an API call. **(Medium)**
 - [ ] Stage 5 (*Coding-Oriented Task UX* above) is the rest of the coding-agent UI/UX — diff viewer,
   touched-files list, live terminal pane. Still ☐ NOT STARTED.
 
