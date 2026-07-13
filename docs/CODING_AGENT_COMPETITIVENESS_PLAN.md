@@ -4,6 +4,12 @@ Goal: get Rasputin to a point where the operator reaches for it instead of Codex
 
 Last reviewed: 2026-06-30
 
+> **Security-model update (2026-07-13):** this plan's original Trusted Dev Mode decision was
+> narrowed during dual-mode Phases 3–4. Trusted now auto-approves file/git mutations only;
+> `shell_exec` requires the separate per-workspace Host Shell capability plus the global shell
+> permission. Native Windows executes it as `Rasputin_sbx`. Treat the 2026-06-30 “Current State”
+> below as historical; `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` is the live status source.
+
 ## Framing
 
 This is not a feature-parity checklist. Cloning what Codex/Gemini already do produces, at best, a worse Codex. Two things have to be true at once:
@@ -26,7 +32,10 @@ Stages are ordered by daily friction removed, not by architectural neatness. Sta
 
 ## Trust Model Decision (operator-approved, 2026-06-30)
 
-Per-workspace **Trusted Dev Mode**: an approved local folder can be explicitly opted into a mode where `shell_exec`, `fs_write`, `fs_mkdir`, `fs_move`, and git tool calls run without a per-action approval click, the same way a human would use their own terminal in that folder.
+Per-workspace **Trusted Dev Mode** was originally approved as one combined no-click mode for
+`shell_exec`, file mutations, and git. **Current implementation supersedes the shell part:** Trusted
+still removes per-action approval for file/git mutations, while Host Shell is a distinct explicit
+opt-in and native Windows runs it through the low-privilege account.
 
 - Privacy Lock stays on regardless: no effect on remote model routing, network egress, or Docker control.
 - Opt-in per workspace, not global. New/non-trusted workspaces keep full per-action approval as they do today.

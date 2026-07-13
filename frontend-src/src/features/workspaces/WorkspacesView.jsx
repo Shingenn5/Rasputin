@@ -22,6 +22,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  BrainCircuit,
   Terminal,
   X
 } from "lucide-react";
@@ -449,10 +450,15 @@ export function WorkspacesView({
       data-app-view="workspaces"
     >
       {/* PHASE 1: Workspace Header Summary Card */}
-      <div className="w2-header-card">
-        <div>
+      <div className="w2-header-card workspace-command-hero">
+        <div className="workspace-hero-copy">
+          <span className="control-eyebrow"><span className="signal-dot" /> Workspace command</span>
           <h1>{activeName || "No workspace selected"}</h1>
           <p>{displayPath(activePath)}</p>
+          <div className="workspace-hero-actions">
+            <button type="button" className="workspace-primary-action" onClick={() => setShowAddModal(true)}><PlusCircle size={16} /> Add folder</button>
+            <button type="button" className="workspace-secondary-action" onClick={loadWorkspaceRoots}><RefreshCw size={15} /> Refresh</button>
+          </div>
         </div>
         <div className="w2-header-stats">
           {uiState.status !== 'idle' && (
@@ -513,7 +519,9 @@ export function WorkspacesView({
             disabled={!activeId || shellBusy}
             aria-pressed={activeHostShell}
             aria-label={activeHostShell ? "Host Shell is on for this workspace. Click to revoke." : "Host Shell is off for this workspace. Click to enable."}
-            title={activeHostShell ? "The agent can run shell commands on your machine in this folder. Click to revoke." : "Enable to let the agent run shell commands on your real machine in this folder."}
+            title={activeHostShell
+              ? `The agent can run shell commands ${native ? "through the native sandbox account" : "inside the Docker wrapper"} for this folder. Click to revoke.`
+              : `Enable shell commands ${native ? "through the native sandbox account" : "inside the Docker wrapper"} for this folder.`}
           >
             <strong style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               {activeHostShell ? <AlertTriangle size={14} /> : <Terminal size={14} />}
@@ -522,6 +530,20 @@ export function WorkspacesView({
             <small>Host Shell</small>
           </button>
         </div>
+      </div>
+
+      <div className={`workspace-runtime-note ${native ? "is-native" : "is-docker"}`} data-testid="workspace-runtime-mode">
+        <span className="workspace-runtime-icon" aria-hidden="true">
+          {native ? <HardDrive size={17} /> : <Database size={17} />}
+        </span>
+        <span>
+          <strong>{native ? "Native workstation · direct folders" : "Docker server · mounted folders"}</strong>
+          <small>
+            {native
+              ? "Choose a folder on this machine, approve it, and work immediately—no Compose edit or restart."
+              : "Adding a folder generates the server mount/restart flow. Launch Native workstation mode for direct, zero-restart folders."}
+          </small>
+        </span>
       </div>
 
       <div className="w2-main-grid">
@@ -554,14 +576,14 @@ export function WorkspacesView({
                 );
               })}
               {workspaceRoots.length === 0 && <div style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', padding: '4px 8px' }}>No approved folders.</div>}
-              <div 
-                className="w2-tree-item" 
-                style={{ color: 'var(--cc-primary)', marginTop: '4px' }}
+              <button
+                type="button"
+                className="w2-tree-item workspace-add-folder"
                 onClick={() => setShowAddModal(true)}
               >
                 <PlusCircle size={16} className="w2-tree-icon" style={{ color: 'var(--cc-primary)' }} />
                 <span>Add Folder</span>
-              </div>
+              </button>
             </div>
           </div>
 
@@ -764,7 +786,7 @@ export function WorkspacesView({
                   <span style={{ color: 'var(--cc-muted)', fontSize: '0.75rem' }}>Select a file from the explorer to preview it.</span>
                 </div>
 
-                <div className="w2-section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="w2-section workspace-operations-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h2 className="w2-section-title">Knowledge Operations</h2>
@@ -1107,14 +1129,23 @@ export function WorkspacesView({
         </Modal.Header>
         <Modal.Body>
           <p>
-            This lets the agent run <strong>shell commands on your real machine</strong> inside{" "}
-            <strong>{activeName || "this workspace"}</strong> without an approval click per command.
-            It is the highest-privilege capability Rasputin has — treat it like handing the agent
-            your terminal.
+            This lets the agent run shell commands inside <strong>{activeName || "this workspace"}</strong>{" "}
+            without an approval click per command. It is separate from Trusted Dev Mode and remains
+            Rasputin&apos;s highest-impact workspace capability.
           </p>
           <ul className="text-muted small" style={{ listStyle: "disc", paddingLeft: "1.25rem" }}>
-            <li>Commands run with your account's permissions and can touch files, install software, and reach the network.</li>
-            <li>A safety guardrail blocks obviously destructive commands, but it is not a full sandbox.</li>
+            {native ? (
+              <>
+                <li>On native Windows, commands run as the dedicated low-privilege <code>Rasputin_sbx</code> account, not as your operator account.</li>
+                <li>The sandbox account is granted access to this workspace; Windows ACLs deny normal access outside it. The workspace itself can still be changed or deleted.</li>
+                <li>External network blocking is best-effort and loopback remains reachable, so this is a strong accident guardrail—not an airtight security boundary.</li>
+              </>
+            ) : (
+              <>
+                <li>In Docker mode, commands run inside the wrapper container with access to the mounted workspace and whatever the deployment exposes to that container.</li>
+                <li>The container boundary limits ordinary host access, but commands can still change or delete files inside the workspace.</li>
+              </>
+            )}
             <li>Only enable this for folders whose work you actively trust and are watching.</li>
             <li>Every command is logged in the audit trail, and you can revoke this in one click.</li>
           </ul>

@@ -1,11 +1,12 @@
 # §6.2 — Skills-sandbox network isolation: options for review
 
-*Step 2 of `docs/EXECUTION_PLAN.md`. Design note only — no code changes to the skills
-path until you pick an option. Closes `THREAT_MODEL.md` §6.2.*
+*Step 2 of `docs/EXECUTION_PLAN.md`. Historical design record. **Decision made and shipped
+2026-07-12:** Option C (`--network none` + stdio RPC), commit `5742cd6`; `THREAT_MODEL.md`
+§6.2 is RESOLVED. The alternatives below are retained to explain the trade-off.*
 
 ## The problem
 
-`run_skill_in_sandbox` (`backend/core/sandbox.py:24`) launches each skill container with
+When this note was written, `run_skill_in_sandbox` launched each skill container with
 `--network host`:
 
 ```python
@@ -95,10 +96,9 @@ HTTP route already calls, and writes the JSON result back to the skill's stdin. 
 
 ---
 
-## Recommendation
+## Decision (implemented)
 
-**Target Option C**, and if you want §6.2 flipped to RESOLVED sooner, ship **Option A** first as
-an interim and land C in a follow-up.
+**Option C shipped directly.** No Option A bridge-network interim was needed.
 
 Rationale: C is the only option that actually matches the threat model (accidental egress is
 *prevented*, not just namespace-isolated), it's how real coding-agent sandboxes work, and it
@@ -107,17 +107,13 @@ The extra code is bounded — a small framed-RPC protocol, reusing the existing 
 a legitimate quick close if timing matters, but it keeps internet egress open and slightly widens
 the wrapper's exposure, so it's a stepping stone, not the destination.
 
-## If you pick C — validation checklist for implementation (Step 4)
-- Frame format: length-prefixed or sentinel-tagged JSON lines that can't collide with skill
-  `print()` output (use a dedicated marker/again, or a separate fd via `docker run` if we want
-  stdout clean).
-- Confirm `--network none` containers still start and run Python skills (they will; no network is
-  needed for local execution).
-- Keep the `SANDBOX_SECRET_TOKEN` as defense-in-depth even though stdio is already private to the
-  parent/child, or drop it as dead weight — decide during implementation.
-- Regression-test a representative skill end-to-end in both native and docker runtimes.
+## Validation completed in Step 4
+- Newline-delimited JSON frames run over a dedicated stdout descriptor; skill `print()` output is
+  redirected to stderr logs and cannot corrupt RPC frames.
+- `--network none` Skills start and execute normally.
+- Multi-call tool round-trips, a >64KB tool result, and blocked outbound network access were
+  verified end-to-end. The old HTTP token/route is now unreachable dead code.
 
 ---
 
-**Your call:** A (interim) → C, or straight to C? Once you pick, implementation is Step 4 (behind
-its own verification gate; `THREAT_MODEL.md` §6.2 flips to RESOLVED with the chosen design recorded).
+**Recorded outcome:** straight to C; Phase 4's security-core gate is complete.

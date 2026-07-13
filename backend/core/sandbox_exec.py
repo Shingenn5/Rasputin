@@ -4,15 +4,18 @@ Phase 3 / Step 3. This module is Windows-only in effect; it imports cleanly on
 every platform (all Win32/ctypes work is lazy, inside functions) so the rest of
 the backend and the test suite don't need to care.
 
-What lives here today (the verifiable, account-independent foundation):
-  - reading + guarding the sandbox credential written by scripts/Provision-Sandbox.ps1
-    (SID-ownership check + DPAPI-CurrentUser decrypt), and
-  - `sandbox_provisioned()` used to gate shell routing and auto-provisioning.
+This module now owns the complete native-Windows Host Shell boundary:
+  - guard and decrypt the DPAPI-CurrentUser credential written by
+    scripts/Provision-Sandbox.ps1;
+  - provision or repair the account through one on-demand UAC prompt;
+  - grant/revoke the account's inherited workspace ACL; and
+  - execute through CreateProcessWithLogonW with captured output, a finite timeout,
+    primary taskkill tree termination, and a Job Object as defense-in-depth.
 
-`run_as_sandbox()` (the CreateProcessWithLogonW + Job Object + pipe-pump executor)
-is intentionally a stub until the account exists on a dev box — its logon/job
-behavior can only be written and verified against a real Rasputin_sbx, so building
-it blind would risk rework (see docs/EXECUTION_PLAN.md, Step 3 design review).
+The run-as path has been exercised against a real Rasputin_sbx account. It is a
+strong accident-containment guardrail, not an airtight boundary: the account can
+still modify the explicitly granted workspace, and its firewall egress rule is
+best-effort (see THREAT_MODEL.md and docs/EXECUTION_PLAN.md).
 """
 import base64
 import json

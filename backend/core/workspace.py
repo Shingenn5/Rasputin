@@ -834,7 +834,8 @@ def get_active():
 def _unsafe_workspace_root(target):
     # A workspace root must be a project folder -- never a drive/system/home root.
     # In native mode this path becomes the agent's file-tool scope and, once
-    # trusted, its shell cwd/scope, so a broad root here is a broad blast radius.
+    # Host Shell is enabled, its shell cwd/ACL scope, so a broad root is a broad
+    # blast radius. Trusted Dev Mode is a separate file/git approval setting.
     # Rejects the drive root, the home dir, the Rasputin data dir, and anything
     # inside the Windows / Program Files (or POSIX system) trees. Fails open on
     # unexpected paths so it can never wrongly block a legitimate project folder.

@@ -6,7 +6,7 @@ aren't. It's written for whoever is deciding whether to expose an instance
 beyond their own machine, and for whoever picks up the next piece of
 security work.
 
-It is a snapshot as of 2026-07-07. Verify file:line citations against
+It is a snapshot as of 2026-07-13. Verify file:line citations against
 current code before relying on them; this system moves fast.
 
 ---
@@ -41,14 +41,13 @@ that the thing to defend against is *content*, not *the operator*:
 | `allow_file_read` | on | RAG ingest, graph build, file preview |
 | `allow_file_write` | on* | `fs_write`/`fs_patch` — *also subject to the approval queue unless the workspace is Trusted (§4) |
 | `allow_file_reorganize` | off | `fs_mkdir`/`fs_move` |
-| `allow_shell_execution` | **off** | `shell_exec` — additionally hard-requires Trusted Dev Mode regardless of this flag |
+| `allow_shell_execution` | **off** | `shell_exec` — also requires the workspace's separate Host Shell capability; native Windows then runs as `Rasputin_sbx` |
 | `allow_web_search` | on | `web_search` (DuckDuckGo scrape, brokered — see §3) |
 | `allow_docker_control` | **off** | WarSat deploys, host folder browsing, mount requests |
 | `allow_remote_models` | **off** | "Privacy Lock" — routing to any non-local model endpoint |
 | `allow_model_tests` / `allow_model_registry_edit` | on | Trials engine, model registry edits |
 
-There is no per-tool self-escalation path: no tool in `backend/mcp/tools.py`
-(25 registered IDs, confirmed by direct listing) can flip its own or any
+There is no per-tool self-escalation path: no registered tool can flip its own or any
 other flag. Changing these flags is a UI/API action gated the same way as
 anything else, not something the agent's own tool loop can reach.
 
@@ -89,24 +88,27 @@ message path (covers all 25 tools, most importantly `web_search`).
   doesn't apply; the relevant boundary is execution sandboxing (§5), a
   different risk category.
 
-Covered by tests: `tests/testBackendSmoke.py` —
+Covered by tests in `tests/testBackendSmoke.py` —
 `testGovernedChatPrependsUntrustedContentPolicyToEveryPhase`,
 `testGovernedChatWrapsToolResultsAsUntrustedContentButNotToolErrors`,
-`testFormatHelpersWrapRetrievedContentButNotEmptyFallbacks`. Full suite
-73/73 passing as of this writing.
+`testFormatHelpersWrapRetrievedContentButNotEmptyFallbacks`.
 
 ## 4. Trusted Dev Mode
 
 An explicit, per-workspace opt-in (`workspace.py`'s `trusted` flag on a
 workspace record). Trusted:
-- `shell_exec` becomes available at all (untrusted: blocked outright,
-  regardless of the `allow_shell_execution` flag).
 - `fs_write` / `fs_patch` / `fs_mkdir` / `fs_move` / `git_add` /
   `git_commit` skip the per-action approval queue (untrusted workspaces
   still hit `approvals.mutation_preview(...)` and need a human click every
   time).
-- Every call is still audit-logged (`audit.log(..., trusted=True/False)`)
-  and still runs through `SHELL_DENY_PATTERNS` guardrails.
+- Every call is still audit-logged (`audit.log(..., trusted=True/False)`).
+
+Trusted Dev Mode does **not** grant shell execution. Host Shell is a second,
+separate per-workspace opt-in (`allow_host_shell`), and the global
+`allow_shell_execution` flag must also be enabled. Every shell call is
+audit-logged and still runs through `SHELL_DENY_PATTERNS`; on native Windows,
+enabling Host Shell also provisions the low-privilege account and grants its
+ACL on that workspace (§5).
 
 Privacy Lock (`allow_remote_models`) is independent of Trusted Dev Mode —
 trusting a workspace for local shell/file access has no effect on whether
@@ -129,16 +131,26 @@ stdio RPC, not HTTP — so the container has no path to the host network,
 the LAN, or the internet. Residual surface: the tool callback still runs
 host tools with the backend's privileges (see §6.2).
 
-**`shell_exec` / git tools** (`backend/mcp/layer.py`): run via
-`asyncio.create_subprocess_shell`/`create_subprocess_exec` directly in
-Rasputin's own backend process — **not** a fresh disposable container per
-call. This is a deliberate trade, not an oversight: Trusted Dev Mode is
-explicitly meant to behave "the same way a real terminal works" for a
-workspace the operator has already vouched for, scoped to that workspace's
-directory (`cwd=str(base)`), with a sanitized environment and deny-pattern
-guardrails. Anyone who can trigger `shell_exec` in a Trusted workspace has
-the same reach as a terminal opened in that directory — no more, no less,
-and no additional container wall.
+**`shell_exec`** (`backend/mcp/layer.py`) has a runtime-specific boundary:
+
+- **Native Windows:** a Host-Shell-enabled workspace runs through
+  `backend/core/sandbox_exec.py` as the dedicated standard user
+  `Rasputin_sbx`, using `CreateProcessWithLogonW`. Only explicitly enabled
+  workspace trees receive an inherited Modify ACL. Timeout handling uses
+  `taskkill /F /T` as the primary process-tree kill and a Job Object as
+  defense-in-depth. Missing/mismatched credentials or an incomplete ACL fail
+  closed; Access Denied results are labeled as sandbox-boundary failures.
+- **Docker wrapper / native non-Windows:** the fallback remains a direct
+  `asyncio.create_subprocess_*` child of the backend, with a sanitized
+  environment, bounded output, process-tree timeout handling, and the
+  deny-pattern guardrail. In Docker deployment this child is inside the
+  long-lived wrapper container, **not** a fresh disposable container per call;
+  the wrapper's normal bridge network is still available.
+
+**Git tools** also run as direct backend child processes. They retain their
+workspace containment/trust/approval checks, but they are not automatically
+routed through `Rasputin_sbx`. Do not describe every agent execution surface
+as having the same isolation level.
 
 ## 6. Known gaps
 
@@ -182,8 +194,16 @@ working cookie, the same protected route then returns 200, and logout
 immediately locks it back out. Covered by three new tests in
 `testBackendSmoke.py` (`testLoginRejectsWrongPasswordAndAcceptsCorrectOne`,
 `testLoginRateLimitLocksOutAfterRepeatedFailures`,
-`testCurrentUserEnforcesRealSessionWhenBypassesDisabled`); full suite
-76/76.
+`testCurrentUserEnforcesRealSessionWhenBypassesDisabled`).
+
+**Credential recovery:** the generated password is printed only when the
+admin record is first created. `rasputin.ps1 credentials` can recover it only
+while that original line still exists in the current container logs. After a
+container replacement/log loss—or after the password was changed—use
+`rasputin.ps1 reset-password`; for a native run use
+`python -m backend.tools.reset_password`. A reset changes the stored hash and
+clears sessions in the resetting process; restart the running server/container
+if you need to invalidate sessions it already holds in memory immediately.
 
 **Caveat carried forward, not fixed:** `localhost_bypass_enabled()` checks
 `request.client.host` against a literal loopback set. Behind the standard
@@ -214,11 +234,16 @@ the HTTP design, tracked as future hardening, not part of this fix. The old
 `/api/sandbox/call-tool` route + `SANDBOX_SECRET_TOKEN` are now unreachable
 dead code (safe to remove).
 
-### 6.3 — Sandboxing is otherwise an open design problem, not solved here
+### 6.3 — Residual execution caveats after Phases 3–4
 
-Per the coding-agent-competitiveness plan, this was deliberately deferred
-rather than rushed. §5 above describes the current, real behavior of both
-execution surfaces so that deferral is an informed one, not an assumed one.
+The native Windows account/ACL model is a strong guardrail against accidental
+machine-wide damage, not an airtight boundary against hostile code. The
+explicitly granted workspace remains writable, the SID-scoped firewall rule is
+best-effort and deliberately leaves loopback reachable, and per-user toolchains
+may be unreadable to `Rasputin_sbx`. Docker/POSIX direct shell and git processes
+retain the backend/container's privileges described in §5. Operators needing a
+VM-grade native boundary still need an external VM/WSL/container arrangement;
+that opt-in hardened mode is not implemented today.
 
 ### 6.4 — Prompt-injection wrapper is a mitigation, not a guarantee
 
@@ -226,7 +251,8 @@ Labeling content as untrusted and instructing the model not to obey it
 reduces the odds a model acts on injected instructions; it does not
 eliminate the possibility a sufficiently capable adversarial payload gets a
 model to act anyway. Tool-level guardrails (approval queues, Trusted Dev
-Mode scoping, deny-pattern shell filters) remain the actual backstop, not
+Mode/Host-Shell scoping, the native low-privilege account, approval gates, and
+deny-pattern shell filters remain the actual backstops, not
 the prompt wrapper.
 
 ## 7. What this document is not

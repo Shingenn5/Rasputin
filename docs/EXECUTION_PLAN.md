@@ -6,6 +6,12 @@ The ordered *how* for finishing the goals in `docs/DUAL_MODE_ARCHITECTURE_PLAN.m
 `docs/REMAINING_WORK.md` is the *what* (status inventory); this is the sequence, the
 verification gates, and exactly where the operator is in the loop.
 
+> **Status update (2026-07-13): Steps 1–4 / security Phases 0–4 are complete.** Native Windows
+> Host Shell runs as `Rasputin_sbx` with workspace ACLs and on-demand provisioning; Skills run
+> `--network none` over stdio RPC. The future-tense sections below are retained as the historical
+> execution/design record. Step 5 (packaging/distribution) is still open and intentionally deferred
+> behind the current daily-driver work in `docs/ROADMAP.md`.
+
 **North stars this plan is optimized for:** (1) blast-radius safety — an agent must not be
 able to damage the host by accident; (2) no dual-mode drift — every change stays green in
 *both* native and Docker; (3) company-compatible — nothing forecloses the future
@@ -54,9 +60,9 @@ Step 2  §6.2 design note ──(you pick an option)─────────�
 
 ---
 
-## Step 1 — Phase 3 account-independent items  ⚙️ *(start now, no blocker)*
+## Step 1 — Phase 3 account-independent items  ✅ *(complete)*
 
-These need no sandbox account, so they land while §6.2 is in design and before you provision.
+These needed no sandbox account, so they landed while §6.2 was in design and before provisioning.
 
 - **3.6 Shell mechanics parity** — interpreter selection (PowerShell default, `cmd` selectable,
   honor an explicit interpreter in the command), minimal-env construction (`_safe_shell_env()` +
@@ -73,10 +79,10 @@ Each of 3.6/3.7/3.8 commits separately.
  
 ---
 
-## Step 2 — §6.2 skills-sandbox isolation — **design note only**  ⚙️→🔑 *(no blocker)*
+## Step 2 — §6.2 skills-sandbox isolation design  ✅ *(Option C selected)*
 
-`backend/core/sandbox.py:24` runs skill containers with `--network host` so they can reach the
-loopback-bound wrapper API. I write a short options note covering the real trade-offs:
+At design time, `backend/core/sandbox.py` ran skill containers with `--network host` so they could
+reach the loopback-bound wrapper API. The options note compared:
 
 - isolated bridge network + `host.docker.internal` (+ `--add-host …:host-gateway` on Linux) vs a
   dedicated published port back to the wrapper;
@@ -90,7 +96,7 @@ breaks all skills execution, so it goes behind an approved design + a gate.
 
 ---
 
-## Step 3 — Phase 3 run-as + **auto-provision**  ⚙️ + one 🔑 click *(the heart of Phase 3)*
+## Step 3 — Phase 3 run-as + **auto-provision**  ✅ *(complete)*
 
 This is where commands actually start running as the low-privilege `Rasputin_sbx` account. The POC
 already proved the hard part (manual pipe capture via ctypes; no pywin32). Built in this order so
@@ -166,18 +172,18 @@ workspace still refuses. Smoke 96+ OK both runtimes.
 
 ---
 
-## Step 4 — Phase 4 sandbox hardening  ⚙️ *(implements Step 2's approved design)*
+## Step 4 — Phase 4 sandbox hardening  ✅ *(complete)*
 
-- Replace `--network host` with the option you approved; mark `THREAT_MODEL.md` §6.2 **RESOLVED**
-  with the design recorded.
-- Verify sandbox behaves identically native vs containerized.
+- Implemented selected Option C: replaced `--network host` with `--network none` + private stdio
+  RPC and marked `THREAT_MODEL.md` §6.2 **RESOLVED**.
+- Verified the Skill sandbox launch/RPC path is the same native vs containerized.
 
-**Gate:** no Rasputin-spawned container runs with host networking; a representative skill still
-executes end-to-end in both runtimes; §6.2 flipped to RESOLVED.
+**Gate met:** no Skill container runs with host networking; representative multi-call/large-result
+flows execute end-to-end, outbound network is blocked, and §6.2 is RESOLVED.
 
 ---
 
-## Step 5 — Phase 5 productization  ⚙️ + 🔑 *(the company track)*
+## Step 5 — Phase 5 productization  ☐ *(open; eventual company track)*
 
 - **Installer** (winget/MSI or equivalent): during install (already elevated) create the account +
   firewall; defer the DPAPI credential to first user-run (the installer may be SYSTEM, but the
@@ -199,35 +205,32 @@ mentions Docker Desktop.
 
 ---
 
-## Open validation items (all resolve on the first real run in Step 3)
+## First-run validation outcomes / retained caveats
 
-Why Step 3's provisioning was authored as a first pass, not a final one:
+The first real-account run settled the mechanism while keeping the claims deliberately narrow:
 
-1. **§9-T5 — job-object nesting via seclogon.** `CreateProcessWithLogonW` routes through the
-   secondary-logon service; confirm the tree is actually killed on timeout. Fallback if it fails:
-   `CreateProcessAsUser` + batch logon (needs an elevated runtime — a documented alt path).
-2. **§9-T6 — per-user firewall (WFP) egress scoping** holds on this build. Loopback is exempt by
-   Windows design regardless; honest claim stays "external egress denied (if the rule holds); loopback
-   open."
-3. **Logon-rights hardening.** v1 touches logon rights zero (denying interactive logon would break
-   `CreateProcessWithLogonW`); the correct hardening depends on which mechanism survives T5, so it's
-   deferred until after the first run.
+1. **§9-T5 — job-object nesting via seclogon.** Do not rely on assignment. The verified primary
+   timeout boundary is `taskkill /F /T`; the Job Object remains defense-in-depth.
+2. **§9-T6 — per-user firewall (WFP) egress scoping.** The rule is best-effort and loopback is
+   exempt by Windows design. Honest claim: “external egress denied if the rule installed; loopback
+   open,” never “no network.”
+3. **Logon-rights hardening.** v1 deliberately leaves the standard user's logon rights unchanged;
+   denying interactive logon would break `CreateProcessWithLogonW`.
 
 ---
 
 ## Your involvement, consolidated
 
-1. 🔑 Review the §6.2 design option (Step 2) — a reading + a choice.
-2. 🔑 One UAC "Yes" the first time you enable Host Shell (Step 3).
-3. 🔑 The company/licensing decision (Step 5) — latest possible; gates public release only.
+1. ✅ §6.2 Option C was selected and implemented (Step 2/4).
+2. ✅ The development machine's `Rasputin_sbx` account was provisioned and the run-as path verified
+   (Step 3). Fresh native-Windows installs still present one UAC prompt on first Host Shell enable.
+3. 🔑 The company/licensing decision (Step 5) remains — latest possible; gates public release only.
 
 Everything else is mine, each stage behind a verification gate and its own commit.
 
 ---
 
-## Recommended start
+## Current next step
 
-Begin **Step 1** (account-independent Phase 3 work) and draft **Step 2** (§6.2 design) in parallel —
-both need nothing from you. That keeps momentum until you're ready to enable Host Shell, at which
-point Step 3's one-click provisioning takes over. I'll checkpoint with you at each 🔑 and at every
-phase-closing gate.
+Do not restart Steps 1–4. Follow `docs/ROADMAP.md` for the current daily-driver work; return here for
+Step 5 only when packaging/distribution becomes a priority.

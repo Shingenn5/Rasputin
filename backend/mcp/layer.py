@@ -35,8 +35,9 @@ SAFE_SHELL_ENV_KEYS = {
     "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP",
     "HOME", "USERPROFILE", "COMSPEC", "LANG", "LC_ALL", "PYTHONIOENCODING", "NODE_ENV",
 }
-# Soft backstop against obviously catastrophic commands. Trusted Dev Mode grants
-# full local user-level shell execution by design; this is not a security boundary.
+# Soft backstop against obviously catastrophic commands. Host Shell is a separate
+# per-workspace capability; native Windows also routes through Rasputin_sbx. These
+# lexical patterns are a UX guardrail, not the security boundary.
 SHELL_DENY_PATTERNS = [
     re.compile(r"rm\s+-rf\s+(/|~|\$HOME)(\s|$)", re.IGNORECASE),
     re.compile(r"rm\s+-rf\s+(\.|\./|\*)\s*$", re.IGNORECASE),

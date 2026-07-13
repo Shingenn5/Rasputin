@@ -1,8 +1,11 @@
 import React from "react";
-import { Menu, ShieldAlert, X } from "lucide-react";
+import { Box, Laptop, Menu, ShieldAlert, X } from "lucide-react";
 import { DashSidebar } from "./shell/DashSidebar.jsx";
 
 export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust }) {
+  const nativeRuntime = sidebarProps?.runtimeMode === "native";
+  const mobileSidebarTriggerRef = React.useRef(null);
+
   return (
     <>
       <a className="skip-link" href="#mainContent">Skip to main content</a>
@@ -16,9 +19,9 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
           )}
         </div>
       )}
-      <div className="dash-aurora" aria-hidden="true"><i /></div>
-      <div className="dash-frame relative z-[1] flex h-dvh overflow-hidden bg-transparent text-foreground" id="appFrame">
-        <DashSidebar {...sidebarProps} />
+      <div className="dash-aurora ras-atmosphere" aria-hidden="true"><i /></div>
+      <div className="dash-frame relative z-[1] flex h-dvh overflow-hidden text-foreground" id="appFrame">
+        <DashSidebar {...sidebarProps} mobileTriggerRef={mobileSidebarTriggerRef} />
         <main className="dash-frame-main min-w-0 flex-1 overflow-y-auto" id="mainContent" tabIndex="-1">
           {/* Sticky top stack: trusted-workspace banner (all breakpoints) + mobile topbar (< sm) share one sticky offset so they don't overlap on scroll */}
           <div className="sticky top-0 z-10 flex flex-col">
@@ -31,7 +34,7 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
                 <span className="flex min-w-0 items-center gap-2">
                   <ShieldAlert size={14} className="shrink-0" aria-hidden="true" />
                   <span className="truncate">
-                    Trusted Dev Mode active for <strong>{trustedWorkspace.name}</strong> — shell, file writes, and git run without per-action approval.
+                    Trusted Dev Mode active for <strong>{trustedWorkspace.name}</strong> — file writes and local git run without per-action approval. Host Shell remains separate.
                   </span>
                 </span>
                 <button
@@ -47,15 +50,22 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
             {/* Mobile topbar — hamburger + brand, hidden on sm+ */}
             <div className="flex items-center gap-3 border-b border-border bg-sidebar/90 px-3 py-2.5 backdrop-blur-sm sm:hidden">
               <button
+                ref={mobileSidebarTriggerRef}
                 type="button"
                 data-testid="mobile-sidebar-toggle"
-                aria-label="Open navigation"
+                aria-label={sidebarProps.mobileOpen ? "Close navigation" : "Open navigation"}
+                aria-expanded={Boolean(sidebarProps.mobileOpen)}
+                aria-controls="rasputin-sidebar"
                 onClick={sidebarProps.toggleSidebar}
-                className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="ras-mobile-nav-trigger grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Menu size={18} />
               </button>
-              <span className="text-sm font-semibold text-foreground">Rasputin</span>
+              <span className="ras-mobile-brand text-sm font-semibold text-foreground">Rasputin</span>
+              <span className="ras-mobile-runtime ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {nativeRuntime ? <Laptop size={12} aria-hidden="true" /> : <Box size={12} aria-hidden="true" />}
+                {nativeRuntime ? "Native" : "Docker"}
+              </span>
             </div>
           </div>
           {children}

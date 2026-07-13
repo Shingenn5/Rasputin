@@ -6,6 +6,11 @@ native workspace, an **accidental** destructive command (`rm -rf`, `Remove-Item 
 must not damage anything outside the approved folder. They differ in **how** they enforce that, and
 in what they cost.*
 
+> **Decision implemented 2026-07-12:** Option A (the dedicated `Rasputin_sbx` account) shipped for
+> native Windows, with `taskkill /F /T` as the primary tree-kill and a Job Object as defense-in-depth.
+> Host Shell is separate from Trusted Dev Mode. See `THREAT_MODEL.md` §5 and the completion block in
+> `DUAL_MODE_ARCHITECTURE_PLAN.md`; the alternatives below remain a historical decision record.
+
 ---
 
 ## The axes that actually differ

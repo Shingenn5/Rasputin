@@ -1,12 +1,14 @@
-import React, { useState } from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useRef } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   Activity,
   Archive,
+  Box,
   Brain,
-  ChevronsLeft,
   FlaskConical,
   LayoutDashboard,
+  Laptop,
+  LockKeyhole,
   MessageSquare,
   PanelLeft,
   Plus,
@@ -14,7 +16,6 @@ import {
   Settings,
   Sparkles,
   FolderGit2,
-  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 
@@ -56,19 +57,37 @@ export function DashSidebar({
   runningCount = 0,
   newTask,
   locked,
+  runtimeMode = "docker",
   mobileOpen = false,
+  mobileTriggerRef,
   recentSessions = [],
   resumeSession,
   activeSessionId,
 }) {
-  // `collapsed` is the persisted rail mode; hovering temporarily expands on sm+.
-  // `mobileOpen` drives the slide-in overlay on mobile (< sm breakpoint).
-  const [hovered, setHovered] = useState(false);
-  const expanded = !collapsed || hovered || mobileOpen;
+  const asideRef = useRef(null);
+  const wasMobileOpenRef = useRef(mobileOpen);
+  const reducedMotion = useReducedMotion();
+  // Collapsed mode is a deliberate, persistent rail. It never relies on hover
+  // for access; the brand control is always keyboard-reachable and reopens it.
+  const expanded = !collapsed || mobileOpen;
+
+  useEffect(() => {
+    const wasMobileOpen = wasMobileOpenRef.current;
+    wasMobileOpenRef.current = mobileOpen;
+
+    if (mobileOpen) {
+      const firstAction = asideRef.current?.querySelector('[data-testid="new-task"]');
+      firstAction?.focus();
+    } else if (wasMobileOpen) {
+      mobileTriggerRef?.current?.focus();
+    }
+  }, [mobileOpen, mobileTriggerRef]);
 
   const isActive = (item) =>
     view === item.view && (item.view !== "settings" || settingsSection === item.section);
   const sessions = (recentSessions || []).slice(0, 12);
+  const nativeRuntime = runtimeMode === "native";
+  const RuntimeIcon = nativeRuntime ? Laptop : Box;
 
   const navBtn = (item) => {
     const Icon = item.icon;
@@ -79,25 +98,26 @@ export function DashSidebar({
         type="button"
         data-testid={item.testId}
         aria-current={active ? "page" : undefined}
+        aria-label={item.label}
         title={!expanded ? item.label : undefined}
         onClick={() => go(item.view, item.section)}
         className={cn(
-          "group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-          active ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+          active ? "is-active text-sidebar-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
           !expanded && "justify-center px-0",
         )}
       >
         {active && (
           <motion.span
             layoutId="nav-active"
-            transition={{ type: "spring", stiffness: 400, damping: 32 }}
-            className="absolute inset-0 -z-10 rounded-xl bg-gradient-to-r from-primary/18 to-primary/5 ring-1 ring-inset ring-primary/25"
+            transition={reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 36 }}
+            className="ras-nav-active absolute inset-0 -z-10 rounded-lg"
           />
         )}
-        <Icon size={18} className={cn("shrink-0", active && "text-primary")} />
+        <Icon size={18} className={cn("shrink-0", active && "text-sidebar-primary")} />
         {expanded && <span className="flex-1 truncate text-left">{item.label}</span>}
         {expanded && item.testId === "nav-activity" && (runningCount || taskCount) > 0 && (
-          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-primary">
+          <span className="rounded-full bg-sidebar-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-sidebar-primary">
             {runningCount || taskCount}
           </span>
         )}
@@ -111,8 +131,6 @@ export function DashSidebar({
         "relative h-dvh shrink-0 w-0",
         collapsed ? "sm:w-[76px]" : "sm:w-[248px]",
       )}
-      onMouseEnter={() => collapsed && setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {/* Mobile scrim — covers content behind the open sidebar overlay */}
       {mobileOpen && (
@@ -123,36 +141,41 @@ export function DashSidebar({
         />
       )}
       <aside
+        id="rasputin-sidebar"
+        ref={asideRef}
+        aria-label="Primary navigation"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && mobileOpen) {
+            event.preventDefault();
+            toggleSidebar();
+          }
+        }}
         className={cn(
-          "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
+          "ras-sidebar absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
           expanded ? "w-[248px]" : "w-[76px]",
-          // Mobile: slide off-screen when closed; sm+ always visible in flow.
-          !mobileOpen && "-translate-x-full sm:translate-x-0",
-          // Shadow: hover-expand on desktop, or slide-in overlay on mobile.
-          (collapsed && hovered) || mobileOpen ? "shadow-2xl shadow-black/50" : "",
+          // Mobile-only CSS hides closed controls from tab/AT order; desktop remains persistent.
+          !mobileOpen && "is-mobile-closed -translate-x-full sm:translate-x-0",
+          mobileOpen ? "shadow-2xl shadow-black/50" : "",
         )}
       >
         {/* Brand */}
-        <div className={cn("flex shrink-0 items-center gap-2.5 px-2 pb-4", !expanded && "justify-center px-0")}>
-          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-emerald-700 font-extrabold text-primary-foreground shadow-[0_4px_16px_-4px_var(--primary)]">
-            R
-          </div>
+        <div className={cn("ras-sidebar-brand flex shrink-0 items-center gap-2.5 px-2 pb-5", !expanded && "justify-center px-0")}>
+          <button
+            type="button"
+            data-testid="sidebar-toggle"
+            onClick={toggleSidebar}
+            aria-label={collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+            className="ras-brand-sigil shrink-0"
+          >
+            <span>R</span><i aria-hidden="true" />
+            <PanelLeft size={11} className="ras-brand-toggle-icon" aria-hidden="true" />
+          </button>
           {expanded && (
             <div className="flex flex-col leading-tight">
-              <span className="text-[0.95rem] font-bold tracking-tight">Rasputin</span>
-              <span className="text-[0.66rem] text-muted-foreground">Local AI Operations</span>
+              <span className="ras-sidebar-wordmark text-[1rem] font-bold tracking-tight">Rasputin</span>
+              <span className="text-[0.63rem] uppercase tracking-[0.12em] text-sidebar-foreground/45">Operator console</span>
             </div>
-          )}
-          {expanded && (
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label={collapsed ? "Pin sidebar open" : "Collapse sidebar"}
-              title={collapsed ? "Pin open" : "Collapse"}
-              className="ml-auto grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              {collapsed ? <PanelLeft size={15} /> : <ChevronsLeft size={16} />}
-            </button>
           )}
         </div>
 
@@ -162,8 +185,9 @@ export function DashSidebar({
           data-testid="new-task"
           onClick={newTask}
           title={!expanded ? "New Chat" : undefined}
+          aria-label="New Chat"
           className={cn(
-            "mb-2 flex shrink-0 items-center gap-2.5 rounded-xl bg-primary/12 px-3 py-2.5 text-sm font-medium text-primary ring-1 ring-inset ring-primary/20 transition-colors hover:bg-primary/20",
+            "ras-new-chat mb-2 flex shrink-0 items-center gap-2.5 rounded-lg bg-sidebar-primary px-3 py-2.5 text-sm font-semibold text-sidebar-primary-foreground transition-colors hover:brightness-110",
             !expanded && "justify-center px-0",
           )}
         >
@@ -174,12 +198,12 @@ export function DashSidebar({
         {/* Single scroll region: nav (with Settings) and Recent Chats scroll
             together as one column, between the pinned header above and the
             pinned privacy chip below. */}
-        <div className="-mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+        <div className="ras-sidebar-scroll -mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
         <nav className="flex shrink-0 flex-col gap-0.5">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mt-3">
               {expanded && (
-                <div className="px-3 pb-2 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                <div className="px-3 pb-2 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
                   {group.label}
                 </div>
               )}
@@ -192,13 +216,15 @@ export function DashSidebar({
             <button
               type="button"
               data-testid="nav-settings"
+              aria-label="Settings"
+              aria-current={view === "settings" ? "page" : undefined}
               onClick={() => go("settings", "general")}
               title={!expanded ? "Settings" : undefined}
               className={cn(
-                "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                "ras-nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 view === "settings"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  ? "is-active bg-sidebar-accent text-sidebar-foreground"
+                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                 !expanded && "justify-center px-0",
               )}
             >
@@ -212,13 +238,13 @@ export function DashSidebar({
         {expanded && sessions.length > 0 && (
           <div className="mt-4 flex shrink-0 flex-col">
             <div className="flex shrink-0 items-center justify-between px-3 pb-2">
-              <span className="text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
                 Recent Chats
               </span>
               <button
                 type="button"
                 onClick={() => go("sessions")}
-                className="text-[0.62rem] text-muted-foreground/70 transition-colors hover:text-foreground"
+                className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
               >
                 All
               </button>
@@ -235,8 +261,8 @@ export function DashSidebar({
                     className={cn(
                       "flex shrink-0 items-center gap-2.5 truncate rounded-lg px-3 py-2 text-left text-[0.8rem] transition-colors",
                       active
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                        ? "bg-sidebar-accent text-sidebar-foreground"
+                        : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     )}
                   >
                     <MessageSquare size={14} className="shrink-0 opacity-70" />
@@ -249,13 +275,18 @@ export function DashSidebar({
         )}
         </div>
 
-        {/* Privacy chip — pinned at the very bottom */}
-        {expanded && (
-          <div className="mt-3 flex shrink-0 items-center gap-2 rounded-xl border border-border bg-gradient-to-br from-secondary to-card px-3.5 py-2.5">
-            <LifeBuoy size={15} className="shrink-0 text-primary" />
-            <span className="text-[0.8rem] font-semibold">{locked ? "Privacy locked" : "Review mode"}</span>
+        {/* Runtime identity + privacy state — launch-time facts, never browser toggles. */}
+        <div className={cn("ras-sidebar-footer mt-3 flex shrink-0 flex-col gap-1.5", !expanded && "is-collapsed")}>
+          <div className="ras-runtime-row" title={nativeRuntime ? "Native workstation runtime" : "Docker server runtime"}>
+            <RuntimeIcon size={15} aria-hidden="true" />
+            {expanded && <span><small>Runtime</small><strong>{nativeRuntime ? "Native workstation" : "Docker server"}</strong></span>}
           </div>
-        )}
+          <div className="ras-privacy-row" title={locked ? "Privacy Lock enabled" : "Review mode"}>
+            <LockKeyhole size={15} aria-hidden="true" />
+            {expanded && <span>{locked ? "Privacy Lock enabled" : "Review mode"}</span>}
+            <i className={locked ? "is-locked" : ""} aria-hidden="true" />
+          </div>
+        </div>
       </aside>
     </div>
   );

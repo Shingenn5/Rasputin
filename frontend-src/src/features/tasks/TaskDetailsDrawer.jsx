@@ -418,26 +418,25 @@ function ChangesPanel({ workspace, active }) {
         </button>
       </div>
       {error && <p className="drawer-error" role="alert">{error}</p>}
-      {notice && <p className="empty-inline" role="status" style={{ color: "var(--ras-primary, #bd4a28)" }}>{notice}</p>}
+      {notice && <p className="empty-inline changes-notice" role="status">{notice}</p>}
       {!files.length && !error ? (
         <EmptyInline text="No uncommitted changes in this workspace." />
       ) : (
-        <>
-          <ul aria-label="Changed files" style={{ listStyle: "none", margin: "var(--sp-2, 8px) 0", padding: 0, display: "flex", flexDirection: "column", gap: "4px" }}>
+        <div className="changes-workbench">
+          <ul className="changes-file-list" aria-label="Changed files">
             {files.map((entry) => {
               const isModified = /[MR]/.test(entry.status || "");
               return (
-                <li key={entry.path} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <li key={entry.path} className="changes-file-row">
                   <button
                     type="button"
                     data-testid="changes-file"
-                    className="tiny-action"
+                    className={`tiny-action changes-file-button${selected === entry.path ? " is-selected" : ""}`}
                     aria-pressed={selected === entry.path}
                     onClick={() => openDiff(entry.path)}
-                    style={{ flex: 1, justifyContent: "flex-start", gap: "8px", fontWeight: selected === entry.path ? 700 : 500, borderColor: selected === entry.path ? "var(--ras-primary, #bd4a28)" : undefined }}
                   >
-                    <span aria-hidden="true" style={statusStyle(entry.status)}>{entry.status || "?"}</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.path}</span>
+                    <span aria-hidden="true" className={`changes-file-status ${statusClass(entry.status)}`}>{entry.status || "?"}</span>
+                    <span className="changes-file-path">{entry.path}</span>
                   </button>
                   {isModified && (
                     <button type="button" data-testid="changes-revert" className="tiny-action danger" aria-label={`Revert ${entry.path}`} onClick={() => revert(entry.path)}>
@@ -448,7 +447,7 @@ function ChangesPanel({ workspace, active }) {
               );
             })}
           </ul>
-          <div tabIndex={0} data-testid="changes-diff" aria-label={selected ? `Diff for ${selected}` : "File diff"} style={{ outline: "none" }}>
+          <div className="changes-diff-panel" tabIndex={0} data-testid="changes-diff" aria-label={selected ? `Diff for ${selected}` : "File diff"}>
             {diffLoading ? (
               <p className="empty-inline">Loading diff…</p>
             ) : selected ? (
@@ -457,43 +456,42 @@ function ChangesPanel({ workspace, active }) {
               <EmptyInline text="Select a file to view its diff." />
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-function statusStyle(status) {
+function statusClass(status) {
   const value = (status || "").trim();
-  let color = "#8a8a8a";
-  if (/A|\?/.test(value)) color = "#3fb950";
-  else if (/D/.test(value)) color = "#f85149";
-  else if (/[MR]/.test(value)) color = "#d29922";
-  return { fontFamily: "var(--font-mono, monospace)", fontWeight: 700, minWidth: "1.6em", color };
+  if (/A|\?/.test(value)) return "is-added";
+  if (/D/.test(value)) return "is-deleted";
+  if (/[MR]/.test(value)) return "is-modified";
+  return "";
 }
 
 function DiffView({ text }) {
   if (!text) return <EmptyInline text="No textual diff (the file may be binary, newly added, or removed)." />;
   const lines = text.split("\n");
   return (
-    <pre className="log-box" aria-label="Unified diff" style={{ maxHeight: "48vh", overflow: "auto", padding: 0 }}>
-      {lines.map((line, index) => (
-        <div key={index} style={{ ...diffLineStyle(line), whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "0 8px" }}>
-          {line || " "}
-        </div>
-      ))}
+    <pre className="log-box diff-view" aria-label="Unified diff">
+      <code>{lines.map((line, index) => (
+        <span key={index} className={`diff-line ${diffLineClass(line)}`}>
+          {line || " "}{"\n"}
+        </span>
+      ))}</code>
     </pre>
   );
 }
 
-function diffLineStyle(line) {
+function diffLineClass(line) {
   if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ") || line.startsWith("index ")) {
-    return { color: "#8a8a8a", fontWeight: 600 };
+    return "is-meta";
   }
-  if (line.startsWith("@@")) return { color: "#4aa3ff", background: "rgba(74,163,255,0.10)" };
-  if (line.startsWith("+")) return { color: "#3fb950", background: "rgba(63,185,80,0.14)" };
-  if (line.startsWith("-")) return { color: "#f85149", background: "rgba(248,81,73,0.14)" };
-  return {};
+  if (line.startsWith("@@")) return "is-hunk";
+  if (line.startsWith("+")) return "is-added";
+  if (line.startsWith("-")) return "is-removed";
+  return "";
 }
 
 function TerminalPanel({ detail, task }) {
@@ -505,8 +503,8 @@ function TerminalPanel({ detail, task }) {
   return (
     <div className="terminal-panel" data-testid="task-terminal">
       {shellCalls.map((tool) => (
-        <pre key={tool.id} className="log-box" style={{ marginBottom: "var(--sp-2, 8px)" }} aria-label="Shell command output">
-          <span style={{ color: "#3fb950" }}>$ {String((tool.argsRedacted || {}).command || "shell command").slice(0, 400)}</span>
+        <pre key={tool.id} className="log-box terminal-command" aria-label="Shell command output">
+          <span className="terminal-prompt">$ {String((tool.argsRedacted || {}).command || "shell command").slice(0, 400)}</span>
           {"\n"}
           {summarizeDetail(tool.resultRedacted || {})}
         </pre>

@@ -3,7 +3,9 @@ param(
     [string]$Command = "help",
 
     [switch]$EnableWarSat,
-    [switch]$Native
+    [switch]$Native,
+    [ValidateRange(0, 65535)]
+    [int]$Port = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,7 +14,7 @@ Set-Location $PSScriptRoot
 function Show-Header {
     Write-Host ""
     Write-Host "=========================================" -ForegroundColor Cyan
-    Write-Host "           🛡️ RASPUTIN MANAGER          " -ForegroundColor Cyan
+    Write-Host "              RASPUTIN MANAGER          " -ForegroundColor Cyan
     Write-Host "=========================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -22,7 +24,7 @@ function Test-DockerEnv {
         [void](docker compose version 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "Docker not found" }
     } catch {
-        Write-Host "❌ Docker is not running or not installed." -ForegroundColor Red
+        Write-Host "Docker is not running or not installed." -ForegroundColor Red
         Write-Host "Rasputin requires Docker Desktop to run its sandboxes." -ForegroundColor Yellow
         Write-Host "Please install Docker Desktop from: https://www.docker.com/products/docker-desktop/" -ForegroundColor Yellow
         Write-Host "Once installed and running, run this script again." -ForegroundColor Yellow
@@ -37,7 +39,7 @@ function Open-Browser {
 }
 
 function Get-Credentials {
-    Write-Host "Fetching credentials from logs..." -ForegroundColor Cyan
+    Write-Host "Looking for the original first-run credentials in current container logs..." -ForegroundColor Cyan
     $logs = docker compose logs rasputin-wrapper 2>&1
     
     $username = $null
@@ -59,7 +61,9 @@ function Get-Credentials {
         Write-Host "Change this password after your first login!" -ForegroundColor Gray
         Write-Host ""
     } else {
-        Write-Host "Still waiting for credentials to be generated... (Check 'docker compose logs' if this persists)" -ForegroundColor DarkGray
+        Write-Host "No generated password was found in the current container logs." -ForegroundColor Yellow
+        Write-Host "This is expected after the first-boot log is lost, the container is replaced, or the password was changed." -ForegroundColor DarkGray
+        Write-Host "If you do not know the current password, run: .\rasputin.ps1 reset-password" -ForegroundColor Cyan
     }
 }
 
@@ -148,28 +152,41 @@ function Stop-Rasputin {
 }
 
 function Start-Native {
+    param([int]$RequestedPort = 0)
+
     # Native (no-Docker) launch: venv bootstrap + uvicorn. Runtime data goes to
     # %LOCALAPPDATA%\Rasputin\data (a fresh instance) unless RASPUTIN_DATA_DIR is
     # set. Serves the prebuilt frontend\ exactly as the container does.
-    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-        Write-Host "Python 3 is required on PATH for native mode." -ForegroundColor Red
-        exit 1
-    }
-
     $venv = Join-Path $PSScriptRoot ".venv"
     $vpy = Join-Path $venv "Scripts\python.exe"
     if (-not (Test-Path $vpy)) {
+        $bootstrapPython = Get-Command python -ErrorAction SilentlyContinue
+        $bootstrapArgs = @()
+        if (-not $bootstrapPython) {
+            $bootstrapPython = Get-Command py -ErrorAction SilentlyContinue
+            $bootstrapArgs = @("-3")
+        }
+        if (-not $bootstrapPython) {
+            Write-Host "Python 3.12+ is required to create the native environment." -ForegroundColor Red
+            Write-Host "Install Python, then rerun this command. An existing .venv can run without Python on PATH." -ForegroundColor Yellow
+            exit 1
+        }
+
         Write-Host "Creating .venv and installing dependencies (first run only)..." -ForegroundColor Cyan
-        python -m venv $venv
+        & $bootstrapPython.Source @bootstrapArgs -m venv $venv
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vpy)) {
+            Write-Host "Failed to create the native Python environment." -ForegroundColor Red
+            exit 1
+        }
         & $vpy -m pip install --quiet --upgrade pip
         & $vpy -m pip install --quiet -r (Join-Path $PSScriptRoot "requirements.txt")
     }
 
-    $port = if ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
+    $port = if ($RequestedPort -gt 0) { "$RequestedPort" } elseif ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
     if (Get-NetTCPConnection -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue) {
         Write-Host "Port $port is already in use -- the Docker instance is probably running." -ForegroundColor Red
         Write-Host "Free it with '.\rasputin.ps1 stop', or pick another port:" -ForegroundColor Yellow
-        Write-Host "    `$env:WRAPPER_PORT=8788; .\rasputin.ps1 start -Native" -ForegroundColor Yellow
+        Write-Host "    .\rasputin.ps1 start -Native -Port 8788" -ForegroundColor Yellow
         exit 1
     }
 
@@ -230,7 +247,17 @@ function Invoke-DataMigration {
 Show-Header
 
 switch ($Command.ToLower()) {
-    "start" { if ($Native) { Start-Native } else { Start-Rasputin } }
+    "start" {
+        if ($Native) {
+            Start-Native -RequestedPort $Port
+        } else {
+            if ($Port -gt 0) {
+                Write-Host "-Port is a native daily-driver option. Use -Native, or set WRAPPER_PORT for Docker mode." -ForegroundColor Red
+                exit 1
+            }
+            Start-Rasputin
+        }
+    }
     "stop" { Stop-Rasputin }
     "credentials" { Test-DockerEnv; Get-Credentials }
     "reset-password" { Test-DockerEnv; Reset-Password }
@@ -238,10 +265,10 @@ switch ($Command.ToLower()) {
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin (Docker) in the background"
-        Write-Host "  .\rasputin.ps1 start -Native     - Starts Rasputin natively (no Docker; venv + uvicorn)"
+        Write-Host "  .\rasputin.ps1 start -Native [-Port 8788] - Starts the native daily driver (venv + uvicorn)"
         Write-Host "  .\rasputin.ps1 start -EnableWarSat - Starts Rasputin with Docker Control layer"
         Write-Host "  .\rasputin.ps1 stop              - Stops all Rasputin containers"
-        Write-Host "  .\rasputin.ps1 credentials       - Fetches your login credentials"
+        Write-Host "  .\rasputin.ps1 credentials       - Reads the original generated login from current container logs"
         Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
         Write-Host "  .\rasputin.ps1 migrate-data      - Moves existing .\data into the named volume (idempotent)"
         Write-Host ""

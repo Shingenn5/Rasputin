@@ -29,9 +29,9 @@ Docker socket.
 > [!IMPORTANT]
 > **Read `THREAT_MODEL.md` at the repo root before writing anything
 > security-adjacent** (auth, permissions, tool dispatch, sandboxing). It's
-> short, current, and includes an honest "Known Gaps" section — most
-> notably that the login/session path is currently a no-op (see §5 below).
-> Don't assume the login screen protects anything until that's resolved.
+> short, current, and includes honest residual caveats. Login/session
+> enforcement is real; the execution surfaces deliberately have different
+> boundaries, so read §5 before describing them as one sandbox.
 
 ---
 
@@ -54,10 +54,12 @@ Docker socket.
   — almost everything (sessions, messages, memory, skills, auth, mount
   requests) lives there now; legacy flat JSON files under `data/` are only
   read once as a migration seed
-- **Execution surfaces**: two, with different isolation properties — see
-  `THREAT_MODEL.md` §5. Skills run in ephemeral Docker containers
-  (`rasputin-sandbox`); `shell_exec`/git tools run as a direct subprocess
-  inside Rasputin's own backend, gated by per-workspace **Trusted Dev Mode**
+- **Execution surfaces**: different isolation properties — see
+  `THREAT_MODEL.md` §5. Skills run in ephemeral `--network none` Docker
+  containers over stdio RPC; native-Windows `shell_exec` runs as the
+  low-privilege `Rasputin_sbx` account when the separate Host Shell capability
+  is enabled; Docker/native-non-Windows shell and git tools follow direct
+  backend-child paths with their documented gates.
 - **Entry point**: `backend/main.py`
 
 ---
@@ -80,9 +82,9 @@ Docker socket.
     actually live).
   - `core/security.py` / `core/approvals.py` — the permission-flag and
     per-action-approval system.
-  - `core/workspace.py` — workspace records, Trusted Dev Mode flag, host
-    folder mount requests (the docker-compose override that lets an
-    approved host folder show up as a bind mount on restart).
+  - `core/workspace.py` — workspace records, separate Trusted Dev Mode / Host
+    Shell flags, direct native folder registration, and Docker-only host-folder
+    mount requests.
   - `core/host_fs.py` — browses the *host* filesystem from inside the
     (usually containerized) backend, for the folder-picker UI.
   - `core/auth.py` — password hashing, login, sessions. Real
@@ -112,7 +114,8 @@ Rasputin is **Docker-first** — that's how it's actually run day to day.
 ```powershell
 # Windows
 .\rasputin.ps1 start                  # add -EnableWarSat for the Docker control layer
-.\rasputin.ps1 credentials            # fetch the generated first-run admin login
+.\rasputin.ps1 credentials            # read first-run login if still in current logs
+.\rasputin.ps1 reset-password         # generate a new login if it is not
 ```
 ```bash
 # macOS/Linux
@@ -154,11 +157,12 @@ Full detail lives in `THREAT_MODEL.md`; the load-bearing points:
 - **Permission flags** (`backend/core/security.py`): flat booleans —
   `allow_shell_execution` and `allow_docker_control` are **off** by
   default; `allow_remote_models` (Privacy Lock) is **off** by default.
-- **Trusted Dev Mode**: a per-workspace opt-in that lets a workspace skip
-  the per-action approval queue for file/git writes, and is the *only* way
-  to unlock `shell_exec` at all. Scoped to that workspace's directory;
-  every call is still audit-logged and still runs through deny-pattern
-  shell guardrails.
+- **Trusted Dev Mode**: a per-workspace opt-in that lets file/git writes skip
+  the per-action approval queue. It does **not** unlock `shell_exec`; Host
+  Shell is a separate per-workspace opt-in, and the global
+  `allow_shell_execution` flag must also be on. Every call remains audited
+  and shell calls still pass the deny-pattern hint; native Windows then routes
+  through the `Rasputin_sbx` account and workspace ACL.
 - **Untrusted-content wrapper** (`backend/engine/prompt_security.py`): RAG
   hits, graph evidence, saved memory, workspace file contents, and every
   tool-call result get fenced in a labeled
@@ -176,9 +180,10 @@ Full detail lives in `THREAT_MODEL.md`; the load-bearing points:
   (non-Docker) run hit directly on `127.0.0.1` — behind the standard
   docker-compose deployment, `request.client.host` is the bridge gateway
   IP, so that bypass is a dev convenience that simply doesn't apply in
-  production. If you lose your admin password, `.\rasputin.ps1
-  credentials` only recovers it from container logs on the very first
-  boot — there's no reset flow yet.
+  production. `.\rasputin.ps1 credentials` can recover the generated password
+  only while its original line remains in the current container logs. If that
+  line is gone or the password was changed, use `.\rasputin.ps1 reset-password`
+  (native: `python -m backend.tools.reset_password`).
 
 ---
 

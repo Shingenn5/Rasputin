@@ -67,8 +67,10 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
   isolated override for test instances.
 - **Auth is real** (no longer stubbed — fixed 2026-07-07). Log in via
   `POST /api/auth/login`; the session is an httponly `rasputin_session` cookie. First-run
-  admin credentials are printed to the server console. Some older docs (root
-  `ONBOARDING.md` §5, `.claude/skills/verify/SKILL.md`) still claim auth is a no-op — stale.
+  admin credentials are printed to the server console only when a fresh data store creates the
+  account. In Docker mode, `rasputin.ps1 credentials` works only while that original line remains
+  in the current container logs; otherwise use `rasputin.ps1 reset-password` (native:
+  `python -m backend.tools.reset_password`).
 - UI verification patterns (Playwright + testids + isolated server) live in
   `.claude/skills/verify/SKILL.md`.
 
@@ -87,7 +89,7 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
 5. **Do not restructure the chat page layout**; upgrade components in place. Any layout change
    elsewhere requires a restorable backup of the prior version. Keep the composer pill.
 6. **Commit only when Elliott asks.** Branch off `main` first if you're on the default branch.
-   Current working branch: `codex/agentic-coding-loop-v1` (`main` is its clean ancestor).
+   Do not trust a branch name captured in a doc; check `git branch --show-current` at the start.
 7. Verify UI claims **in the running app**, not by reading code. "Renders" ≠ "works" — drive
    the primary action before calling something done.
 8. Temp/scratch files go outside the repo (session temp dir), never in the repo or `/tmp`.
@@ -135,9 +137,10 @@ coding task on a coder model (e.g. Qwen2.5-Coder).
 | `docs/PHASE_A1_FINDINGS.md` | Current — audit + real-model findings |
 | `docs/ROADMAP.md` | Mostly current; its "Status" block predates A1 completion (says A1 is next — it's done) |
 | `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | §4 is current/canonical; later backend path maps still contain pre-package-layout names |
-| `ONBOARDING.md` (root) | Good general architecture intro, but §5's "auth is a no-op" is **stale** |
+| `ONBOARDING.md` (root) | Current general architecture/auth introduction |
 | `CLAUDE_HANDOVER.md` | **Stale** (old `claude-ui` branch era) — ignore |
-| `docs/REMAINING_WORK.md` | **Stale** — predates completion of sandbox-account execution and `--network none` |
+| `docs/DUAL_MODE_ARCHITECTURE_PLAN.md`, `docs/EXECUTION_PLAN.md` | Current completion record for security Phases 0–4; future-tense plan text is retained as history |
+| `docs/REMAINING_WORK.md` | Current dual-mode/security residuals + open Phase 5 packaging |
 | `docs/CURRENT_BASELINE.md` | **Stale** — June baseline; useful history, not current direction |
 | `.agents/skills/verify/SKILL.md`, `.claude/skills/verify/SKILL.md` | Current — isolated native verification with real-auth login/cookie flow |
 

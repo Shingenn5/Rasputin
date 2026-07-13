@@ -1,8 +1,12 @@
 # Phase 3 Design — Host-Toolchain Sandboxed Shell
 
-*Draft for operator review, 2026-07-11 (Claude Fable 5). Implements the "Execution isolation
-model" section of [`DUAL_MODE_ARCHITECTURE_PLAN.md`](DUAL_MODE_ARCHITECTURE_PLAN.md). Nothing here
-is built yet — this is the plan to sign off on before code.*
+*Drafted for operator review, 2026-07-11 (Claude Fable 5); retained as the historical design record
+for the "Execution isolation model" in
+[`DUAL_MODE_ARCHITECTURE_PLAN.md`](DUAL_MODE_ARCHITECTURE_PLAN.md). The core shipped 2026-07-12:
+`Rasputin_sbx` run-as, workspace ACL grant/revoke, primary `taskkill /F /T`, Job Object
+defense-in-depth, and on-demand provisioning. Implementation deliberately differs from this draft
+in three places: no per-command confirmation, git tools stay direct backend children, and overflow
+is truncated rather than archived. External-egress denial is best-effort with loopback open.*
 
 ---
 
@@ -128,7 +132,7 @@ guardrail (§1), weaker than the container wall.*
 - These are testable **independently of the account** and ship first (Stage 3.1).
 
 ### 3.7 Capability split — `allow_host_shell` distinct from `trusted`
-- Problem today: one `trusted` flag both auto-approves file edits **and** unlocks `shell_exec`. So
+- Problem at design time: one `trusted` flag both auto-approved file edits **and** unlocked `shell_exec`. So
   "stop nagging me about edits" silently means "run unattended host shell."
 - New per-workspace boolean **`allow_host_shell`**, separate from `trusted`:
   - `trusted` → auto-approve file *edits* (unchanged).

@@ -1,6 +1,23 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Col, Form, ListGroup, Nav, Row, Stack } from "react-bootstrap";
-import { CheckCircle2, Download, Upload, RefreshCw, Save, ShieldAlert, ShieldCheck, Square, Wrench, Search, Info, Settings2, Activity, BrainCircuit, Rocket, Plug, Server as ServerIcon, Bell, FileWarning, Stethoscope } from "lucide-react";
+import {
+  Activity,
+  Bell,
+  BrainCircuit,
+  CheckCircle2,
+  Download,
+  FileWarning,
+  Info,
+  Plug,
+  RefreshCw,
+  Rocket,
+  Search,
+  Server as ServerIcon,
+  Settings2,
+  ShieldAlert,
+  ShieldCheck,
+  Stethoscope,
+  Upload,
+} from "lucide-react";
 import { GeneralSettings } from "./GeneralSettings.jsx";
 import { settingsItems } from "../../lib/constants.js";
 import { useSettingsStore } from "./settingsStore.js";
@@ -16,185 +33,170 @@ import { AuditSettings } from "./AuditSettings.jsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.jsx";
 import { AboutSettings } from "./AboutSettings.jsx";
 
-// Import existing settings components that haven't been rewritten yet, if they exist
-// For now, we will create stubs for the new categories.
+const iconMap = {
+  general: Settings2,
+  runtime: Activity,
+  security: ShieldCheck,
+  models: BrainCircuit,
+  deployments: Rocket,
+  integrations: Plug,
+  resources: ServerIcon,
+  notifications: Bell,
+  audit: FileWarning,
+  diagnostics: Stethoscope,
+  about: Info,
+};
+
+const settingGroups = [
+  { label: "Experience", ids: ["general", "notifications"] },
+  { label: "Intelligence", ids: ["models", "runtime", "resources"] },
+  { label: "Governance", ids: ["security", "audit", "diagnostics"] },
+  { label: "Platform", ids: ["deployments", "integrations", "about"] },
+];
 
 export function SettingsView(props) {
-  const { view, section, setSection, setTheme, models, modeModelOverrides, setModeModelOverride, testingMode, updateTestingMode } = props;
+  const {
+    view,
+    section,
+    setSection,
+    setTheme,
+    models,
+    modeModelOverrides,
+    setModeModelOverride,
+    testingMode,
+    updateTestingMode,
+    security,
+  } = props;
   const activeSetting = settingsItems.find(([id]) => id === section) || settingsItems[0];
+  const activeInspector = getInspectorText(activeSetting[0]);
+  const ActiveIcon = iconMap[activeSetting[0]] || Settings2;
   const [searchQuery, setSearchQuery] = useState("");
-  const loading = useSettingsStore(state => state.loading);
+  const loading = useSettingsStore((state) => state.loading);
 
-  const iconMap = {
-    general: Settings2,
-    runtime: Activity,
-    security: ShieldCheck,
-    models: BrainCircuit,
-    deployments: Rocket,
-    integrations: Plug,
-    resources: ServerIcon,
-    notifications: Bell,
-    audit: FileWarning,
-    diagnostics: Stethoscope,
-    about: Info
-  };
+  const visibleGroups = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return settingGroups
+      .map((group) => ({
+        ...group,
+        items: settingsItems.filter(([id, label, small]) =>
+          group.ids.includes(id) && (!query || `${label} ${small}`.toLowerCase().includes(query))
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [searchQuery]);
 
   useEffect(() => {
-    if (view === "settings") {
-      loadSettings();
-    }
+    if (view === "settings") loadSettings();
   }, [view]);
 
   return (
     <section className={`app-view settings-view tw ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
-      {/* ── Settings Header ── */}
-      <header className="page-header border-bottom bg-body d-flex justify-content-between align-items-center">
-        <div>
-          <h1 className="mb-0 text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="mt-1 mb-0 text-sm text-muted-foreground">Platform configuration, governance, and deployment control plane.</p>
+      <header className="settings-command-hero">
+        <div className="settings-hero-copy">
+          <span className="control-eyebrow"><span className="signal-dot" /> System control</span>
+          <h1>Shape your Rasputin.</h1>
+          <p>One control plane for local intelligence, runtime policy, and the boundaries your agents operate within.</p>
         </div>
-        <div className="d-flex gap-2 align-items-center">
-          <div className="input-group input-group-sm">
-            <span className="input-group-text bg-body-tertiary"><Search size={14} /></span>
-            <Form.Control 
-              placeholder="Search Settings..." 
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ width: "200px" }}
-            />
-          </div>
-          <Button variant="outline-secondary" size="sm" onClick={() => importSettings({})} disabled={loading}>
-            <Upload size={14} className="me-1" /> Import Config
-          </Button>
-          <Button variant="outline-secondary" size="sm" onClick={exportSettings} disabled={loading}>
-            <Download size={14} className="me-1" /> Export Config
-          </Button>
-          <Button variant="outline-danger" size="sm" onClick={() => restoreDefaults("all")} disabled={loading}>
-            <RefreshCw size={14} className="me-1" /> Restore Defaults
-          </Button>
+        <div className="settings-posture" aria-label="Current system posture">
+          <div><span>Runtime</span><strong>{security?.native ? "Native" : "Container"}</strong></div>
+          <div><span>Models</span><strong>{models?.length || 0} ready</strong></div>
+          <div><span>Guardrails</span><strong className="is-safe">Enforced</strong></div>
+        </div>
+        <div className="settings-hero-actions" aria-label="Configuration actions">
+          <button type="button" onClick={() => importSettings({})} disabled={loading}><Upload size={15} /> Import</button>
+          <button type="button" onClick={exportSettings} disabled={loading}><Download size={15} /> Export</button>
+          <button type="button" className="is-danger" onClick={() => restoreDefaults("all")} disabled={loading}><RefreshCw size={15} /> Reset</button>
         </div>
       </header>
 
-      <div className="settings-layout gui-workspace settings-gui-workspace">
-        {/* ── Left Navigation ── */}
-        <Nav className="settings-nav flex-column bg-body-tertiary gui-sidebar" aria-label="Settings sections">
-          {settingsItems.map(([id, label, small]) => {
-            const Icon = iconMap[id] || Square;
-            return (
-              <Button
-                key={id}
-                type="button"
-                variant={section === id ? "primary" : "light"}
-                className="settings-tab text-start d-flex align-items-center gap-3"
-                data-testid={`settings-${id}`}
-                aria-current={section === id ? "page" : undefined}
-                onClick={() => setSection(id)}
-              >
-                <Icon size={18} className="flex-shrink-0" />
-                <span className="fw-medium">{label}</span>
-              </Button>
-            );
-          })}
-        </Nav>
-
-        {/* ── Main Settings Panel ── */}
-        <div className="settings-panels gui-main">
-          {section === "general" && <GeneralSettings setTheme={setTheme} testingMode={testingMode} updateTestingMode={updateTestingMode} />}
-          {section === "runtime" && <RuntimeSettings />}
-          {section === "security" && <SecuritySettings />}
-          {section === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
-          {section === "deployments" && <DeploymentSettings />}
-          {section === "integrations" && <IntegrationSettings />}
-          {section === "resources" && <ResourceSettings />}
-          {section === "notifications" && <NotificationSettings />}
-          {section === "audit" && <AuditSettings />}
-          {section === "diagnostics" && <DiagnosticsSettings />}
-          {section === "about" && <AboutSettings />}
-        </div>
-
-        {/* ── Inspector Panel ── */}
-        <aside className="settings-inspector-panel gui-inspector" aria-label="Settings inspector">
-          <span className="eyebrow">Inspector</span>
-          <h2>{activeSetting[1]}</h2>
-          
-          <div className="mt-4">
-            <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Description</h6>
-            <p className="small mb-3">{getInspectorText(activeSetting[0]).desc}</p>
-
-            {/* Status color lives on the icon; the words stay body-colored
-                for readability (amber/green text was illegible on cream). */}
-            <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Validation Rules</h6>
-            <p className="small mb-3"><CheckCircle2 size={12} className="me-1 text-success" />{getInspectorText(activeSetting[0]).validation}</p>
-
-            <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Impact Analysis</h6>
-            <p className="small mb-3"><ShieldAlert size={12} className="me-1 text-warning" />{getInspectorText(activeSetting[0]).impact}</p>
-
-            <h6 className="text-uppercase text-muted" style={{ fontSize: "0.75rem", letterSpacing: "1px" }}>Dependencies</h6>
-            <div className="small">
-              {getInspectorText(activeSetting[0]).deps.map(d => (
-                <Badge bg="secondary" className="me-1 mb-1" key={d}>{d}</Badge>
-              ))}
-              {getInspectorText(activeSetting[0]).deps.length === 0 && <span className="text-muted">None</span>}
-            </div>
+      <div className="settings-control-grid">
+        <nav className="settings-control-rail" aria-label="Settings sections">
+          <label className="settings-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Find a setting"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            <kbd>/</kbd>
+          </label>
+          <div className="settings-rail-scroll">
+            {visibleGroups.map((group) => (
+              <div className="settings-nav-group" key={group.label}>
+                <span>{group.label}</span>
+                {group.items.map(([id, label, small]) => {
+                  const Icon = iconMap[id] || Settings2;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`settings-nav-item ${section === id ? "is-active" : ""}`}
+                      data-testid={`settings-${id}`}
+                      aria-current={section === id ? "page" : undefined}
+                      onClick={() => setSection(id)}
+                    >
+                      <span className="settings-nav-icon"><Icon size={17} /></span>
+                      <span><strong>{label}</strong><small>{small}</small></span>
+                      <i aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            {visibleGroups.length === 0 && <p className="settings-no-results">No settings match “{searchQuery}”.</p>}
           </div>
-        </aside>
-      </div>
-    </section>
-  );
-}
+        </nav>
 
-function PlaceholderPanel({ title, desc }) {
-  return (
-    <section className="settings-pane active">
-      <div className="mb-4 border-bottom pb-3">
-        <h2 className="mb-1">{title}</h2>
-        <p className="text-body-secondary mb-0">{desc}</p>
+        <main className="settings-control-stage">
+          <div className="settings-stage-heading">
+            <span className="settings-stage-icon"><ActiveIcon size={23} /></span>
+            <div>
+              <span className="control-eyebrow">Configuration / {activeSetting[2]}</span>
+              <h2>{activeSetting[1]}</h2>
+              <p>{activeInspector.desc}</p>
+            </div>
+            <span className="settings-validation"><CheckCircle2 size={14} /> Schema valid</span>
+          </div>
+
+          <div className="settings-context-strip">
+            <div><span>Validation</span><p>{activeInspector.validation}</p></div>
+            <div><span>Operational impact</span><p><ShieldAlert size={13} /> {activeInspector.impact}</p></div>
+            <div><span>Connected systems</span><p>{activeInspector.deps.length ? activeInspector.deps.join(" · ") : "Isolated configuration"}</p></div>
+          </div>
+
+          <div className="settings-panel-surface">
+            {section === "general" && <GeneralSettings setTheme={setTheme} testingMode={testingMode} updateTestingMode={updateTestingMode} />}
+            {section === "runtime" && <RuntimeSettings />}
+            {section === "security" && <SecuritySettings />}
+            {section === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
+            {section === "deployments" && <DeploymentSettings />}
+            {section === "integrations" && <IntegrationSettings />}
+            {section === "resources" && <ResourceSettings />}
+            {section === "notifications" && <NotificationSettings />}
+            {section === "audit" && <AuditSettings />}
+            {section === "diagnostics" && <DiagnosticsSettings />}
+            {section === "about" && <AboutSettings />}
+          </div>
+        </main>
       </div>
-      <Card className="shadow-sm">
-        <Card.Body className="text-center py-5">
-          <Wrench size={48} className="text-muted mb-3" />
-          <h4>Under Construction</h4>
-          <p className="text-body-secondary">
-            This module is being migrated to the Settings V3 Architecture.
-          </p>
-        </Card.Body>
-      </Card>
     </section>
   );
 }
 
 function getInspectorText(section) {
   const data = {
-    general: {
-      desc: "Platform-wide behavioral settings and startup defaults.",
-      validation: "Strict type checking on primitives.",
-      impact: "Affects UI layout and default session loading.",
-      deps: ["Archive", "Workspaces"]
-    },
-    runtime: {
-      desc: "Controls system resource allocation and task execution limits.",
-      validation: "Numeric bounds checking required.",
-      impact: "May reject new Tasks if limits are reduced below current usage.",
-      deps: ["WarSat"]
-    },
-    security: {
-      desc: "Critical authentication and encryption management.",
-      validation: "Cryptographic validation of keys.",
-      impact: "High risk: Revoking tokens will terminate active agents.",
-      deps: ["All Subsystems"]
-    },
-    deployments: {
-      desc: "Governs WarSat container creation and operational rules.",
-      validation: "Docker/K8s schema validation.",
-      impact: "Changes apply to new containers only.",
-      deps: ["WarSat", "Models"]
-    }
+    general: { desc: "Tune the application experience and the defaults every new session inherits.", validation: "Live type and range checks", impact: "Changes the interface and session defaults", deps: ["Archive", "Workspaces"] },
+    runtime: { desc: "Balance speed, stability, and resource use for local task execution.", validation: "Resource limits and numeric bounds", impact: "Can affect new and running tasks", deps: ["WarSat"] },
+    security: { desc: "Control authentication, secrets, approvals, and agent access boundaries.", validation: "Key and policy integrity checks", impact: "May end sessions or revoke capabilities", deps: ["All subsystems"] },
+    models: { desc: "Register intelligence providers and choose how work routes between them.", validation: "Provider and model availability", impact: "Changes inference routing", deps: ["Runtime", "Tasks"] },
+    deployments: { desc: "Define how isolated WarSat workers are created and operated.", validation: "Container deployment schema", impact: "Applies to newly created workers", deps: ["WarSat", "Models"] },
+    integrations: { desc: "Connect Rasputin to the external services that extend your workflow.", validation: "Endpoint and credential checks", impact: "Changes available external actions", deps: ["Security"] },
+    resources: { desc: "Set practical hardware ceilings for predictable local performance.", validation: "Host capacity and numeric bounds", impact: "May reduce task concurrency", deps: ["Runtime"] },
+    notifications: { desc: "Decide which system events deserve your attention and where they appear.", validation: "Channel and event mapping", impact: "Changes alert delivery only", deps: ["Activity"] },
+    audit: { desc: "Configure the durable record of agent actions and security-sensitive events.", validation: "Retention and storage policy", impact: "Changes compliance records", deps: ["Security", "Activity"] },
+    diagnostics: { desc: "Inspect health signals and tune the evidence available for troubleshooting.", validation: "Diagnostic service checks", impact: "May increase local telemetry", deps: ["Runtime"] },
+    about: { desc: "Review build identity, platform information, and project resources.", validation: "Build metadata", impact: "Read-only information", deps: [] },
   };
-  
-  return data[section] || {
-    desc: "Configuration module for Rasputin.",
-    validation: "Standard schema validation.",
-    impact: "Low system impact.",
-    deps: []
-  };
+  return data[section] || { desc: "Configure Rasputin.", validation: "Standard schema checks", impact: "Low system impact", deps: [] };
 }

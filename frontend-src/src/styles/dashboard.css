@@ -14,8 +14,8 @@
   --dash-panel-2: color-mix(in srgb, var(--dash-bg) 87%, var(--dash-text));
   --dash-panel-hover: color-mix(in srgb, var(--dash-bg) 82%, var(--dash-text));
   
-  --dash-border: color-mix(in srgb, var(--dash-text) 8%, transparent);
-  --dash-border-strong: color-mix(in srgb, var(--dash-text) 16%, transparent);
+  --dash-border: color-mix(in srgb, var(--dash-text) 11%, transparent);
+  --dash-border-strong: color-mix(in srgb, var(--dash-text) 21%, transparent);
   
   --dash-muted: color-mix(in srgb, var(--dash-text) 65%, transparent);
   --dash-faint: color-mix(in srgb, var(--dash-text) 45%, transparent);
@@ -23,13 +23,28 @@
   --dash-accent-soft: color-mix(in srgb, var(--dash-accent) 14%, transparent);
   --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 50%, transparent);
 
-  --dash-up: var(--dash-accent);
-  --dash-down: #ff6b6b;
+  --dash-up: #3f9c68;
+  --dash-info: #477ca5;
+  --dash-warn: #d49438;
+  --dash-down: #c74f46;
   
-  --dash-radius: 18px;
-  --dash-radius-sm: 12px;
+  --dash-radius: 16px;
+  --dash-radius-sm: 10px;
   --dash-radius-pill: 999px;
   --dash-gap: 18px;
+
+  --ras-font-display: "Rajdhani", "Arial Narrow", system-ui, sans-serif;
+  --ras-font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ras-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --ras-shadow-low: 0 1px 2px color-mix(in srgb, var(--dash-text) 8%, transparent), 0 10px 30px color-mix(in srgb, var(--dash-text) 5%, transparent);
+  --ras-shadow-overlay: 0 22px 70px color-mix(in srgb, #000 30%, transparent);
+}
+
+html:not(.dark) {
+  --dash-bg-2: color-mix(in srgb, var(--dash-bg) 91%, #fff);
+  --dash-panel: color-mix(in srgb, var(--dash-bg) 74%, #fff);
+  --dash-panel-2: color-mix(in srgb, var(--dash-bg) 61%, #fff);
+  --dash-panel-hover: color-mix(in srgb, var(--dash-bg) 84%, var(--dash-text));
 }
 
 /* ── Dashboard shell layout ── */

@@ -89,21 +89,14 @@ export function Drawer({
 
   if (!mounted || typeof document === "undefined") return null;
 
-  function onBackdropMouseDown(event) {
-    if (event.target === event.currentTarget && typeof onClose === "function") {
-      onClose();
-    }
-  }
-
   const { className: extraPanelClass = "", ...restPanelProps } = panelProps;
 
   return createPortal(
     <div
       className={`ras-drawer-layer${visible ? " is-open" : ""}`}
       role="presentation"
-      onMouseDown={onBackdropMouseDown}
     >
-      <div className="ras-drawer-backdrop" aria-hidden="true" />
+      <div className="ras-drawer-backdrop" aria-hidden="true" onMouseDown={() => onClose?.()} />
       <div
         ref={containerRef}
         className={

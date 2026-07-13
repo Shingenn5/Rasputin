@@ -1720,6 +1720,7 @@ export function App() {
         workspaceName: activeWorkspaceName,
         modelName: displayModelName(selectedModelObject, models),
         locked: security.privacyLock,
+        runtimeMode: security.native ? "native" : "docker",
         mobileOpen: mobileSidebarOpen,
         newTask: startNewChat,
         recentSessions: sessions?.sessions || [],

@@ -49,7 +49,10 @@ these, it doesn't belong in this track.
 
 ---
 
-## Current baseline (verified 2026-07-10)
+## Starting baseline (historical, verified 2026-07-10)
+
+This section records the conditions that motivated the plan. It is **not** the current state;
+Phases 0–4 completed on 2026-07-12. See the phase checklists and status log below.
 
 - Wrapper runs in `rasputin-wrapper` (compose), port `127.0.0.1:8787`, `python -u server.py`.
 - `./data` (SQLite) and `./workspace` are Docker Desktop bind mounts. Measured costs: a 327MB
@@ -82,8 +85,9 @@ model's **mistake** reach, and what actually keeps it contained.*
 
 **The reframe.** "Native wrapper" and "sandboxed shell" are *separate* decisions. Phases 0–2
 make the *wrapper* run natively (G1/G2/G4/G5) regardless of how the agent's shell is isolated.
-Only Phase 3's `shell_exec` runs arbitrary commands, so only it needs a box. We therefore run
-**the wrapper native, the agent's shell in a sandbox** — not native-everything.
+Only Phase 3's `shell_exec` runs arbitrary host commands, so it needs its own boundary. On Windows
+we therefore run **the wrapper native, the agent's shell as a low-privilege sandbox account** — not
+native-everything. Native non-Windows still uses the direct-process fallback documented below.
 
 **What is and isn't already contained (verified against code, 2026-07-10):**
 
@@ -97,16 +101,18 @@ Only Phase 3's `shell_exec` runs arbitrary commands, so only it needs a box. We 
   current guard, `SHELL_DENY_PATTERNS` (`layer.py:37`), is a six-regex lexical filter whose own
   comment says "this is not a security boundary." It misses
   `Remove-Item C:\Windows\System32 -Recurse -Force`, `del /s /q ...`, and any indirection through
-  `bash -c` / `python -c`. Today this is safe **only** because the command runs inside the
-  throwaway container. Phase 3 removes that container — so Phase 3 must replace the container's
-  wall with a new one, not with better regexes.
+  `bash -c` / `python -c`. At the starting baseline, Docker deployment at least kept the command
+  inside the long-lived wrapper container; moving the wrapper onto Windows removes even that host
+  separation. Phase 3 therefore had to add a real host-side guardrail, not better regexes.
 
-**The decision — how the shell is boxed in each mode:**
+**Implemented result — how the shell is boxed in each mode:**
 
-- **Native (workstation) mode:** `shell_exec` runs under a **dedicated low-privilege local
+- **Native Windows (workstation) mode:** `shell_exec` runs under a **dedicated low-privilege local
   sandbox account**, inside a **Job Object** (whole-process-tree kill on timeout), with the
-  workspace granted to that account by ACL and **network denied by default**, and any access
-  violation **failing closed into an approval prompt** rather than a silent success. Rationale:
+  workspace granted to that account by ACL and **external egress denied on a best-effort basis**.
+  `taskkill /F /T` is the primary tree-kill because seclogon/Job Object nesting is not guaranteed;
+  the Job Object is defense-in-depth. Access violations fail closed and return an explicit sandbox-
+  boundary result rather than silently succeeding. Rationale:
   this is the only isolation that satisfies G1 (one-command install), G3 (the operator's real,
   machine-installed toolchain), and G5 (never requires Docker Desktop) *at once*. Against the
   risk we actually care about — *accidental* destruction — it is effective by construction:
@@ -118,22 +124,25 @@ Only Phase 3's `shell_exec` runs arbitrary commands, so only it needs a box. We 
   (Microsoft does not treat integrity levels / restricted tokens as a security boundary) — which
   is the correct tradeoff for a single-operator desktop tool whose threat is fumble-fingers, not
   a hostile human at the keyboard.
-- **Server (Docker Engine) mode:** `shell_exec` runs in a disposable workspace-only container
-  with no host networking — the same model Codex and Claude Code use on Linux. This is a hard
-  wall and is the right tool where Docker is already present.
-- **Opt-in hardened native:** operators who want a VM-grade wall on the workstation can enable
-  WSL2- or container-backed shell execution. It is *offered, not required*, so G5 holds for
-  everyone who doesn't opt in.
+- **Server (Docker Engine) mode:** `shell_exec` is a direct child of the long-lived wrapper
+  container—not a new disposable container per call. The container boundary still separates it
+  from the host, but the wrapper's normal bridge network and mounted workspaces remain reachable.
+  This is materially different from the Skills sandbox below and must not be described as a
+  per-execution hard wall.
+- **Native non-Windows:** the current fallback is a direct backend subprocess with the same bounded
+  output, sanitized environment, and process-tree timeout handling as Docker mode; the
+  `Rasputin_sbx` account mechanism is Windows-only.
+- **Opt-in hardened native (not implemented):** a VM/WSL2/container-backed shell remains a possible
+  future option for operators who require a VM-grade wall.
 
 The lexical deny-list is demoted to a **UX nicety** — a fast, friendly "are you sure?" on obvious
 foot-guns — never the boundary.
 
-**Capability split (so convenience never silently grants execution).** Today a single `trusted`
-flag (`workspace.py:886`) both auto-approves file edits *and* satisfies the `shell_exec` gate
-(`layer.py:507`). Natively that means "stop nagging me about edits" would also mean "run
-unattended host shell." Phase 3/4 split these: `trusted` keeps auto-approving edits; a *separate*
-per-workspace `allow_host_shell` flag (plus a per-exec confirmation) is required before any
-command runs on the host.
+**Capability split (so convenience never silently grants execution).** The former combined gate is
+now split: `trusted` only auto-approves file/git edits; a *separate* per-workspace
+`allow_host_shell` flag plus the global `allow_shell_execution` flag is required before shell
+commands run. Host Shell enable is an explicit, strongly warned action; there is no per-command
+confirmation in the current implementation.
 
 **Toolchain caveat (recorded, not hand-waved).** Machine-wide installs (Node/Python/git in
 `Program Files`, on the system PATH) are visible to the sandbox account automatically. A
@@ -156,7 +165,7 @@ what it takes to *verify*, not just write.
 
 ---
 
-## Phase 0 — Data layer off the bind mount ☐
+## Phase 0 — Data layer off the bind mount ☑
 
 *Serves G4 directly; prerequisite for everything else. Small and shippable alone.*
 
@@ -223,7 +232,7 @@ what it takes to *verify*, not just write.
 **Definition of done:** `docker compose down`/`up` cycles cannot produce SQLite flakiness, and
 no SQLite file is ever again read through Docker Desktop file sharing.
 
-## Phase 1 — Native launch becomes first-class ☐
+## Phase 1 — Native launch becomes first-class ☑
 
 *Serves G1, G5, G6. Foundation phase — nothing user-visible changes yet.*
 
@@ -277,7 +286,7 @@ no SQLite file is ever again read through Docker Desktop file sharing.
   frontend builds clean. Next: **Stage 3.3 — dedicated low-privilege sandbox account + workspace
   ACL + run-as (Job Object), which needs a one-time elevated provisioning step on the operator's
   machine.**
-- 2026-07-11 — **Phase 3, Stage 3.3 first-pass (authoring + de-risk; NOT yet run).** Two findings
+- 2026-07-11 — **Historical checkpoint — Phase 3, Stage 3.3 first-pass (not yet run that day).** Two findings
   changed the plan before writing system-changing code:
   (a) **pywin32 is unnecessary** — a stdlib-only ctypes POC proved the manual pipe-capture path
   (`CreatePipe` + drain threads + `GetExitCodeProcess`) captures stdout/stderr/exit-code correctly.
@@ -298,6 +307,18 @@ no SQLite file is ever again read through Docker Desktop file sharing.
   firewall + stored credential is a system change needing the operator's elevated go-ahead. Blocked
   on that; the run-as integration (`backend/core/sandbox_exec.py`) is authored right after, since
   its logon/job/firewall behavior can only be verified once the account exists.**
+- 2026-07-12 — **Phase 3 COMPLETE (security-core scope).** The real `Rasputin_sbx` account was
+  provisioned and `run_as_sandbox()` was verified end to end (`fdd6bc8`: `whoami`, exit-code
+  propagation, PowerShell/cmd, bounded output, timeout tree-kill). Native Windows `shell_exec` now
+  routes through that account; Host Shell grants/revokes the workspace ACL and fails closed when
+  provisioning is absent (`42e68a8`). On-demand UAC provisioning and clear Access-Denied boundary
+  reporting followed in `2352dad`. Honest residuals: the firewall rule is best-effort with loopback
+  open, the workspace itself remains writable, Job Object assignment is defense-in-depth, and git
+  tools are still direct backend children.
+- 2026-07-12 — **Phase 4 COMPLETE.** Option C from the §6.2 review shipped in `5742cd6`: every Skill
+  container runs `--network none`, and its only host-tool channel is a private newline-delimited
+  stdio RPC. Verified with multi-call tool round-trips, a >64KB result, and a blocked outbound
+  request. The host-side tool callback remains a privileged surface; §6.2 documents that residual.
 - [x] **DONE** — native launch serves prebuilt `frontend/` (same as container), warns if unbuilt.
       Frontend build story in native mode (serve prebuilt `frontend/` exactly as the container
       does; document `npm run build` for dev) — **(Easy)**
@@ -308,7 +329,7 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 **Definition of done:** a developer with Python + Docker Desktop can run
 `.\rasputin.ps1 start -Native` and get a fully working Rasputin, WarSat included, with real auth.
 
-## Phase 2 — Direct workspaces in native mode ☐
+## Phase 2 — Direct workspaces in native mode ☑
 
 *Serves G2. The mount subsystem stops being load-bearing.*
 
@@ -341,21 +362,22 @@ no SQLite file is ever again read through Docker Desktop file sharing.
 **Definition of done:** in native mode, opening a new project is: pick folder → approve →
 working, in under ten seconds, with zero restarts.
 
-## Phase 3 — Host-toolchain agent (Windows shell semantics) ☐
+## Phase 3 — Host-toolchain agent (Windows shell semantics) ☑
 
 *Serves G3. Coordinates with coding-agent plan Stage 6 — do this before or with it.*
 
-- [x] `shell_exec` on native Windows: **process-tree termination on timeout DONE (Stage 3.1,
-      38f34b6)** — `taskkill /F /T` + new process group. Remaining for this line: shell selection
-      (PowerShell vs cmd), minimal-env construction, output caps — same guarantees as Linux — **(Hard)**
-- [ ] **Implement the native isolation model (see "Execution isolation model" above):** run
+- [x] `shell_exec` on native Windows: **DONE.** Process-tree termination uses `taskkill /F /T` + a
+      new process group; interpreter selection, sandbox-profile environment, and bounded output with
+      a truncation marker are implemented. Output archiving was not needed for the security-core
+      gate and remains a product follow-up rather than a Phase-3 blocker. — **(Hard)**
+- [x] **Implement the native isolation model (see "Execution isolation model" above):** run
       `shell_exec` under the dedicated low-privilege sandbox account inside a Job Object, with the
-      workspace ACL-granted, network denied by default, and boundary violations failing closed
-      into an approval prompt. This replaces the deny-list-as-boundary; keep `SHELL_DENY_PATTERNS`
-      only as a UX foot-gun hint — **(Very Hard)** (G7)
-- [ ] Provisioning — **elevation-on-demand, not a manual checkpoint.** On the first Host Shell
-      enable (or native startup self-heal), the backend runs `Provision-Sandbox.ps1 -Status`
-      (no elevation) and, if unprovisioned/broken, raises ONE UAC prompt via
+      workspace ACL-granted, best-effort external-egress denial, and boundary violations failing
+      closed into an explicit result. The deny-list remains only a UX foot-gun hint. Verified against
+      the real account; this is an accident-containment guardrail, not an airtight wall. — **(Very Hard)** (G7)
+- [x] Provisioning — **elevation-on-demand, not a manual checkpoint.** On the first Host Shell
+      enable, the backend checks the stored credential without elevation and, if unprovisioned or
+      broken, raises ONE UAC prompt via
       `Start-Process -Verb RunAs` to create/repair the account + credential + firewall. `-Verb RunAs`
       elevates the same user, which is exactly what the DPAPI-CurrentUser credential needs. The
       per-workspace ACL grant (`icacls <ws> /grant Rasputin_sbx:(OI)(CI)M`) needs **no** elevation —
@@ -364,27 +386,31 @@ working, in under ten seconds, with zero restarts.
       click (later absorbed into the installer's own elevation, Phase 5). We deliberately keep that
       one UAC consent: automating it away (disabled UAC, SYSTEM scheduled task, stored admin creds)
       would dismantle the blast-radius protection this phase exists to build — **(Hard)**
-- [ ] Git tools against host git (path forms, `safe.directory` not needed natively,
-      CRLF/UTF-8 as encountered) — **(Easy)**
-- [ ] Trusted-workspace + approval gating verified identical in native mode (audit rows,
-      revoke-mid-session) — **(Medium)** (G7)
-- [ ] Test: timeout kills a child-spawning command cleanly on Windows; output cap + archive
-      path works; untrusted workspace still refuses — **(Hard to verify well)**
+- [x] Git tools against host git remain direct backend child processes and are covered by their
+      existing trust/approval and structured-output tests. They do **not** inherit the
+      `Rasputin_sbx` boundary; this residual is explicit in `THREAT_MODEL.md`. — **(Easy)**
+- [x] Capability + approval gating verified in native mode: Trusted alone does not enable Host
+      Shell, revoke-mid-session blocks the next shell action, and calls are audited. — **(Medium)** (G7)
+- [x] Test: live Windows run-as proved account identity, exit-code propagation and timeout tree-kill;
+      smoke covers bounded output, fail-closed unprovisioned behavior, separate capability gating,
+      and revocation. The live-account test skips where `Rasputin_sbx` is not provisioned. — **(Hard to verify well)**
 
 **Definition of done:** a `code`-mode task in a trusted native workspace runs the repo's real
 test suite with the operator's real toolchain — the Stage 6 test loop gets the host machine.
 
-## Phase 4 — Sandbox hardening ☐
+## Phase 4 — Sandbox hardening ☑
 
 *Serves G7. Native wrapper still uses Docker for sandboxes — that's the right tool.*
 
-- [ ] Skills sandbox: isolated bridge network + explicit allowlist instead of
-      `--network host`; update THREAT_MODEL §6.2 to RESOLVED with the design — **(Medium)**
+- [x] Skills sandbox: **`--network none` + private stdio RPC** replaced `--network host` (Option C);
+      THREAT_MODEL §6.2 is RESOLVED. The skill container has no network; its host-side tool callback
+      remains permissioned but privileged and is documented as residual surface. — **(Medium)**
 - [x] Capability split: per-workspace `allow_host_shell` flag distinct from `trusted` — **DONE
       early in Phase 3, Stage 3.2 (3b9d580).** `shell_exec` gates on `allow_host_shell`; toggle +
       strong-warning modal in the UI. (Per-exec confirmation deferred — the deny-list + audit +
-      the coming sandbox account are the layered controls.) — **(Medium, security-sensitive)** (G7)
-- [ ] Sandbox works identically whether the wrapper is native or containerized — **(Medium)**
+      sandbox account are the layered controls.) — **(Medium, security-sensitive)** (G7)
+- [x] The Skill sandbox launch/RPC path is runtime-independent: the same `--network none` container
+      and stdio protocol are used whether the wrapper is native or containerized. — **(Medium)**
 - [ ] Watch item (not a commitment): Docker Sandboxes (`sbx`) microVM prototype for skills
       isolation once its beta stabilizes and licensing is understood — **(env-blocked)**
 

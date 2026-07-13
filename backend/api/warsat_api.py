@@ -657,7 +657,7 @@ async def workspace_trust(req: WorkspaceTrustIn, _user=Depends(current_user)):
 async def workspace_commands(req: WorkspaceCommandsIn, _user=Depends(current_user)):
     # Store per-workspace test/build/lint commands. Configuring them is a plain
     # settings write; actually running them stays gated by allow_shell_execution
-    # + a trusted workspace at execution time (see engine test-loop).
+    # + the workspace's separate Host Shell capability (see engine test-loop).
     item = workspace.set_workspace_commands(req.workspace_id, test=req.test, build=req.build, lint=req.lint)
     audit.log("workspace_commands_changed", {"workspace_id": req.workspace_id, "commands": item.get("commands")})
     return ok(item)

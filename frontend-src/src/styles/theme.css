@@ -9,7 +9,7 @@
    shadcn-compatible variable names mapped into Tailwind's theme.
    ───────────────────────────────────────────────────────────── */
 :root {
-  --radius: 0.85rem;
+  --radius: 0.75rem;
 
   --background: var(--dash-bg);
   --foreground: var(--dash-text);
@@ -53,6 +53,30 @@
   --sidebar-accent-foreground: var(--dash-text);
   --sidebar-border: var(--dash-border);
   --sidebar-ring: var(--dash-accent);
+}
+
+/* Rasputin's house themes use an ink operator rail. Alternate themes keep
+   deriving their sidebar from the shared theme tokens above. */
+html[data-theme="rasputin-light"] {
+  --sidebar: #20231f;
+  --sidebar-foreground: #f4efe6;
+  --sidebar-primary: #d25d3d;
+  --sidebar-primary-foreground: #10120f;
+  --sidebar-accent: #2d312b;
+  --sidebar-accent-foreground: #fff;
+  --sidebar-border: rgba(244, 239, 230, 0.11);
+  --sidebar-ring: #e17a59;
+}
+
+html[data-theme="rasputin-dark"] {
+  --sidebar: #0b0d0b;
+  --sidebar-foreground: #ece8de;
+  --sidebar-primary: #de6545;
+  --sidebar-primary-foreground: #10120f;
+  --sidebar-accent: #1a1d18;
+  --sidebar-accent-foreground: #fff;
+  --sidebar-border: rgba(236, 232, 222, 0.1);
+  --sidebar-ring: #e17a59;
 }
 
 /* Map tokens into Tailwind's theme so utilities like bg-card, text-muted-foreground work. */

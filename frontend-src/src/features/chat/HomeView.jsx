@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
+  ArrowUpRight,
   Bot,
+  Box,
   Brain,
   Check,
   ChevronDown,
@@ -10,6 +12,7 @@ import {
   Cpu,
   FileText,
   ListPlus,
+  Laptop,
   Paperclip,
   Pause,
   PanelLeftOpen,
@@ -123,6 +126,7 @@ export function HomeView(props) {
     selectedModelObject,
     models,
     visibleModels,
+    activeWorkspaceName,
     setSelectedModel,
     security,
     go,
@@ -385,6 +389,10 @@ export function HomeView(props) {
         runCmdItem(cmdItems[cmdIndex]);
         return;
       }
+      if (event.key === "Tab" && event.shiftKey) {
+        setCmd(null);
+        return;
+      }
       if (event.key === "Tab") {
         event.preventDefault();
         runCmdItem(cmdItems[cmdIndex]);
@@ -584,17 +592,26 @@ export function HomeView(props) {
 
   const canSubmit = (objective.trim() && !objective.trim().startsWith("/")) || attachments.length > 0;
 
+  const chooseQuickPrompt = (prompt) => {
+    setTaskMode(prompt.mode);
+    setObjective(prompt.text);
+    requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      resizeComposer();
+    });
+  };
+
   return (
     <section className={`cc-layout app-view home-view tw ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
       {/* Header */}
       <header className="cc-header">
         <div className="cc-header-left">
-          <button className="icon-button" type="button" aria-label="Open navigation" onClick={toggleSidebar}>
+          <button className="icon-button cc-nav-trigger" type="button" aria-label="Toggle navigation" onClick={toggleSidebar}>
             <PanelLeftOpen size={19} />
           </button>
           <div className="cc-logo">
-            <span className="brand-mark" aria-hidden="true">R</span>
-            Rasputin
+            <span className="ras-brand-sigil ras-brand-sigil-sm" aria-hidden="true"><span>R</span><i /></span>
+            <span><strong>Rasputin</strong><small>{activeWorkspaceName || "No workspace selected"}</small></span>
           </div>
         </div>
         <div className="cc-status-area">
@@ -613,6 +630,10 @@ export function HomeView(props) {
             <span className="cc-model-name">{displayModelName(selectedModelObject, models)}</span>
             <span className={`cc-model-state state-${modelRuntimeStatus}`}>{modelStateLabel}</span>
           </button>
+          <div className="cc-status-item cc-runtime-status" title={security?.native ? "Native workstation runtime" : "Docker server runtime"}>
+            {security?.native ? <Laptop size={14} aria-hidden="true" /> : <Box size={14} aria-hidden="true" />}
+            <span>{security?.native ? "Native" : "Docker"}</span>
+          </div>
           <div className="cc-status-item" title={`${privacyTitle}: ${privacyDetail}`}>
             <ShieldCheck size={14} /> <span>{privacyTitle}</span>
           </div>
@@ -638,7 +659,18 @@ export function HomeView(props) {
           <div className="cc-chat-column">
             {orderedHomeTasks.length === 0 ? (
               <div className="cc-quick-action-center">
-                <h1 className="cc-objective-title">What is our objective?</h1>
+                <div className="cc-empty-mark" aria-hidden="true"><span>R</span><i /><b /></div>
+                <p className="cc-empty-kicker">READY · PRIVATE · LOCAL</p>
+                <h1 className="cc-objective-title">What should we tackle?</h1>
+                <p className="cc-objective-subtitle">Start with a goal, or choose a direction. Rasputin will keep the work grounded in your active workspace.</p>
+                <div className="cc-quick-actions" aria-label="Starter prompts">
+                  {quickPrompts.slice(2, 6).map((prompt) => (
+                    <button key={prompt.text} type="button" className="cc-quick-action-chip" onClick={() => chooseQuickPrompt(prompt)}>
+                      <span><small>{labelize(prompt.mode)}</small>{prompt.text}</span>
+                      <ArrowUpRight size={14} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               <div className="cc-thread-scroll" aria-live="polite" ref={threadScrollRef} onScroll={handleThreadScroll}>
@@ -699,8 +731,7 @@ export function HomeView(props) {
                       <div className="cmd-menu-crumb">
                         <button
                           type="button"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
+                          onClick={() => {
                             setCmd((current) => ({ ...current, path: null }));
                             setCmdIndex(0);
                           }}
@@ -710,20 +741,18 @@ export function HomeView(props) {
                         <span>{cmd.path === "mode" ? "Mode" : cmd.path === "model" ? "Model" : cmd.path === "reasoning" ? "Reasoning" : "Quick prompts"}</span>
                       </div>
                     )}
-                    <div className="cmd-menu-list" role="listbox" aria-label="Commands">
+                    <div className="cmd-menu-list" id="composer-command-list" role="listbox" aria-label="Commands">
                       {cmdItems.length === 0 && <div className="cmd-menu-empty">No matching commands</div>}
                       {cmdItems.map((item, index) => (
                         <button
                           key={item.id}
                           type="button"
+                          id={`composer-command-${index}`}
                           role="option"
                           aria-selected={index === cmdIndex}
                           data-testid="command-item"
                           className={index === cmdIndex ? "cmd-item is-active" : "cmd-item"}
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            runCmdItem(item);
-                          }}
+                          onClick={() => runCmdItem(item)}
                           onMouseEnter={() => setCmdIndex(index)}
                         >
                           {item.dotStatus && <span className={`model-choice-status status-${item.dotStatus}`} aria-hidden="true" />}
@@ -752,6 +781,11 @@ export function HomeView(props) {
                   onChange={handleComposerChange}
                   onInput={resizeComposer}
                   onKeyDown={handleComposerKeyDown}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={Boolean(cmd)}
+                  aria-controls={cmd ? "composer-command-list" : undefined}
+                  aria-activedescendant={cmd && cmdItems.length ? `composer-command-${cmdIndex}` : undefined}
                 />
                 <div className="composer-toolbar">
                   <div className="composer-tools">
@@ -818,7 +852,7 @@ export function HomeView(props) {
                 </div>
               </div>
               {(uiState.status !== 'idle' || composerStatus) && (
-                <div className={`composer-feedback ${uiState.status !== 'idle' ? `is-${uiState.status}` : "is-failed"}`}>
+                <div className={`composer-feedback ${uiState.status !== 'idle' ? `is-${uiState.status}` : "is-failed"}`} role="status" aria-live="polite">
                   {uiState.status !== 'idle' ? uiState.message : composerStatus}
                 </div>
               )}

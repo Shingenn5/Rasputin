@@ -7,14 +7,20 @@ roadmap wins on order.***
 
 ## Status — read this first (cold-start handoff)
 
-**As of 2026-07-12.** Written so this plan survives a fresh session with zero chat context.
+**As of 2026-07-13.** Written so this plan survives a fresh session with zero chat context.
 
-- **Immediate next action:** **Phase A1 — launch the app** (verify skill) and audit. The app has
-  **not been launched** this session; "not working for daily use" is unscoped until A1 runs. Nothing
-  past A1 has started.
-- **Done (don't redo):** security core — Phases 0–4 (dual-mode; sandboxed host shell as low-priv
-  `Rasputin_sbx`; skills run `--network none` over stdio RPC; THREAT_MODEL §6.2 RESOLVED) — all
-  committed. Docs made accurate + the Tailwind+tokens consolidation locked; 5 stale UI docs removed.
+- **Current work:** the GUI redesign is in progress on `codex/gui-redesign`. It is applying the
+  Phase-B design vocabulary and the first Phase-C chat/task slice across the existing components.
+  The working tree is modified but **not committed, released, or verified complete yet**; finish
+  build + isolated running-app desktop/mobile/keyboard/mouse QA before calling this pass done.
+- **Done (don't redo):**
+  - Phase A1 recon/audit completed in the running app (`docs/PHASE_A1_FINDINGS.md`).
+  - Phase A2's real-local-model blocker was found and fixed: conversational fallback works, a
+    parser-configured Qwen/vLLM deployment completed a genuine tool-calling task, and tool-less
+    execution now fails visibly instead of reporting a silent success.
+  - Security core Phases 0–4 are complete (dual-mode; native-Windows Host Shell as low-priv
+    `Rasputin_sbx`; Skills run `--network none` over stdio RPC; THREAT_MODEL §6.2 RESOLVED).
+  - Tailwind+tokens is the locked styling convention; the security/dual-mode docs are current.
 - **Decisions locked (don't relitigate):**
   - Rasputin is **first a daily-driver you love, polished to a high bar**; going public is an
     *eventual option*, not the near-term driver.
@@ -27,7 +33,8 @@ roadmap wins on order.***
 - **Constraints:** verify UI in the running app (verify skill); edit `frontend-src/` then
   `npm run build`, never hand-edit `frontend/`; never bulk-edit source with PowerShell
   Get/Set-Content (UTF-8/BOM) — use Edit/Write or Python; commit only when asked.
-- **Then follow the phase sequence below (A1 → F).**
+- **Continue from B/C below, then D → E → F.** Phase 5 packaging remains open inside the eventual
+  Phase-F product track; it is not part of the current uncommitted GUI pass.
 
 ---
 
@@ -46,15 +53,15 @@ daily-driver polish comes first. Turning it into a **self-hosted, local-model pr
 data-sensitive / cost-cutting teams is an **eventual option**, sequenced last. Two hard realities
 shape the order:
 
-1. **The app isn't at a working daily-use state yet.** Nothing else matters until that's fixed —
-   so a working baseline + honest audit is Phase 0.
+1. **The functional baseline is now proven.** A1 launched and audited the app; A2 found the real
+   vLLM/tool-parser failure and closed it with live local-model and genuine tool-calling proof.
+   Remaining near-term work is product-quality GUI/UX, not an unscoped broken agent loop.
 2. **You're effectively a solo builder.** So phases are sized to be finishable, and we work in
    **vertical slices** (one area fully done) rather than endless horizontal passes — the first real
    milestone is your most-used surface (chat/task) genuinely good, not "everything at 60%."
-3. **This plan is honest about its own uncertainty.** The app has never been launched this session,
-   so we don't yet know if "not working" means rough edges or a broken agent loop. **Everything
-   past Phase A1 is provisional until A1 (the recon launch) lands** — its depth can't be known
-   until we see it run. The *order* is right; the *sizing* of B–F firms up after A1.
+3. **The uncertainty is now bounded by evidence.** A1's written audit and A2's real-model tests are
+   the baseline. B–E can be sized from observed UI debt; Phase F stays intentionally deferred until
+   the daily-driver experience is polished.
 
 ---
 
@@ -63,6 +70,12 @@ shape the order:
 - **Security core — Phases 0–4 complete.** Dual-mode (native + Docker); sandboxed host shell as
   the low-priv `Rasputin_sbx` account (blast radius contained, verified); skills run `--network
   none` over a stdio RPC (THREAT_MODEL §6.2 RESOLVED). All committed.
+- **Phase A1 complete.** Isolated running-app audit covered 15+ views, light/dark, auth, routing,
+  chat/task, workspaces, models, and the existing primitive/theme inventory. Findings are recorded
+  in `docs/PHASE_A1_FINDINGS.md`.
+- **Phase A2 functional gate complete.** Real vLLM chat works; the tool parser is opt-in per deploy;
+  Qwen2.5 completed a real agentic tool call; execution without tool support fails visibly. Small
+  cosmetic cleanups found by A1 are folded into B–E rather than treated as functional blockers.
 - **Docs made accurate + Tailwind+tokens consolidation locked** as the convention; 5 stale UI docs
   removed. Committed.
 - **Direction decided:** self-hosted, local open-source models, for teams that can't send data out
@@ -75,29 +88,17 @@ shape the order:
 Each phase: **goal · key work · depends on · done-when (gate)**. Verify every phase in the running
 app (verify skill); back up any layout before changing it; commit per stage.
 
-### Phase A1 — Recon launch + audit  *(bounded — hours, not weeks; do this FIRST)*
-- **Goal:** find out what "not working" actually means, and what already exists — replace the
-  guesswork below with facts.
-- **Work:** launch via the verify skill; drive every core loop (chat/task, workspace + Host Shell,
-  models/WarSat, dashboard/settings); **catalog broken / rough / fine**; and **inventory what's
-  already built** — the shadcn/ui primitives + the Tailwind `@theme inline` bridge in `theme.css`
-  (adopted in commit `0cbe103`), the 11 themes, existing components — so later phases *finish/adapt*
-  instead of rebuilding.
-- **Depends on:** nothing. **This is the immediate next action — before B–F are treated as committed.**
-- **Gate:** a written broken/rough backlog + a primitives/themes inventory. This is what makes the
-  rest of the plan real.
+### Phase A1 — Recon launch + audit  ✅ COMPLETE (2026-07-12)
+- **Outcome:** isolated running-app audit + broken/rough/fine backlog + primitives/themes inventory.
+  See `docs/PHASE_A1_FINDINGS.md`; do not repeat this recon unless the baseline materially changes.
 
-### Phase A2 — Fix to daily-usable  *(size unknown until A1 — could be a day or the main event)*
-- **Goal:** you can run your real daily workflows end-to-end without hitting a wall.
-- **Work:** fix the *blocking* functional issues A1 found. This is where "get it working" lives; its
-  scope is whatever A1 reveals (rough edges vs. a broken agent loop — we don't know yet).
-- **Depends on:** A1.
-- **Gate:** you complete a real end-to-end task in the running app, comfortably.
+### Phase A2 — Fix to daily-usable  ✅ FUNCTIONAL GATE COMPLETE (2026-07-13)
+- **Outcome:** the real local-model 400 was traced to tool advertisement/parser mismatch and fixed
+  without imposing a model-incompatible global parser. Real chat and genuine tool-calling execution
+  were verified; unsupported-tool execution now fails visibly. Remaining visual cleanups belong to
+  B–E.
 
-> ⚠️ **Everything below (B–F) is provisional until A1 lands.** The order holds; the *depth/sizing*
-> firms up once we've actually seen the app run.
-
-### Phase B — *Minimal* design-system foundation  *(just enough for the first slice)*
+### Phase B — *Minimal* design-system foundation  🚧 IN PROGRESS
 - **Goal:** the shared vocabulary — but only as much as chat/task needs first, adapting what exists.
 - **Work:** confirm/finish the token→Tailwind `@theme` bridge; lock a type scale + spacing/radius/
   shadow language; **adapt the existing shadcn primitives** (`Button`, `Card`, `Input`, `Select`,
@@ -106,7 +107,7 @@ app (verify skill); back up any layout before changing it; commit per stage.
 - **Depends on:** A1 (the inventory) + the **theme + target-look decisions** (see Inputs).
 - **Gate:** the primitives chat/task needs render in the chosen look, light/dark + first-class themes.
 
-### Phase C — Chat / task vertical slice  *(THE first real milestone)*
+### Phase C — Chat / task vertical slice  🚧 IN PROGRESS (uncommitted GUI branch)
 - **Goal:** your most-used surface is genuinely usable, polished, and delightful — end to end.
 - **Work:** take chat/task fully to the bar: migrate its react-bootstrap to the Phase B primitives,
   apply the visual polish, wire the delight behaviors it needs (toasts, in-button loading, streaming/
@@ -152,10 +153,11 @@ app (verify skill); back up any layout before changing it; commit per stage.
 | Decision | Gates | Default if you don't pick |
 |---|---|---|
 | Themes: polish all 11, or promote 2–3 to first-class + mark rest experimental | Phase B | Promote 3, mark rest experimental (reads as more finished) |
-| Target look / references you love (Claude.ai, Linear, Vercel, Raycast…) | Phase B | I propose a direction in Phase B for your sign-off |
+| Target look / references you love (Claude.ai, Linear, Vercel, Raycast…) | Phase B | Elliott delegated the current pass to Codex's taste; judge it in running-app review before commit |
 | The one-line product wedge (#5 from the SaaS report) | Phase F (not near-term) | Defer — doesn't block A–E |
 
-Nothing above blocks **Phase A**, which is why we start there regardless.
+These inputs do not block finishing the current GUI prototype and presenting it for running-app
+review. They can still change the direction before the branch is committed.
 
 ## How we work (applies to every phase)
 
@@ -168,8 +170,8 @@ Nothing above blocks **Phase A**, which is why we start there regardless.
 - **Commit per stage** with before/after notes; scratch files to the scratchpad.
 
 ## Recommended immediate next step
-**Phase A1 — launch the app.** We've done a lot of planning and zero launching; the single
-highest-value thing now is to *see it run*. I'll start it via the verify skill, drive your real
-workflows, and hand you an honest broken-vs-rough backlog + an inventory of the primitives/themes
-that already exist. That turns the rest of this plan from provisional into real. The theme + look
-inputs can wait — they gate Phase B, not A1.
+Finish the **uncommitted `codex/gui-redesign` B/C pass**, run `npm run build`, and verify it in an
+isolated running instance across desktop/mobile plus keyboard-only and mouse-only paths. Present the
+result for review before committing. After B/C is accepted, continue the remaining areas in D, then
+the consistency/a11y sweep in E. Keep Phase-5 packaging inside F until the daily-driver GUI is
+finished.

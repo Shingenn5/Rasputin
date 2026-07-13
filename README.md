@@ -11,7 +11,10 @@
 
 ---
 
-Rasputin is a privacy-first, secure AI orchestration platform designed to run entirely on your local machine. It provides a robust backend to route LLM tasks, execute **Action Skills** via ephemeral Docker sandboxes, process RAG operations, and perform approval-gated capabilities, all while guaranteeing zero unbrokered outbound internet access for your models.
+Rasputin is a privacy-first AI orchestration platform designed to run on your own machine. The
+same wrapper supports a native workstation mode and a Docker server mode; it routes LLM tasks,
+executes **Action Skills** in networkless ephemeral Docker sandboxes, processes RAG operations,
+and gates sensitive capabilities through explicit permissions and approvals.
 
 ## 📑 Table of Contents
 - [Core Architecture & Privacy](#-core-architecture--privacy)
@@ -31,11 +34,17 @@ Rasputin operates on a strict zero-trust privacy model:
 Approved Local Folders → Rasputin → Local Model Endpoints
 Internet Access        → MCP Web Broker Only
 ```
-Models **do not receive direct internet access**. Web search is brokered, query-guarded, approval-gated by default, and heavily audited. Action Skills (like generating or running code) are executed inside strictly isolated, ephemeral Docker Sandboxes (`rasputin-sandbox`) that are immediately destroyed after execution.
+Models **do not receive direct internet access**. Web search is brokered, query-guarded,
+approval-gated by default, and heavily audited. Action Skills run in fresh
+`rasputin-sandbox` containers with `--network none`; tool requests cross a private stdio RPC and
+the container is destroyed after execution. Native-Windows Host Shell is a different execution
+surface: it runs as the low-privilege `Rasputin_sbx` account inside the explicitly enabled
+workspace. See `THREAT_MODEL.md` for the boundaries and residual caveats.
 
 ## ✨ Key Features
 
-- **Secure Agent Execution:** Run capabilities through isolated Ephemeral Docker Sandboxes.
+- **Secure Agent Execution:** Networkless ephemeral Skill containers plus a low-privilege,
+  workspace-ACL-scoped Host Shell on native Windows.
 - **Task Orchestration:** Live SSE updates, cancellation, multi-modal tracing, and human-in-the-loop approvals.
 - **Graph RAG & Memory:** Persistent Warmind context engine that compacts old chat history into structured, graph-based local knowledge edges.
 - **Warsat Deployment Layer:** Curated protocols to acquire, build, containerize, and deploy AI models natively inside your Docker engine.
@@ -46,7 +55,8 @@ Models **do not receive direct internet access**. Web search is brokered, query-
 
 ## 🚀 Installation & Quick Start
 
-Rasputin runs inside an isolated, secure container on your machine. To make this happen, we use a tool called **Docker**. 
+Rasputin can run as a Docker-hosted wrapper (the default commands below) or as a native Windows
+wrapper. Docker is still used for Action Skills and WarSat model containers in either topology.
 
 ### 🟢 Option 1: The Absolute Beginner's Guide (Windows)
 
@@ -125,9 +135,17 @@ Then, launch the manager:
 ### Interactive CLI Commands
 The `rasputin` manager supports the following commands:
 - `start` : Builds and runs Rasputin in the background.
+- `start -Native [-Port 8788]` *(Windows)* : Runs the wrapper natively in the foreground; runtime data uses `%LOCALAPPDATA%` by default. `-Port` applies only to native mode.
 - `start -EnableWarSat` : Runs Rasputin with the Docker Control layer enabled (allowing it to deploy local models).
 - `stop` : Safely tears down the containers.
-- `credentials` : Fetches your login credentials from the container logs.
+- `credentials` : Reads the original generated login from current container logs, if that line still exists.
+- `reset-password` *(Windows manager)* : Generates and prints a new Docker-mode admin password when the original is unavailable.
+
+The first-run password is generated only when a fresh data store creates its admin account.
+`credentials` cannot recover a changed password and may find nothing after container replacement
+or log loss even though the account persists. In that case run `.\rasputin.ps1 reset-password`.
+On macOS/Linux use `docker compose exec rasputin-wrapper python -m backend.tools.reset_password`.
+For native mode, use `python -m backend.tools.reset_password` against that instance's data dir.
 
 ### Advanced Docker Profiles (Manual Mode)
 - **RAG Vector Database:** `docker compose --profile rag up --build`
@@ -137,7 +155,42 @@ The `rasputin` manager supports the following commands:
 
 ## 💻 Native Development
 
-If you prefer to run the application bare-metal without Docker, ensure you have Python 3.12+ and Node.js v22+ installed.
+For the supported native launcher on Windows, use `.\rasputin.ps1 start -Native`. For a manual
+bare-metal development loop, ensure you have Python 3.12+ and Node.js v22+ installed.
+
+### Run Docker and native side by side
+
+Keep the normal Docker instance on `127.0.0.1:8787`, then start the native daily driver on 8788
+from a second PowerShell window:
+
+```powershell
+# Docker remains detached on its normal port.
+.\rasputin.ps1 start
+
+# In a second PowerShell, use the canonical native data store and a separate port.
+Remove-Item Env:\RASPUTIN_DATA_DIR -ErrorAction SilentlyContinue
+.\rasputin.ps1 start -Native -Port 8788
+```
+
+Open the two instances with these exact hostnames:
+
+- Docker: `http://127.0.0.1:8787`
+- Native: `http://localhost:8788`
+
+Use `localhost` for native and `127.0.0.1` for Docker deliberately. The `rasputin_session` cookie is
+scoped by hostname, not port; using `127.0.0.1` for both instances would make their cookies collide.
+Native uses the separate `%LOCALAPPDATA%\Rasputin\data` store and therefore has its **own admin
+account**. On the first native boot, use the credentials printed in that foreground console; Docker
+credentials do not automatically work there. `Ctrl+C` stops only the native process.
+
+`RASPUTIN_DATA_DIR`, when set, overrides `%LOCALAPPDATA%\Rasputin\data`; clear a leftover test value
+as shown above before judging the canonical daily-driver state. The launcher reuses an existing
+`.venv\Scripts\python.exe`, so Python needs to be on `PATH` only when that virtual environment must
+be created for the first time.
+
+To prove the native workspace path is direct: open **Workspaces** at `http://localhost:8788`, add a
+normal project folder, approve it, and confirm it appears and is browsable immediately with no mount
+request, restart badge, or wrapper restart. Docker's folder flow remains mount → restart → approve.
 
 ### 1. Start the Backend (FastAPI)
 ```powershell
@@ -168,7 +221,8 @@ Rasputin prioritizes local safety through stringent defaults:
 - **Docker/Shell Control:** OFF by default.
 - **Workspace Operations:** Read-only unless explicitly granted; moves/writes trigger approval reviews.
 - **Web Brokering:** Searches are paused and sent to the approval queue.
-- **Sandbox Isolation:** AI-generated python execution is fenced in an unprivileged alpine container.
+- **Capability Split:** Trusted Dev Mode auto-approves file/git writes; Host Shell is a separate per-workspace opt-in.
+- **Sandbox Isolation:** Skills have no container network. Native-Windows shell commands run as `Rasputin_sbx`; Docker/native-non-Windows shell and git paths have different boundaries documented in `THREAT_MODEL.md`.
 
 > **Important:** Local models, memory databases, vector indexes, workspaces, and `data/model_secrets.json` are automatically ignored by Git.
 
