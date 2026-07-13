@@ -1,5 +1,10 @@
 # AGENTS.md — Model Orchestration Policy
 
+> **If you are Codex (or any non–Claude Code agent):** this file's orchestration policy is
+> Claude Code–specific and does not apply to you. Read **`docs/CODEX_ONBOARDING.md`** instead —
+> it covers the project, build/test commands, and the hard rules. The one section here that
+> applies to everyone is "Project gotchas" below (also repeated in that doc).
+
 This project runs Claude Code with **Fable as the orchestrator** and **Sonnet as the execution
 tier**. The goal: Fable's tokens are the expensive, scarce resource — spend them on planning,
 judgment, and verification; push bulk reading, editing, and mechanical work down to Sonnet
