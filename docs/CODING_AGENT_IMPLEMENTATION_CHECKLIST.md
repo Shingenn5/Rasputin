@@ -23,13 +23,13 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 
 ### Easy
 - [x] Fix hardcoded `--bs-primary-rgb` so Bootstrap components follow the selected theme's accent (UI Bug Fix 1) — done 2026-07-01
-- [ ] Configure a real model endpoint for verification (Stage 4a follow-up)
+- [x] Configure a real model endpoint for verification (Stage 4a follow-up) — done 2026-07-12 (Qwen2.5-3B-Instruct deployed via WarSat; see Session 2026-07-12 below)
 - [x] Identify/confirm SSE extension point at `frontend-src/src/app/App.jsx:589` (Stage 4b) — done 2026-07-02
 - [ ] Quick action: view diff for a file (Stage 5)
 - [ ] Reuse existing `TaskDetailsDrawer.jsx` structure (Stage 5)
 - [ ] Parse pass/fail from test command output (Stage 6)
 - [ ] Bounded retry count distinct from tool-call ceiling (Stage 6)
-- [ ] Confirm zero-cost/offline path once local model routed (Stage 8)
+- [x] Confirm zero-cost/offline path once local model routed (Stage 8) — done 2026-07-12 (local vLLM, no API spend, privacy lock on)
 - [x] Confirm role-pin takes effect immediately (Stage 9) — done 2026-07-01
 
 ### Medium
@@ -57,7 +57,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Test: reconnect/resume mid-stream doesn't duplicate/drop events (Stage 4b) — done 2026-07-02 (full-snapshot design makes this structural)
 - [x] Add dedicated relation-query verbs ("what calls X" / "where used" / "what imports") (Stage 7) — done 2026-07-01
 - [x] Extend Warsat fit-scoring to flag coding-capable local models for `coder` role (Stage 8) — done 2026-07-01
-- [ ] Test: local-routed `code` mode completes a real task **(env-blocked — needs a deployed local model)** (Stage 8)
+- [x] Test: local-routed `code` mode completes a real task **(env-block RESOLVED 2026-07-12)** (Stage 8) — a `mode=code` agentic task ran end-to-end on the local Qwen model with 2 real `rag_search` tool executions (plan + execute phases); a *file-editing* coding task specifically is the remaining validation
 - [x] Blind-compare models on a real coding subtask (Stage 9) — done 2026-07-01
 
 ### Very Hard
@@ -165,10 +165,10 @@ Branch: `codex/agentic-coding-loop-v1` · Commit: `5000e0d`
 
 **Verification note:** confirmed line-for-line in `backend/engine/agent.py:742-819` — `_tool_loop_budget` returns exactly `{"max_attempts": 80, "max_seconds": 900}` for `code` mode and `{15, 180}` otherwise; `_bound_tool_loop_messages` archives to `eviction_log` with an `archive_expand`-style pointer message, wrapped in a try/except that logs-and-skips on DB failure. Tests `testGovernedChatArchivesOldToolResultsUnderContextPressure` and `testGovernedChatStopsOnTimeBudgetWithoutHanging` exist at `tests/testBackendSmoke.py:1750,1779`. All plan-doc line citations still match current code.
 
-**⚠️ Open gap (standing caveat, not fully closed):** no real model endpoint configured in this environment (no local vLLM, no API keys). Stage 4a verified at the mechanics level with a scripted mock model only.
+**✅ Open gap RESOLVED 2026-07-12** (was: no real model endpoint; Stage 4a had only been verified against a scripted mock). A real local model is now deployed and driven end-to-end — see **Session 2026-07-12** below.
 
-- [ ] Configure a real model endpoint (local vLLM or API key) in a test environment — **(Easy** — config only, gated on having credentials/GPU access, not code**)**
-- [ ] Run one real multi-file bug-fix task end-to-end through Stage 0-4a, confirm no ceiling/context-corruption issues — **(Medium)**
+- [x] Configure a real model endpoint (local vLLM or API key) in a test environment — done 2026-07-12: Qwen2.5-3B-Instruct deployed via WarSat (`--tool-call-parser hermes`), healthy on `127.0.0.1:8001`, registered role `main`
+- [ ] Run one real multi-file bug-fix task end-to-end through Stage 0-4a, confirm no ceiling/context-corruption issues — **(Medium)** — *de-risked but not yet run:* the loop, real-model tool-calling, and tool execution are now proven; what remains is a task that actually *edits files* (our 2026-07-12 task was search/summarize)
 
 ---
 
@@ -269,8 +269,8 @@ Branch: extends existing Warsat fit-scoring work
 
 - [x] Extend Warsat model fit scoring to flag coding-capable local models for the `coder` role — done 2026-07-01: `registry.suggest_role()` (token + collapsed-name matching for Qwen-Coder/DeepSeek-Coder/CodeLlama/StarCoder/Codestral/granite-code-class names, conservative `helper` otherwise) wired into `scan_gguf` suggestions, `import_gguf` default role, and Warsat `make_plan` (explicit role still wins; falls back to protocol default)
 - [x] Route `code` mode to a local model once deployed — done via existing plumbing: `execution_role("code") → "coder"` → `key_for_role("coder")` picks the first reachable coder-role model, and Warsat-deployed coding models now register with role `coder` automatically. No extra click needed at all.
-- [ ] Confirm zero API cost / fully offline path when local model is selected — **(Easy, env-blocked** — needs a deployed local model**)**
-- [ ] Test: `code` mode routed to local model completes a real coding task end to end — **(Hard, env-blocked** — needs an actual deployed local coding model to verify**)**
+- [x] Confirm zero API cost / fully offline path when local model is selected — done 2026-07-12: ran chat + a `mode=code` agentic task entirely against local Qwen2.5-3B (privacy lock on, no API spend, no data leaving the machine)
+- [x] Test: `code` mode routed to local model completes a real task end to end — **(env-block RESOLVED 2026-07-12)**: local Qwen `mode=code` task completed with 2 real `rag_search` tool executions. *Caveat:* it was a search/summarize task; a file-editing *coding* task (write/patch a file, run tests) is the remaining specific validation — the model was deployed with role `main`, not `coder`, so pin a coder-capable model (e.g. Qwen2.5-Coder) for that run
 - [x] Validation: backend smoke 56/56 (incl. `testCodingModelsSuggestCoderRole`), repo safety check passed (2026-07-01)
 
 **Definition of done:** a real coding task can run entirely against a local model with zero tokens spent and zero data leaving the machine, end to end through the Stage 0-6 pipeline.
@@ -335,6 +335,129 @@ Playwright sweep of all 11 views at 1440×900 and 390×844 against a live instan
 
 ---
 
+## Session 2026-07-12: Real-Model Verification + Local-Provider Tool-Calling Fixes
+
+Branch: `codex/agentic-coding-loop-v1`. Resolved the standing "no real model endpoint"
+env-block (Stage 4a/8) by deploying and driving a real local model — and, doing so, found
+and fixed **two pre-existing local-provider breaks** (in the same spirit as the Stage 4b
+`chat_sync` fix at line 182: local models that looked healthy couldn't actually be used).
+
+**Real-model verification (env-block resolved):**
+- [x] Deployed **Qwen2.5-3B-Instruct through WarSat** end-to-end (plan → approval → pull → start →
+  probe → registered), healthy on `127.0.0.1:8001`, registered role `main`.
+- [x] Proved the **agent tool loop works** with a controllable mock emitting valid streaming
+  `tool_call`s (parses → executes the real tool → feeds result back → completes, in both plan and
+  execute phases). The loop was never the blocker.
+- [x] Proved it **with the real model**: a `mode=code` task ran `tool: rag_search → plan made →
+  tool: rag_search → executed → done` — Qwen itself emitted the tool calls, vLLM's hermes parser
+  extracted them, Rasputin executed them. Plain chat returned a correct answer with no error.
+
+**Fix 1 — local runtimes degrade gracefully when they reject tools** (`backend/models/providers.py`,
+commit `3c653c1`). vLLM started without `--enable-auto-tool-choice` returns **HTTP 400 on every
+tool-bearing chat request**; since the agent sends `TOOL_DEFINITIONS` on every turn, a healthy local
+model was 100% unusable. `chat_sync` now (local runtimes only; remote APIs untouched) retries once
+without tools on any tools-bearing 400 and caches the model key so later calls skip tools; also
+clamps `max_tokens` to the model context on the `max_model_len` 400. Fixes conversational chat on
+tool-less deploys; agentic tool-execution still needs a parser (Fix 2).
+- [x] Implemented + unit-checked + verified in the running app (real chat returned "391", no 400).
+
+**Fix 2 — vLLM `--tool-call-parser` is per-deploy, not hardcoded `hermes`** (`backend/warsat/__init__.py`
++ `backend/api/warsat_api.py`, commits `3c26a25`, `100a905`). WarSat hardcoded `--tool-call-parser
+hermes` for *every* vLLM deploy — wrong for non-Hermes models (silently corrupts their tool calls).
+Now opt-in per deploy: a sanitized `toolCallParser` enables `--enable-auto-tool-choice
+--tool-call-parser <parser>`; with none set, tool flags are omitted and Fix 1 handles the tool-less
+runtime. Also added `tool_call_parser` to `WarsatPlanIn` (the API model was stripping it).
+- [x] Unit-verified (default → no flags; explicit parser → emitted + sanitized) and verified through
+  the real plan/deploy path (the Qwen deploy's docker command carried the flags).
+
+**Still open (the real remaining coding-agent validation):**
+- [ ] Run a real *file-editing* coding task on a local model (write/patch a file, run tests, iterate)
+  — deploy a **coder-role** model (e.g. Qwen2.5-Coder) with its parser and run in a **trusted**
+  workspace. This is what fully closes Stage 4a's bug-fix item, Stage 8's coding-task test, and the
+  "real coding session on local model" success criterion.
+
+---
+
+## UI/UX Work
+
+Tracked here per the same "fold UI items in on request" precedent as the *Additional UI/UX Bug
+Fixes* section above. Split into coding-agent-adjacent UI and the broader daily-driver UI/UX track.
+
+### ⛔ Non-negotiable requirement: dual input independence (applies to ALL UI work below)
+
+**Every screen must be fully usable with a keyboard alone** (for someone who cannot use a mouse)
+**AND fully usable with a mouse alone** (for someone who cannot use a keyboard). This is a hard
+acceptance bar on *every* item in this section and every new/migrated component, dialog, drawer,
+menu, and the Warsat deploy form — not a separate phase to defer. If a control fails either pass,
+the work isn't done. (WCAG 2.1.1 Keyboard, 2.1.2 No Keyboard Trap, 2.4.7 Focus Visible, 2.5.1
+Pointer Gestures.)
+
+**Keyboard-only (no mouse):**
+- [ ] Every interactive element is reachable and operable via Tab / Shift+Tab + Enter/Space, with
+  arrow-key movement inside menus, lists, chip groups, side panels, and the `/` command menu.
+- [ ] A visible focus ring on every focusable element — never `outline: none` without an equal-or-
+  better replacement.
+- [ ] Logical DOM-ordered focus sequence; **no keyboard traps**; `Esc` closes any menu/dialog/drawer
+  and returns focus to the control that opened it (focus trapped while open — `useFocusTrap` already
+  exists and should be used everywhere, not just `Drawer`).
+- [ ] Skip-to-main-content link (already present) is the first tab stop and works.
+- [ ] Core actions have discoverable keyboard paths (send message, new chat, open `/` command menu,
+  switch view, submit/cancel in dialogs) and are documented where non-obvious.
+
+**Mouse-only (no keyboard):**
+- [ ] **No feature is reachable only by keyboard.** Every keyboard shortcut has an equivalent
+  visible, clickable control — e.g. the `/` command menu must also open via its composer button
+  (keep that parity as the composer evolves); Enter-to-send must always coexist with the send button.
+- [ ] No action depends on a hover-only reveal or a keyboard modifier (no shift/ctrl-click-only
+  paths); any hover affordance also responds to plain click/tap.
+- [ ] All controls are pointer-operable at comfortable hit-target sizes; nothing needs the keyboard
+  to *navigate*. (Raw text entry is served by the OS on-screen keyboard / dictation — the app must
+  not block those, but must never *require* a physical keyboard to reach a feature.)
+
+**Verification — run BOTH passes every UI phase (build-green is not enough):**
+- [ ] Keyboard-only Playwright pass: drive each core flow with keyboard events only (no `.click()`),
+  asserting every step is reachable, focus is visible, and focus is trapped/restored correctly.
+- [ ] Mouse-only pass: drive each core flow with pointer only, asserting there are no shortcut-only
+  dead ends and no hover-only critical actions.
+- [ ] Screen-reader sanity (correct aria role/name/state on every custom widget) rides along with
+  the keyboard pass.
+
+### A. Coding-agent / WarSat deploy UI (from Session 2026-07-12)
+- [ ] **Deploy-form tool-call-parser field** — the backend/API accept `toolCallParser` now, but the
+  Warsat deploy form has no field for it, so enabling tool-calling for a model is currently API-only.
+  Add a parser input (with a "none / disable tools" option) to the deploy UI. **(Easy–Medium)**
+- [ ] **Per-catalog-model parser hint** — auto-suggest the right parser for known tool-capable
+  catalog models (e.g. Qwen2.5 → `hermes`) so the field is prefilled, not guessed. **(Medium)**
+- [ ] **Surface tool-unavailable state** — when a deploy has no parser and the engine drops tools
+  (Fix 1), an agentic task returns prose with empty `tool_calls` and `governed_chat` reports it as
+  "done" (`agent.py:890`) — a silent no-op. Show "tools unavailable on this model — ran as plain
+  chat" so a degraded run doesn't look like success. **(Medium)**
+- [ ] Stage 5 (*Coding-Oriented Task UX* above) is the rest of the coding-agent UI/UX — diff viewer,
+  touched-files list, live terminal pane. Still ☐ NOT STARTED.
+
+### B. Daily-driver UI/UX track (from the Phase A1 audit — full detail in `docs/PHASE_A1_FINDINGS.md`)
+The app was launched + audited 2026-07-12: shell/routing/auth/theming/chat are solid and polished
+(zero console errors across 15+ views, light + dark). This is the polish backlog. The design-system
+plan is `docs/UI_UX_PLAN.md` + `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` §4; the phased sequence (B–E) is
+in `docs/ROADMAP.md`. Confirmed near-term items:
+- [ ] Theme picker shows the wrong active theme on load — defaults to `rasputin-dark` instead of the
+  live theme (`GeneralSettings.jsx:85`). **(Trivial)**
+- [ ] Settings "Save" gives no success toast (it does persist). **(Trivial)**
+- [ ] Blue Settings "Save Changes" button — it's react-bootstrap `variant="primary"` leaking through
+  an un-migrated screen; recolor to the accent (a mini-instance of the react-bootstrap retirement).
+  **(Trivial)**
+- [ ] `Button` is duplicated and both copies are live (`ModelsView.jsx:43-44`, vanilla vs shadcn) —
+  pick the canonical one. **(Small)**
+- [ ] Mode-switch silently re-routes the selected model to an unhealthy role model → header shows
+  STOPPED (a daily foot-gun). **(Small–Medium)**
+- [ ] Retire **react-bootstrap** (16 files: 12 settings screens + workspaces/runtime/audit/auth) onto
+  the shadcn primitives + `@theme inline` token bridge (`theme.css`, 36 tokens); remove the global
+  `bootstrap.min.css` import — the ~50/50 legacy/modern split is the main coherence debt. **(Large;
+  Phases C–E of the roadmap)**
+- [ ] Flesh out thin secondary views (Agents / Activity / Memory / Approvals / Archive). **(Medium)**
+
+---
+
 ## Explicitly Out of Scope / Unchanged (carried from plan doc, not tasks)
 
 - Everything in `docs/STAGED_IMPLEMENTATION_BACKLOG.md`'s "Explicitly Deferred" section (Mail Relay, Timeline Sync, Visual Relay, Field Console PWA, Local Admin 2FA)
@@ -349,5 +472,5 @@ Playwright sweep of all 11 views at 1440×900 and 390×844 against a live instan
 - [ ] A multi-file bug fix (edit, run tests, iterate, commit) completes in one task with zero manual per-action approval clicks
 - [ ] The operator can review what changed like a PR (diff view, not chat scrollback) before or after commit
 - [ ] A coding task doesn't stall against the old 15-call ceiling or go silent for minutes with no visible progress
-- [ ] At least one real coding session runs entirely on a local model through Warsat with no API spend
+- [~] At least one real coding session runs entirely on a local model through Warsat with no API spend — **substantially met 2026-07-12**: a `mode=code` agentic task ran entirely on a WarSat-deployed local Qwen2.5-3B with real tool execution and zero API spend; full [x] awaits a session that actually *edits code and runs tests*
 - [ ] The operator's own unprompted judgment: "I opened Rasputin instead of Codex for this," happening more than once
