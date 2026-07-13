@@ -26,7 +26,7 @@ import {
   Terminal,
   X
 } from "lucide-react";
-import { Modal, Button, Form, Table, Spinner, Badge, Alert, Card } from "react-bootstrap";
+import { Modal, Button, Table, Spinner, Badge } from "react-bootstrap";
 import { postJson } from "../../api/client.js";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
@@ -273,11 +273,13 @@ export function WorkspacesView({
     if (!showAddModal || (!native && !security?.allowDockerControl)) return;
     postJson("/api/workspace/host-browse", {})
       .then((data) => {
-        setHostRoots(data.roots || []);
+        const roots = data.roots || [];
+        setHostRoots(roots);
         setHostRootsMessage(data.message || "");
+        if (roots[0]?.path) browseHost(roots[0].path);
       })
       .catch((error) => setHostRootsMessage(error.message));
-  }, [showAddModal, security?.allowDockerControl]);
+  }, [showAddModal, native, security?.allowDockerControl]);
 
   async function browseHost(path) {
     const target = String(path || "").trim();
@@ -893,160 +895,192 @@ export function WorkspacesView({
         </div>
       </div>
 
-      {/* Streamlined Add Folder Modal */}
-      <Modal show={showAddModal} onHide={resetMountModal} centered size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title className="d-flex align-items-center">
-            <FolderOpen className="me-2 text-primary" size={24} />
-            Approve Local Folder
-          </Modal.Title>
+      {/* Mode-aware folder picker: browse a verified location, choose access, confirm once. */}
+      <Modal show={showAddModal} onHide={resetMountModal} centered size="xl" className="workspace-folder-modal">
+        <Modal.Header closeButton className="folder-picker-header">
+          <div className="folder-picker-title">
+            <span className="folder-picker-title-icon"><FolderOpen size={22} /></span>
+            <span>
+              <small>{native ? "Native workspace" : "Docker workspace"}</small>
+              <Modal.Title>Add a project folder</Modal.Title>
+            </span>
+          </div>
+          <span className={`folder-picker-runtime ${native ? "is-native" : "is-docker"}`}>
+            <span className="signal-dot" /> {native ? "Ready immediately" : "Secure mount"}
+          </span>
         </Modal.Header>
-        <Modal.Body className="px-4 py-4">
+        <Modal.Body className="folder-picker-body">
           {!mountSuccess ? (
-            <Form onSubmit={handleAddFolderSubmit}>
-              <p className="text-muted mb-4">
-                {native
-                  ? "Choose a folder on your machine to give Rasputin access to. It is registered directly -- no mount or restart needed."
-                  : "Grant Rasputin access to a local directory. Since Rasputin runs in a Docker container, it cannot access your files unless you explicitly approve and mount them here."}
-              </p>
-              
-              <Form.Group className="mb-4">
-                <Form.Label className="fw-semibold">Pick a folder</Form.Label>
-                {(native || security?.allowDockerControl) && hostRoots.length > 0 && (
-                  <div className="d-flex flex-wrap gap-2 mb-2">
-                    {hostRoots.map((root) => (
-                      <Button
-                        key={root.path}
-                        type="button"
-                        size="sm"
-                        variant={hostListing?.path === root.path ? "primary" : "outline-secondary"}
-                        disabled={hostBrowseLoading}
-                        onClick={() => browseHost(root.path)}
-                      >
-                        <HardDrive size={14} className="me-1" /> {root.name}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-                <div className="d-flex gap-2 mb-2">
-                  <Button
-                    type="button"
-                    variant="outline-secondary"
-                    disabled={!hostListing?.parent || hostBrowseLoading}
-                    onClick={() => browseHost(hostListing?.parent)}
-                    title="Up one level"
-                    aria-label="Up one level"
-                  >
-                    <ArrowLeft size={15} />
-                  </Button>
-                  <Form.Control
-                    type="text"
-                    value={hostPathDraft}
-                    onChange={(e) => {
-                      setHostPathDraft(e.target.value);
-                      setMountHostPath(e.target.value);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        browseHost(hostPathDraft);
-                      }
-                    }}
-                    placeholder="Click a starting point above, or type a path and press Enter"
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    variant="outline-primary"
-                    disabled={hostBrowseLoading || !hostPathDraft.trim()}
-                    onClick={() => browseHost(hostPathDraft)}
-                  >
-                    Go
-                  </Button>
+            <form onSubmit={handleAddFolderSubmit} className="folder-picker-form">
+              <div className="folder-picker-intro">
+                <div>
+                  <span className="folder-picker-step">1</span>
+                  <strong>Choose the project folder Rasputin should work in</strong>
                 </div>
-                <div className="border rounded" style={{ maxHeight: 240, overflowY: "auto" }} data-testid="host-folder-list">
-                  {hostBrowseLoading && (
-                    <div className="d-flex align-items-center gap-2 p-3 text-muted">
-                      <Spinner size="sm" /> <span>Listing folders...</span>
-                    </div>
-                  )}
-                  {!hostBrowseLoading && !hostListing && (
-                    <div className="p-3 text-muted small">
-                      {hostRootsMessage || "Choose a starting point above, then click folders to drill in. The folder you are viewing is the one that gets approved."}
-                    </div>
-                  )}
-                  {!hostBrowseLoading && hostListing && hostListing.entries.length === 0 && (
-                    <div className="p-3 text-muted small">No subfolders here. Approve this folder below.</div>
-                  )}
-                  {!hostBrowseLoading && hostListing && hostListing.entries.map((entry) => (
+                <p>
+                  {native
+                    ? "Browse this machine. The folder shown as Current folder is the one that will be added."
+                    : "Browse the host machine. Rasputin will create a read-only Docker mount unless you choose edit access."}
+                </p>
+              </div>
+
+              <div className="folder-picker-browser">
+                <aside className="folder-picker-places" aria-label="Quick locations">
+                  <span className="folder-picker-label">Quick locations</span>
+                  {hostRoots.map((root) => (
                     <button
+                      key={root.path}
                       type="button"
-                      key={entry.path}
-                      className="host-folder-row d-flex align-items-center gap-2 w-100 text-start border-0 bg-transparent px-3 py-2"
-                      data-testid="host-folder-row"
-                      onClick={() => browseHost(entry.path)}
+                      className={hostListing?.path === root.path ? "is-active" : ""}
+                      disabled={hostBrowseLoading}
+                      onClick={() => browseHost(root.path)}
                     >
-                      <Folder size={15} className="text-primary flex-shrink-0" />
-                      <span className="text-truncate">{entry.name}</span>
-                      <ChevronRight size={14} className="ms-auto text-muted flex-shrink-0" />
+                      <HardDrive size={16} />
+                      <span>{root.name}</span>
                     </button>
                   ))}
-                </div>
-                {hostBrowseError && <Alert variant="danger" className="mt-2 mb-0 py-2">{hostBrowseError}</Alert>}
-                {mountHostPath && (
-                  <div className="mt-2 small">
-                    <span className="text-muted">Folder to approve: </span>
-                    <strong className="font-monospace text-break" data-testid="host-selected-path">{mountHostPath}</strong>
+                  {hostRoots.length === 0 && (
+                    <p>{hostRootsMessage || "No quick locations found. Enter a folder path instead."}</p>
+                  )}
+                </aside>
+
+                <section className="folder-picker-explorer" aria-label="Folder browser">
+                  <div className="folder-picker-pathbar">
+                    <button
+                      type="button"
+                      className="folder-picker-up"
+                      disabled={!hostListing?.parent || hostBrowseLoading}
+                      onClick={() => browseHost(hostListing?.parent)}
+                      title="Go up one folder"
+                      aria-label="Go up one folder"
+                    >
+                      <ArrowLeft size={17} />
+                    </button>
+                    <label className="folder-picker-path-input">
+                      <span className="sr-only">Folder path</span>
+                      <input
+                        type="text"
+                        value={hostPathDraft}
+                        onChange={(event) => setHostPathDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            browseHost(hostPathDraft);
+                          }
+                        }}
+                        placeholder="Enter a folder path"
+                        spellCheck="false"
+                        autoFocus
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="folder-picker-go"
+                      disabled={hostBrowseLoading || !hostPathDraft.trim()}
+                      onClick={() => browseHost(hostPathDraft)}
+                    >
+                      Open
+                    </button>
                   </div>
-                )}
-              </Form.Group>
 
-              <Form.Group className="mb-4">
-                <Form.Label className="fw-semibold">Access Permissions</Form.Label>
-                <Card className="border-0 bg-body-tertiary">
-                  <Card.Body className="p-3">
-                    <Form.Check 
-                      type="radio" 
-                      id="radio-readonly"
-                      name="accessMode"
-                      label={<><span className="fw-medium">Read Only (Recommended)</span><p className="text-muted small mb-0 mt-1">Agents can read files to answer questions and analyze code, but cannot edit files.</p></>}
-                      checked={mountReadOnly}
-                      onChange={() => setMountReadOnly(true)}
-                      className="mb-3"
-                    />
-                    <Form.Check 
-                      type="radio" 
-                      id="radio-readwrite"
-                      name="accessMode"
-                      label={<><span className="fw-medium">Read / Write</span><p className="text-muted small mb-0 mt-1">Agents can write new files and modify existing code autonomously.</p></>}
-                      checked={!mountReadOnly}
-                      onChange={() => setMountReadOnly(false)}
-                    />
-                  </Card.Body>
-                </Card>
-              </Form.Group>
+                  <div className="folder-picker-current" data-testid="host-selected-path">
+                    <span className="folder-picker-current-icon"><FolderOpen size={19} /></span>
+                    <span className="folder-picker-current-copy">
+                      <small>Current folder - this is what will be added</small>
+                      <strong>{mountHostPath ? displayWorkspaceName(mountHostPath) : "Choose a location"}</strong>
+                      <code>{mountHostPath || "No verified folder selected yet"}</code>
+                    </span>
+                    {mountHostPath && <span className="folder-picker-selected"><Check size={13} /> Selected</span>}
+                  </div>
 
-              {mountStatus && <Alert variant="danger">{mountStatus}</Alert>}
+                  <div className="folder-picker-list" data-testid="host-folder-list" aria-busy={hostBrowseLoading}>
+                    {hostBrowseLoading && (
+                      <div className="folder-picker-empty"><Spinner size="sm" /> <span>Opening folder...</span></div>
+                    )}
+                    {!hostBrowseLoading && !hostListing && (
+                      <div className="folder-picker-empty">
+                        <FolderOpen size={24} />
+                        <span>{hostRootsMessage || "Choose a quick location or enter a path to begin."}</span>
+                      </div>
+                    )}
+                    {!hostBrowseLoading && hostListing && hostListing.entries.length === 0 && (
+                      <div className="folder-picker-empty">
+                        <Check size={22} />
+                        <span>This folder has no subfolders. You can add the current folder below.</span>
+                      </div>
+                    )}
+                    {!hostBrowseLoading && hostListing && hostListing.entries.map((entry) => (
+                      <button
+                        type="button"
+                        key={entry.path}
+                        className="folder-picker-row"
+                        data-testid="host-folder-row"
+                        onClick={() => browseHost(entry.path)}
+                        aria-label={`Open ${entry.name}`}
+                      >
+                        <span className="folder-picker-row-icon"><Folder size={17} /></span>
+                        <span className="folder-picker-row-copy">
+                          <strong>{entry.name}</strong>
+                          <small>Open folder</small>
+                        </span>
+                        <ChevronRight size={16} />
+                      </button>
+                    ))}
+                  </div>
+                  {hostBrowseError && <div className="folder-picker-error" role="alert"><AlertTriangle size={16} /> {hostBrowseError}</div>}
+                </section>
+              </div>
+
+              <div className="folder-picker-access-heading">
+                <div><span className="folder-picker-step">2</span><strong>Choose access</strong></div>
+                <span>You can change this later.</span>
+              </div>
+              <div className="folder-picker-access" role="radiogroup" aria-label="Folder access">
+                <label className={mountReadOnly ? "is-selected" : ""}>
+                  <input type="radio" name="accessMode" checked={mountReadOnly} onChange={() => setMountReadOnly(true)} />
+                  <span className="folder-access-icon"><Eye size={19} /></span>
+                  <span><strong>Read and analyze <em>Recommended</em></strong><small>Agents can inspect and discuss files but cannot change them.</small></span>
+                  <span className="folder-access-check"><Check size={14} /></span>
+                </label>
+                <label className={!mountReadOnly ? "is-selected" : ""}>
+                  <input type="radio" name="accessMode" checked={!mountReadOnly} onChange={() => setMountReadOnly(false)} />
+                  <span className="folder-access-icon"><ShieldPlus size={19} /></span>
+                  <span><strong>Read and edit</strong><small>Agents can create and modify files inside this folder.</small></span>
+                  <span className="folder-access-check"><Check size={14} /></span>
+                </label>
+              </div>
+
+              {mountStatus && <div className="folder-picker-error" role="alert"><AlertTriangle size={16} /> {mountStatus}</div>}
 
               {!native && !security?.allowDockerControl && (
-                <div className="alert alert-warning d-flex align-items-center mb-0">
-                  <Lock size={16} className="me-2" /> Docker control is disabled in Safety Settings. You cannot auto-mount folders.
+                <div className="folder-picker-warning" role="alert">
+                  <Lock size={17} />
+                  <span><strong>Docker control is off.</strong> Enable it in Settings - Safety before adding a host folder.</span>
                 </div>
               )}
 
-              <div className="d-flex justify-content-end mt-4 pt-3 border-top">
-                <Button variant="light" className="me-2" onClick={resetMountModal}>Cancel</Button>
-                <Button type="submit" variant="primary" disabled={isMounting || !mountHostPath || (!native && !security?.allowDockerControl)}>
-                  {isMounting ? <Spinner size="sm" /> : (native ? "Approve Folder" : "Approve & Generate Mount")}
-                </Button>
+              <div className="folder-picker-review">
+                <div className="folder-picker-review-copy">
+                  <span className="folder-picker-step">3</span>
+                  <span>
+                    <small>{native ? "AVAILABLE IMMEDIATELY" : "RESTART REQUIRED AFTER MOUNT"}</small>
+                    <strong>{mountHostPath ? displayWorkspaceName(mountHostPath) : "Select a folder to continue"}</strong>
+                    {mountHostPath && <code>{mountHostPath}</code>}
+                  </span>
+                </div>
+                <div className="folder-picker-actions">
+                  <button type="button" className="folder-picker-cancel" onClick={resetMountModal}>Cancel</button>
+                  <button type="submit" className="folder-picker-submit" disabled={isMounting || !mountHostPath || (!native && !security?.allowDockerControl)}>
+                    {isMounting ? <><Spinner size="sm" /> Adding...</> : <><FolderOpen size={17} /> {native ? "Add this folder" : "Create secure mount"}</>}
+                  </button>
+                </div>
               </div>
-            </Form>
+            </form>
           ) : (
-            <div className="text-center py-4">
-              <div className="mb-4 d-inline-flex justify-content-center align-items-center rounded-circle bg-success bg-opacity-10" style={{ width: '80px', height: '80px' }}>
-                <Check size={40} className="text-success" />
-              </div>
-              <h4 className="fw-bold mb-3">Folder Approved Successfully!</h4>
+            <div className="folder-picker-success">
+              <span className="folder-picker-success-icon"><Check size={34} /></span>
+              <span className="control-eyebrow"><span className="signal-dot" /> {native ? "Workspace ready" : "Mount saved"}</span>
+              <h3>{native ? "Folder added" : "One restart, then approve"}</h3>
               {native ? (
                 <p className="text-muted mb-4 px-4">
                   The folder is registered and ready to use right now — no mount or restart needed.
@@ -1055,10 +1089,15 @@ export function WorkspacesView({
                 </p>
               ) : (
                 <>
-                  <p className="text-muted mb-4 px-4">
-                    The folder has been added to your approved list. <br/>
-                    <strong>Important:</strong> Because Rasputin is dockerized, you must restart the container with the newly generated volume mapping for the files to be accessible.
+                  <p>
+                    The secure mount is saved, but the folder is not available yet. Restart Rasputin,
+                    then approve it from <strong>Pending mounts</strong> on this page.
                   </p>
+                  <div className="folder-picker-next-steps">
+                    <span className="is-done"><Check size={15} /><strong>Mount saved</strong></span>
+                    <span><b>2</b><strong>Restart Rasputin</strong></span>
+                    <span><b>3</b><strong>Approve folder</strong></span>
+                  </div>
 
                   <div className="bg-body-tertiary p-3 rounded mb-4 text-start font-monospace small position-relative border">
                     <div className="text-muted mb-2 fw-bold font-sans">Docker Compose Volume Line:</div>

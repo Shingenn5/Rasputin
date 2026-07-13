@@ -216,6 +216,19 @@ contain textual `content`, because generated text can leak into the accessibilit
 `aria-hidden` geometry or real semantic markup instead. Shared legacy runtime screens should use the
 `PageHeader` / `ras-runtime-hero` pattern rather than inventing a new page header per tab.
 
+### Workspace folder-picker contract
+
+The Workspaces add-folder flow is mode-aware but shares one interaction model. A typed path is only
+a navigation draft; it must not become the selected workspace until `/api/workspace/host-browse`
+successfully verifies and lists it. The browser's clearly labeled **Current folder** is the folder
+that will be submitted. Read-only access remains the default, and the selected folder, access mode,
+runtime consequence, and primary action stay together in the persistent review bar.
+
+Native mode registers the verified host path directly and reports that it is available immediately.
+Docker mode creates a secure mount request and must describe the real remaining sequence without
+claiming the folder is already usable: save mount, restart Rasputin, then approve the visible mount.
+Keep quick locations, manual path entry, folder drilling, and the final action fully keyboard-usable.
+
 ## 5. Frontend Source Structure
 
 The frontend is now split into modules:
