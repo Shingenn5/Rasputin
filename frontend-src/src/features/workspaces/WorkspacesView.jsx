@@ -59,8 +59,11 @@ export function WorkspacesView({
   setPrompt,
   models,
   modeModelOverrides,
-  setModeModelOverride
+  setModeModelOverride,
+  role,
 }) {
+  const adminAccess = role === "admin";
+  const taskAccess = role !== "viewer";
   const [filter, setFilter] = useState("");
   const [selectedEntry, setSelectedEntry] = useState(null);
   
@@ -458,7 +461,7 @@ export function WorkspacesView({
           <h1>{activeName || "No workspace selected"}</h1>
           <p>{displayPath(activePath)}</p>
           <div className="workspace-hero-actions">
-            <button type="button" className="workspace-primary-action" onClick={() => setShowAddModal(true)}><PlusCircle size={16} /> Add folder</button>
+            {adminAccess && <button type="button" className="workspace-primary-action" onClick={() => setShowAddModal(true)}><PlusCircle size={16} /> Add folder</button>}
             <button type="button" className="workspace-secondary-action" onClick={loadWorkspaceRoots}><RefreshCw size={15} /> Refresh</button>
           </div>
         </div>
@@ -489,7 +492,7 @@ export function WorkspacesView({
             <strong>{ragStats?.docs || 0}</strong>
             <small>Files Indexed</small>
           </div>
-          <button
+          {adminAccess && <button
             type="button"
             className="w2-header-stat"
             style={{
@@ -508,8 +511,8 @@ export function WorkspacesView({
               {activeTrusted ? "On" : "Off"}
             </strong>
             <small>Trusted Dev Mode</small>
-          </button>
-          <button
+          </button>}
+          {adminAccess && <button
             type="button"
             className="w2-header-stat"
             style={{
@@ -530,7 +533,7 @@ export function WorkspacesView({
               {activeHostShell ? "On" : "Off"}
             </strong>
             <small>Host Shell</small>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -658,7 +661,7 @@ export function WorkspacesView({
           <div className="w2-section" style={{ flex: 1, gap: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="w2-section-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>EXPLORER: {currentFolder}</h2>
-              {workspaceBrowse?.path && normalizePath(workspaceBrowse.path) !== normalizePath(currentRoot?.path) && (
+              {adminAccess && workspaceBrowse?.path && normalizePath(workspaceBrowse.path) !== normalizePath(currentRoot?.path) && (
                 <button
                   className="icon-button"
                   type="button"
@@ -704,7 +707,7 @@ export function WorkspacesView({
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {entry.displayName || entry.name}
                   </span>
-                  {entry.kind === "folder" && (
+                  {adminAccess && entry.kind === "folder" && (
                     <button
                       type="button"
                       className="tree-approve-btn"
@@ -805,7 +808,7 @@ export function WorkspacesView({
                     </div>
                     
                     <div className="w2-action-panel-grid">
-                      <button className="w2-button primary" onClick={indexCurrentFolder}>Index Workspace</button>
+                      {taskAccess && <button className="w2-button primary" onClick={indexCurrentFolder}>Index Workspace</button>}
                       <button className="w2-button" onClick={refreshKnowledgeStats}>Refresh Status</button>
                     </div>
 
@@ -845,14 +848,14 @@ export function WorkspacesView({
 
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h2 className="w2-section-title">Launch Workspace Task</h2>
-                    <div className="w2-action-panel-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                    {taskAccess ? <div className="w2-action-panel-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
                       <button className="w2-button" onClick={() => launchTask('summarize')}>Summarize Directory</button>
                       <button className="w2-button" onClick={() => launchTask('analyze')}>Analyze Workspace</button>
                       <button className="w2-button" onClick={() => launchTask('search')}>Search Vulnerabilities</button>
                       <button className="w2-button" onClick={() => launchTask('graph')}>Review Dependencies</button>
                       <button className="w2-button" onClick={() => launchTask('docs')}>Generate Documentation</button>
                       <button className="w2-button" onClick={() => launchTask('review')}>Code Review</button>
-                    </div>
+                    </div> : <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', margin: 0 }}>Viewer access is read-only. An administrator can grant member access when this account should run workspace tasks.</p>}
                   </div>
 
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px', gridColumn: '1 / -1' }}>

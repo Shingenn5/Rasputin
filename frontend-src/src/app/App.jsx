@@ -40,6 +40,7 @@ import {
 import { useSettingsStore } from "../features/settings/settingsStore.js";
 import { loadSettings } from "../features/settings/settingsActions.js";
 import { ENGINE_PROTOCOLS } from "../lib/engines.js";
+import { canAccessRoute } from "../lib/access.js";
 
 const routedViews = new Set([
   "home",
@@ -294,9 +295,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!session) return undefined;
     function applyHashRoute() {
       const route = parseAppRouteHash();
-      go(route.view, route.section, { fromHistory: true });
+      if (!canAccessRoute(session.role, route.view, route.section)) {
+        applyView("home");
+        setGlobalStatus("This account does not include this area.");
+        window.history.replaceState(null, "", routeHashFor("home"));
+        return;
+      }
+      applyView(route.view, route.section);
     }
     applyHashRoute();
     window.addEventListener("hashchange", applyHashRoute);
@@ -305,7 +313,7 @@ export function App() {
       window.removeEventListener("hashchange", applyHashRoute);
       window.removeEventListener("popstate", applyHashRoute);
     };
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (ready) return undefined;
@@ -389,7 +397,7 @@ export function App() {
         return;
       }
       bootPhaseRef.current = "loadingApp";
-      await loadBasics();
+      await loadBasics(authSession.role);
       setLoginVisible(false);
       connectEvents();
       bootPhaseRef.current = "ready";
@@ -401,7 +409,7 @@ export function App() {
     }
   }
 
-  async function loadBasics() {
+  async function loadBasics(activeRole = session?.role) {
     const data = await api("/api/ui/bootstrap");
     const prefs = data.preferences || {};
     setModels(data.models || []);
@@ -444,17 +452,24 @@ export function App() {
     setWorkspaceExplorer(prefs.workspaceExplorer || {});
     const route = parseAppRouteHash();
     const hasExplicitRoute = Boolean(window.location.hash.replace(/^#\/?/, "").trim());
-    setView(hasExplicitRoute ? route.view : prefs.activeView || "home");
-    setSettingsSection(hasExplicitRoute && route.view === "settings" ? route.section || "general" : prefs.activeSettingsSection || "general");
+    const requestedView = hasExplicitRoute ? route.view : prefs.activeView || "home";
+    const requestedSection = hasExplicitRoute && route.view === "settings" ? route.section || "general" : prefs.activeSettingsSection || "general";
+    const routeAllowed = canAccessRoute(activeRole, requestedView, requestedSection);
+    setView(routeAllowed ? requestedView : "home");
+    setSettingsSection(routeAllowed ? requestedSection : "accounts");
+    if (!routeAllowed) {
+      setGlobalStatus("This account does not include this area.");
+      window.history.replaceState(null, "", routeHashFor("home"));
+    }
     setActiveChatFolder(prefs.activeChatFolder || "all");
     loadWorkspaceRoots(data.workspace?.activePath || ".", prefs.workspaceExplorer || {}).catch((error) => {
       setWorkspaceRoots([]);
       setWorkspaceBrowse(null);
       setGlobalStatus(`Workspace browser will retry when opened: ${error.message}`);
     });
-    // Platform settings (Default Inference Engine etc.) affect behavior
-    // outside the Settings view, so load them at boot, not on first visit.
-    loadSettings();
+    // Platform settings are administrator-owned. Loading them for a member
+    // creates a guaranteed 403 and makes a read-only session look broken.
+    if (data.session?.role === "admin") loadSettings();
     // The bootstrap catalog has no VRAM-based fit labels; swap in the
     // hardware-aware copy in the background.
     api("/api/model-catalog?fit=true").then(setModelCatalog).catch(() => {});
@@ -695,6 +710,10 @@ export function App() {
   }
 
   function go(nextView, section, options = {}) {
+    if (!canAccessRoute(session?.role, nextView, section)) {
+      setGlobalStatus("This account does not include this area.");
+      return;
+    }
     applyView(nextView, section);
     if (options.fromHistory) return;
     const nextHash = routeHashFor(nextView, section);
@@ -702,6 +721,13 @@ export function App() {
       window.history.pushState(null, "", nextHash);
     }
   }
+
+  useEffect(() => {
+    if (!session || canAccessRoute(session.role, view, settingsSection)) return;
+    setGlobalStatus("This account does not include this area.");
+    setView("home");
+    window.history.replaceState(null, "", routeHashFor("home"));
+  }, [session, settingsSection, view]);
 
   function toggleSidebar() {
     // < sm breakpoint (639px) → overlay mode; sm+ → collapse/expand rail
@@ -724,7 +750,7 @@ export function App() {
       setSession(authSession);
       setLoginVisible(false);
       setLoginStatus("");
-      await loadBasics();
+      await loadBasics(authSession.role);
       connectEvents();
     } catch (error) {
       setLoginStatus(error.message);
@@ -1731,6 +1757,8 @@ export function App() {
         resumeSession,
         createChatFolder,
         assignSessionFolder,
+        session,
+        logout,
       }}
     >
       <DashboardView
@@ -1743,6 +1771,7 @@ export function App() {
         openTaskDetails={openTaskDetails}
         security={security}
         session={session}
+        role={session?.role}
         selectedModelObject={selectedModelObject}
         objective={objective}
         setObjective={setObjective}
@@ -1783,6 +1812,7 @@ export function App() {
         startNewChat={startNewChat}
         modeModelOverrides={modeModelOverrides}
         setModeModelOverride={setModeModelOverride}
+        role={session?.role}
         modelKeyForMode={modelKeyForMode}
         subagentCount={subagentCount}
         setSubagentCount={setSubagentCount}
@@ -1809,6 +1839,7 @@ export function App() {
         models={models}
         modeModelOverrides={modeModelOverrides}
         setModeModelOverride={setModeModelOverride}
+        role={session?.role}
         loadWorkspaceRoots={() => loadWorkspaceRoots(workspace.activePath)}
         previewMount={previewMount}
         requestMount={requestMount}

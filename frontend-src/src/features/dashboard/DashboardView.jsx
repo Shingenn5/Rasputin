@@ -119,8 +119,11 @@ export function DashboardView({
   setObjective,
   sendTask,
   healthy,
+  role,
 }) {
   const tasks = homeTasks || [];
+  const taskAccess = role !== "viewer";
+  const adminAccess = role === "admin";
 
   const stats = useMemo(() => {
     const counts = { active: 0, done: 0, failed: 0, other: 0 };
@@ -196,10 +199,10 @@ export function DashboardView({
             <div className="glass hidden items-center gap-2 rounded-full px-4 py-2 text-sm text-muted-foreground sm:flex">
               <Search size={15} /> <span>Search…</span>
             </div>
-            <Button variant="outline" size="icon" className="rounded-full" onClick={() => go("activity")} aria-label="Activity">
+            {taskAccess && <Button variant="outline" size="icon" className="rounded-full" onClick={() => go("activity")} aria-label="Activity">
               <Bell size={16} />
-            </Button>
-            <button
+            </Button>}
+            {adminAccess && <button
               type="button"
               onClick={() => go("models")}
               className="glass flex items-center gap-2 rounded-full py-1.5 pl-2 pr-3.5 text-sm transition-colors hover:border-primary/30"
@@ -208,7 +211,7 @@ export function DashboardView({
                 <Cpu size={14} />
               </span>
               {displayModelName(selectedModelObject, models)}
-            </button>
+            </button>}
           </div>
         </motion.div>
 
@@ -304,7 +307,7 @@ export function DashboardView({
           <Card className="glow-card p-5">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-base font-semibold">Top Models <span className="text-muted-foreground">· by runs</span></div>
-              <Button variant="ghost" size="pill" onClick={() => go("models")}>Manage</Button>
+              {adminAccess && <Button variant="ghost" size="pill" onClick={() => go("models")}>Manage</Button>}
             </div>
             {topModels.length ? (
               <div className="overflow-x-auto">
@@ -344,10 +347,10 @@ export function DashboardView({
 
           <Card className="glow-card flex flex-col p-5">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-base font-semibold">Quick Chat</div>
-              <Button variant="ghost" size="pill" onClick={() => go("chat")}>Open full chat</Button>
+              <div className="text-base font-semibold">{taskAccess ? "Quick Chat" : "Read-only session"}</div>
+              {taskAccess && <Button variant="ghost" size="pill" onClick={() => go("chat")}>Open full chat</Button>}
             </div>
-            <p className="mb-3 text-sm text-muted-foreground">
+            {taskAccess ? <><p className="mb-3 text-sm text-muted-foreground">
               Start a run with {displayModelName(selectedModelObject, models)}.
             </p>
             <form className="flex flex-1 flex-col gap-3" onSubmit={submitChat}>
@@ -362,7 +365,10 @@ export function DashboardView({
               <Button type="submit" disabled={!objective.trim() || healthy === false} className="rounded-full">
                 <Send size={15} /> Send to Chat
               </Button>
-            </form>
+            </form></> : <div className="flex flex-1 flex-col justify-between gap-4 text-sm text-muted-foreground">
+              <p>Viewer accounts can inspect shared workspaces and their own records, but cannot start agent runs or change appliance configuration.</p>
+              <Button variant="outline" className="self-start" onClick={() => go("workspaces")}>Browse shared workspaces</Button>
+            </div>}
           </Card>
         </motion.div>
 

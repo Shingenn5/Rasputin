@@ -13,6 +13,7 @@ export function AccountsSettings({ session }) {
   const [workspaces, setWorkspaces] = useState([]);
   const [status, setStatus] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [savingKey, setSavingKey] = useState("");
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [newAccountRole, setNewAccountRole] = useState("member");
   const isAdmin = session?.role === "admin";
@@ -46,11 +47,13 @@ export function AccountsSettings({ session }) {
   }
 
   async function updateAccount(username, patch) {
+    const key = `account:${username}`;
+    setSavingKey(key);
     try {
       await api(`/api/auth/users/${encodeURIComponent(username)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
       setStatus(`${username} updated.`);
       await refresh();
-    } catch (error) { setStatus(error.message); }
+    } catch (error) { setStatus(error.message); } finally { setSavingKey(""); }
   }
 
   async function resetPassword(username) {
@@ -62,11 +65,13 @@ export function AccountsSettings({ session }) {
   }
 
   async function setWorkspaceRole(workspaceId, username, role) {
+    const key = `workspace:${workspaceId}:${username}`;
+    setSavingKey(key);
     try {
       await postJson("/api/workspace/members", { workspaceId, username, role: role || null });
       setStatus(`${username}'s workspace access was updated.`);
       await refresh();
-    } catch (error) { setStatus(error.message); }
+    } catch (error) { setStatus(error.message); } finally { setSavingKey(""); }
   }
 
   async function changeOwnPassword(event) {
@@ -151,9 +156,13 @@ export function AccountsSettings({ session }) {
               <article className="account-row" key={user.username}>
                 <span className="account-avatar">{user.username.slice(0, 2).toUpperCase()}</span>
                 <span className="account-identity"><strong>{user.username}</strong><small>{user.enabled ? "Active" : "Disabled"}</small></span>
-                <select value={user.role} aria-label={`Role for ${user.username}`} disabled={user.username === session?.username} onChange={(event) => updateAccount(user.username, { role: event.target.value })}>
-                  <option value="viewer">Viewer</option><option value="member">Member</option><option value="admin">Administrator</option>
-                </select>
+                <span className="account-role-control">
+                  <select value={user.role} aria-label={`Appliance role for ${user.username}`} disabled={user.username === session?.username || savingKey === `account:${user.username}`} onChange={(event) => updateAccount(user.username, { role: event.target.value })}>
+                    <option value="viewer">Viewer</option><option value="member">Member</option><option value="admin">Administrator</option>
+                  </select>
+                  {user.username === session?.username && <small>Your active role is protected.</small>}
+                  {savingKey === `account:${user.username}` && <small>Saving role…</small>}
+                </span>
                 <button type="button" onClick={() => resetPassword(user.username)}><KeyRound size={14} /> Reset password</button>
                 <button type="button" className={user.enabled ? "is-danger" : ""} disabled={user.username === session?.username} onClick={() => updateAccount(user.username, { enabled: !user.enabled })}>
                   {user.enabled ? "Disable" : "Enable"}
@@ -164,16 +173,21 @@ export function AccountsSettings({ session }) {
 
           <div className="workspace-access-matrix">
             <div className="workspace-access-heading"><ShieldCheck size={18} /><span><strong>Workspace access</strong><small>Appliance roles do not automatically grant folder access.</small></span></div>
-            {workspaces.map((workspace) => (
-              <article key={workspace.id}>
+            {workspaces.map((workspace) => {
+              const members = workspace.members || {};
+              const ownerCount = Object.values(members).filter((role) => role === "owner").length;
+              return <article key={workspace.id}>
                 <div><strong>{workspace.name}</strong><small>{workspace.root}</small></div>
-                {users.filter((user) => user.enabled).map((user) => (
-                  <label key={user.username}><span>{user.username}</span><select value={workspace.members?.[user.username] || ""} onChange={(event) => setWorkspaceRole(workspace.id, user.username, event.target.value)}>
+                {users.filter((user) => user.enabled).map((user) => {
+                  const currentRole = members[user.username] || "";
+                  const protectedOwner = currentRole === "owner" && ownerCount === 1;
+                  const busy = savingKey === `workspace:${workspace.id}:${user.username}`;
+                  return <label key={user.username}><span>{user.username}</span><select aria-label={`Workspace access for ${user.username} in ${workspace.name}`} value={currentRole} disabled={protectedOwner || busy} title={protectedOwner ? "Assign another owner before changing this access." : undefined} onChange={(event) => setWorkspaceRole(workspace.id, user.username, event.target.value)}>
                     <option value="">No access</option><option value="viewer">Viewer</option><option value="contributor">Contributor</option><option value="developer">Developer</option><option value="owner">Owner</option>
-                  </select></label>
-                ))}
-              </article>
-            ))}
+                  </select>{protectedOwner && <small>Last owner</small>}{busy && <small>Saving…</small>}</label>;
+                })}
+              </article>;
+            })}
           </div>
         </>
       )}

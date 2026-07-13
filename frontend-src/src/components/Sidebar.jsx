@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { navItems } from "../lib/constants.js";
 import { displayWorkspaceName } from "../lib/display.js";
+import { canAccessView, canRunTasks, normalizedRole, roleLabel } from "../lib/access.js";
 
 const icons = {
   Home,
@@ -53,7 +54,11 @@ export function Sidebar({
   resumeSession,
   createChatFolder,
   assignSessionFolder,
+  session,
 }) {
+  const role = normalizedRole(session?.role);
+  const visibleNavItems = navItems.filter((item) => canAccessView(role, item.view));
+  const taskAccess = canRunTasks(role);
   const stateLabel = locked ? "Privacy locked" : "Review mode";
   const folders = chatFolders?.folders || [];
   const [sessionSearch, setSessionSearch] = useState("");
@@ -111,13 +116,20 @@ export function Sidebar({
         </button>
       </div>
 
-      <button className="new-task-btn" data-testid="new-task" type="button" onClick={newTask}>
-        <Plus size={18} />
-        <span className="nav-label">New Chat</span>
-      </button>
+      {taskAccess ? (
+        <button className="new-task-btn" data-testid="new-task" type="button" onClick={newTask}>
+          <Plus size={18} />
+          <span className="nav-label">New Chat</span>
+        </button>
+      ) : (
+        <div className="sidebar-role-notice" data-testid="viewer-read-only-notice">
+          <span>Read-only access</span>
+          <small>Ask an administrator for member access to run tasks.</small>
+        </div>
+      )}
 
       <nav className="sidebar-nav" aria-label="Primary">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = icons[item.label] || Home;
           const active = view === item.view && (item.view === "settings" || !item.section || settingsSection === item.section);
           return (
@@ -262,6 +274,10 @@ export function Sidebar({
       </details>
 
       <div className="sidebar-context" aria-label="Current Rasputin state">
+        <div className="context-line sidebar-role-line">
+          <span className={`status-dot is-${role}`} aria-hidden="true" />
+          <span className="nav-label">{roleLabel(role)}</span>
+        </div>
         <div className="context-line">
           <span className="status-dot" aria-hidden="true" />
           <span className="nav-label">{stateLabel}</span>

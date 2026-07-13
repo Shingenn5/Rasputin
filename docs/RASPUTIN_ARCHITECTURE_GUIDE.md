@@ -537,6 +537,13 @@ Local account provisioning is collapsed by default and opens as a dedicated flow
 explicit role choice. Creating an account does not grant workspace access; workspace grants are
 managed separately after the account exists.
 
+The UI mirrors the server-side role model instead of showing controls that will be rejected:
+administrators receive the fleet, deployment, account, and workspace-administration surfaces;
+members receive chat, activity, and their shared workspaces; viewers receive a read-only
+dashboard and shared-workspace browser. Direct hash routes are guarded as well. A signed-in
+administrator cannot demote their own active role, and a workspace's final owner cannot remove
+their own ownership until another owner exists; both states are explained beside the control.
+
 ### TasksView.jsx
 
 The operational task list:

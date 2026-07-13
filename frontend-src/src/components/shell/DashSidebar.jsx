@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Laptop,
   LockKeyhole,
+  LogOut,
   MessageSquare,
   PanelLeft,
   Plus,
@@ -18,6 +19,7 @@ import {
   FolderGit2,
 } from "lucide-react";
 import { cn } from "@/lib/utils.js";
+import { canAccessView, canRunTasks, normalizedRole, roleLabel } from "@/lib/access.js";
 
 /* Grouped navigation modeled on the reference dashboards. */
 const NAV_GROUPS = [
@@ -63,7 +65,15 @@ export function DashSidebar({
   recentSessions = [],
   resumeSession,
   activeSessionId,
+  session,
+  logout,
 }) {
+  const role = normalizedRole(session?.role);
+  const taskAccess = canRunTasks(role);
+  const visibleNavGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => canAccessView(role, item.view)),
+  })).filter((group) => group.items.length > 0);
   const asideRef = useRef(null);
   const wasMobileOpenRef = useRef(mobileOpen);
   const reducedMotion = useReducedMotion();
@@ -180,7 +190,7 @@ export function DashSidebar({
         </div>
 
         {/* New chat */}
-        <button
+        {taskAccess ? <button
           type="button"
           data-testid="new-task"
           onClick={newTask}
@@ -193,14 +203,19 @@ export function DashSidebar({
         >
           <Plus size={18} className="shrink-0" />
           {expanded && <span>New Chat</span>}
-        </button>
+        </button> : <div
+          data-testid="viewer-read-only-notice"
+          className={cn("mb-2 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/60 px-3 py-2 text-[0.68rem] text-sidebar-foreground/65", !expanded && "px-1 text-center")}
+        >
+          {expanded ? <><strong className="block text-sidebar-foreground/80">Read-only access</strong><span>Ask an administrator for member access to run tasks.</span></> : <LockKeyhole size={16} className="mx-auto" />}
+        </div>}
 
         {/* Single scroll region: nav (with Settings) and Recent Chats scroll
             together as one column, between the pinned header above and the
             pinned privacy chip below. */}
         <div className="ras-sidebar-scroll -mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
         <nav className="flex shrink-0 flex-col gap-0.5">
-          {NAV_GROUPS.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.label} className="mt-3">
               {expanded && (
                 <div className="px-3 pb-2 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
@@ -218,7 +233,7 @@ export function DashSidebar({
               data-testid="nav-settings"
               aria-label="Settings"
               aria-current={view === "settings" ? "page" : undefined}
-              onClick={() => go("settings", "general")}
+              onClick={() => go("settings", role === "admin" ? "general" : "accounts")}
               title={!expanded ? "Settings" : undefined}
               className={cn(
                 "ras-nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -235,7 +250,7 @@ export function DashSidebar({
         </nav>
 
         {/* Recent chats — reached by scrolling the shared region above */}
-        {expanded && sessions.length > 0 && (
+        {expanded && taskAccess && sessions.length > 0 && (
           <div className="mt-4 flex shrink-0 flex-col">
             <div className="flex shrink-0 items-center justify-between px-3 pb-2">
               <span className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
@@ -286,6 +301,21 @@ export function DashSidebar({
             {expanded && <span>{locked ? "Privacy Lock enabled" : "Review mode"}</span>}
             <i className={locked ? "is-locked" : ""} aria-hidden="true" />
           </div>
+          {expanded && <div className="ras-privacy-row" title={`${roleLabel(role)} appliance role`}>
+            <LockKeyhole size={15} aria-hidden="true" />
+            <span>{roleLabel(role)}</span>
+          </div>}
+          <button
+            type="button"
+            data-testid="sidebar-logout"
+            onClick={logout}
+            title={!expanded ? "Log out" : `Log out ${session?.username || ""}`}
+            aria-label={`Log out ${session?.username || "current account"}`}
+            className={cn("ras-privacy-row ras-sidebar-logout", !expanded && "justify-center")}
+          >
+            <LogOut size={15} aria-hidden="true" />
+            {expanded && <span>Log out{session?.username ? ` · ${session.username}` : ""}</span>}
+          </button>
         </div>
       </aside>
     </div>
