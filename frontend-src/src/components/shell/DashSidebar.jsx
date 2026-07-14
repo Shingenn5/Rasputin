@@ -112,7 +112,7 @@ export function DashSidebar({
         title={!expanded ? item.label : undefined}
         onClick={() => go(item.view, item.section)}
         className={cn(
-          "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+          "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium transition-colors",
           active ? "is-active text-sidebar-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
           !expanded && "justify-center px-0",
         )}
@@ -161,7 +161,7 @@ export function DashSidebar({
           }
         }}
         className={cn(
-          "ras-sidebar absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar px-3 py-5 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
+          "ras-sidebar ras-sidebar-scroll absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-3 py-3 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
           expanded ? "w-[248px]" : "w-[76px]",
           // Mobile-only CSS hides closed controls from tab/AT order; desktop remains persistent.
           !mobileOpen && "is-mobile-closed -translate-x-full sm:translate-x-0",
@@ -169,7 +169,7 @@ export function DashSidebar({
         )}
       >
         {/* Brand */}
-        <div className={cn("ras-sidebar-brand flex shrink-0 items-center gap-2.5 px-2 pb-5", !expanded && "justify-center px-0")}>
+        <div className={cn("ras-sidebar-brand flex shrink-0 items-center gap-2.5 px-2 pb-3", !expanded && "justify-center px-0")}>
           <button
             type="button"
             data-testid="sidebar-toggle"
@@ -197,7 +197,7 @@ export function DashSidebar({
           title={!expanded ? "New Chat" : undefined}
           aria-label="New Chat"
           className={cn(
-            "ras-new-chat mb-2 flex shrink-0 items-center gap-2.5 rounded-lg bg-sidebar-primary px-3 py-2.5 text-sm font-semibold text-sidebar-primary-foreground transition-colors hover:brightness-110",
+            "ras-new-chat mb-1 flex shrink-0 items-center gap-2.5 rounded-lg bg-sidebar-primary px-3 py-2 text-sm font-semibold text-sidebar-primary-foreground transition-colors hover:brightness-110",
             !expanded && "justify-center px-0",
           )}
         >
@@ -210,15 +210,12 @@ export function DashSidebar({
           {expanded ? <><strong className="block text-sidebar-foreground/80">Read-only access</strong><span>Ask an administrator for member access to run tasks.</span></> : <LockKeyhole size={16} className="mx-auto" />}
         </div>}
 
-        {/* Single scroll region: nav (with Settings) and Recent Chats scroll
-            together as one column, between the pinned header above and the
-            pinned privacy chip below. */}
-        <div className="ras-sidebar-scroll -mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+        {/* Navigation participates in the sidebar's single unified scroll surface. */}
         <nav className="flex shrink-0 flex-col gap-0.5">
           {visibleNavGroups.map((group) => (
-            <div key={group.label} className="mt-3">
+            <div key={group.label} className="mt-1">
               {expanded && (
-                <div className="px-3 pb-2 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
+                <div className="px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
                   {group.label}
                 </div>
               )}
@@ -227,7 +224,7 @@ export function DashSidebar({
           ))}
 
           {/* Settings — pinned with the primary nav, always reachable */}
-          <div className="mt-3">
+          <div className="mt-1">
             <button
               type="button"
               data-testid="nav-settings"
@@ -236,7 +233,7 @@ export function DashSidebar({
               onClick={() => go("settings", role === "admin" ? "general" : "accounts")}
               title={!expanded ? "Settings" : undefined}
               className={cn(
-                "ras-nav-item flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "ras-nav-item flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium transition-colors",
                 view === "settings"
                   ? "is-active bg-sidebar-accent text-sidebar-foreground"
                   : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
@@ -249,10 +246,10 @@ export function DashSidebar({
           </div>
         </nav>
 
-        {/* Recent chats — reached by scrolling the shared region above */}
+        {/* Recent chats continue naturally in the unified sidebar flow. */}
         {expanded && sessions.length > 0 && (
-          <div className="mt-4 flex shrink-0 flex-col">
-            <div className="flex shrink-0 items-center justify-between px-3 pb-2">
+          <div className="-mr-1 mt-3 flex shrink-0 flex-col pr-1">
+            <div className="flex shrink-0 items-center justify-between px-3 pb-1">
               <span className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
                 Recent Chats
               </span>
@@ -274,7 +271,7 @@ export function DashSidebar({
                     title={s.title || "Untitled chat"}
                     onClick={() => resumeSession?.(s.id)}
                     className={cn(
-                      "flex shrink-0 items-center gap-2.5 truncate rounded-lg px-3 py-2 text-left text-[0.8rem] transition-colors",
+                      "flex shrink-0 items-center gap-2.5 truncate rounded-lg px-3 py-1.5 text-left text-[0.8rem] transition-colors",
                       active
                         ? "bg-sidebar-accent text-sidebar-foreground"
                         : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground",
@@ -288,10 +285,10 @@ export function DashSidebar({
             </div>
           </div>
         )}
-        </div>
+        {(!expanded || sessions.length === 0) && <div className="min-h-0 flex-1" aria-hidden="true" />}
 
         {/* Runtime identity + privacy state — launch-time facts, never browser toggles. */}
-        <div className={cn("ras-sidebar-footer mt-3 flex shrink-0 flex-col gap-1.5", !expanded && "is-collapsed")}>
+        <div className={cn("ras-sidebar-footer mt-2 flex shrink-0 flex-col gap-1", !expanded && "is-collapsed")}>
           <div className="ras-runtime-row" title={nativeRuntime ? "Native workstation runtime" : "Docker server runtime"}>
             <RuntimeIcon size={15} aria-hidden="true" />
             {expanded && <span><small>Runtime</small><strong>{nativeRuntime ? "Native workstation" : "Docker server"}</strong></span>}

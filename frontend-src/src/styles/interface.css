@@ -542,13 +542,13 @@ html[data-theme="rasputin-dark"] .login-submit {
 
 .ras-sidebar-footer {
   border-top: 1px solid var(--sidebar-border);
-  padding-top: 10px;
+  padding-top: 6px;
 }
 
 .ras-runtime-row,
 .ras-privacy-row {
   display: flex;
-  min-height: 38px;
+  min-height: 32px;
   align-items: center;
   gap: 10px;
   border-radius: 8px;
@@ -588,7 +588,7 @@ html[data-theme="rasputin-dark"] .login-submit {
 }
 
 .ras-privacy-row {
-  min-height: 31px;
+  min-height: 27px;
   font-size: 0.68rem;
 }
 
