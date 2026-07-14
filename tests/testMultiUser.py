@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -9,8 +10,9 @@ TEST_ROOT = Path(tempfile.mkdtemp(prefix="rasputin-multiuser-"))
 os.environ["RASPUTIN_DATA_DIR"] = str(TEST_ROOT / "data")
 os.environ.pop("RASPUTIN_LOCALHOST_BYPASS", None)
 
-from backend.core import auth, preferences, workspace  # noqa: E402
+from backend.core import auth, connectors, preferences, workspace  # noqa: E402
 from backend.engine.agent import AgentHub  # noqa: E402
+from backend.core import runtime_store  # noqa: E402
 from backend.rag import memory  # noqa: E402
 from backend import warsat  # noqa: E402
 import server  # noqa: E402
@@ -86,6 +88,63 @@ class MultiUserTests(unittest.TestCase):
         self.assertEqual(detected["dockerClientVersion"], "1.2.3")
         self.assertEqual(detected["dockerServerVersion"], "")
         self.assertEqual(next(item for item in checks if item["id"] == "dockerDaemon")["status"], "block")
+
+    def test_connectors_are_owner_scoped_and_secrets_are_masked(self):
+        connector = connectors.save_connector(
+            "alice",
+            "gmail",
+            "Alice mail",
+            {"clientId": "client-id"},
+            {"clientSecret": "do-not-return"},
+        )
+        self.assertTrue(connector["hasCredentials"])
+        self.assertNotIn("credentials", connector)
+        self.assertNotIn("do-not-return", str(connector))
+        self.assertEqual(connectors.list_connectors("bob"), [])
+        checked = connectors.test_connector("alice", connector["id"])
+        self.assertEqual(checked["status"], "ready_for_authorization")
+
+    def test_task_queue_survives_restart_and_scopes_inbox(self):
+        owner = "queue-owner"
+
+        async def create_queued():
+            hub = AgentHub()
+            task = hub.start(
+                "persist me",
+                workspace_path=".",
+                owner_id=owner,
+                scheduled_for=time.time() + 3600,
+            )
+            await asyncio.sleep(0)
+            updated = await hub.set_priority(task.id, 4, owner)
+            self.assertEqual(updated["status"], "queued")
+            self.assertEqual(updated["priority"], 4)
+            return task.id
+
+        import asyncio
+        task_id = asyncio.run(create_queued())
+
+        async def recover_and_cancel():
+            hub = AgentHub()
+            recovered = await hub.recover_pending()
+            self.assertGreaterEqual(recovered, 1)
+            self.assertEqual(hub.get_task(task_id, owner)["status"], "queued")
+            await hub.cancel(task_id)
+
+        asyncio.run(recover_and_cancel())
+        events = runtime_store.list_inbox_events(owner)
+        self.assertTrue(any(item["task_id"] == task_id and item["kind"] == "task_cancelled" for item in events))
+        self.assertFalse(any(item["task_id"] == task_id for item in runtime_store.list_inbox_events("another-owner")))
+        self.assertGreater(runtime_store.universal_search(owner, "persist me")["count"], 0)
+        self.assertEqual(runtime_store.universal_search("another-owner", "persist me")["count"], 0)
+
+        artifact_hub = AgentHub()
+        artifact_hub.record_output(task_id, "markdown", "Queue report", "# Durable artifact")
+        artifacts = runtime_store.list_artifacts(owner, "Durable")
+        self.assertEqual(len(artifacts), 1)
+        self.assertTrue(runtime_store.set_artifact_pinned(owner, artifacts[0]["id"], True))
+        self.assertEqual(runtime_store.get_artifact(owner, artifacts[0]["id"])["pinned"], 1)
+        self.assertIsNone(runtime_store.get_artifact("another-owner", artifacts[0]["id"]))
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ param(
     [switch]$Native,
     [switch]$Lan,
     [string[]]$TlsName = @(),
+    [string[]]$AllowedHost = @(),
     [ValidateRange(0, 65535)]
     [int]$Port = 0
 )
@@ -131,7 +132,7 @@ function Start-Rasputin {
     while ($try -lt $maxTries) {
         Start-Sleep -Seconds 2
         try {
-            $resp = Invoke-WebRequest -Uri "$url/api/system/health" -UseBasicParsing -ErrorAction Stop
+            $resp = Invoke-WebRequest -Uri "$url/api/health" -UseBasicParsing -ErrorAction Stop
             if ($resp.StatusCode -eq 200) {
                 $healthy = $true
                 break
@@ -232,6 +233,23 @@ function Start-Native {
     & $vpy (Join-Path $PSScriptRoot "server.py")
 }
 
+function Invoke-NativeHost {
+    param([string]$Action)
+
+    $vpy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $vpy)) {
+        Write-Host "The native environment has not been created yet." -ForegroundColor Yellow
+        Write-Host "Run '.\rasputin.ps1 start -Native -Port 8788' once, then stop it with Ctrl+C." -ForegroundColor Cyan
+        exit 1
+    }
+    $arguments = @("-m", "backend.tools.native_host", $Action)
+    if ($Port -gt 0) { $arguments += @("--port", "$Port") }
+    if ($Lan) { $arguments += "--lan" }
+    foreach ($hostName in $AllowedHost) { $arguments += @("--allowed-host", $hostName) }
+    & $vpy @arguments
+    exit $LASTEXITCODE
+}
+
 function Setup-Https {
     $pythonPath = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
     $pythonArgs = @()
@@ -321,6 +339,12 @@ switch ($Command.ToLower()) {
     "reset-password" { Test-DockerEnv; Reset-Password }
     "migrate-data" { Invoke-DataMigration }
     "setup-https" { Setup-Https }
+    "native-host-start" { Invoke-NativeHost -Action "start" }
+    "native-host-stop" { Invoke-NativeHost -Action "stop" }
+    "native-host-restart" { Invoke-NativeHost -Action "restart" }
+    "native-host-status" { Invoke-NativeHost -Action "status" }
+    "native-host-install" { Invoke-NativeHost -Action "install" }
+    "native-host-uninstall" { Invoke-NativeHost -Action "uninstall" }
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin (Docker) in the background"
@@ -332,6 +356,9 @@ switch ($Command.ToLower()) {
         Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
         Write-Host "  .\rasputin.ps1 migrate-data      - Moves existing .\data into the named volume (idempotent)"
         Write-Host "  .\rasputin.ps1 setup-https [-TlsName rasputin.home,192.168.1.10] - Creates a trusted mkcert certificate"
+        Write-Host "  .\rasputin.ps1 native-host-start [-Port 8788] [-Lan] [-AllowedHost name] - Starts the persistent native host"
+        Write-Host "  .\rasputin.ps1 native-host-stop|native-host-restart|native-host-status - Controls the native host"
+        Write-Host "  .\rasputin.ps1 native-host-install|native-host-uninstall - Controls start-at-login registration"
         Write-Host ""
     }
 }

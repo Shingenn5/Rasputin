@@ -47,6 +47,23 @@ these, it doesn't belong in this track.
 - No new features riding along "while we're in there." Feature tracks (coding-agent Stages 5/6,
   WarSat enhancement tiers, business track) proceed separately.
 
+### 2026-07-13 desktop host decision
+
+The native daily driver is becoming **Rasputin Desktop**, with Electron owning the local FastAPI
+process, application window, system tray, and lifecycle. This does not fork the product: Electron
+loads the same React frontend from the same FastAPI backend on a random loopback-only port. Docker
+becomes the headless server/appliance shape managed through Compose and the CLI. The foreground
+`rasputin.ps1 start -Native` path remains available for development and recovery.
+
+The first lifecycle milestone is implemented under `desktop/`: single-instance behavior, secure
+renderer settings, backend health supervision, start/stop/restart tray actions, graceful shutdown,
+isolated log handling, and one-time first-run credential presentation. A PyInstaller backend and
+electron-builder/NSIS pipeline now produce a self-contained Windows application; signing and clean-
+machine release qualification remain. Native Host adds stable-port browser operation with detached
+lifecycle controls and start-at-login registration. The detailed boundary and packaging gates live
+in [`DESKTOP_ARCHITECTURE.md`](DESKTOP_ARCHITECTURE.md), with all supported shapes in
+[`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md).
+
 ### 2026-07-13 server-mode extension: accounts and HTTPS
 
 The Docker server shape now supports simultaneous local users without changing the native
@@ -61,6 +78,11 @@ FiloSottile/mkcert, stores only generated leaf material in ignored `data/tls/`, 
 read-only to Docker. `-Lan` changes the bind address explicitly; the safe default remains loopback.
 Native mode derives its Host/Origin allowlist from the generated SAN list. Public deployment still
 requires a production certificate/reverse proxy rather than mkcert.
+
+`setup-https` always preserves SANs for localhost, both loopback forms, and the machine hostname;
+additional `-TlsName` values are additive. This prevents a friendly-name certificate from breaking
+the standard native or Docker launch URL. Friendly names still require local DNS or a hosts-file
+mapping; certificate generation does not change name resolution.
 
 ---
 

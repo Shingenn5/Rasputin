@@ -1,8 +1,9 @@
 import React from "react";
 import { Box, Laptop, Menu, ShieldAlert, X } from "lucide-react";
 import { DashSidebar } from "./shell/DashSidebar.jsx";
+import { CommandPalette } from "./CommandPalette.jsx";
 
-export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust }) {
+export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust, commandPaletteProps }) {
   const nativeRuntime = sidebarProps?.runtimeMode === "native";
   const mobileSidebarTriggerRef = React.useRef(null);
 
@@ -75,6 +76,7 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
           {children}
         </main>
       </div>
+      <CommandPalette {...commandPaletteProps} />
     </>
   );
 }

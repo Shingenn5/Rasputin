@@ -55,6 +55,26 @@ That is the direct-folder native path; Docker retains its mount → restart → 
 Docker is still required for Skills and WarSat model containers, but not for the native wrapper
 process or its low-privilege Host Shell.
 
+### Trusted HTTPS and friendly hostnames
+
+Install the official `mkcert` binary, then generate a leaf certificate. Loopback names and the
+computer hostname are always included; `-TlsName` adds friendly or LAN names without removing
+those safe defaults:
+
+```powershell
+.\rasputin.ps1 setup-https -TlsName rasputin.test,$env:COMPUTERNAME
+.\rasputin.ps1 start
+```
+
+For a friendly name on the same computer, map it to `127.0.0.1` in the operating-system hosts
+file, then open `https://rasputin.test:8787`. For another trusted LAN device, start with `-Lan`,
+map the chosen hostname to the Rasputin machine's LAN address, and install mkcert's `rootCA.pem`
+on that client. Never copy `rootCA-key.pem`. `mkcert` is for private trusted networks; public or
+Internet-facing access needs a real DNS name and a production reverse proxy/certificate.
+
+Native and Docker instances should use distinct hostnames when they run side by side so their
+host-scoped session cookies cannot collide.
+
 ## 2. Get Or Reset The Admin Password
 
 On the **first boot of a fresh data store**, Rasputin generates an admin password once. In Docker
@@ -147,4 +167,14 @@ Before pushing or packaging, verify Git does not stage:
 - screenshots
 - API keys
 - generated RAG or graph indexes
+
+## 9. Productivity Features
+
+- Activity -> Inbox shows durable completion, failure, cancellation, and approval notices.
+- Activity -> Queue manages persisted queued work; queued tasks survive wrapper restarts.
+- `Ctrl+K` opens account-scoped search across chats, runs, and generated artifacts.
+- Archive is now the Artifact Workspace: preview, pin, copy, download, and return to source run.
+- Settings -> Integrations stores account-scoped connector configuration for Gmail, Outlook,
+  Teams, and generic HTTPS webhooks. OAuth providers remain `ready for authorization` until an
+  operator supplies an application registration and completes the provider authorization handoff.
 

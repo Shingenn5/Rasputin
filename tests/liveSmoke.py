@@ -126,10 +126,15 @@ def main():
     finally:
         assertOk("POST", "/api/security", securityBefore)
 
+    discovery = assertOk("POST", "/api/model-registry/discover", {"key": "dry-run"})
+    if discovery.get("status") != "reachable" or "latencyMs" not in discovery:
+        raise SmokeFailure(f"Dry-run discovery failed: {discovery}")
+
     prefs = assertOk("POST", "/api/preferences", {
         "theme": "rasputin-dark",
         "sidebarCollapsed": True,
         "selectedModel": "dry-run",
+        "testingMode": True,
         "skill": "general",
         "taskMode": "chat",
         "subagents": 0,
@@ -141,17 +146,14 @@ def main():
     assertOk("POST", "/api/preferences", {
         "theme": "rasputin-light",
         "sidebarCollapsed": False,
-        "selectedModel": "dry-run",
+        "selectedModel": "",
+        "testingMode": False,
         "skill": "general",
         "taskMode": "chat",
         "subagents": 0,
         "activeView": "home",
         "activeSettingsSection": "general",
     })
-
-    discovery = assertOk("POST", "/api/model-registry/discover", {"key": "dry-run"})
-    if discovery.get("status") != "reachable" or "latencyMs" not in discovery:
-        raise SmokeFailure(f"Dry-run discovery failed: {discovery}")
 
     status, deniedLogs = requestJson("POST", "/api/model-registry/logs", {"key": "dry-run"}, 403)
     if deniedLogs.get("error", {}).get("code") != "permissionDenied":

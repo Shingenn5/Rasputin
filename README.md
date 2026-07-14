@@ -143,6 +143,18 @@ The `rasputin` manager supports the following commands:
 - `credentials` : Reads the original generated login from current container logs, if that line still exists.
 - `reset-password` *(Windows manager)* : Generates and prints a new Docker-mode admin password when the original is unavailable.
 
+### Desktop daily driver
+
+The native daily driver now has an Electron lifecycle shell. From a repository checkout, run
+`npm run desktop` to build the frontend and open Rasputin as a desktop application. Closing the
+window keeps it available in the system tray, where the native engine can be started, stopped,
+restarted, or fully quit. Docker remains the browser-based server/appliance deployment.
+
+Development uses the checkout's Python environment. `npm run desktop:package` builds a
+self-contained Windows installer with a bundled backend runtime, so target machines do not need
+Python or Node.js. See [`docs/DEPLOYMENT_MATRIX.md`](docs/DEPLOYMENT_MATRIX.md) for Desktop, Native
+Host, Docker Server, and private remote-access workflows.
+
 The first-run password is generated only when a fresh data store creates its admin account.
 `credentials` cannot recover a changed password and may find nothing after container replacement
 or log loss even though the account persists. In that case run `.\rasputin.ps1 reset-password`.

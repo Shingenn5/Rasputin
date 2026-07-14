@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import os
 import re
 import time
 import uuid
@@ -64,7 +65,7 @@ FILE_SNIPPET_TERMS = (
 
 
 class AgentTask:
-    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto"):
+    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None):
         self.id = task_id or str(uuid.uuid4())[:8]
         self.session_id = session_id or store.new_id("sess")
         self.objective = objective
@@ -72,6 +73,15 @@ class AgentTask:
         self.skill = skill or "general"
         self.mode = mode or "chat"
         self.reasoning = reasoning if reasoning in {"auto", "off", "low", "medium", "high"} else "auto"
+        self.priority = max(-10, min(int(priority or 0), 10))
+        self.scheduled_for = float(scheduled_for) if scheduled_for else None
+        self.subagents = max(0, min(int(subagents or 0), 4))
+        self.max_attempts = max(1, min(int(max_attempts or 1), 5))
+        self.attempt_count = 0
+        self.source_task_id = source_task_id
+        self.queue_order = time.time()
+        self.started_at = None
+        self.completed_at = None
         self.parent_id = parent_id
         self.status = "queued"
         self.progress = 0
@@ -126,6 +136,8 @@ class AgentHub:
         self.mcp = McpLayer()
         self._memory_export_task = None
         self._loop = None
+        self._owner_semaphores = {}
+        self._queued_runners = {}
         self._mark_interrupted()
 
     def _trigger_broadcast(self, task_id):
@@ -159,7 +171,7 @@ class AgentHub:
     def _mark_interrupted(self):
         with store._lock, store.connect() as conn:
             conn.execute(
-                "UPDATE tasks SET status='paused', paused=1, updated_at=? WHERE status IN ('queued','running')",
+                "UPDATE tasks SET status='paused', paused=1, updated_at=? WHERE status='running'",
                 (store.now(),),
             )
             conn.commit()
@@ -168,6 +180,98 @@ class AgentHub:
         task.event_sink = self.record_event
         task.output_sink = self.record_output
         task.trace_sink = self.record_trace
+
+    def _concurrency_limit(self):
+        try:
+            value = int(os.environ.get("RASPUTIN_TASK_CONCURRENCY", "1"))
+        except (TypeError, ValueError):
+            value = 1
+        return max(1, min(value, 8))
+
+    def _owner_semaphore(self, owner_id):
+        owner = str(owner_id or "admin")
+        semaphore = self._owner_semaphores.get(owner)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(self._concurrency_limit())
+            self._owner_semaphores[owner] = semaphore
+        return semaphore
+
+    def _task_from_row(self, row):
+        task = AgentTask(
+            row["objective"],
+            row["model"],
+            row["skill"],
+            row["parent_id"],
+            row["workspace"],
+            row["mode"],
+            task_id=row["id"],
+            session_id=row["session_id"],
+            reasoning=row["reasoning"] or "auto",
+            priority=row["priority"],
+            scheduled_for=row["scheduled_for"],
+            subagents=row["subagents"],
+            max_attempts=row["max_attempts"],
+            source_task_id=row["source_task_id"],
+        )
+        task.owner_id = row["owner_id"] or "admin"
+        task.created_at = row["created_at"]
+        task.queue_order = row["queue_order"] or row["created_at"]
+        task.progress = row["progress"]
+        task.result = row["result"]
+        task.attempt_count = row["attempt_count"]
+        task.started_at = row["started_at"]
+        task.completed_at = row["completed_at"]
+        task.status = row["status"]
+        task.paused_requested = bool(row["paused"])
+        self._wire(task)
+        return task
+
+    def _schedule_queued_task(self, task):
+        runner = self._queued_runners.get(task.id)
+        if runner and not runner.done():
+            return runner
+        runner = asyncio.create_task(self._run_when_ready(task))
+        self._queued_runners[task.id] = runner
+        return runner
+
+    async def recover_pending(self):
+        """Restore queued tasks after restart; interrupted running tasks remain paused."""
+        with store._lock, store.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status='queued' ORDER BY owner_id, priority DESC, queue_order ASC"
+            ).fetchall()
+        for row in rows:
+            if row["id"] in self.tasks:
+                continue
+            task = self._task_from_row(row)
+            self.tasks[task.id] = task
+            self._schedule_queued_task(task)
+        return len(rows)
+
+    async def _run_when_ready(self, task):
+        owner = getattr(task, "owner_id", "admin")
+        try:
+            while task.status == "queued" and not task.cancel_requested:
+                now = store.now()
+                with store._lock, store.connect() as conn:
+                    row = conn.execute(
+                        """
+                        SELECT id FROM tasks
+                        WHERE owner_id=? AND status='queued'
+                          AND (scheduled_for IS NULL OR scheduled_for<=?)
+                        ORDER BY priority DESC, queue_order ASC LIMIT 1
+                        """,
+                        (owner, now),
+                    ).fetchone()
+                if row and row["id"] == task.id:
+                    async with self._owner_semaphore(owner):
+                        if task.status != "queued" or task.cancel_requested:
+                            return
+                        await self.run_task(task, subagents=task.subagents)
+                        return
+                await asyncio.sleep(0.35)
+        finally:
+            self._queued_runners.pop(task.id, None)
 
     def record_event(self, task_id, kind, detail):
         with store._lock, store.connect() as conn:
@@ -188,10 +292,15 @@ class AgentHub:
         self._trigger_broadcast(task_id)
 
     def record_output(self, task_id, kind, title, content):
+        text = str(content or "")
+        normalized_kind = str(kind or "text").lower()
+        mime_type = "text/markdown" if normalized_kind in {"markdown", "report"} else "application/json" if normalized_kind == "json" else "text/plain"
+        extension = "md" if mime_type == "text/markdown" else "json" if mime_type == "application/json" else "txt"
+        filename = f"{re.sub(r'[^a-zA-Z0-9_.-]+', '-', str(title or 'artifact')).strip('-').lower() or 'artifact'}.{extension}"
         with store._lock, store.connect() as conn:
             conn.execute(
-                "INSERT INTO outputs(id,task_id,kind,title,content,created_at) VALUES(?,?,?,?,?,?)",
-                (store.new_id("out"), task_id, kind, title, str(content or ""), store.now()),
+                "INSERT INTO outputs(id,task_id,kind,title,content,filename,mime_type,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (store.new_id("out"), task_id, kind, title, text, filename, mime_type, len(text.encode("utf-8")), store.now()),
             )
             conn.commit()
         self._trigger_broadcast(task_id)
@@ -259,12 +368,30 @@ class AgentHub:
 
     def _persist_task(self, task):
         self._persist_session(task)
+        previous_status = None
         with store._lock, store.connect() as conn:
+            previous = conn.execute("SELECT status FROM tasks WHERE id=?", (task.id,)).fetchone()
+            previous_status = previous["status"] if previous else None
             conn.execute(
                 """
-                INSERT INTO tasks(id,session_id,parent_id,objective,model,skill,mode,status,progress,result,workspace,permission_snapshot,paused,created_at,updated_at,owner_id)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(id) DO UPDATE SET status=excluded.status, progress=excluded.progress, result=excluded.result, paused=excluded.paused, updated_at=excluded.updated_at
+                INSERT INTO tasks(
+                  id,session_id,parent_id,objective,model,skill,mode,status,progress,result,
+                  workspace,permission_snapshot,paused,created_at,updated_at,owner_id,reasoning,
+                  subagents,priority,queue_order,scheduled_for,started_at,completed_at,attempt_count,
+                  max_attempts,source_task_id
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                  status=excluded.status,
+                  progress=excluded.progress,
+                  result=excluded.result,
+                  paused=excluded.paused,
+                  priority=excluded.priority,
+                  queue_order=excluded.queue_order,
+                  scheduled_for=excluded.scheduled_for,
+                  started_at=excluded.started_at,
+                  completed_at=excluded.completed_at,
+                  attempt_count=excluded.attempt_count,
+                  updated_at=excluded.updated_at
                 """,
                 (
                     task.id,
@@ -283,9 +410,36 @@ class AgentHub:
                     task.created_at,
                     store.now(),
                     getattr(task, "owner_id", "admin"),
+                    task.reasoning,
+                    task.subagents,
+                    task.priority,
+                    task.queue_order,
+                    task.scheduled_for,
+                    task.started_at,
+                    task.completed_at,
+                    task.attempt_count,
+                    task.max_attempts,
+                    task.source_task_id,
                 ),
             )
             conn.commit()
+        if task.status in {"done", "error", "cancelled"} and previous_status != task.status:
+            labels = {
+                "done": ("Task completed", "success"),
+                "error": ("Task failed", "error"),
+                "cancelled": ("Task cancelled", "warning"),
+            }
+            title, severity = labels[task.status]
+            store.create_inbox_event(
+                getattr(task, "owner_id", "admin"),
+                f"task_{task.status}",
+                title,
+                task.objective[:240],
+                severity=severity,
+                task_id=task.id,
+                action_type="open_task",
+                action_payload={"taskId": task.id},
+            )
 
     async def emit(self, task):
         self._persist_task(task)
@@ -311,6 +465,15 @@ class AgentHub:
             "skill": task.skill,
             "mode": task.mode,
             "reasoning": getattr(task, "reasoning", "auto"),
+            "subagents": getattr(task, "subagents", 0),
+            "priority": getattr(task, "priority", 0),
+            "queueOrder": getattr(task, "queue_order", task.created_at),
+            "scheduledFor": getattr(task, "scheduled_for", None),
+            "startedAt": getattr(task, "started_at", None),
+            "completedAt": getattr(task, "completed_at", None),
+            "attemptCount": getattr(task, "attempt_count", 0),
+            "maxAttempts": getattr(task, "max_attempts", 1),
+            "sourceTaskId": getattr(task, "source_task_id", None),
             "status": task.status,
             "progress": task.progress,
             "logs": task.logs[-80:],
@@ -354,6 +517,16 @@ class AgentHub:
             "paused": bool(task["paused"]),
             "createdAt": task["created_at"],
             "ownerId": task.get("owner_id") or "admin",
+            "reasoning": task.get("reasoning") or "auto",
+            "subagents": task.get("subagents") or 0,
+            "priority": task.get("priority") or 0,
+            "queueOrder": task.get("queue_order") or task["created_at"],
+            "scheduledFor": task.get("scheduled_for"),
+            "startedAt": task.get("started_at"),
+            "completedAt": task.get("completed_at"),
+            "attemptCount": task.get("attempt_count") or 0,
+            "maxAttempts": task.get("max_attempts") or 1,
+            "sourceTaskId": task.get("source_task_id"),
         }
         if not include_details:
             return base
@@ -593,16 +766,44 @@ class AgentHub:
         self.listeners[q] = owner_id
         return q
 
-    def start(self, objective, model="dry-run", skill="general", subagents=0, workspace_path=None, mode="chat", session_id=None, reasoning="auto", owner_id="admin"):
+    def start(
+        self,
+        objective,
+        model="dry-run",
+        skill="general",
+        subagents=0,
+        workspace_path=None,
+        mode="chat",
+        session_id=None,
+        reasoning="auto",
+        owner_id="admin",
+        priority=0,
+        scheduled_for=None,
+        max_attempts=1,
+        source_task_id=None,
+    ):
         if session_id:
             self.session(session_id, owner_id)
-        task = AgentTask(objective, model, skill, workspace_path=workspace_path, mode=mode, session_id=session_id, reasoning=reasoning)
+        task = AgentTask(
+            objective,
+            model,
+            skill,
+            workspace_path=workspace_path,
+            mode=mode,
+            session_id=session_id,
+            reasoning=reasoning,
+            priority=priority,
+            scheduled_for=scheduled_for,
+            subagents=subagents,
+            max_attempts=max_attempts,
+            source_task_id=source_task_id,
+        )
         task.owner_id = owner_id
         self._wire(task)
         self.tasks[task.id] = task
         self._persist_task(task)
         self._add_message(task.session_id, task.id, "user", objective)
-        asyncio.create_task(self.run_task(task, subagents=subagents))
+        self._schedule_queued_task(task)
         return task
 
     async def run_tool_test(self, tool_id, args=None):
@@ -656,12 +857,27 @@ class AgentHub:
             if not snapshot:
                 raise ValueError("task missing")
             with store._lock, store.connect() as conn:
-                conn.execute("UPDATE tasks SET status='cancelled', updated_at=? WHERE id=?", (store.now(), task_id))
+                stamp = store.now()
+                conn.execute(
+                    "UPDATE tasks SET status='cancelled', completed_at=?, updated_at=? WHERE id=?",
+                    (stamp, stamp, task_id),
+                )
                 conn.commit()
+            store.create_inbox_event(
+                snapshot.get("ownerId", "admin"),
+                "task_cancelled",
+                "Task cancelled",
+                snapshot.get("objective", "")[:240],
+                severity="warning",
+                task_id=task_id,
+                action_type="open_task",
+                action_payload={"taskId": task_id},
+            )
             return self.get_task(task_id)
         task.cancel_requested = True
         if task.status in {"queued", "running", "paused"}:
             task.status = "cancelled"
+            task.completed_at = store.now()
             task.progress = min(task.progress, 99)
             task.log("cancel requested")
             await self.emit(task)
@@ -684,9 +900,11 @@ class AgentHub:
         task = self.tasks.get(task_id)
         if task:
             task.paused_requested = False
-            task.status = "running"
+            task.status = "running" if task.started_at else "queued"
             task.log("resumed")
             await self.emit(task)
+            if task.status == "queued":
+                self._schedule_queued_task(task)
             return self.snapshot_task(task)
         with store._lock, store.connect() as conn:
             row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
@@ -694,22 +912,57 @@ class AgentHub:
             raise ValueError("task missing")
         if row["status"] in {"done", "error", "cancelled"}:
             return self._snapshot_from_db(row)
-        task = AgentTask(
-            row["objective"],
-            row["model"],
-            row["skill"],
-            row["parent_id"],
-            row["workspace"],
-            row["mode"],
-            task_id=row["id"],
-            session_id=row["session_id"],
-        )
-        task.created_at = row["created_at"]
-        task.progress = row["progress"]
-        self._wire(task)
+        task = self._task_from_row(row)
+        task.paused_requested = False
+        task.status = "queued"
         self.tasks[task.id] = task
-        asyncio.create_task(self.run_task(task, subagents=0))
+        await self.emit(task)
+        self._schedule_queued_task(task)
         return self.snapshot_task(task)
+
+    async def retry(self, task_id, owner_id="admin"):
+        original = self.get_task(task_id, owner_id)
+        if not original:
+            raise ValueError("task missing")
+        if original["status"] not in {"done", "error", "cancelled"}:
+            raise ValueError("only completed tasks can be retried")
+        return self.start(
+            original["objective"],
+            original["model"],
+            original["skill"],
+            original.get("subagents", 0),
+            original["workspace"],
+            original["mode"],
+            original["sessionId"],
+            reasoning=original.get("reasoning", "auto"),
+            owner_id=owner_id,
+            priority=original.get("priority", 0),
+            max_attempts=original.get("maxAttempts", 1),
+            source_task_id=task_id,
+        )
+
+    async def set_priority(self, task_id, priority, owner_id="admin"):
+        task = self.tasks.get(task_id)
+        if task and getattr(task, "owner_id", "admin") == owner_id:
+            if task.status != "queued":
+                raise ValueError("priority can only be changed while queued")
+            task.priority = max(-10, min(int(priority or 0), 10))
+            task.log(f"priority changed to {task.priority}")
+            await self.emit(task)
+            return self.snapshot_task(task)
+        with store._lock, store.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE id=? AND owner_id=?",
+                (task_id, owner_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("task missing")
+            if row["status"] != "queued":
+                raise ValueError("priority can only be changed while queued")
+            value = max(-10, min(int(priority or 0), 10))
+            conn.execute("UPDATE tasks SET priority=?, updated_at=? WHERE id=?", (value, store.now(), task_id))
+            conn.commit()
+        return self.get_task(task_id, owner_id)
 
     async def checkpoint(self, task):
         if task.cancel_requested or task.status == "cancelled":
@@ -725,6 +978,8 @@ class AgentHub:
             await self.emit(task)
 
     async def run_task(self, task, subagents=0):
+        task.started_at = task.started_at or store.now()
+        task.attempt_count += 1
         task.status = "running"
         task.log("started")
         await self.emit(task)
@@ -781,6 +1036,7 @@ class AgentHub:
             task.status = "error"
             task.result = str(exc)
             task.log(f"error: {exc}")
+        task.completed_at = store.now()
         await self.emit(task)
 
     def _tool_loop_budget(self, task):

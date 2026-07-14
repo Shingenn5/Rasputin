@@ -112,7 +112,7 @@ start_rasputin() {
     HEALTHY=0
     while [ $TRY -lt $MAX_TRIES ]; do
         sleep 2
-        if curl -s -f "$URL/api/system/health" > /dev/null; then
+        if curl -s -f "$URL/api/health" > /dev/null; then
             HEALTHY=1
             break
         else

@@ -1,11 +1,20 @@
 {
   "name": "rasputin",
   "version": "0.2.0",
+  "description": "Private local AI workstation and multi-user server",
+  "author": "Shingenn5",
   "private": true,
   "type": "module",
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite --config vite.config.mjs --host 127.0.0.1",
     "build": "vite build --config vite.config.mjs",
+    "desktop": "npm run build && electron .",
+    "desktop:dev": "electron .",
+    "desktop:check": "node --check ./desktop/main.cjs && node --check ./desktop/backend-supervisor.cjs",
+    "desktop:backend": "powershell -ExecutionPolicy Bypass -File ./scripts/build-desktop-backend.ps1",
+    "desktop:package:dir": "npm run build && npm run desktop:backend && electron-builder --dir --win",
+    "desktop:package": "npm run build && npm run desktop:backend && electron-builder --win nsis",
     "preview": "vite preview --config vite.config.mjs --host 127.0.0.1",
     "testUi": "playwright test",
     "testUiHeaded": "playwright test --headed",
@@ -38,8 +47,39 @@
     "@playwright/test": "^1.44.0",
     "@tailwindcss/vite": "^4.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3",
     "tailwindcss": "^4.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vite": "^6.0.7"
+  },
+  "build": {
+    "appId": "com.rasputin.desktop",
+    "productName": "Rasputin",
+    "asar": true,
+    "directories": {
+      "output": "dist/electron"
+    },
+    "files": [
+      "desktop/**/*.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/desktop-backend/rasputin-backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Rasputin-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

@@ -58,7 +58,7 @@ try {
     throw "Rasputin test container did not become healthy at $baseUrl"
   }
 
-  Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "-m", "unittest", "tests.testBackendSmoke"))
+  Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "-m", "unittest", "tests.testBackendSmoke", "tests.testMultiUser"))
   Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "/app/tests/liveSmoke.py"))
   Invoke-NativeChecked "docker" ($composeArgs + @("exec", "-T", "rasputin-wrapper-test", "python", "/app/tests/warsatSmoke.py"))
 

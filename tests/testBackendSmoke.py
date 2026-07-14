@@ -1985,6 +1985,7 @@ class BackendSmokeTests(unittest.TestCase):
 
         with patch("backend.core.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._fake_deploy_enabled", return_value=False), \
              patch("backend.warsat._run_command", side_effect=fake_run), \
              patch("backend.warsat._probe_model_endpoint", return_value={
                  "ok": True,
@@ -2210,6 +2211,7 @@ class BackendSmokeTests(unittest.TestCase):
 
         with patch("backend.core.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._fake_deploy_enabled", return_value=False), \
              patch("backend.warsat._run_command", side_effect=make_fake_run("someones-app\t127.0.0.1:8000->8000/tcp")):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
@@ -2220,6 +2222,7 @@ class BackendSmokeTests(unittest.TestCase):
 
         with patch("backend.core.security.load", return_value=cfg), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._fake_deploy_enabled", return_value=False), \
              patch("backend.warsat._run_command", side_effect=make_fake_run("rasputin-vllmcudaopenai-8000\t127.0.0.1:8000->8000/tcp")):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
@@ -2245,6 +2248,7 @@ class BackendSmokeTests(unittest.TestCase):
         try:
             with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
                  patch("backend.warsat._docker_cli_path", return_value="docker"), \
+                 patch("backend.warsat._fake_deploy_enabled", return_value=False), \
                  patch("backend.warsat._run_command", side_effect=fake_run):
                 gpus = warsat_module._gpu_probe_via_docker()
             self.assertEqual(gpus, [{"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311}])
@@ -2265,6 +2269,7 @@ class BackendSmokeTests(unittest.TestCase):
 
         with patch("backend.core.security.load", return_value={"allow_docker_control": True}), \
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
+             patch("backend.warsat._fake_deploy_enabled", return_value=False), \
              patch("backend.warsat._run_command", side_effect=fake_run):
             metrics = warsat_module.gpu_live_metrics_via_docker()
 
@@ -2687,12 +2692,13 @@ class BackendSmokeTests(unittest.TestCase):
         # health probe.
         from backend import warsat as warsat_module
 
-        plan = warsat_module.make_plan({
-            "protocolId": "llamaCppGgufServer",
-            "modelPath": "/models/tiny.q4_k_m.gguf",
-            "hostPort": 8001,
-            "role": "helper",
-        })
+        with patch.dict(os.environ, {"WRAPPER_RUNTIME": ""}):
+            plan = warsat_module.make_plan({
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "/models/tiny.q4_k_m.gguf",
+                "hostPort": 8001,
+                "role": "helper",
+            })
         self.assertEqual(plan["healthUrl"], "http://127.0.0.1:8001/v1/models")
 
     def testWarsatVllmToolCallParserIsOptInPerDeploy(self):
@@ -2808,7 +2814,8 @@ class BackendSmokeTests(unittest.TestCase):
              patch("backend.warsat._docker_cli_path", return_value="docker"), \
              patch("backend.warsat._run_command", side_effect=fake_run), \
              patch("backend.warsat._probe_openai_endpoint", side_effect=fake_probe), \
-             patch("backend.warsat._probe_ollama_endpoint", return_value=None):
+             patch("backend.warsat._probe_ollama_endpoint", return_value=None), \
+             patch.dict(os.environ, {"WRAPPER_RUNTIME": ""}):
             result = self.assertOk(self.client.get("/api/warsat/discover"))
 
         self.assertEqual(result["count"], 1)

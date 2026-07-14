@@ -52,7 +52,7 @@ if [ "$ready" != "1" ]; then
   exit 1
 fi
 
-docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke
+docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python -m unittest tests.testBackendSmoke tests.testMultiUser
 docker compose -f docker-compose.test.yml exec -T rasputin-wrapper-test python /app/tests/liveSmoke.py
 
 if [ "${RASPUTIN_RUN_UI:-0}" = "1" ]; then

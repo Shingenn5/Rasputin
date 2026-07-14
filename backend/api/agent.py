@@ -1,11 +1,13 @@
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from backend.api.core import CamelModel, current_user, require_admin, require_member, hub
 from backend.core import audit
 from backend.core import schedules
 from backend.core import security
 from backend.core import workspace
+from backend.core import runtime_store as store
+from backend.core import connectors
 from backend.core.response import ok, AppError
 from backend.mcp import skills as skill_store
 from backend.rag import graph as graphify
@@ -83,6 +85,22 @@ class TaskIn(CamelModel):
     subagents: int = 0
     workspace_path: str | None = None
     session_id: str | None = None
+    priority: int = 0
+    scheduled_for: float | None = None
+    max_attempts: int = 1
+
+class TaskPriorityIn(CamelModel):
+    priority: int = 0
+
+class ArtifactPinIn(CamelModel):
+    pinned: bool = True
+
+class ConnectorIn(CamelModel):
+    id: str | None = None
+    provider: str
+    display_name: str | None = None
+    config: dict | None = None
+    credentials: dict | None = None
 
 class ScheduleIn(CamelModel):
     name: str
@@ -95,7 +113,20 @@ class ScheduleIn(CamelModel):
 async def create_task(req: TaskIn, _user=Depends(require_member)):
     workspace_ref = req.workspace_path or workspace.get_active(_user["username"], _user["role"] == "admin").get("active_path") or "."
     workspace.require_user_access(workspace_ref, _user["username"], "contributor", _user["role"] == "admin")
-    task = hub.start(req.objective, req.model, req.skill, max(0, min(req.subagents, 4)), workspace_ref, req.mode, req.session_id, reasoning=req.reasoning, owner_id=_user["username"])
+    task = hub.start(
+        req.objective,
+        req.model,
+        req.skill,
+        max(0, min(req.subagents, 4)),
+        workspace_ref,
+        req.mode,
+        req.session_id,
+        reasoning=req.reasoning,
+        owner_id=_user["username"],
+        priority=req.priority,
+        scheduled_for=req.scheduled_for,
+        max_attempts=req.max_attempts,
+    )
     return ok(hub.snapshot_task(task))
 
 @tasks_router.post("/tasks/{task_id}/cancel")
@@ -119,6 +150,20 @@ async def resume_task(task_id: str, _user=Depends(require_member)):
         raise AppError("task_not_found", "Task was not found.", 404)
     return ok(await hub.resume(task_id))
 
+@tasks_router.post("/tasks/{task_id}/retry")
+
+async def retry_task(task_id: str, _user=Depends(require_member)):
+    if not hub.get_task(task_id, _user["username"]):
+        raise AppError("task_not_found", "Task was not found.", 404)
+    return ok(hub.snapshot_task(await hub.retry(task_id, _user["username"])))
+
+@tasks_router.post("/tasks/{task_id}/priority")
+
+async def task_priority(task_id: str, req: TaskPriorityIn, _user=Depends(require_member)):
+    if not hub.get_task(task_id, _user["username"]):
+        raise AppError("task_not_found", "Task was not found.", 404)
+    return ok(await hub.set_priority(task_id, req.priority, _user["username"]))
+
 @tasks_router.get("/tasks")
 
 async def tasks(limit: int = 100, details: bool = False, _user=Depends(current_user)):
@@ -131,6 +176,90 @@ async def task_detail(task_id: str, _user=Depends(current_user)):
     if not detail:
         raise AppError("task_not_found", "Task was not found.", 404)
     return ok(detail)
+
+@tasks_router.get("/inbox")
+
+async def inbox(status: str | None = None, limit: int = 100, _user=Depends(current_user)):
+    return ok(store.list_inbox_events(_user["username"], status, limit))
+
+@tasks_router.get("/search")
+
+async def universal_search(q: str = "", limit: int = 30, _user=Depends(current_user)):
+    return ok(store.universal_search(_user["username"], q, limit))
+
+@tasks_router.get("/artifacts")
+
+async def artifacts(q: str = "", kind: str = "", pinned: bool = False, limit: int = 200, _user=Depends(current_user)):
+    return ok(store.list_artifacts(_user["username"], q, kind, pinned, limit))
+
+@tasks_router.get("/artifacts/{artifact_id}")
+
+async def artifact_detail(artifact_id: str, _user=Depends(current_user)):
+    artifact = store.get_artifact(_user["username"], artifact_id)
+    if not artifact:
+        raise AppError("artifact_not_found", "Artifact was not found.", 404)
+    return ok(artifact)
+
+@tasks_router.get("/artifacts/{artifact_id}/download")
+
+async def artifact_download(artifact_id: str, _user=Depends(current_user)):
+    artifact = store.get_artifact(_user["username"], artifact_id)
+    if not artifact:
+        raise AppError("artifact_not_found", "Artifact was not found.", 404)
+    filename = artifact.get("filename") or f"artifact-{artifact_id}.txt"
+    return Response(
+        artifact.get("content") or "",
+        media_type=artifact.get("mime_type") or "text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{filename.replace(chr(34), "")}"'},
+    )
+
+@tasks_router.post("/artifacts/{artifact_id}/pin")
+
+async def artifact_pin(artifact_id: str, req: ArtifactPinIn, _user=Depends(require_member)):
+    if not store.set_artifact_pinned(_user["username"], artifact_id, req.pinned):
+        raise AppError("artifact_not_found", "Artifact was not found.", 404)
+    return ok(store.get_artifact(_user["username"], artifact_id))
+
+@tasks_router.get("/connectors")
+
+async def connector_list(_user=Depends(current_user)):
+    return ok({"providers": connectors.provider_catalog(), "connectors": connectors.list_connectors(_user["username"])})
+
+@tasks_router.post("/connectors")
+
+async def connector_save(req: ConnectorIn, _user=Depends(require_member)):
+    return ok(connectors.save_connector(_user["username"], req.provider, req.display_name or "", req.config, req.credentials, req.id))
+
+@tasks_router.post("/connectors/{connector_id}/test")
+
+async def connector_test(connector_id: str, _user=Depends(require_member)):
+    return ok(connectors.test_connector(_user["username"], connector_id))
+
+@tasks_router.delete("/connectors/{connector_id}")
+
+async def connector_delete(connector_id: str, _user=Depends(require_member)):
+    if not connectors.remove_connector(_user["username"], connector_id):
+        raise AppError("connector_not_found", "Connector was not found.", 404)
+    return ok({"deleted": True})
+
+@tasks_router.post("/inbox/read-all")
+
+async def inbox_read_all(_user=Depends(require_member)):
+    return ok({"updated": store.mark_all_inbox_read(_user["username"])})
+
+@tasks_router.post("/inbox/{event_id}/read")
+
+async def inbox_read(event_id: str, _user=Depends(require_member)):
+    if not store.update_inbox_event(_user["username"], event_id, "read"):
+        raise AppError("inbox_event_not_found", "Inbox event was not found.", 404)
+    return ok({"id": event_id, "status": "read"})
+
+@tasks_router.post("/inbox/{event_id}/archive")
+
+async def inbox_archive(event_id: str, _user=Depends(require_member)):
+    if not store.update_inbox_event(_user["username"], event_id, "archived"):
+        raise AppError("inbox_event_not_found", "Inbox event was not found.", 404)
+    return ok({"id": event_id, "status": "archived"})
 
 @tasks_router.get("/schedules")
 

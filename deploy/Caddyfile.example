@@ -1,0 +1,8 @@
+# Replace this hostname, then add the same name to Native Host with:
+#   --allowed-host rasputin.example.com
+rasputin.example.com {
+    reverse_proxy http://127.0.0.1:8788 {
+        health_uri /api/health
+        health_interval 30s
+    }
+}

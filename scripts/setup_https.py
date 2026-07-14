@@ -50,7 +50,8 @@ def main() -> int:
         print("Install it from https://github.com/FiloSottile/mkcert, then rerun this command.", file=sys.stderr)
         return 2
 
-    names = args.names or ["localhost", "127.0.0.1", "::1", socket.gethostname()]
+    # Keep the standard launcher names when extra friendly/LAN names are added.
+    names = ["localhost", "127.0.0.1", "::1", socket.gethostname(), *(args.names or [])]
     names = list(dict.fromkeys(names))
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)

@@ -1,240 +1,141 @@
-import React, { useState, useEffect } from "react";
-import {
-  Archive,
-  Search,
-  Camera,
-  Target,
-  FileText,
-  Package,
-  HardDrive,
-  MessageSquare,
-  Files,
-  RefreshCw,
-  Trash2,
-  Download,
-  CheckCircle2,
-  AlertTriangle,
-  RotateCcw
-} from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Copy, Download, FileCode2, FileJson, FileText, FolderOpen, Pin, RefreshCw, Search, Sparkles } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
+import { Button } from "@/components/ui/button.jsx";
+import { Badge } from "@/components/ui/badge.jsx";
+import { cn } from "@/lib/utils.js";
 
-const ARCHIVE_NAV = [
-  { id: "all", label: "All Archives", icon: Archive },
-  { id: "snapshots", label: "Snapshots", icon: Camera },
-  { id: "missions", label: "Missions", icon: Target },
-  { id: "reports", label: "Reports", icon: FileText },
-  { id: "exports", label: "Exports", icon: Package },
-  { id: "backups", label: "Backups", icon: HardDrive },
-  { id: "conversations", label: "Conversations", icon: MessageSquare },
-  { id: "artifacts", label: "Artifacts", icon: Files },
+const FILTERS = [
+  { id: "all", label: "All artifacts", kind: "" },
+  { id: "markdown", label: "Markdown", kind: "markdown" },
+  { id: "json", label: "Data & JSON", kind: "json" },
+  { id: "text", label: "Text", kind: "text" },
+  { id: "pinned", label: "Pinned", pinned: true },
 ];
 
-export function ArchiveView({ view }) {
-  const [activeNav, setActiveNav] = useState("all");
-  const [items, setItems] = useState([]);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [selectedItem, setSelectedItem] = useState(null);
+function ArtifactIcon({ kind, size = 18 }) {
+  if (kind === "json") return <FileJson size={size} />;
+  if (kind === "code") return <FileCode2 size={size} />;
+  return <FileText size={size} />;
+}
 
-  const fetchItems = async (type = null) => {
+function readableSize(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function ArchiveView({ view, openTaskDetails }) {
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [items, setItems] = useState([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const selected = items.find((item) => item.id === selectedId) || items[0] || null;
+  const filter = FILTERS.find((item) => item.id === activeFilter) || FILTERS[0];
+
+  async function loadArtifacts() {
     setLoading(true);
-    setError(null);
+    setError("");
     try {
-      const url = new URL("/api/archive/items", window.location.origin);
-      if (type && type !== "all") url.searchParams.append("type", type);
-      if (search) url.searchParams.append("search", search);
-      const res = await api(url.pathname + url.search);
-      setItems(res || []);
-    } catch (err) {
-      setError(err.message);
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
+      if (filter.kind) params.set("kind", filter.kind);
+      if (filter.pinned) params.set("pinned", "true");
+      const data = await api(`/api/artifacts?${params}`);
+      setItems(data || []);
+      setSelectedId((current) => (data || []).some((item) => item.id === current) ? current : data?.[0]?.id || null);
+    } catch (caught) {
+      setError(caught.message);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    if (view === "archive") {
-      fetchItems(activeNav);
-    }
-  }, [view, activeNav]);
+    if (view === "archive") loadArtifacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, activeFilter]);
 
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    fetchItems(activeNav);
-  };
+  const counts = useMemo(() => ({
+    total: items.length,
+    pinned: items.filter((item) => item.pinned).length,
+    size: items.reduce((sum, item) => sum + Number(item.size_bytes || 0), 0),
+  }), [items]);
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to permanently delete this archive item?")) return;
-    try {
-      await api(`/api/archive/items/${id}`, { method: "DELETE" });
-      setItems(items.filter(i => i.id !== id));
-      if (selectedItem?.id === id) setSelectedItem(null);
-    } catch (err) {
-      alert("Failed to delete: " + err.message);
-    }
-  };
+  async function togglePin(item) {
+    const updated = await postJson(`/api/artifacts/${item.id}/pin`, { pinned: !item.pinned });
+    setItems((current) => current.map((entry) => entry.id === item.id ? updated : entry));
+  }
 
-  const handleRestore = async (id) => {
-    if (!window.confirm("Are you sure you want to restore this archive item? This will modify your current state.")) return;
-    try {
-      await api(`/api/archive/items/${id}/restore`, { method: "POST" });
-      alert("Restore completed successfully! (Audit log created)");
-      fetchItems(activeNav);
-    } catch (err) {
-      alert("Failed to restore: " + err.message);
-    }
-  };
+  async function copyContent() {
+    if (!selected) return;
+    await navigator.clipboard.writeText(selected.content || "");
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
     <section className={`w2-layout app-view archive-view tw ${view === "archive" ? "active" : ""}`} id="archiveView" data-app-view="archive">
-      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
-
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-5">
-        <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
-            <Archive size={26} className="text-primary" /> Archive <span className="text-muted-foreground">Center</span>
-          </h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Long-term retention, snapshot recovery, and mission preservation.</p>
-        </div>
-        <div className="flex gap-3">
-          <div className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
-            <div className="text-xl font-bold">{items.length}</div>
-            <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">Total Items</div>
+      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1600px] flex-col gap-5 p-7">
+        <header className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight"><Sparkles size={27} className="text-primary" /> Artifact <span className="text-muted-foreground">Workspace</span></h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">Every report, code block, and structured result generated by your runs—searchable and ready to reuse.</p>
           </div>
-          <div className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
-            <div className="text-xl font-bold text-primary">Online</div>
-            <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">Vault Status</div>
+          <div className="flex gap-3">
+            {[{ label: "Visible", value: counts.total }, { label: "Pinned", value: counts.pinned }, { label: "Storage", value: readableSize(counts.size) }].map((stat) => (
+              <div key={stat.label} className="glow-card min-w-24 rounded-xl border border-border bg-card px-4 py-2.5 text-center"><div className="text-lg font-bold">{stat.value}</div><div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{stat.label}</div></div>
+            ))}
           </div>
-        </div>
-      </div>
+        </header>
 
-      <div className="w2-main-grid" style={{ marginTop: "16px" }}>
-        
-        {/* ── Left Navigation ── */}
-        <div className="w2-column">
-          <div className="w2-card" style={{ padding: "8px" }}>
-            {ARCHIVE_NAV.map(nav => {
-              const Icon = nav.icon;
-              return (
-                <button
-                  key={nav.id}
-                  type="button"
-                  className={`w2-list-item ${activeNav === nav.id ? "is-active" : ""}`}
-                  style={{ background: activeNav === nav.id ? "var(--cc-surface)" : "transparent", padding: "8px 12px", borderRadius: "4px", border: "none", width: "100%", justifyContent: "flex-start", cursor: "pointer" }}
-                  onClick={() => { setActiveNav(nav.id); setSelectedItem(null); }}
-                >
-                  <div style={{ display: "flex", gap: "12px", alignItems: "center", color: activeNav === nav.id ? "var(--cc-text)" : "var(--cc-muted)" }}>
-                    <Icon size={16} />
-                    <span style={{ fontSize: "0.875rem", fontWeight: activeNav === nav.id ? 600 : 400 }}>{nav.label}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <div className="grid min-h-[68vh] grid-cols-1 gap-4 lg:grid-cols-[210px_minmax(300px,0.8fr)_minmax(420px,1.2fr)]">
+          <nav className="rounded-2xl border border-border bg-card p-3" aria-label="Artifact filters">
+            <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</div>
+            {FILTERS.map((item) => (
+              <button key={item.id} type="button" onClick={() => setActiveFilter(item.id)} className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm", activeFilter === item.id ? "bg-primary/12 font-semibold text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+                {item.id === "pinned" ? <Pin size={16} /> : <FolderOpen size={16} />} {item.label}
+              </button>
+            ))}
+            <div className="mt-6 rounded-xl border border-border bg-background/50 p-3 text-xs text-muted-foreground"><strong className="mb-1 block text-foreground">Task-linked by design</strong>Artifacts retain their source run, workspace, format, and creation time.</div>
+          </nav>
 
-        {/* ── Main View ── */}
-        <div className="w2-column">
-          <div className="w2-card">
-            <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "8px" }}>
-              <div style={{ position: "relative", flex: 1 }}>
-                <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--cc-muted)" }} />
-                <input
-                  type="text"
-                  className="w2-input"
-                  style={{ paddingLeft: "36px", width: "100%" }}
-                  placeholder={`Search ${activeNav}...`}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <button type="submit" className="w2-button primary"><Search size={14} /> Search</button>
-              <button type="button" className="w2-button" onClick={() => fetchItems(activeNav)}><RefreshCw size={14} /> Refresh</button>
+          <div className="flex min-h-0 flex-col gap-3">
+            <form className="flex gap-2 rounded-2xl border border-border bg-card p-3" onSubmit={(event) => { event.preventDefault(); loadArtifacts(); }}>
+              <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3"><Search size={16} className="text-muted-foreground" /><input className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search artifact contents..." aria-label="Search artifacts" /></label>
+              <Button type="submit" size="icon" aria-label="Search"><Search size={16} /></Button>
+              <Button type="button" variant="outline" size="icon" onClick={loadArtifacts} aria-label="Refresh artifacts"><RefreshCw size={16} /></Button>
             </form>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-2xl border border-border bg-card p-2">
+              {items.map((item) => (
+                <button key={item.id} type="button" onClick={() => setSelectedId(item.id)} className={cn("glow-card flex w-full gap-3 rounded-xl border p-3 text-left", selected?.id === item.id ? "border-primary/60 bg-primary/5" : "border-transparent hover:border-border hover:bg-accent/50")}>
+                  <span className="rounded-lg bg-primary/10 p-2 text-primary"><ArtifactIcon kind={item.kind} /></span>
+                  <span className="min-w-0 flex-1"><span className="flex items-center gap-2"><strong className="truncate text-sm">{item.title}</strong>{item.pinned ? <Pin size={12} className="text-primary" /> : null}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{item.preview || "Empty artifact"}</span><span className="mt-2 flex gap-2 text-[0.68rem] text-muted-foreground"><Badge variant="muted">{item.kind}</Badge><span>{readableSize(item.size_bytes)}</span><span>{new Date(Number(item.created_at) * 1000).toLocaleDateString()}</span></span></span>
+                </button>
+              ))}
+              {loading && <div className="p-10 text-center text-sm text-muted-foreground">Loading artifacts...</div>}
+              {!loading && error && <div className="p-10 text-center text-sm text-rose-400">{error}</div>}
+              {!loading && !error && !items.length && <div className="p-10 text-center text-sm text-muted-foreground">No artifacts match this view. Completed Rasputin runs will publish their outputs here automatically.</div>}
+            </div>
           </div>
 
-          <div className="w2-card" style={{ flex: 1, overflowY: "auto" }}>
-            {loading ? (
-              <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)" }}>Searching archive...</div>
-            ) : error ? (
-              <div style={{ padding: "32px", textAlign: "center", color: "var(--ras-danger)" }}>{error}</div>
-            ) : items.length === 0 ? (
-              <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)" }}>No archive items found.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {items.map(item => (
-                  <div
-                    key={item.id}
-                    className={`w2-list-item ${selectedItem?.id === item.id ? "is-active" : ""}`}
-                    onClick={() => setSelectedItem(item)}
-                    style={{ background: selectedItem?.id === item.id ? "color-mix(in srgb, var(--cc-accent) 10%, var(--cc-bg))" : "var(--cc-surface)" }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: "0.875rem" }}>{item.name}</strong>
-                      <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", marginTop: "4px" }}>
-                        {item.type} · {new Date(item.archived_at * 1000).toLocaleString()} · {Math.round(item.size / 1024)} KB
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+            {selected ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border p-4">
+                  <div className="min-w-0"><div className="flex items-center gap-2"><ArtifactIcon kind={selected.kind} /><h2 className="truncate font-semibold">{selected.title}</h2></div><p className="mt-1 text-xs text-muted-foreground">{selected.filename || selected.id} · {readableSize(selected.size_bytes)}</p></div>
+                  <div className="flex gap-2"><Button variant="outline" size="icon" onClick={() => togglePin(selected)} aria-label={selected.pinned ? "Unpin artifact" : "Pin artifact"}><Pin size={15} className={selected.pinned ? "fill-current text-primary" : ""} /></Button><Button variant="outline" size="sm" onClick={copyContent}><Copy size={14} /> {copied ? "Copied" : "Copy"}</Button><Button size="sm" asChild><a href={`/api/artifacts/${selected.id}/download`}><Download size={14} /> Download</a></Button></div>
+                </div>
+                <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-background/60 p-5 font-mono text-xs leading-relaxed text-foreground">{selected.content || "This artifact is empty."}</pre>
+                <div className="grid grid-cols-2 gap-x-5 gap-y-2 border-t border-border p-4 text-xs"><span className="text-muted-foreground">Source task</span><button type="button" className="truncate text-left font-medium text-primary hover:underline" onClick={() => openTaskDetails?.(selected.task_id)}>{selected.objective || selected.task_id}</button><span className="text-muted-foreground">Workspace</span><span className="truncate">{selected.workspace || "."}</span><span className="text-muted-foreground">Created</span><span>{new Date(Number(selected.created_at) * 1000).toLocaleString()}</span></div>
+              </>
+            ) : <div className="grid h-full place-items-center p-10 text-center text-sm text-muted-foreground">Select an artifact to inspect its complete contents and provenance.</div>}
+          </aside>
         </div>
-
-        {/* ── Inspector Panel ── */}
-        <div className="w2-column">
-          <div className="w2-card" style={{ flex: 1 }}>
-            <h3 style={{ margin: "0 0 16px 0", fontSize: "0.875rem" }}>Inspector</h3>
-            {selectedItem ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ background: "var(--cc-bg)", padding: "12px", borderRadius: "6px" }}>
-                  <h4 style={{ margin: "0 0 8px 0", fontSize: "1rem" }}>{selectedItem.name}</h4>
-                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 12px", fontSize: "0.75rem" }}>
-                    <span style={{ color: "var(--cc-muted)" }}>ID</span>
-                    <span style={{ fontFamily: "monospace" }}>{selectedItem.id}</span>
-                    <span style={{ color: "var(--cc-muted)" }}>Type</span>
-                    <span>{selectedItem.type}</span>
-                    <span style={{ color: "var(--cc-muted)" }}>Source</span>
-                    <span>{selectedItem.source}</span>
-                    <span style={{ color: "var(--cc-muted)" }}>Workspace</span>
-                    <span>{selectedItem.workspace || "Global"}</span>
-                    <span style={{ color: "var(--cc-muted)" }}>Created</span>
-                    <span>{new Date(selectedItem.created_at * 1000).toLocaleString()}</span>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {(selectedItem.tags || []).map(tag => (
-                    <span key={tag} style={{ background: "var(--cc-surface)", padding: "2px 8px", borderRadius: "999px", fontSize: "0.6875rem", border: "1px solid var(--cc-border)" }}>
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "auto" }}>
-                  <button className="w2-button primary" onClick={() => handleRestore(selectedItem.id)}>
-                    <RotateCcw size={14} /> Restore Item
-                  </button>
-                  <button className="w2-button" onClick={() => alert("Export not implemented")}>
-                    <Download size={14} /> Download Export
-                  </button>
-                  <button className="w2-button" style={{ color: "var(--ras-danger)", borderColor: "color-mix(in srgb, var(--ras-danger) 30%, transparent)" }} onClick={() => handleDelete(selectedItem.id)}>
-                    <Trash2 size={14} /> Delete Forever
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ color: "var(--cc-muted)", fontSize: "0.875rem", textAlign: "center", marginTop: "32px" }}>
-                Select an item to view details.
-              </div>
-            )}
-          </div>
-        </div>
-
-      </div>
       </div>
     </section>
   );

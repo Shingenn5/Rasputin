@@ -99,7 +99,6 @@ export function App() {
   const [reasoningMode, setReasoningMode] = useState("auto");
   const [modeModelOverrides, setModeModelOverrides] = useState({});
   const [subagentCount, setSubagentCount] = useState(0);
-  const [queuedMessages, setQueuedMessages] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [taskDetails, setTaskDetails] = useState(null);
@@ -221,6 +220,10 @@ export function App() {
   const healthy = isModelHealthy(selectedModelObject);
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
+  const queuedMessages = tasks
+    .filter((task) => !task.parentId && task.status === "queued" && (!activeChatSessionId || task.sessionId === activeChatSessionId))
+    .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0) || Number(a.queueOrder || a.createdAt || 0) - Number(b.queueOrder || b.createdAt || 0))
+    .map((task) => ({ id: task.id, text: task.objective, mode: task.mode, reasoning: task.reasoning }));
   const approvalCount = (approvals?.approvals || []).filter((approval) => approval.status === "pending").length;
 
   const loadTaskDetails = useCallback(async (taskId, options = {}) => {
@@ -261,6 +264,11 @@ export function App() {
   const tasksQuery = useQuery({
     queryKey: ["tasks"],
     queryFn: () => api("/api/tasks"),
+    enabled: authenticated,
+  });
+  const inboxQuery = useQuery({
+    queryKey: ["inbox"],
+    queryFn: () => api("/api/inbox"),
     enabled: authenticated,
   });
   const auditQuery = useQuery({
@@ -583,7 +591,12 @@ export function App() {
   }
 
   async function refreshActivity() {
-    const [nextTasks] = await Promise.all([loadTasks(), loadTools(), loadMcpRelays()]);
+    const [nextTasks] = await Promise.all([
+      loadTasks(),
+      loadTools(),
+      loadMcpRelays(),
+      queryClient.fetchQuery({ queryKey: ["inbox"], queryFn: () => api("/api/inbox") }),
+    ]);
     return nextTasks;
   }
 
@@ -676,6 +689,9 @@ export function App() {
             }
           } else if (selectedTaskIdRef.current) {
             loadTaskDetails(selectedTaskIdRef.current, { silent: true });
+          }
+          if (["done", "error", "cancelled"].includes(data.task.status)) {
+            queryClient.invalidateQueries({ queryKey: ["inbox"] });
           }
         }
         if (data.approvals) setApprovals(data.approvals);
@@ -779,7 +795,6 @@ export function App() {
       setSelectedSession(detail);
       setActiveChatSessionId(sessionId || null);
       setObjective("");
-      setQueuedMessages([]);
       go("chat");
       loadChatFolders().catch((error) => setGlobalStatus(error.message));
       setGlobalStatus("New chat created.");
@@ -839,6 +854,9 @@ export function App() {
         subagents: subagentCount,
         workspacePath: workspace.activePath || ".",
         sessionId: activeChatSessionId || undefined,
+        priority: options.priority || 0,
+        scheduledFor: options.scheduledFor || undefined,
+        maxAttempts: options.maxAttempts || 1,
       });
       setTasks((current) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
       queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
@@ -865,49 +883,29 @@ export function App() {
     }
   }
 
-  const queueMessage = useCallback((text, options = {}) => {
+  async function queueMessage(text, options = {}) {
     const trimmed = String(text || "").trim();
     if (!trimmed) return null;
-    const entry = {
-      id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      text: trimmed,
+    const sent = await sendTask(null, trimmed, {
+      ...options,
       mode: options.mode || taskMode,
       reasoning: options.reasoning || reasoningMode,
-    };
-    setQueuedMessages((current) => [...current, entry]);
-    return entry;
-  }, [taskMode, reasoningMode]);
+      fromQueue: true,
+    });
+    if (!sent) setObjective((current) => current || trimmed);
+    return sent;
+  }
 
-  const removeQueuedMessage = useCallback((id) => {
-    setQueuedMessages((current) => current.filter((item) => item.id !== id));
-  }, []);
+  async function removeQueuedMessage(id) {
+    await cancelTask(id);
+  }
 
-  const clearQueuedMessages = useCallback(() => setQueuedMessages([]), []);
-
-  // Drain the queue: whenever the current chat has no active task, send the
-  // next queued message. Failures land in composerStatus and drop the entry
-  // from the queue so a broken runtime can't retry-loop.
-  const queueDispatchRef = useRef(false);
-  useEffect(() => {
-    if (!queuedMessages.length || queueDispatchRef.current || !healthy) return;
-    const busy = tasks.some((task) => !task.parentId && homeTaskIds.has(task.id)
-      && ["queued", "running", "paused"].includes(task.status));
-    if (busy) return;
-    const [next, ...rest] = queuedMessages;
-    queueDispatchRef.current = true;
-    setQueuedMessages(rest);
-    sendTask(null, next.text, { mode: next.mode, reasoning: next.reasoning, fromQueue: true })
-      .then((sent) => {
-        if (!sent) {
-          // Recover the text into the composer (if it's free) so nothing is lost.
-          setObjective((current) => current || next.text);
-          setGlobalStatus("A queued message failed to send. Its text was returned to the composer.");
-        }
-      })
-      .finally(() => {
-        queueDispatchRef.current = false;
-      });
-  }, [tasks, queuedMessages, healthy, homeTaskIds]);
+  async function clearQueuedMessages() {
+    await Promise.all(queuedMessages.map((entry) => postJson(`/api/tasks/${entry.id}/cancel`, {})));
+    await loadTasks();
+    queryClient.invalidateQueries({ queryKey: ["inbox"] });
+    setGlobalStatus("Queued tasks cleared.");
+  }
 
   async function cancelTask(taskId) {
     try {
@@ -937,6 +935,47 @@ export function App() {
       setGlobalStatus("Task resumed.");
       await loadTasks();
       if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
+    } catch (error) {
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function retryTask(taskId) {
+    try {
+      const task = await postJson(`/api/tasks/${taskId}/retry`, {});
+      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
+      setGlobalStatus("Task queued for retry.");
+      return task;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
+  async function setTaskPriority(taskId, priority) {
+    try {
+      const task = await postJson(`/api/tasks/${taskId}/priority`, { priority });
+      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
+      return task;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
+  async function updateInboxEvent(eventId, action) {
+    try {
+      await postJson(`/api/inbox/${eventId}/${action}`, {});
+      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
+    } catch (error) {
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function markAllInboxRead() {
+    try {
+      await postJson("/api/inbox/read-all", {});
+      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
     } catch (error) {
       setGlobalStatus(error.message);
     }
@@ -1411,7 +1450,6 @@ export function App() {
         return Array.from(next.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
       });
       setObjective("");
-      setQueuedMessages([]);
       go("chat");
       setGlobalStatus("Chat restored.");
     } catch (error) {
@@ -1735,6 +1773,20 @@ export function App() {
       clearGlobalStatus={() => setGlobalStatus("")}
       trustedWorkspace={trustedWorkspace}
       onRevokeTrust={() => trustedWorkspace && setWorkspaceTrust(trustedWorkspace.id, false)}
+      commandPaletteProps={{
+        commands: [
+          { label: "Start a new chat", hint: "Create a clean Rasputin conversation.", keywords: "new message", action: startNewChat },
+          { label: "Open dashboard", hint: "Return to your local overview.", action: () => go("home") },
+          { label: "Open chat", hint: "Continue the active conversation.", action: () => go("chat") },
+          { label: "Open workspaces", hint: "Manage mounted folders and access.", action: () => go("workspaces") },
+          { label: "Open activity inbox", hint: "Review queue, approvals, failures, and completions.", keywords: "notifications queue", action: () => go("activity") },
+          { label: "Open models", hint: "Inspect and manage model runtimes.", action: () => go("models") },
+          { label: "Open artifacts", hint: "Browse generated files and evidence.", keywords: "archive output", action: () => go("archive") },
+          { label: "Open settings", hint: "Configure accounts, security, and integrations.", action: () => go("settings", "general") },
+        ],
+        onOpenTask: openTaskDetails,
+        onOpenSession: resumeSession,
+      }}
       sidebarProps={{
         collapsed: sidebarCollapsed,
         toggleSidebar,
@@ -1947,6 +1999,7 @@ export function App() {
       />
       <ArchiveView
         view={view}
+        openTaskDetails={openTaskDetails}
         archive={archiveSessions}
         status={archiveStatus}
         saveArchiveDraft={saveArchiveDraft}
@@ -2002,7 +2055,13 @@ export function App() {
         cancelTask={cancelTask}
         pauseTask={pauseTask}
         resumeTask={resumeTask}
+        retryTask={retryTask}
+        setTaskPriority={setTaskPriority}
         openTaskDetails={openTaskDetails}
+        inbox={inboxQuery.data || []}
+        markInboxRead={(id) => updateInboxEvent(id, "read")}
+        archiveInbox={(id) => updateInboxEvent(id, "archive")}
+        markAllInboxRead={markAllInboxRead}
       />
       <SettingsView
         view={view}

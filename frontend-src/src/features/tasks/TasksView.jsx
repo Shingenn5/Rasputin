@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import {
   Pause, Play, RefreshCw, Square, Users, Search, 
   Activity, AlertTriangle, CheckCircle, Clock, 
-  Server, Database, HardDrive, Download, Eye, FileText
+  Server, Database, HardDrive, Download, Eye, FileText, Inbox, Archive, ChevronUp, ChevronDown
 } from "lucide-react";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
@@ -10,7 +10,7 @@ import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 
-const activityTabs = ["All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
+const activityTabs = ["Inbox", "Queue", "All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
 
 export function ActivityView({
   view,
@@ -25,9 +25,15 @@ export function ActivityView({
   cancelTask,
   pauseTask,
   resumeTask,
+  retryTask,
+  setTaskPriority,
   openTaskDetails,
+  inbox = [],
+  markInboxRead,
+  archiveInbox,
+  markAllInboxRead,
 }) {
-  const [tab, setTab] = useState("All Runs");
+  const [tab, setTab] = useState("Inbox");
   const [searchQuery, setSearchQuery] = useState("");
   const [localAudit, setLocalAudit] = useState(actionRegistry.logs);
   
@@ -48,6 +54,11 @@ export function ActivityView({
   const activeTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const completedTasks = tasks.filter((task) => ["completed", "done", "success"].includes(task.status));
   const failedTasks = tasks.filter((task) => ["failed", "error", "cancelled"].includes(task.status));
+  const queuedTasks = tasks
+    .filter((task) => task.status === "queued")
+    .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0) || Number(a.queueOrder || a.createdAt || 0) - Number(b.queueOrder || b.createdAt || 0));
+  const scheduledTasks = queuedTasks.filter((task) => Number(task.scheduledFor || 0) > Date.now() / 1000);
+  const unreadInbox = inbox.filter((event) => event.status === "unread");
 
   // Search Filter
   const filteredTasks = useMemo(() => {
@@ -71,6 +82,8 @@ export function ActivityView({
   const handleCancel = (id) => executeAction("CancelTask", id, async () => cancelTask?.(id), setUiState);
   const handlePause = (id) => executeAction("PauseTask", id, async () => pauseTask?.(id), setUiState);
   const handleResume = (id) => executeAction("ResumeTask", id, async () => resumeTask?.(id), setUiState);
+  const handleRetry = (id) => executeAction("RetryTask", id, async () => retryTask?.(id), setUiState);
+  const handlePriority = (id, priority) => executeAction("SetTaskPriority", id, async () => setTaskPriority?.(id, priority), setUiState);
 
   return (
     <section className={`w2-layout app-view activity-view tw ${view === "activity" ? "active" : ""}`} id="activityView" data-app-view="activity">
@@ -80,13 +93,13 @@ export function ActivityView({
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Activity <span className="text-muted-foreground">Center</span></h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Mission control for everything Rasputin has ever done.</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">One durable place for queued work, approvals, failures, and completed runs.</p>
         </div>
         <div className="flex flex-wrap gap-3">
           {[
-            { v: tasks.length, l: "Total Runs", c: "text-foreground" },
+            { v: unreadInbox.length, l: "Unread", c: "text-sky-400" },
             { v: completedTasks.length, l: "Successes", c: "text-primary" },
-            { v: activeTasks.length, l: "Running", c: "text-amber-400" },
+            { v: queuedTasks.length, l: "Queued", c: "text-amber-400" },
             { v: failedTasks.length, l: "Failures", c: "text-rose-400" },
           ].map((s) => (
             <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
@@ -118,6 +131,67 @@ export function ActivityView({
         
         {/* MAIN COLUMN */}
         <div className="w2-column">
+
+          {tab === "Inbox" && (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
+                <div className="flex items-center gap-3">
+                  <span className="rounded-lg bg-primary/10 p-2 text-primary"><Inbox size={18} /></span>
+                  <div>
+                    <h2 className="font-semibold">Activity inbox</h2>
+                    <p className="text-xs text-muted-foreground">{unreadInbox.length} unread notification{unreadInbox.length === 1 ? "" : "s"}</p>
+                  </div>
+                </div>
+                {unreadInbox.length > 0 && <UIButton variant="outline" size="sm" onClick={() => markAllInboxRead?.()}>Mark all read</UIButton>}
+              </div>
+              <div className="flex flex-col gap-2">
+                {inbox.map((event) => (
+                  <article key={event.id} className={cn("rounded-xl border bg-card p-4", event.status === "unread" ? "border-primary/50 shadow-[0_0_24px_-18px_var(--primary)]" : "border-border")}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          {event.status === "unread" && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
+                          <strong>{event.title}</strong>
+                          <Badge variant={event.severity === "error" ? "down" : event.severity === "success" ? "up" : "muted"}>{event.kind.replaceAll("_", " ")}</Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">{event.body}</p>
+                        <time className="mt-2 block text-xs text-muted-foreground">{new Date(Number(event.created_at) * 1000).toLocaleString()}</time>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        {event.task_id && <UIButton size="sm" onClick={() => { markInboxRead?.(event.id); openTaskDetails?.(event.task_id); }}>Open</UIButton>}
+                        {event.status === "unread" && <UIButton variant="outline" size="sm" onClick={() => markInboxRead?.(event.id)}>Mark read</UIButton>}
+                        <UIButton variant="ghost" size="icon" title="Archive notification" aria-label="Archive notification" onClick={() => archiveInbox?.(event.id)}><Archive size={15} /></UIButton>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {inbox.length === 0 && <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center text-sm text-muted-foreground">You are all caught up. Task outcomes and approval requests will appear here.</div>}
+              </div>
+            </div>
+          )}
+
+          {tab === "Queue" && (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h2 className="font-semibold">Persistent task queue</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Higher priority work runs first. Queued tasks survive refreshes and server restarts.</p>
+              </div>
+              {queuedTasks.map((task) => (
+                <RunCard
+                  key={task.id}
+                  task={task}
+                  models={models}
+                  onCancel={() => handleCancel(task.id)}
+                  onPause={() => handlePause(task.id)}
+                  onResume={() => handleResume(task.id)}
+                  onDetails={() => openTaskDetails?.(task.id)}
+                  onRetry={() => handleRetry(task.id)}
+                  onPriority={(priority) => handlePriority(task.id, priority)}
+                />
+              ))}
+              {queuedTasks.length === 0 && <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center text-sm text-muted-foreground">The queue is empty. Send another message while a run is active to add work here.</div>}
+            </div>
+          )}
           
           {/* PHASE 6: Activity Search */}
           {["All Runs", "Active", "Completed", "Failed"].includes(tab) && (
@@ -142,6 +216,8 @@ export function ActivityView({
                     onCancel={() => handleCancel(task.id)}
                     onPause={() => handlePause(task.id)}
                     onResume={() => handleResume(task.id)}
+                    onRetry={() => handleRetry(task.id)}
+                    onPriority={(priority) => handlePriority(task.id, priority)}
                     onDetails={() => openTaskDetails?.(task.id)}
                   />
                 ))}
@@ -226,7 +302,13 @@ export function ActivityView({
              <div className="w2-section">
                 <h2 className="w2-section-title">Scheduled Jobs</h2>
                 <div className="w2-card">
-                  <p style={{ color: 'var(--cc-muted)' }}>No scheduled tasks available.</p>
+                  {scheduledTasks.map((task) => (
+                    <button key={task.id} type="button" className="flex w-full items-center justify-between rounded-lg border border-border p-3 text-left" onClick={() => openTaskDetails?.(task.id)}>
+                      <span><strong className="block">{task.objective}</strong><span className="text-xs text-muted-foreground">Priority {task.priority || 0}</span></span>
+                      <time className="text-sm text-muted-foreground">{new Date(Number(task.scheduledFor) * 1000).toLocaleString()}</time>
+                    </button>
+                  ))}
+                  {scheduledTasks.length === 0 && <p style={{ color: 'var(--cc-muted)' }}>No scheduled tasks available.</p>}
                 </div>
              </div>
           )}
@@ -299,7 +381,7 @@ export function ActivityView({
 // --- Helpers ---
 
 // PHASE 4 & 5 & 8: Embedded in RunCard
-function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
+function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry, onPriority }) {
   const isFailed = ["failed", "error", "cancelled"].includes(task.status);
   const isActive = ["queued", "running", "paused"].includes(task.status);
   const [expanded, setExpanded] = useState(false);
@@ -326,6 +408,12 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
           </UIButton>
           {isActive && (
             <div className="flex gap-1.5">
+              {task.status === "queued" && (
+                <>
+                  <UIButton variant="outline" size="icon" onClick={() => onPriority?.(Number(task.priority || 0) + 1)} title="Raise priority" aria-label="Raise priority"><ChevronUp size={14} /></UIButton>
+                  <UIButton variant="outline" size="icon" onClick={() => onPriority?.(Number(task.priority || 0) - 1)} title="Lower priority" aria-label="Lower priority"><ChevronDown size={14} /></UIButton>
+                </>
+              )}
               {task.status === 'paused' ? (
                 <UIButton variant="outline" size="icon" onClick={onResume} title="Resume"><Play size={14} /></UIButton>
               ) : (
@@ -356,7 +444,7 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails }) {
               </div>
               <p style={{ fontSize: '0.875rem', margin: '0 0 8px 0' }}>The agent encountered an error and could not complete the objective.</p>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="w2-button" style={{ borderColor: 'var(--ras-danger)', color: 'var(--ras-danger)' }}>Retry Run</button>
+                <button className="w2-button" style={{ borderColor: 'var(--ras-danger)', color: 'var(--ras-danger)' }} onClick={onRetry}>Retry Run</button>
                 <button className="w2-button">Debug Stack Trace</button>
               </div>
             </div>

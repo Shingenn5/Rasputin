@@ -15,7 +15,7 @@ from backend.rag import memory as memory_store
 from backend.mcp import skills as skill_store
 from backend.core import telegram
 from backend.core import audit
-from backend.api.core import router as core_router
+from backend.api.core import router as core_router, hub
 from backend.core import settings_api
 from backend.api.agent import router as agent_router
 from backend.api.warsat_api import router as warsat_router
@@ -87,6 +87,9 @@ async def startup():
         audit.log("localhost_bypass_enabled_native_warning", {"message": _warn})
     memory_store.init_memory()
     skill_store.init_skills()
+    recovered = await hub.recover_pending()
+    if recovered:
+        audit.log("task_queue_recovered", {"count": recovered})
     telegram.start_polling()
     try:
         model_registry.auto_repair_obvious()

@@ -47,16 +47,28 @@ def create(action_type, detail=None, risk_level="approval_required", task_id=Non
     stamp = store.now()
     expires = stamp + max(60, int(ttl or DEFAULT_TTL_SECONDS))
     with store._lock, store.connect() as conn:
+        task = conn.execute("SELECT owner_id FROM tasks WHERE id=?", (task_id,)).fetchone() if task_id else None
+        owner_id = (task["owner_id"] if task else None) or "admin"
         while conn.execute("SELECT id FROM approvals WHERE code=?", (code,)).fetchone():
             code = _code()
         conn.execute(
             """
-            INSERT INTO approvals(id,code,task_id,tool_call_id,action_type,risk_level,workspace,summary,redacted_detail,status,expires_at,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO approvals(id,code,task_id,tool_call_id,action_type,risk_level,workspace,summary,redacted_detail,status,expires_at,created_at,owner_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (approval_id, code, task_id, tool_call_id, action_type, risk_level, workspace or ".", summary, store._json(redacted), "pending", expires, stamp),
+            (approval_id, code, task_id, tool_call_id, action_type, risk_level, workspace or ".", summary, store._json(redacted), "pending", expires, stamp, owner_id),
         )
         conn.commit()
+    store.create_inbox_event(
+        owner_id,
+        "approval_required",
+        "Approval required",
+        summary,
+        severity="warning",
+        task_id=task_id,
+        action_type="open_approval",
+        action_payload={"approvalId": approval_id, "code": code},
+    )
     event = audit.log("approval_created", {
         "id": approval_id,
         "code": code,
