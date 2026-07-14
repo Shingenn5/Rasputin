@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
 
 docker compose down

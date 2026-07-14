@@ -110,8 +110,8 @@ The active effort is making Rasputin a **competitive coding agent**, tracked in
 `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` (the working plan — read it before picking up
 work). Position:
 
-- **App baseline is healthy** (`docs/PHASE_A1_FINDINGS.md`): zero console/HTTP errors across
-  15+ views, light+dark; polish gaps are cosmetic, not structural.
+- **App baseline is healthy:** the isolated running-app audit covered 15+ views in light and dark
+  with zero console/HTTP errors; remaining polish gaps are cosmetic, not structural.
 - **Real local-model inference works end-to-end.** Qwen2.5-3B-Instruct deployed through WarSat
   (vLLM, `toolCallParser=hermes`) ran real chat and a `mode=code` agentic task with genuine
   tool calls. Two fixes made this work: `chat_sync` drops tools + retries once on a
@@ -144,14 +144,11 @@ coding task on a coder model (e.g. Qwen2.5-Coder).
 | Doc | Status |
 |---|---|
 | `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` | **Current** — the working plan; honest `[~]` markers |
-| `docs/PHASE_A1_FINDINGS.md` | Current — audit + real-model findings |
-| `docs/ROADMAP.md` | Mostly current; its "Status" block predates A1 completion (says A1 is next — it's done) |
 | `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | §4 is current/canonical; later backend path maps still contain pre-package-layout names |
 | `ONBOARDING.md` (root) | Current general architecture/auth introduction |
-| `CLAUDE_HANDOVER.md` | **Stale** (old `claude-ui` branch era) — ignore |
-| `docs/DUAL_MODE_ARCHITECTURE_PLAN.md`, `docs/EXECUTION_PLAN.md` | Current completion record for security Phases 0–4; future-tense plan text is retained as history |
 | `docs/REMAINING_WORK.md` | Current dual-mode/security residuals + open Phase 5 packaging |
-| `docs/CURRENT_BASELINE.md` | **Stale** — June baseline; useful history, not current direction |
+| `docs/DEPLOYMENT_MATRIX.md`, `docs/DESKTOP_ARCHITECTURE.md` | Current runtime and packaging guidance |
+| `THREAT_MODEL.md`, `docs/WRAPPER_RUNTIME_CONTRACT.md` | Current security and runtime contracts |
 | `.agents/skills/verify/SKILL.md`, `.claude/skills/verify/SKILL.md` | Current — isolated native verification with real-auth login/cookie flow |
 
 ## 7. Working with Elliott

@@ -168,8 +168,8 @@ Testing        Playwright (npm run testUi)
 
 Installed packages are the source of truth — see root `package.json` / `package-lock.json`.
 Do NOT reintroduce a "no Tailwind" or "vanilla JS only" rule; React + Vite + Tailwind are the
-real stack. (Rationalizing the three styling layers into a cleaner primary system is a known
-cleanup goal — see `docs/UI_UX_PLAN.md`.)
+real stack. Rationalizing the three styling layers into a cleaner primary system remains a known
+cleanup goal.
 
 ### Styling: a three-layer hybrid (the honest picture)
 
@@ -194,7 +194,7 @@ why the UI can "feel like a prototype"), so:
 - **New and changed components use Tailwind utilities + `--ras-*`/`--cc-*` tokens** (tokens exposed
   as CSS variables Tailwind reads). Do **not** add new `react-bootstrap` usages.
 - **`react-bootstrap` / Bootstrap CSS is now legacy** — retire it incrementally as components get
-  touched during the UI/UX work (`docs/UI_UX_PLAN.md`), keeping it only where a component is still
+  touched during UI/UX work, keeping it only where a component is still
   pulling real weight and hasn't been migrated yet.
 - The `--ras-*`/`--cc-*` token system stays — it's the theme engine; we build Tailwind *on top of*
   it, not instead of it.

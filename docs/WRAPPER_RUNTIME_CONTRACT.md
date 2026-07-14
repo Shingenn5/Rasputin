@@ -1,8 +1,6 @@
 # `WRAPPER_RUNTIME` Contract (native vs Docker)
 
-*Authored 2026-07-11 as the Phase 1 path-audit deliverable of
-[`DUAL_MODE_ARCHITECTURE_PLAN.md`](DUAL_MODE_ARCHITECTURE_PLAN.md); re-audited
-2026-07-13 after Phases 3–4 completed.*
+*Authored 2026-07-11 and re-audited 2026-07-13 after the dual-mode security work completed.*
 
 `WRAPPER_RUNTIME` is the single switch that tells the wrapper whether it is running **inside the
 Docker container** (`WRAPPER_RUNTIME=docker`, set by the Dockerfile) or **natively on the host**

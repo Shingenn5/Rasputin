@@ -2,10 +2,8 @@
 
 *Snapshot refreshed 2026-07-13 · dual-mode/security core through Phase 4 is complete*
 
-This is the current status roll-up for `docs/DUAL_MODE_ARCHITECTURE_PLAN.md`. The older
-2026-07-11 version stopped at the first sandbox-account checkpoint; that checkpoint and the
-Phase-4 network work have since shipped. The detailed build sequence remains in
-`docs/EXECUTION_PLAN.md` as a historical execution record.
+This is the current status roll-up for the dual-mode and security work. The sandbox-account and
+Phase-4 network work have shipped; only residual caveats and productization work remain.
 
 ---
 
@@ -24,8 +22,8 @@ Phase-4 network work have since shipped. The detailed build sequence remains in
 - **Phase 5 — OPEN / eventual.** Single-artifact workstation packaging, a published server image,
   update/version UX, and the licensing/company decision have not started.
 
-The dual-mode security work has **no active provisioning blocker**. Current product work is
-sequenced by `docs/ROADMAP.md`; Phase 5 remains intentionally behind daily-driver polish.
+The dual-mode security work has **no active provisioning blocker**. Phase 5 remains intentionally
+behind daily-driver polish.
 
 ---
 
@@ -49,7 +47,7 @@ Docker/native-non-Windows shell execution follows the direct backend path descri
 
 ## Completed Phase 4 — Skills sandbox network isolation
 
-Option C from `docs/PHASE_4_SANDBOX_NETWORK_OPTIONS.md` shipped in `5742cd6`:
+The selected sandbox-network design shipped in `5742cd6`:
 
 - each Skill runs in a fresh `docker run -i --rm --network none` container;
 - the old HTTP callback was replaced by newline-delimited JSON over private stdio;
@@ -91,7 +89,7 @@ unreachable dead code and can be removed in routine cleanup.
 | LICENSE/company model + CLA decision before public distribution | Open — business decision; repo remains private |
 
 Phase 5 is not a prerequisite for local development or the current GUI/daily-driver work. It is
-the eventual productization track in `docs/ROADMAP.md` and `docs/SAAS_ROADMAP.md`.
+the eventual productization track.
 
 ---
 
@@ -107,5 +105,5 @@ the eventual productization track in `docs/ROADMAP.md` and `docs/SAAS_ROADMAP.md
 
 ## Recommended sequence from here
 
-Follow `docs/ROADMAP.md` for daily-driver UI/agent work. Return to this track only for a specific
-residual hardening item or Phase-5 packaging; do not redo Phases 0–4.
+Use `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` for current UI/agent work. Return to this track
+only for a specific residual hardening item or Phase-5 packaging; do not redo Phases 0–4.

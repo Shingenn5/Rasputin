@@ -1,4 +1,10 @@
 .git
+.worktrees/
+.agents/
+.claude/
+.codex/
+.playwright-mcp/
+.pytest_cache/
 .env
 .env.*
 __pycache__/
@@ -25,7 +31,14 @@ test-results/
 venv/
 node_modules/
 frontend/
+dist/
+build/
 output/
+token-optimizer/
+
+*.png
+*.webp
+*.webm
 
 auth.json
 telegram.json

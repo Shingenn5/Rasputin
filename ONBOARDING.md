@@ -98,11 +98,10 @@ Docker socket.
   - `trials/` — blind model-comparison/scoring engine.
 - `data/` — SQLite DB + generated files (`docker-compose.mounts.yml`,
   first-run `auth.json` seed). Gitignored — never commit anything from here.
-- `docs/` — planning/status docs. Two worth knowing:
-  `docs/CODING_AGENT_COMPETITIVENESS_PLAN.md` (why we're building what
-  we're building) and `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`
-  (the actual checkbox list of what's done vs. not — check this before
-  assuming a feature doesn't exist yet).
+- `docs/` — current architecture, operations, security, and status docs.
+  `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` is the active checkbox
+  list of what's done vs. not — check it before assuming a feature doesn't
+  exist yet.
 
 ---
 

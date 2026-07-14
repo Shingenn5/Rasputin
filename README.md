@@ -122,9 +122,12 @@ curl -s https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.sh | b
 If you prefer to clone the repository manually, you can use the interactive CLI tools provided in the project root:
 
 ```bash
-git clone https://github.com/Shingenn5/Rasputin.git
+git clone --recurse-submodules https://github.com/Shingenn5/Rasputin.git
 cd Rasputin
 ```
+
+The `token-optimizer` submodule is optional developer tooling; the Rasputin runtime does not
+depend on it. A normal clone without submodules is sufficient when you only want to run the app.
 
 Then, launch the manager:
 - **Windows:** `.\rasputin.ps1 start`
@@ -313,4 +316,4 @@ npm run preview:gui
 
 ---
 
-*For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) (frontend stack in §4) and the [UI/UX Plan](docs/UI_UX_PLAN.md).*
+*For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) (frontend stack in §4).*

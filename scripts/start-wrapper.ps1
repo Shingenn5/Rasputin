@@ -3,7 +3,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
 
 foreach ($dir in @("data", "workspace", "models")) {
   New-Item -ItemType Directory -Force -Path $dir | Out-Null

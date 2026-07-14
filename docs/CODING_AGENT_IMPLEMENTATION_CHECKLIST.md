@@ -1,6 +1,6 @@
 # Coding-Agent Competitiveness — Implementation Checklist
 
-Companion to [`CODING_AGENT_COMPETITIVENESS_PLAN.md`](CODING_AGENT_COMPETITIVENESS_PLAN.md). That doc is the narrative/rationale; this doc is the actionable, checkable task list derived from it. Keep both in sync — when a box here is checked, update the corresponding Status line in the plan doc too.
+This is the actionable, checkable source of truth for the coding-agent competitiveness track.
 
 Last derived from plan doc: 2026-07-01.
 **Last verified against actual repo code: 2026-07-01** (see "Verification notes" callouts below — this pass re-read the source files themselves, not just commit messages/plan-doc claims, and found the plan understates two things: Stage 7 already has a real partial implementation, and Stage 4b has a hidden prerequisite the plan doc didn't call out).
@@ -298,7 +298,7 @@ Branch: extends existing Warsat fit-scoring work
 
 ## Stage 9 (Differentiator): Coding-Task Trials — ✅ COMPLETE (2026-07-01)
 
-Branch: extends existing Trials feature (`docs/STAGED_IMPLEMENTATION_BACKLOG.md`)
+Implemented in the existing Trials subsystem.
 
 **Verification note:** `backend/trials/models.py` already defines a `"model"` experiment type and includes `"code"` in `ROUTABLE_MODES` (`:50`) — the general Trials scaffold this stage extends already exists and already knows about `code` mode. No coding-subtask-specific blind-comparison or pin-to-`coder`-role flow exists yet.
 
@@ -458,11 +458,10 @@ Pointer Gestures.)
 - [~] Stage 5 (*Coding-Oriented Task UX* above) is implemented (diff viewer, touched-files list,
   live terminal pane); frontend render/interaction plus keyboard-only/mouse-only Playwright passes remain.
 
-### B. Daily-driver UI/UX track (from the Phase A1 audit — full detail in `docs/PHASE_A1_FINDINGS.md`)
+### B. Daily-driver UI/UX track
 The app was launched + audited 2026-07-12: shell/routing/auth/theming/chat are solid and polished
 (zero console errors across 15+ views, light + dark). This is the polish backlog. The design-system
-plan is `docs/UI_UX_PLAN.md` + `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` §4; the phased sequence (B–E) is
-in `docs/ROADMAP.md`. Confirmed near-term items:
+contract is `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` §4. Confirmed near-term items:
 - [ ] Theme picker shows the wrong active theme on load — defaults to `rasputin-dark` instead of the
   live theme (`GeneralSettings.jsx:85`). **(Trivial)**
 - [ ] Settings "Save" gives no success toast (it does persist). **(Trivial)**
@@ -483,7 +482,7 @@ in `docs/ROADMAP.md`. Confirmed near-term items:
 
 ## Explicitly Out of Scope / Unchanged (carried from plan doc, not tasks)
 
-- Everything in `docs/STAGED_IMPLEMENTATION_BACKLOG.md`'s "Explicitly Deferred" section (Mail Relay, Timeline Sync, Visual Relay, Field Console PWA, Local Admin 2FA)
+- Deferred product areas: Mail Relay, Timeline Sync, Visual Relay, Field Console PWA, and Local Admin 2FA
 - Non-trusted workspaces keep full per-action approval — unchanged by this plan
 - Privacy Lock, remote model gating, web-broker approval/redaction behavior — unchanged by every stage
 - `docker_control` stays a disabled stub (confirmed still `"enabled": False` at `backend/mcp/tools.py:534`) — out of scope; Warsat's existing approval-gated deploy path untouched
