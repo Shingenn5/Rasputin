@@ -147,7 +147,7 @@ The `rasputin` manager supports the following commands:
 
 The native daily driver now has an Electron lifecycle shell. From a repository checkout, run
 `npm run desktop` to build the frontend and open Rasputin as a desktop application. Closing the
-window keeps it available in the system tray, where the native engine can be started, stopped,
+window keeps it available in the system tray, where the Electron-owned Desktop Runtime can be started, stopped,
 restarted, or fully quit. Docker remains the browser-based server/appliance deployment.
 
 Development uses the checkout's Python environment. `npm run desktop:package` builds a

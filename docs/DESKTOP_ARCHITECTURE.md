@@ -30,16 +30,22 @@ specific development port; normal desktop launches choose an available loopback 
 `RASPUTIN_DISABLE_HARDWARE_ACCELERATION=1` only when working around a problematic GPU or
 remote-desktop driver.
 
-Closing the window minimizes Rasputin to the system tray. The tray owns these lifecycle actions:
+By default, closing the window minimizes Rasputin to the system tray. The tray's **Keep running
+when window closes** setting can instead make window close perform a full quit. The preference is
+stored under Electron's per-user application data directory. The tray owns these lifecycle actions:
 
 - Open Rasputin
-- Start, stop, or restart the native engine
+- Start, stop, or restart the Electron-owned Desktop Runtime
 - Show the persistent desktop log
 - Quit Rasputin and stop its managed backend
 
-When the persistent Native Host already owns the same native data directory, Desktop attaches to
+When the persistent Native Server already owns the same native data directory, Desktop attaches to
 that instance instead of starting another backend. Closing or quitting the window leaves the host
 running for browser users; choosing the explicit tray stop action shuts the host down gracefully.
+
+Before starting a Desktop Runtime, Electron checks `desktop-runtime.json`. If a previous Electron
+process crashed but left its backend alive, the new app terminates that abandoned process tree and
+removes the stale ownership record. A live Electron owner is never replaced.
 
 On a fresh data store, Electron shows the generated administrator credentials once and can copy
 the password to the clipboard. The password is redacted from the persistent desktop log.

@@ -8,6 +8,8 @@ survives the controlling terminal, and can be started at Windows logon.
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
 import json
 import os
 import secrets
@@ -30,6 +32,33 @@ ROOT = Path(__file__).resolve().parents[2]
 AUTOSTART_NAME = "Rasputin Native Host"
 AUTOSTART_KEY = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
 DEFAULT_PORT = 8788
+
+
+WINDOWS_PROCESS_BROKER_SCRIPT = r"""
+$ErrorActionPreference = "Stop"
+$environmentVariables = @(
+    [System.Environment]::GetEnvironmentVariables().GetEnumerator() |
+        Where-Object { $_.Key -notlike "RASPUTIN_NATIVE_BROKER_*" } |
+        ForEach-Object { "{0}={1}" -f $_.Key, $_.Value }
+)
+$startupClass = Get-CimClass -ClassName Win32_ProcessStartup
+$startup = New-CimInstance -CimClass $startupClass -ClientOnly -Property @{
+    ShowWindow = [uint16]0
+    EnvironmentVariables = [string[]]$environmentVariables
+}
+$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+    CommandLine = $env:RASPUTIN_NATIVE_BROKER_COMMAND
+    CurrentDirectory = $env:RASPUTIN_NATIVE_BROKER_CWD
+    ProcessStartupInformation = $startup
+}
+if ($result.ReturnValue -ne 0) {
+    throw "Win32_Process.Create failed with return value $($result.ReturnValue)."
+}
+[PSCustomObject]@{
+    returnValue = [int]$result.ReturnValue
+    processId = [int]$result.ProcessId
+} | ConvertTo-Json -Compress
+"""
 
 
 def _paths(selected_data_dir: Path | None = None) -> dict[str, Path]:
@@ -119,7 +148,7 @@ def _effective_config(args: argparse.Namespace, paths: dict[str, Path]) -> dict:
     return {"port": int(port), "lan": lan, "allow_http": allow_http, "allowed_hosts": allowed_hosts}
 
 
-def _run(args: argparse.Namespace, paths: dict[str, Path]) -> int:
+def _run_server(args: argparse.Namespace, paths: dict[str, Path]) -> int:
     desktop = _desktop_runtime(paths)
     if desktop:
         print(f"Rasputin Desktop already owns this data store at {desktop.get('url')}.", file=sys.stderr)
@@ -179,6 +208,79 @@ def _run(args: argparse.Namespace, paths: dict[str, Path]) -> int:
             paths["state"].unlink(missing_ok=True)
 
 
+def _run(args: argparse.Namespace, paths: dict[str, Path]) -> int:
+    if args.log_file is None:
+        return _run_server(args, paths)
+    log_path = Path(args.log_file).resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8", buffering=1) as log:
+        with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
+            return _run_server(args, paths)
+
+
+def _spawn_windows_brokered(command: list[str], cwd: Path, environment: dict[str, str]) -> int:
+    """Create a process through WMI so it is not owned by the launcher's job.
+
+    Some application launchers close an entire Windows job when their command
+    finishes, which also kills children created with DETACHED_PROCESS. WMI is
+    the OS-owned broker here. The environment is supplied through
+    Win32_ProcessStartup instead of the command line so first-run credentials
+    are not exposed in process listings.
+    """
+    broker_environment = environment.copy()
+    broker_environment["RASPUTIN_NATIVE_BROKER_COMMAND"] = subprocess.list2cmdline(command)
+    broker_environment["RASPUTIN_NATIVE_BROKER_CWD"] = str(cwd)
+    encoded_script = base64.b64encode(WINDOWS_PROCESS_BROKER_SCRIPT.encode("utf-16le")).decode("ascii")
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            encoded_script,
+        ],
+        text=True,
+        capture_output=True,
+        env=broker_environment,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        timeout=30,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "unknown Windows process broker error").strip()
+        raise RuntimeError(detail)
+    try:
+        response = next(line for line in reversed(completed.stdout.splitlines()) if line.strip())
+        result = json.loads(response)
+        return int(result["processId"])
+    except (StopIteration, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        response_detail = completed.stdout.strip()
+        raise RuntimeError(f"Windows process broker returned an invalid response: {response_detail}") from error
+
+
+def _spawn_direct(command: list[str], cwd: Path, environment: dict[str, str], log) -> int:
+    creationflags = 0
+    popen_options: dict = {}
+    if os.name == "nt":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    else:
+        popen_options["start_new_session"] = True
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
+        creationflags=creationflags,
+        **popen_options,
+    )
+    return process.pid
+
+
 def _start(args: argparse.Namespace, paths: dict[str, Path]) -> int:
     desktop = _desktop_runtime(paths)
     if desktop:
@@ -228,27 +330,25 @@ def _start(args: argparse.Namespace, paths: dict[str, Path]) -> int:
         environment.pop("RASPUTIN_TLS_CERT_FILE", None)
         environment.pop("RASPUTIN_TLS_KEY_FILE", None)
 
-    command = [sys.executable, "-m", "backend.tools.native_host", "run", "--data-dir", str(paths["data"])]
-    creationflags = 0
-    popen_options: dict = {}
-    if os.name == "nt":
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    else:
-        popen_options["start_new_session"] = True
+    command = [
+        sys.executable,
+        "-m",
+        "backend.tools.native_host",
+        "run",
+        "--data-dir",
+        str(paths["data"]),
+    ]
 
     with paths["log"].open("a", encoding="utf-8", buffering=1) as log:
         log.write(f"\n--- Native Host {datetime.now(timezone.utc).isoformat()} ---\n")
-        subprocess.Popen(
-            command,
-            cwd=ROOT,
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            close_fds=True,
-            creationflags=creationflags,
-            **popen_options,
-        )
+        if os.name == "nt":
+            try:
+                _spawn_windows_brokered([*command, "--log-file", str(paths["log"])], ROOT, environment)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                log.write(f"Windows process broker unavailable; using direct launch: {error}\n")
+                _spawn_direct(command, ROOT, environment, log)
+        else:
+            _spawn_direct(command, ROOT, environment, log)
 
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
@@ -343,6 +443,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-http", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--allowed-host", action="append", default=None)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--log-file", type=Path, default=None, help=argparse.SUPPRESS)
     return parser
 
 

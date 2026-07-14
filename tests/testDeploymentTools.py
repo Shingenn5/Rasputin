@@ -41,6 +41,32 @@ class NativeHostStateTests(unittest.TestCase):
             self.assertTrue(config["lan"])
             self.assertEqual(config["allowed_hosts"], ["rasputin.home"])
 
+    def test_windows_broker_keeps_credentials_out_of_command_and_script(self):
+        completed = mock.Mock(
+            returncode=0,
+            stdout='{"returnValue":0,"processId":4321}\n',
+            stderr="",
+        )
+        environment = {
+            "PATH": "C:\\Windows",
+            "RASPUTIN_ADMIN_PASSWORD": "one-time-secret",
+        }
+        command = ["python.exe", "-m", "backend.tools.native_host", "run"]
+        with mock.patch("subprocess.run", return_value=completed) as run:
+            pid = native_host._spawn_windows_brokered(command, Path("C:/Rasputin"), environment)
+
+        self.assertEqual(pid, 4321)
+        invocation = run.call_args
+        self.assertNotIn("one-time-secret", " ".join(invocation.args[0]))
+        self.assertEqual(invocation.kwargs["env"]["RASPUTIN_ADMIN_PASSWORD"], "one-time-secret")
+        self.assertIn("-EncodedCommand", invocation.args[0])
+        self.assertIn("Win32_Process", native_host.WINDOWS_PROCESS_BROKER_SCRIPT)
+
+    def test_windows_broker_rejects_failed_process_creation(self):
+        completed = mock.Mock(returncode=1, stdout="", stderr="access denied")
+        with mock.patch("subprocess.run", return_value=completed):
+            with self.assertRaisesRegex(RuntimeError, "access denied"):
+                native_host._spawn_windows_brokered(["python.exe"], Path("C:/Rasputin"), {})
 
 class RemoteAccessTests(unittest.TestCase):
     def test_caddy_config_has_health_check_and_origin_preserving_proxy(self):

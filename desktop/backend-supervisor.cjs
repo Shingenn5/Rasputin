@@ -79,6 +79,46 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function pidIsAlive(pid) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) return false;
+  try {
+    process.kill(numericPid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+async function terminateProcessTree(pid) {
+  const numericPid = Number(pid);
+  if (!pidIsAlive(numericPid)) return;
+  if (process.platform === "win32") {
+    const killer = spawn("taskkill", ["/pid", String(numericPid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    await new Promise((resolve) => {
+      killer.once("error", resolve);
+      killer.once("close", resolve);
+    });
+  } else {
+    try {
+      process.kill(numericPid, "SIGTERM");
+    } catch {}
+  }
+  const deadline = Date.now() + 5_000;
+  while (pidIsAlive(numericPid) && Date.now() < deadline) await delay(100);
+  if (pidIsAlive(numericPid) && process.platform !== "win32") {
+    try {
+      process.kill(numericPid, "SIGKILL");
+    } catch {}
+    const forceDeadline = Date.now() + 2_000;
+    while (pidIsAlive(numericPid) && Date.now() < forceDeadline) await delay(100);
+  }
+  if (pidIsAlive(numericPid)) throw new Error(`Could not stop abandoned Desktop Runtime process ${numericPid}`);
+}
+
 class BackendSupervisor extends EventEmitter {
   constructor({ projectRoot, dataDir, logDir, requestedPort = 0, backendExecutable = null }) {
     super();
@@ -151,6 +191,29 @@ class BackendSupervisor extends EventEmitter {
     }
   }
 
+  async recoverAbandonedDesktopRuntime() {
+    let state;
+    try {
+      state = JSON.parse(fs.readFileSync(this.desktopStatePath, "utf8"));
+    } catch {
+      fs.rmSync(this.desktopStatePath, { force: true });
+      return;
+    }
+    const ownerPid = Number(state?.ownerPid);
+    const runtimePid = Number(state?.pid);
+    const runtimeAlive = pidIsAlive(runtimePid);
+    if (runtimeAlive && ownerPid !== process.pid && pidIsAlive(ownerPid)) {
+      throw new Error(
+        `Another Rasputin Desktop Runtime owns this data store (app PID ${ownerPid}, runtime PID ${runtimePid}).`
+      );
+    }
+    if (runtimeAlive) {
+      this.setStatus("recovering", `Stopping abandoned Desktop Runtime ${runtimePid}`);
+      await terminateProcessTree(runtimePid);
+    }
+    fs.rmSync(this.desktopStatePath, { force: true });
+  }
+
   async attachToNativeHost() {
     let state;
     try {
@@ -162,7 +225,7 @@ class BackendSupervisor extends EventEmitter {
     if (!url || !await healthIsReady(url)) return false;
     this.url = url;
     this.attachedToNativeHost = true;
-    this.setStatus("attached", url);
+    this.setStatus("attached", `Connected to Native Server at ${url}`);
     return true;
   }
 
@@ -175,6 +238,7 @@ class BackendSupervisor extends EventEmitter {
 
   async start() {
     if (this.child || this.attachedToNativeHost) return this.url;
+    await this.recoverAbandonedDesktopRuntime();
     if (await this.attachToNativeHost()) return this.url;
 
     const packaged = Boolean(this.backendExecutable && fs.existsSync(this.backendExecutable));
@@ -216,7 +280,7 @@ class BackendSupervisor extends EventEmitter {
     delete environment.RASPUTIN_TLS_CERT_FILE;
     delete environment.RASPUTIN_TLS_KEY_FILE;
 
-    this.setStatus("starting", `Starting native engine on ${this.url}`);
+    this.setStatus("starting", `Starting Desktop Runtime on ${this.url}`);
     const child = spawn(
       runtime.command,
       [...runtime.prefixArgs, ...runtime.args],
@@ -237,7 +301,7 @@ class BackendSupervisor extends EventEmitter {
       const expected = this.stopping;
       if (this.child === child) this.child = null;
       this.clearDesktopState(child);
-      this.writeLog("desktop", `Native engine exited (code=${code}, signal=${signal}).\n`);
+      this.writeLog("desktop", `Desktop Runtime exited (code=${code}, signal=${signal}).\n`);
       this.flushPendingLogs();
       this.logStream?.end();
       this.logStream = null;
@@ -247,7 +311,7 @@ class BackendSupervisor extends EventEmitter {
     const deadline = Date.now() + HEALTH_TIMEOUT_MS;
     while (Date.now() < deadline) {
       if (!this.child) {
-        throw new Error(`The native engine exited during startup. See ${this.logPath}`);
+        throw new Error(`The Desktop Runtime exited during startup. See ${this.logPath}`);
       }
       if (await healthIsReady(this.url)) {
         this.setStatus("running", this.url);
@@ -257,13 +321,13 @@ class BackendSupervisor extends EventEmitter {
     }
 
     await this.stop();
-    throw new Error(`The native engine did not become healthy. See ${this.logPath}`);
+    throw new Error(`The Desktop Runtime did not become healthy. See ${this.logPath}`);
   }
 
   async stop({ includeAttached = false } = {}) {
     if (this.attachedToNativeHost) {
       if (!includeAttached) return;
-      this.setStatus("stopping", "Stopping persistent native host");
+      this.setStatus("stopping", "Stopping Native Server");
       fs.writeFileSync(this.nativeHostStopPath, "stop\n", "utf8");
       const deadline = Date.now() + 12_000;
       while (Date.now() < deadline) {
@@ -274,7 +338,7 @@ class BackendSupervisor extends EventEmitter {
         }
         await delay(200);
       }
-      throw new Error("The persistent Native Host did not stop before the timeout.");
+      throw new Error("The Native Server did not stop before the timeout.");
     }
     const child = this.child;
     if (!child) {
@@ -283,7 +347,7 @@ class BackendSupervisor extends EventEmitter {
     }
 
     this.stopping = true;
-    this.setStatus("stopping", "Stopping native engine");
+    this.setStatus("stopping", "Stopping Desktop Runtime");
     child.kill("SIGTERM");
 
     const deadline = Date.now() + 4_000;
@@ -306,13 +370,13 @@ class BackendSupervisor extends EventEmitter {
       await delay(100);
     }
     if (this.child === child) {
-      throw new Error(`Could not stop native engine process ${child.pid}`);
+      throw new Error(`Could not stop Desktop Runtime process ${child.pid}`);
     }
   }
 
   async restart() {
     if (this.attachedToNativeHost) {
-      throw new Error("Restart the persistent Native Host with rasputin.ps1 native-host-restart.");
+      throw new Error("Restart the Native Server with rasputin.ps1 native-host-restart.");
     }
     await this.stop();
     return this.start();
@@ -322,5 +386,7 @@ class BackendSupervisor extends EventEmitter {
 module.exports = {
   BackendSupervisor,
   findFreePort,
+  pidIsAlive,
   resolvePython,
+  terminateProcessTree,
 };

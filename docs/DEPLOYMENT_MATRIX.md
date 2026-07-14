@@ -6,9 +6,9 @@ one account/permission model; only lifecycle, filesystem access, and network exp
 | Shape | Lifecycle owner | Default address | Intended use |
 | --- | --- | --- | --- |
 | Desktop | Electron window and tray | Random loopback port | Personal daily driver with direct folders |
-| Native Host | Native host controller | `localhost:8788` | Persistent browser host with direct folders |
+| Native Server | Native host controller | `localhost:8788` | Persistent browser host with direct folders |
 | Docker Server | Docker Compose | `127.0.0.1:8787` | Shared appliance/server with explicit mounts |
-| Private Remote Access | Tailscale Serve or reviewed Caddy config | Stable HTTPS name | Access to Native Host or Docker from other devices |
+| Private Remote Access | Tailscale Serve or reviewed Caddy config | Stable HTTPS name | Access to Native Server or Docker from other devices |
 
 ## Desktop
 
@@ -30,10 +30,16 @@ resulting application does not require Python or Node.js on the target machine. 
 lands under `dist/electron/`. The installer is currently unsigned; Windows may display a publisher
 warning until release signing is configured.
 
-## Native Host
+## Native Server
 
-Native Host is the non-Docker multi-user option. It runs independently of Electron and records its
+Native Server is the user-facing name for the non-Docker multi-user option; its CLI commands retain
+the `native-host-*` spelling for compatibility. It runs independently of Electron and records its
 PID, URL, and data directory under `%LOCALAPPDATA%\Rasputin\data`.
+
+On Windows, the controller asks Windows Management Instrumentation to create the background
+process. This keeps the host alive when it was started by a terminal, desktop launcher, or another
+parent process that cleans up its children on exit. First-run credentials are passed through the
+new process environment rather than its command line and remain excluded from the persistent log.
 
 ```powershell
 .\rasputin.ps1 native-host-start -Port 8788
@@ -44,10 +50,10 @@ PID, URL, and data directory under `%LOCALAPPDATA%\Rasputin\data`.
 
 The controller waits for `/api/health`, performs a graceful Uvicorn shutdown, and falls back to
 process-tree termination only after a timeout. Fresh credentials are printed once by the start
-command and are not written to the persistent Native Host log.
+command and are not written to the persistent Native Server log.
 
-Desktop and Native Host share this data store deliberately but never open two backends against it.
-If Native Host is already running, Electron attaches to its stable URL; closing Electron leaves the
+Desktop and Native Server share this data store deliberately but never open two backends against it.
+If Native Server is already running, Electron attaches to its stable URL; closing Electron leaves the
 host serving browser users, while the explicit tray stop action shuts it down gracefully. Native
 Host refuses to start when an Electron-owned backend already holds the store.
 
@@ -58,7 +64,7 @@ Start-at-login registration is available for the current Windows user:
 .\rasputin.ps1 native-host-uninstall
 ```
 
-This creates a per-user `HKCU\...\Run` entry and restarts Native Host at the next user logon; it is
+This creates a per-user `HKCU\...\Run` entry and restarts Native Server at the next user logon; it is
 not a machine-account Windows service and therefore does not claim access to folders the operator account cannot read. For a
 dedicated always-on machine, keep that operator signed in or use Docker Server until a signed
 machine-service installer with explicit service-account ACL management is added.

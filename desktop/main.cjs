@@ -11,12 +11,14 @@ const {
   Tray,
 } = require("electron");
 const { BackendSupervisor } = require("./backend-supervisor.cjs");
+const { loadDesktopSettings, saveDesktopSettings } = require("./settings.cjs");
 
 let mainWindow = null;
 let tray = null;
 let supervisor = null;
 let quitting = false;
 let shutdownComplete = false;
+let desktopSettings = { closeBehavior: "tray" };
 
 app.setName("Rasputin");
 app.setPath("userData", path.join(process.env.APPDATA || app.getPath("appData"), "Rasputin"));
@@ -87,22 +89,34 @@ function rebuildTrayMenu() {
   tray.setToolTip(`Rasputin Desktop — ${supervisor.status}`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open Rasputin", click: showWindow },
-    { label: attached ? "Native engine: persistent host" : `Native engine: ${supervisor.status}`, enabled: false },
+    { label: attached ? "Native Server: connected" : `Desktop Runtime: ${supervisor.status}`, enabled: false },
     { type: "separator" },
     {
-      label: "Start native engine",
+      label: "Start Desktop Runtime",
       enabled: !running && !busy,
       click: () => startEngine(),
     },
     {
-      label: attached ? "Stop persistent native host" : "Stop native engine",
+      label: attached ? "Stop Native Server" : "Stop Desktop Runtime",
       enabled: running && !busy,
       click: () => stopEngine(),
     },
     {
-      label: "Restart native engine",
+      label: "Restart Desktop Runtime",
       enabled: running && !busy && !attached,
       click: () => restartEngine(),
+    },
+    {
+      label: "Keep running when window closes",
+      type: "checkbox",
+      checked: desktopSettings.closeBehavior === "tray",
+      click: (menuItem) => {
+        desktopSettings = saveDesktopSettings(app.getPath("userData"), {
+          ...desktopSettings,
+          closeBehavior: menuItem.checked ? "tray" : "quit",
+        });
+        rebuildTrayMenu();
+      },
     },
     { label: "Show logs", click: () => shell.showItemInFolder(supervisor.logPath) },
     { type: "separator" },
@@ -124,7 +138,7 @@ async function loadRasputin(url) {
 
 async function startEngine() {
   try {
-    await showPage("Starting Rasputin", "Preparing your native workspace and local services…");
+    await showPage("Starting Rasputin", "Preparing your Desktop Runtime and local workspace…");
     showWindow();
     const url = await supervisor.start();
     await loadRasputin(url);
@@ -138,7 +152,7 @@ async function startEngine() {
 async function stopEngine() {
   try {
     await supervisor.stop({ includeAttached: true });
-    await showPage("Native engine stopped", "Rasputin is still available in the system tray. Start the engine there whenever you are ready.", "#6f7787");
+    await showPage("Runtime stopped", "Rasputin is still available in the system tray. Start it there whenever you are ready.", "#6f7787");
   } catch (error) {
     dialog.showErrorBox("Rasputin could not stop", error.message);
   }
@@ -146,7 +160,7 @@ async function stopEngine() {
 
 async function restartEngine() {
   try {
-    await showPage("Restarting Rasputin", "Stopping and starting the native engine…");
+    await showPage("Restarting Rasputin", "Stopping and starting the Desktop Runtime…");
     const url = await supervisor.restart();
     await loadRasputin(url);
   } catch (error) {
@@ -174,10 +188,14 @@ function createWindow() {
   });
 
   mainWindow.on("close", (event) => {
-    if (!quitting) {
-      event.preventDefault();
+    if (quitting) return;
+    event.preventDefault();
+    if (desktopSettings.closeBehavior === "tray") {
       mainWindow.hide();
+      return;
     }
+    quitting = true;
+    app.quit();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -217,6 +235,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "notifications");
   });
+  desktopSettings = loadDesktopSettings(app.getPath("userData"));
 
   supervisor = new BackendSupervisor({
     projectRoot: projectRoot(),
@@ -228,7 +247,7 @@ app.whenReady().then(async () => {
   supervisor.on("status", ({ status, detail }) => {
     rebuildTrayMenu();
     if (status === "crashed" && !quitting) {
-      showPage("Native engine stopped unexpectedly", `${detail}\n\nUse the tray menu to inspect the desktop log and restart.`, "#ffb454");
+      showPage("Desktop Runtime stopped unexpectedly", `${detail}\n\nUse the tray menu to inspect the desktop log and restart.`, "#ffb454");
     }
   });
   supervisor.on("credentials", async ({ username, password }) => {
@@ -249,6 +268,10 @@ app.whenReady().then(async () => {
   createTray();
   await startEngine();
 
+  const smokeCloseMs = Number(process.env.RASPUTIN_DESKTOP_SMOKE_CLOSE_MS) || 0;
+  if (smokeCloseMs > 0) {
+    setTimeout(() => mainWindow?.close(), smokeCloseMs);
+  }
   const smokeExitMs = Number(process.env.RASPUTIN_DESKTOP_SMOKE_EXIT_MS) || 0;
   if (smokeExitMs > 0) {
     setTimeout(() => {
