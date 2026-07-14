@@ -27,6 +27,7 @@ THEMES = {
 def defaults():
     return {
         "theme": "rasputin-light",
+        "motionMode": "full",
         "sidebarCollapsed": False,
         "selectedModel": "",
         "testingMode": False,
@@ -49,6 +50,8 @@ def _coerce(data):
         merged.update({k: data.get(k, v) for k, v in merged.items()})
     if merged["theme"] not in THEMES:
         merged["theme"] = "rasputin-light"
+    if merged["motionMode"] not in {"full", "reduced"}:
+        merged["motionMode"] = "full"
     if merged["activeView"] not in {"home", "workspaces", "activity", "agents", "sessions", "tasks", "approvals", "memory", "skills", "telegram", "schedules", "models", "warsat", "settings", "audit"}:
         merged["activeView"] = "home"
     if merged["activeSettingsSection"] not in {"general", "workspaces", "accounts", "safety", "knowledge", "output", "appearance", "admin"}:

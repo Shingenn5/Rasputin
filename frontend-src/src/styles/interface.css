@@ -1475,7 +1475,7 @@ button.workspace-add-folder:focus-visible {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .login-submit,
   .cc-quick-action-chip,
   .composer-send-round,
@@ -1793,7 +1793,7 @@ button.workspace-add-folder:focus-visible {
   .workspaces-view .w2-column-nav { min-height: 450px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .signal-dot,
   .settings-view::before,
   .workspaces-view::before { animation: none !important; }
@@ -1924,7 +1924,7 @@ button.workspace-add-folder:focus-visible {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .account-create-panel { animation: none; }
 }
 
@@ -2206,7 +2206,7 @@ button.workspace-add-folder:focus-visible {
   .dash-frame-main::before { right: -300px; opacity: 0.55; }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .app-view.active,
   .app-view.active::after,
   .dash-frame-main::before,

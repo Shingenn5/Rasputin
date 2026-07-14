@@ -63,6 +63,8 @@ export function SettingsView(props) {
     section,
     setSection,
     setTheme,
+    motionMode,
+    setMotionMode,
     models,
     modeModelOverrides,
     setModeModelOverride,
@@ -203,7 +205,15 @@ export function SettingsView(props) {
           </div>
 
           <div className="settings-panel-surface">
-            {section === "general" && <GeneralSettings setTheme={setTheme} testingMode={testingMode} updateTestingMode={updateTestingMode} />}
+            {section === "general" && (
+              <GeneralSettings
+                setTheme={setTheme}
+                motionMode={motionMode}
+                setMotionMode={setMotionMode}
+                testingMode={testingMode}
+                updateTestingMode={updateTestingMode}
+              />
+            )}
             {section === "runtime" && <RuntimeSettings />}
             {section === "security" && <SecuritySettings />}
             {section === "accounts" && <AccountsSettings session={session} />}

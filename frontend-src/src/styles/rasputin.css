@@ -313,7 +313,7 @@ svg {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .ras-toast { animation: none; }
 }
 
@@ -369,7 +369,7 @@ svg {
   to   { background-position: -200% 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .ras-skeleton {
     animation: none;
     background: color-mix(in srgb, var(--ras-text) 9%, transparent);
@@ -395,7 +395,7 @@ svg {
   cursor: progress;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .ras-spin { animation-duration: 1.6s; }
 }
 
@@ -9637,7 +9637,7 @@ button.helper-row:hover {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   *,
   *::before,
   *::after {
@@ -12036,7 +12036,7 @@ button.helper-row:hover {
 }
 
 /* Explicit reduced-motion safeguard for the rules above. */
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   .app-view.active,
   .ras-list-item {
     animation: none !important;
@@ -12061,7 +12061,7 @@ button.helper-row:hover {
    Phase 3: Modal / Drawer primitives  (Modal.jsx, Drawer.jsx, useFocusTrap)
    All classes namespaced .ras-modal* / .ras-drawer* to avoid Bootstrap's
    .modal / .modal-backdrop collisions. Animations rely on the global
-   prefers-reduced-motion block above (it neutralises transitions/animations).
+   reduced Interface Motion scope above (it neutralises transitions/animations).
    ========================================================================= */
 
 /* ---- shared overlay layer ---- */
@@ -12295,15 +12295,15 @@ textarea.cc-input.ras-autogrow {
   );
 }
 
-@media (prefers-reduced-motion: reduce) {
+@scope (html[data-motion="reduced"]) {
   textarea.cc-input.ras-autogrow { transition: none !important; }
 }
 
 
 /* ==========================================================================
    Phase 7 — First-run onboarding overlay (.ras-onboarding*)
-   Self-contained lightweight dialog; dims the rest of the UI. Reduced-motion
-   honored by the global prefers-reduced-motion rule above.
+   Self-contained lightweight dialog; dims the rest of the UI. Reduced motion
+   follows the explicit Interface Motion preference above.
    ========================================================================== */
 .ras-onboarding-layer {
   position: fixed;

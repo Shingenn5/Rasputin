@@ -5,7 +5,7 @@ import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 import { themeOptions } from "../../lib/constants.js";
 
-export function GeneralSettings({ setTheme, testingMode, updateTestingMode }) {
+export function GeneralSettings({ setTheme, motionMode = "full", setMotionMode, testingMode, updateTestingMode }) {
   const general = useSettingsStore(state => state.general);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.general);
@@ -104,6 +104,21 @@ export function GeneralSettings({ setTheme, testingMode, updateTestingMode }) {
                   <option value="fr">Français</option>
                   <option value="ja">日本語</option>
                 </Form.Select>
+              </Form.Group>
+
+              <Form.Group className="mt-4">
+                <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Interface Motion</Form.Label>
+                <Form.Select
+                  data-testid="interface-motion-select"
+                  size="lg"
+                  className="fs-6"
+                  value={motionMode}
+                  onChange={(event) => setMotionMode?.(event.target.value)}
+                >
+                  <option value="full">Full motion — cinematic effects</option>
+                  <option value="reduced">Reduced motion — minimal effects</option>
+                </Form.Select>
+                <Form.Text className="text-muted">Applies immediately and is saved as your Rasputin preference.</Form.Text>
               </Form.Group>
             </Card.Body>
           </Card>

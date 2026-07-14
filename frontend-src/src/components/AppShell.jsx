@@ -6,6 +6,24 @@ import { CommandPalette } from "./CommandPalette.jsx";
 export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust, commandPaletteProps }) {
   const nativeRuntime = sidebarProps?.runtimeMode === "native";
   const mobileSidebarTriggerRef = React.useRef(null);
+  const mainContentRef = React.useRef(null);
+  const motionKey = `${sidebarProps?.view || "home"}:${sidebarProps?.settingsSection || ""}`;
+
+  React.useEffect(() => {
+    const activeView = mainContentRef.current?.querySelector(".app-view.active");
+    if (!activeView) return undefined;
+    activeView.classList.remove("ras-motion-enter");
+    activeView.dataset.motionState = "preparing";
+    const frame = window.requestAnimationFrame(() => {
+      activeView.classList.add("ras-motion-enter");
+      activeView.dataset.motionState = "entered";
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      activeView.classList.remove("ras-motion-enter");
+      delete activeView.dataset.motionState;
+    };
+  }, [motionKey]);
 
   return (
     <>
@@ -27,7 +45,7 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
         data-current-view={sidebarProps?.view || "home"}
       >
         <DashSidebar {...sidebarProps} mobileTriggerRef={mobileSidebarTriggerRef} />
-        <main className="dash-frame-main min-w-0 flex-1 overflow-y-auto" id="mainContent" tabIndex="-1">
+        <main ref={mainContentRef} className="dash-frame-main min-w-0 flex-1 overflow-y-auto" id="mainContent" tabIndex="-1">
           {/* Sticky top stack: trusted-workspace banner (all breakpoints) + mobile topbar (< sm) share one sticky offset so they don't overlap on scroll */}
           <div className="sticky top-0 z-10 flex flex-col">
             {trustedWorkspace?.active && (

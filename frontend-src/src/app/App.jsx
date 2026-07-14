@@ -41,6 +41,7 @@ import { useSettingsStore } from "../features/settings/settingsStore.js";
 import { loadSettings } from "../features/settings/settingsActions.js";
 import { ENGINE_PROTOCOLS } from "../lib/engines.js";
 import { canAccessRoute } from "../lib/access.js";
+import { applyMotionMode, normalizeMotionMode, readStoredMotionMode } from "../lib/motion.js";
 
 const routedViews = new Set([
   "home",
@@ -88,6 +89,7 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageFlag("rasputin-sidebar-collapsed", false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => normalizeTheme(localStorage.getItem("rasputin-theme") || "rasputin-light"));
+  const [motionMode, setMotionMode] = useState(readStoredMotionMode);
   const [models, setModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
   const [modelCatalog, setModelCatalog] = useState({ items: [], categories: [], runtimes: [], source: {} });
@@ -285,6 +287,10 @@ export function App() {
     updateThemeChrome(theme);
   }, [theme, sidebarCollapsed, mobileSidebarOpen, ready]);
 
+  useEffect(() => {
+    applyMotionMode(motionMode);
+  }, [motionMode]);
+
   // Bridge: route every legacy setGlobalStatus(...) call through the toast
   // system so all existing call sites surface as stacked, non-clobbering
   // toasts without per-site edits. Cleared immediately so the legacy status
@@ -384,10 +390,11 @@ export function App() {
         activeView: view,
         activeSettingsSection: settingsSection,
         activeChatFolder,
+        motionMode,
       }).catch(() => {});
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, session, ready]);
+  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, motionMode, session, ready]);
 
   async function boot() {
     const markReady = () => {
@@ -448,8 +455,10 @@ export function App() {
     setTrialsRuns(data.trials || { runs: [] });
     setSetup(data.setup || null);
     const localTheme = localStorage.getItem("rasputin-theme");
+    const localMotionMode = localStorage.getItem("rasputin-motion-mode");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
     setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
+    setMotionMode(normalizeMotionMode(localMotionMode || prefs.motionMode || "full"));
     setSidebarCollapsed(localSidebarCollapsed === null ? !!prefs.sidebarCollapsed : localSidebarCollapsed);
     setTestingMode(!!prefs.testingMode);
     setSelectedModel(pickBootModel(data.models || [], prefs));
@@ -2097,6 +2106,8 @@ export function App() {
         themeOptions={themeOptions}
         theme={theme}
         setTheme={setTheme}
+        motionMode={motionMode}
+        setMotionMode={setMotionMode}
         logout={logout}
         loadModels={loadModels}
         tools={tools}

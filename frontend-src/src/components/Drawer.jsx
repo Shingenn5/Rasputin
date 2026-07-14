@@ -13,7 +13,7 @@
  *     Escape/backdrop close and ARIA wiring on the panel element. This is what
  *     TaskDetailsDrawer uses so it keeps its bespoke header/tabs and test ids.
  *
- * Honours prefers-reduced-motion via the global reduced-motion block.
+ * Honors Rasputin's explicit Interface Motion preference.
  *
  * @param {object}   props
  * @param {boolean}  props.open               Whether the drawer is visible.

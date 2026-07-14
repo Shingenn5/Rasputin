@@ -1123,6 +1123,7 @@ class BackendSmokeTests(unittest.TestCase):
     def testPreferencesRoundTrip(self):
         saved = self.assertOk(self.client.post("/api/preferences", json={
             "theme": "bootswatch-slate",
+            "motionMode": "reduced",
             "sidebarCollapsed": True,
             "selectedModel": "dry-run",
             "skill": "general",
@@ -1133,17 +1134,20 @@ class BackendSmokeTests(unittest.TestCase):
             "activeChatFolder": "unfiled",
         }))
         self.assertEqual(saved["theme"], "bootswatch-slate")
+        self.assertEqual(saved["motionMode"], "reduced")
         self.assertTrue(saved["sidebarCollapsed"])
         self.assertEqual(saved["taskMode"], "code")
         loaded = self.assertOk(self.client.get("/api/preferences"))
         self.assertEqual(loaded["activeView"], "models")
         self.assertEqual(loaded["activeSettingsSection"], "safety")
         self.assertEqual(loaded["activeChatFolder"], "unfiled")
+        self.assertEqual(loaded["motionMode"], "reduced")
         stored = runtime_store.get_kv("userPreferences")
         self.assertEqual(stored["theme"], "bootswatch-slate")
         self.assertEqual(stored["activeChatFolder"], "unfiled")
         self.assertOk(self.client.post("/api/preferences", json={
             "theme": "rasputin-light",
+            "motionMode": "full",
             "sidebarCollapsed": False,
             "selectedModel": "dry-run",
             "skill": "general",

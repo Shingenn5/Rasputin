@@ -11,7 +11,7 @@ export function CountUp({ value, duration = 900, decimals = 0, prefix = "", suff
 
   useEffect(() => {
     if (!isNumeric) { setDisplay(value); return undefined; }
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const reduce = document.documentElement.dataset.motion === "reduced";
     if (reduce) { setDisplay(numeric); return undefined; }
     const start = performance.now();
     const from = 0;

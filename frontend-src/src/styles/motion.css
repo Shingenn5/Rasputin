@@ -1,0 +1,126 @@
+/* Shared route motion ----------------------------------------------------
+   AppShell retriggers .ras-motion-enter whenever the top-level route or a
+   Settings subsection changes. The Memory runtime page is the reference:
+   calm rise/fade, staged surfaces, and tactile cards without layout shifts.
+   Dashboard already owns a richer Framer Motion sequence, so its descendants
+   are excluded from the CSS cascade while retaining the route reveal. */
+
+:root {
+  --ras-motion-duration: 440ms;
+  --ras-motion-fast: 260ms;
+  --ras-motion-ease: cubic-bezier(0.2, 0.72, 0.2, 1);
+  --ras-motion-distance: 12px;
+}
+
+.app-view.active.ras-motion-enter {
+  animation: ras-motion-view-reveal var(--ras-motion-duration) var(--ras-motion-ease) both;
+}
+
+.app-view.active.ras-motion-enter:not(#homeView) > * {
+  animation: ras-motion-section-reveal var(--ras-motion-duration) var(--ras-motion-ease) both;
+}
+
+.app-view.active.ras-motion-enter:not(#homeView) > *:nth-child(1) { animation-delay: 20ms; }
+.app-view.active.ras-motion-enter:not(#homeView) > *:nth-child(2) { animation-delay: 80ms; }
+.app-view.active.ras-motion-enter:not(#homeView) > *:nth-child(3) { animation-delay: 140ms; }
+.app-view.active.ras-motion-enter:not(#homeView) > *:nth-child(4) { animation-delay: 190ms; }
+.app-view.active.ras-motion-enter:not(#homeView) > *:nth-child(n + 5) { animation-delay: 230ms; }
+
+.app-view.active.ras-motion-enter:not(#homeView)
+  :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+  > * {
+  animation: ras-motion-surface-reveal var(--ras-motion-duration) var(--ras-motion-ease) both;
+}
+
+.app-view.active.ras-motion-enter:not(#homeView)
+  :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+  > *:nth-child(1) { animation-delay: 100ms; }
+.app-view.active.ras-motion-enter:not(#homeView)
+  :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+  > *:nth-child(2) { animation-delay: 145ms; }
+.app-view.active.ras-motion-enter:not(#homeView)
+  :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+  > *:nth-child(3) { animation-delay: 190ms; }
+.app-view.active.ras-motion-enter:not(#homeView)
+  :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+  > *:nth-child(4) { animation-delay: 235ms; }
+.app-view.active.ras-motion-enter:not(#homeView)
+  :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+  > *:nth-child(n + 5) { animation-delay: 280ms; }
+
+.app-view.active :where(
+  .glow-card,
+  .w2-card,
+  .w2-column,
+  .settings-card,
+  .message-card,
+  .model-card,
+  .trial-card,
+  .workspace-card,
+  .activity-card,
+  .archive-card
+) {
+  transform-origin: 50% 55%;
+  transition:
+    transform var(--ras-motion-fast) var(--ras-motion-ease),
+    box-shadow var(--ras-motion-fast) var(--ras-motion-ease),
+    border-color var(--ras-motion-fast) var(--ras-motion-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-view.active :where(
+    .glow-card,
+    .w2-card,
+    .settings-card,
+    .message-card,
+    .model-card,
+    .trial-card,
+    .workspace-card,
+    .activity-card,
+    .archive-card
+  ):hover {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes ras-motion-view-reveal {
+  from { opacity: 0; transform: translate3d(0, 7px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes ras-motion-section-reveal {
+  from { opacity: 0; transform: translate3d(0, var(--ras-motion-distance), 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes ras-motion-surface-reveal {
+  from { opacity: 0; transform: translate3d(0, 9px, 0) scale(0.992); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@scope (html[data-motion="reduced"]) {
+  .app-view.active.ras-motion-enter,
+  .app-view.active.ras-motion-enter:not(#homeView) > *,
+  .app-view.active.ras-motion-enter:not(#homeView)
+    :where(.task-dashboard, .w2-grid, .w2-content, .runtime-list, .models-grid, .settings-grid, .row, [data-motion-list])
+    > * {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .app-view.active :where(
+    .glow-card,
+    .w2-card,
+    .w2-column,
+    .settings-card,
+    .message-card,
+    .model-card,
+    .trial-card,
+    .workspace-card,
+    .activity-card,
+    .archive-card
+  ) {
+    transition: none !important;
+  }
+}

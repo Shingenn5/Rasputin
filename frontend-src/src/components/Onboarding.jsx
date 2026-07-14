@@ -8,7 +8,7 @@
  * Self-contained, accessible lightweight overlay — no external Modal dependency.
  * - role="dialog" + aria-modal, Escape skips, primary action is focused on open.
  * - Backdrop dims the rest of the UI; namespaced `.ras-onboarding*` classes.
- * - Reduced-motion is honored by the global `prefers-reduced-motion` rule.
+ * - Reduced motion follows the explicit Interface Motion preference.
  *
  * Fail-soft: any render/handler issue degrades to simply not blocking the app.
  */

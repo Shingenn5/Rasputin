@@ -8,8 +8,8 @@
  *  - Escape closes; backdrop click closes (panel clicks do not).
  *  - Rendered into document.body via a React portal so it escapes any
  *    overflow/stacking context of the trigger.
- *  - Enter/exit animation via CSS classes; honours prefers-reduced-motion
- *    through the global reduced-motion block in rasputin.css.
+ *  - Enter/exit animation via CSS classes; follows Rasputin's explicit
+ *    Interface Motion preference through the global motion scope.
  *
  * Vanilla CSS only — see the `.ras-modal*` block in rasputin.css.
  *
