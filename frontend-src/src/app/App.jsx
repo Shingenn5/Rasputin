@@ -791,6 +791,16 @@ export function App() {
 
   async function startNewChat() {
     try {
+      const listedSession = (sessions?.sessions || []).find((item) => item.id === activeChatSessionId);
+      const selectedIsEmpty = selectedSession?.session?.id === activeChatSessionId
+        && !(selectedSession?.messages || []).some((message) => String(message.content || "").trim())
+        && !(selectedSession?.tasks || []).length;
+      if (activeChatSessionId && (listedSession?.isEmpty || selectedIsEmpty)) {
+        setObjective("");
+        go("chat");
+        setGlobalStatus("The current chat is already empty and ready.");
+        return selectedSession || { session: listedSession, messages: [], tasks: [] };
+      }
       const detail = await postJson("/api/sessions", {
         title: "New chat",
         workspace: workspace.activePath || ".",
@@ -1411,6 +1421,49 @@ export function App() {
     return { sessions: nextSessions, chatFolders: nextFolders };
   }
 
+  function clearDeletedSessionSelection(sessionIds) {
+    if (sessionIds.includes(selectedSession?.session?.id)) setSelectedSession(null);
+    if (!sessionIds.includes(activeChatSessionId)) return;
+    setActiveChatSessionId(null);
+    setHomeTaskIds(new Set());
+    setObjective("");
+  }
+
+  async function deleteSession(sessionItem) {
+    const sessionId = sessionItem?.id;
+    if (!sessionId) return null;
+    const isEmpty = sessionItem.isEmpty
+      ?? (Number(sessionItem.messageCount || 0) === 0 && Number(sessionItem.taskCount || 0) === 0);
+    if (!isEmpty) {
+      const confirmed = window.confirm(`Delete “${sessionItem.title || "Untitled chat"}” and all of its messages and tasks? This cannot be undone.`);
+      if (!confirmed) return null;
+    }
+    try {
+      const result = await postJson(`/api/sessions/${sessionId}/delete`, {});
+      clearDeletedSessionSelection([sessionId]);
+      await loadChatFolders();
+      setGlobalStatus(`Deleted ${result.title || sessionItem.title || "chat"}.`);
+      return result;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
+  async function cleanupEmptySessions() {
+    try {
+      const result = await postJson("/api/sessions/cleanup-empty", {});
+      clearDeletedSessionSelection(result.sessionIds || []);
+      await loadChatFolders();
+      const count = Number(result.deletedCount || 0);
+      setGlobalStatus(count ? `Removed ${count} empty chat${count === 1 ? "" : "s"}.` : "No empty chats to remove.");
+      return result;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
   async function createChatFolder(event) {
     event.preventDefault();
     // currentTarget is nulled once the handler's synchronous phase ends, so
@@ -1808,9 +1861,13 @@ export function App() {
         modelName: displayModelName(selectedModelObject, models),
         locked: security.privacyLock,
         runtimeMode: security.native ? "native" : "docker",
+        motionMode,
         mobileOpen: mobileSidebarOpen,
         newTask: startNewChat,
         recentSessions: sessions?.sessions || [],
+        emptySessionCount: sessions?.emptyTotal || 0,
+        deleteSession,
+        cleanupEmptySessions,
         chatFolders,
         activeChatFolder,
         setActiveChatFolder,
@@ -1933,6 +1990,9 @@ export function App() {
         resumeSession={resumeSession}
         createChatFolder={createChatFolder}
         assignSessionFolder={assignSessionFolder}
+        deleteSession={deleteSession}
+        cleanupEmptySessions={cleanupEmptySessions}
+        canDeleteSessions={session?.role !== "viewer"}
         createSkillFromSession={createSkillFromSession}
       />
       <ApprovalsView

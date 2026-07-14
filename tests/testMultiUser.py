@@ -62,6 +62,9 @@ class MultiUserTests(unittest.TestCase):
         alice_session = hub.create_session(title="Alice", owner_id="alice")
         hub.create_session(title="Bob", owner_id="bob")
         self.assertEqual([item["id"] for item in hub.sessions(owner_id="alice")["sessions"]], [alice_session["session"]["id"]])
+        with self.assertRaises(ValueError):
+            hub.delete_session(alice_session["session"]["id"], owner_id="bob")
+        self.assertTrue(hub.delete_session(alice_session["session"]["id"], owner_id="alice")["deleted"])
 
     def test_workspace_acl_roles(self):
         workspace.claim_legacy_membership(self.admin_username)

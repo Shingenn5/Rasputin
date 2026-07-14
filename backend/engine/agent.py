@@ -642,9 +642,104 @@ class AgentHub:
 
     def sessions(self, limit=100, owner_id="admin"):
         with store._lock, store.connect() as conn:
-            rows = conn.execute("SELECT * FROM sessions WHERE owner_id=? ORDER BY updated_at DESC LIMIT ?", (owner_id, max(1, min(int(limit), 500)))).fetchall()
+            rows = conn.execute(
+                """
+                SELECT s.*,
+                       (SELECT COUNT(*) FROM messages m
+                        WHERE m.session_id=s.id AND TRIM(COALESCE(m.content, ''))!='') AS message_count,
+                       (SELECT COUNT(*) FROM tasks t WHERE t.session_id=s.id) AS task_count
+                FROM sessions s
+                WHERE s.owner_id=?
+                ORDER BY s.updated_at DESC
+                LIMIT ?
+                """,
+                (owner_id, max(1, min(int(limit), 500))),
+            ).fetchall()
             total = conn.execute("SELECT COUNT(*) AS count FROM sessions WHERE owner_id=?", (owner_id,)).fetchone()
-        return {"sessions": [dict(row) for row in rows], "total": int(total["count"] if total else len(rows))}
+            empty_total = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM sessions s
+                WHERE s.owner_id=?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM messages m
+                    WHERE m.session_id=s.id AND TRIM(COALESCE(m.content, ''))!=''
+                  )
+                  AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.session_id=s.id)
+                """,
+                (owner_id,),
+            ).fetchone()
+        session_items = []
+        for row in rows:
+            item = dict(row)
+            item["is_empty"] = int(item.get("message_count") or 0) == 0 and int(item.get("task_count") or 0) == 0
+            session_items.append(item)
+        return {
+            "sessions": session_items,
+            "total": int(total["count"] if total else len(rows)),
+            "empty_total": int(empty_total["count"] if empty_total else 0),
+        }
+
+    def delete_empty_session(self, session_id, owner_id="admin"):
+        with store._lock, store.connect() as conn:
+            session = conn.execute(
+                "SELECT id FROM sessions WHERE id=? AND owner_id=?",
+                (session_id, owner_id),
+            ).fetchone()
+            if not session:
+                raise ValueError("session missing")
+            has_content = conn.execute(
+                """
+                SELECT
+                  EXISTS(
+                    SELECT 1 FROM messages
+                    WHERE session_id=? AND TRIM(COALESCE(content, ''))!=''
+                  ) AS has_messages,
+                  EXISTS(SELECT 1 FROM tasks WHERE session_id=?) AS has_tasks
+                """,
+                (session_id, session_id),
+            ).fetchone()
+            if has_content and (has_content["has_messages"] or has_content["has_tasks"]):
+                raise ValueError("Only empty chats can be removed.")
+            conn.execute("DELETE FROM sessions WHERE id=? AND owner_id=?", (session_id, owner_id))
+            conn.commit()
+        return {"deleted": True, "session_id": session_id}
+
+    def delete_session(self, session_id, owner_id="admin"):
+        with store._lock, store.connect() as conn:
+            session = conn.execute(
+                "SELECT id,title FROM sessions WHERE id=? AND owner_id=?",
+                (session_id, owner_id),
+            ).fetchone()
+            if not session:
+                raise ValueError("session missing")
+            conn.execute("DELETE FROM sessions WHERE id=? AND owner_id=?", (session_id, owner_id))
+            conn.commit()
+        return {"deleted": True, "session_id": session_id, "title": session["title"]}
+
+    def cleanup_empty_sessions(self, owner_id="admin"):
+        with store._lock, store.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT s.id
+                FROM sessions s
+                WHERE s.owner_id=?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM messages m
+                    WHERE m.session_id=s.id AND TRIM(COALESCE(m.content, ''))!=''
+                  )
+                  AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.session_id=s.id)
+                """,
+                (owner_id,),
+            ).fetchall()
+            session_ids = [row["id"] for row in rows]
+            if session_ids:
+                conn.executemany(
+                    "DELETE FROM sessions WHERE id=? AND owner_id=?",
+                    [(session_id, owner_id) for session_id in session_ids],
+                )
+                conn.commit()
+        return {"deleted_count": len(session_ids), "session_ids": session_ids}
 
     def session(self, session_id, owner_id="admin"):
         with store._lock, store.connect() as conn:

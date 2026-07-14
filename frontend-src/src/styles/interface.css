@@ -2026,10 +2026,14 @@ button.workspace-add-folder:focus-visible {
   width: clamp(120px, 16vw, 220px);
   height: clamp(120px, 16vw, 220px);
   border: 1px solid color-mix(in srgb, var(--view-accent) 14%, transparent);
-  border-radius: 44% 56% 48% 52%;
+  border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--view-accent) 8%, transparent) 0 4px, transparent 5px),
-    conic-gradient(from 25deg, transparent, color-mix(in srgb, var(--view-accent) 5%, transparent), transparent 30%, color-mix(in srgb, var(--view-accent-2) 4%, transparent), transparent 72%);
+    radial-gradient(circle at 70% 29%, var(--view-accent-2) 0 2px, transparent 3px),
+    radial-gradient(circle at 34% 68%, color-mix(in srgb, var(--view-accent) 78%, transparent) 0 3px, transparent 4px),
+    linear-gradient(90deg, transparent 49.5%, color-mix(in srgb, var(--view-accent) 12%, transparent) 50%, transparent 50.5%),
+    linear-gradient(transparent 49.5%, color-mix(in srgb, var(--view-accent) 12%, transparent) 50%, transparent 50.5%),
+    repeating-radial-gradient(circle, transparent 0 21%, color-mix(in srgb, var(--view-accent) 10%, transparent) 21.5% 22%, transparent 22.5% 42%),
+    conic-gradient(from 0deg, transparent 0 73%, color-mix(in srgb, var(--view-accent) 2%, transparent) 78%, color-mix(in srgb, var(--view-accent) 30%, transparent) 96%, transparent 100%);
   box-shadow:
     0 0 0 22px color-mix(in srgb, var(--view-accent) 1.8%, transparent),
     inset 0 0 48px color-mix(in srgb, var(--view-accent) 3%, transparent);
@@ -2037,6 +2041,8 @@ button.workspace-add-folder:focus-visible {
   opacity: 0.72;
   pointer-events: none;
   transform: rotate(-12deg);
+  transform-origin: center;
+  animation: ras-radar-scan 8s linear infinite;
 }
 
 .app-view.active::after {
@@ -2197,6 +2203,10 @@ button.workspace-add-folder:focus-visible {
 }
 
 @keyframes ras-orbit-spin { to { transform: rotate(360deg); } }
+@keyframes ras-radar-scan {
+  from { transform: rotate(-12deg); }
+  to { transform: rotate(348deg); }
+}
 @keyframes ras-pulse { 0%, 100% { opacity: 0.45; transform: scale(0.82); } 50% { opacity: 1; transform: scale(1); } }
 
 @media (max-width: 760px) {
@@ -2208,6 +2218,7 @@ button.workspace-add-folder:focus-visible {
 
 @scope (html[data-motion="reduced"]) {
   .app-view.active,
+  .app-view.active::before,
   .app-view.active::after,
   .dash-frame-main::before,
   .dash-frame-main::after,

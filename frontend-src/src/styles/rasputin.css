@@ -6180,6 +6180,21 @@ button.runtime-chip {
   color: var(--ras-muted);
 }
 
+.session-list-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .4rem;
+  align-items: center;
+}
+
+.session-list-controls .btn {
+  display: grid;
+  width: 32px;
+  height: 31px;
+  padding: 0;
+  place-items: center;
+}
+
 .session-folder-control {
   max-width: 360px;
 }

@@ -1241,6 +1241,47 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(detail["session"]["title"], "Rename this new chat from first message")
         self.assertTrue(any(message["role"] == "user" for message in detail["messages"]))
 
+    def testEmptySessionsCanBeRemovedWithoutTouchingRealChats(self):
+        empty = self.assertOk(self.client.post("/api/sessions", json={"title": "Disposable empty chat"}))
+        protected = self.assertOk(self.client.post("/api/sessions", json={"title": "Keep this chat"}))
+        empty_id = empty["session"]["id"]
+        protected_id = protected["session"]["id"]
+
+        sessions = self.assertOk(self.client.get("/api/sessions"))
+        empty_item = next(item for item in sessions["sessions"] if item["id"] == empty_id)
+        self.assertTrue(empty_item["isEmpty"])
+        self.assertEqual(empty_item["messageCount"], 0)
+        self.assertEqual(empty_item["taskCount"], 0)
+
+        deleted = self.assertOk(self.client.post(f"/api/sessions/{empty_id}/delete-empty"))
+        self.assertTrue(deleted["deleted"])
+        self.assertEqual(self.client.get(f"/api/sessions/{empty_id}").status_code, 400)
+
+        task = self.assertOk(self.client.post("/api/tasks", json={
+            "objective": "Give this conversation meaningful content",
+            "model": "dry-run",
+            "skill": "general",
+            "mode": "chat",
+            "workspacePath": ".",
+            "sessionId": protected_id,
+        }))
+        self.assertEqual(task["sessionId"], protected_id)
+        blocked = self.client.post(f"/api/sessions/{protected_id}/delete-empty")
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("Only empty chats", blocked.json()["error"]["message"])
+
+        another_empty = self.assertOk(self.client.post("/api/sessions", json={"title": "Bulk cleanup chat"}))
+        cleaned = self.assertOk(self.client.post("/api/sessions/cleanup-empty"))
+        self.assertGreaterEqual(cleaned["deletedCount"], 1)
+        self.assertIn(another_empty["session"]["id"], cleaned["sessionIds"])
+        kept = self.assertOk(self.client.get(f"/api/sessions/{protected_id}"))
+        self.assertEqual(kept["session"]["id"], protected_id)
+
+        chosen = self.assertOk(self.client.post(f"/api/sessions/{protected_id}/delete"))
+        self.assertTrue(chosen["deleted"])
+        self.assertEqual(chosen["title"], "Keep this chat")
+        self.assertEqual(self.client.get(f"/api/sessions/{protected_id}").status_code, 400)
+
     def testRuntimeSessionsMemorySkillsAndSchedules(self):
         task = self.assertOk(self.client.post("/api/tasks", json={
             "objective": "Remember that I prefer concise local summaries.",

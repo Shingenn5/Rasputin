@@ -50,10 +50,31 @@ async def sessions_create(req: SessionCreateIn, _user=Depends(require_member)):
     audit.log("session_created", {"session_id": detail["session"]["id"], "title": detail["session"]["title"]})
     return ok(detail)
 
+@sessions_router.post("/sessions/cleanup-empty")
+
+async def sessions_cleanup_empty(_user=Depends(require_member)):
+    result = hub.cleanup_empty_sessions(_user["username"])
+    audit.log("empty_sessions_cleaned", {"count": result["deleted_count"]})
+    return ok(result)
+
 @sessions_router.get("/sessions/{session_id}")
 
 async def session_get(session_id: str, _user=Depends(current_user)):
     return ok(hub.session(session_id, _user["username"]))
+
+@sessions_router.post("/sessions/{session_id}/delete-empty")
+
+async def session_delete_empty(session_id: str, _user=Depends(require_member)):
+    result = hub.delete_empty_session(session_id, _user["username"])
+    audit.log("empty_session_deleted", {"session_id": session_id})
+    return ok(result)
+
+@sessions_router.post("/sessions/{session_id}/delete")
+
+async def session_delete(session_id: str, _user=Depends(require_member)):
+    result = hub.delete_session(session_id, _user["username"])
+    audit.log("session_deleted", {"session_id": session_id, "title": result["title"]})
+    return ok(result)
 
 @sessions_router.get("/chat-folders")
 

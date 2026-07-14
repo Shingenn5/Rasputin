@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Activity,
   Archive,
@@ -16,6 +16,7 @@ import {
   Rocket,
   Settings,
   Sparkles,
+  Trash2,
   FolderGit2,
 } from "lucide-react";
 import { cn } from "@/lib/utils.js";
@@ -60,9 +61,13 @@ export function DashSidebar({
   newTask,
   locked,
   runtimeMode = "docker",
+  motionMode = "full",
   mobileOpen = false,
   mobileTriggerRef,
   recentSessions = [],
+  emptySessionCount = 0,
+  deleteSession,
+  cleanupEmptySessions,
   resumeSession,
   activeSessionId,
   session,
@@ -76,7 +81,7 @@ export function DashSidebar({
   })).filter((group) => group.items.length > 0);
   const asideRef = useRef(null);
   const wasMobileOpenRef = useRef(mobileOpen);
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = motionMode === "reduced";
   // Collapsed mode is a deliberate, persistent rail. It never relies on hover
   // for access; the brand control is always keyboard-reachable and reopens it.
   const expanded = !collapsed || mobileOpen;
@@ -249,37 +254,63 @@ export function DashSidebar({
         {/* Recent chats continue naturally in the unified sidebar flow. */}
         {expanded && sessions.length > 0 && (
           <div className="-mr-1 mt-3 flex shrink-0 flex-col pr-1">
-            <div className="flex shrink-0 items-center justify-between px-3 pb-1">
+            <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1">
               <span className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
                 Recent Chats
               </span>
-              {taskAccess && <button
-                type="button"
-                onClick={() => go("sessions")}
-                className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
-              >
-                All
-              </button>}
+              {taskAccess && <span className="flex items-center gap-2">
+                {emptySessionCount > 0 && <button
+                  type="button"
+                  data-testid="sidebar-clear-empty-chats"
+                  onClick={() => cleanupEmptySessions?.()}
+                  title={`Remove ${emptySessionCount} empty chat${emptySessionCount === 1 ? "" : "s"}`}
+                  aria-label={`Remove ${emptySessionCount} empty chat${emptySessionCount === 1 ? "" : "s"}`}
+                  className="flex items-center gap-1 text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
+                >
+                  <Trash2 size={11} aria-hidden="true" /> {emptySessionCount}
+                </button>}
+                <button
+                  type="button"
+                  onClick={() => go("sessions")}
+                  className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
+                >
+                  All
+                </button>
+              </span>}
             </div>
             <div className="flex flex-col gap-0.5">
               {sessions.map((s) => {
                 const active = s.id === activeSessionId;
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    type="button"
-                    title={s.title || "Untitled chat"}
-                    onClick={() => resumeSession?.(s.id)}
                     className={cn(
-                      "flex shrink-0 items-center gap-2.5 truncate rounded-lg px-3 py-1.5 text-left text-[0.8rem] transition-colors",
+                      "group/session flex shrink-0 items-center rounded-lg transition-colors",
                       active
                         ? "bg-sidebar-accent text-sidebar-foreground"
                         : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     )}
                   >
-                    <MessageSquare size={14} className="shrink-0 opacity-70" />
-                    <span className="truncate">{s.title || "Untitled chat"}</span>
-                  </button>
+                    <button
+                      type="button"
+                      title={s.title || "Untitled chat"}
+                      onClick={() => resumeSession?.(s.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 truncate px-3 py-1.5 text-left text-[0.8rem]"
+                    >
+                      <MessageSquare size={14} className="shrink-0 opacity-70" />
+                      <span className="truncate">{s.title || "Untitled chat"}</span>
+                    </button>
+                    {taskAccess && <button
+                      type="button"
+                      data-testid={`sidebar-delete-chat-${s.id}`}
+                      aria-label={`Delete ${s.title || "Untitled chat"}`}
+                      title={s.isEmpty ? "Delete empty chat" : "Delete chat"}
+                      onClick={() => deleteSession?.(s)}
+                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/35 opacity-0 transition hover:bg-red-500/10 hover:text-red-300 focus:opacity-100 group-hover/session:opacity-100"
+                    >
+                      <Trash2 size={13} aria-hidden="true" />
+                    </button>}
+                  </div>
                 );
               })}
             </div>

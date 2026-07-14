@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-bootstrap";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
+import { Trash2 } from "lucide-react";
 import { displayModelName, displayWorkspaceName, labelize } from "../../lib/display.js";
 import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 
@@ -44,6 +45,9 @@ export function SessionsView({
   resumeSession,
   createChatFolder,
   assignSessionFolder,
+  deleteSession,
+  cleanupEmptySessions,
+  canDeleteSessions = false,
   createSkillFromSession,
 }) {
   const folders = chatFolders?.folders || [];
@@ -51,6 +55,7 @@ export function SessionsView({
   // The list is capped server-side (most recent 100); `total` is the real
   // table count, so the header/"All" chip agree with the folder counts.
   const totalSessions = sessions?.total ?? sessionItems.length;
+  const emptySessions = sessions?.emptyTotal ?? sessionItems.filter((session) => session.isEmpty).length;
   const [sessionSearch, setSessionSearch] = useState("");
   const selectedId = selectedSession?.session?.id;
   const needle = sessionSearch.trim().toLowerCase();
@@ -75,6 +80,18 @@ export function SessionsView({
                       {totalSessions > sessionItems.length ? ` Showing the ${sessionItems.length} most recent.` : ""}
                     </p>
                   </div>
+                  {canDeleteSessions && emptySessions > 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline-danger"
+                      data-testid="sessions-clear-empty"
+                      onClick={() => cleanupEmptySessions?.()}
+                    >
+                      <Trash2 size={14} className="me-1" aria-hidden="true" />
+                      Remove empty ({emptySessions})
+                    </Button>
+                  )}
                 </div>
                 <Form.Control
                   type="search"
@@ -105,15 +122,30 @@ export function SessionsView({
                         <strong>{session.title}</strong>
                         <small>{session.status} / {session.mode} / {displayWorkspaceName(session.workspace)}</small>
                       </button>
-                      <Form.Select
-                        size="sm"
-                        aria-label={`Move ${session.title} to folder`}
-                        value={session.folder || ""}
-                        onChange={(event) => assignSessionFolder?.(session.id, event.target.value || null)}
-                      >
-                        <option value="">Unfiled</option>
-                        {folders.map((folder) => <option key={folder.id} value={folder.name}>{folder.name}</option>)}
-                      </Form.Select>
+                      <div className="session-list-controls">
+                        <Form.Select
+                          size="sm"
+                          aria-label={`Move ${session.title} to folder`}
+                          value={session.folder || ""}
+                          onChange={(event) => assignSessionFolder?.(session.id, event.target.value || null)}
+                        >
+                          <option value="">Unfiled</option>
+                          {folders.map((folder) => <option key={folder.id} value={folder.name}>{folder.name}</option>)}
+                        </Form.Select>
+                        {canDeleteSessions && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline-danger"
+                            data-testid={`sessions-delete-${session.id}`}
+                            aria-label={`Delete ${session.title || "Untitled chat"}`}
+                            title={session.isEmpty ? "Delete empty chat" : "Delete chat"}
+                            onClick={() => deleteSession?.(session)}
+                          >
+                            <Trash2 size={14} aria-hidden="true" />
+                          </Button>
+                        )}
+                      </div>
                     </ListGroup.Item>
                   ))}
                   {!filteredSessions.length && (
