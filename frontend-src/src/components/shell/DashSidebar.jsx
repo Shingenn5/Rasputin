@@ -14,6 +14,7 @@ import {
   PanelLeft,
   Plus,
   Rocket,
+  Search,
   Settings,
   Sparkles,
   Trash2,
@@ -248,6 +249,20 @@ export function DashSidebar({
               <Settings size={18} className="shrink-0" />
               {expanded && <span>Settings</span>}
             </button>
+            <button
+              type="button"
+              data-testid="sidebar-command-palette"
+              aria-label="Search and commands"
+              onClick={() => window.dispatchEvent(new Event("rasputin:open-command-palette"))}
+              title={!expanded ? "Search and commands" : undefined}
+              className={cn(
+                "ras-nav-item mt-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                !expanded && "justify-center px-0",
+              )}
+            >
+              <Search size={18} className="shrink-0" />
+              {expanded && <><span className="flex-1 text-left">Search &amp; commands</span><kbd className="text-[0.58rem] text-sidebar-foreground/35">Ctrl K</kbd></>}
+            </button>
           </div>
         </nav>
 
@@ -306,7 +321,7 @@ export function DashSidebar({
                       aria-label={`Delete ${s.title || "Untitled chat"}`}
                       title={s.isEmpty ? "Delete empty chat" : "Delete chat"}
                       onClick={() => deleteSession?.(s)}
-                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/35 opacity-0 transition hover:bg-red-500/10 hover:text-red-300 focus:opacity-100 group-hover/session:opacity-100"
+                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/50 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring"
                     >
                       <Trash2 size={13} aria-hidden="true" />
                     </button>}

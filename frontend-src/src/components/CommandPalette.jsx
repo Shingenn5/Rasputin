@@ -26,8 +26,15 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
       }
       if (event.key === "Escape") setOpen(false);
     }
+    function onOpenPalette() {
+      setOpen(true);
+    }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("rasputin:open-command-palette", onOpenPalette);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("rasputin:open-command-palette", onOpenPalette);
+    };
   }, []);
 
   useEffect(() => {
@@ -81,11 +88,7 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
     else if (item.result.sessionId) onOpenSession?.(item.result.sessionId);
   }
 
-  if (!open) return (
-    <button type="button" className="fixed bottom-5 right-5 z-20 hidden items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur hover:text-foreground md:flex" onClick={() => setOpen(true)} aria-label="Open command palette">
-      <Command size={14} /> Quick actions <kbd className="rounded border border-border px-1.5 py-0.5">Ctrl K</kbd>
-    </button>
-  );
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
