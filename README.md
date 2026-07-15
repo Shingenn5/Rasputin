@@ -19,11 +19,13 @@ and gates sensitive capabilities through explicit permissions and approvals.
 ## 📑 Table of Contents
 - [Core Architecture & Privacy](#-core-architecture--privacy)
 - [Key Features](#-key-features)
+- [Setup at a Glance](#-setup-at-a-glance)
 - [Quick Start (Docker)](#-quick-start-docker)
 - [Native Development](#-native-development)
 - [Security & Approvals](#-security--approvals)
 - [Model Integrations & WarSat](#-model-integrations--warsat)
 - [Testing](#-testing)
+- [How this project used Codex and GPT-5.6](#-how-this-project-used-codex-and-gpt-56)
 
 ---
 
@@ -50,6 +52,57 @@ workspace. See `THREAT_MODEL.md` for the boundaries and residual caveats.
 - **Warsat Deployment Layer:** Curated protocols to acquire, build, containerize, and deploy AI models natively inside your Docker engine.
 - **Approval Gateways:** Pause/resume functionality with an asynchronous, persistent queue for risky actions (file writes, shell commands, model downloads).
 - **SQLite Runtime:** Durable storage for sessions, messages, memory schemas, traces, and metrics inside `data/rasputin.db`.
+
+---
+
+## 🛠 Setup at a Glance
+
+### Prerequisites
+
+- **Docker Desktop** running with WSL 2 enabled. Docker is required for the Docker deployment,
+  Action Skills, and WarSat model containers.
+- **Windows:** PowerShell 5.1+ is supported. For the native development workflow, install
+  **Python 3.12+** and **Node.js 22+**. macOS and Linux users can use the Bash launcher.
+- **Git** is needed only when cloning manually; the Windows bootstrapper can install what it needs.
+
+### Fastest first run (Windows)
+
+1. Start Docker Desktop and wait until its engine reports that it is running.
+2. Open PowerShell and run:
+
+   ```powershell
+   iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -useb | iex
+   ```
+
+3. The bootstrapper downloads and starts Rasputin. Open the address it prints (normally
+   `http://127.0.0.1:8787`) and use the first-run credentials printed in that same console.
+
+### Manual clone and start
+
+```powershell
+git clone https://github.com/Shingenn5/Rasputin.git
+cd Rasputin
+.\rasputin.ps1 start
+```
+
+On macOS or Linux, use `./rasputin.sh start`. To stop the Docker deployment later, run
+`.\rasputin.ps1 stop` (or `./rasputin.sh stop`). If the first-run password is no longer in
+the container logs, use `.\rasputin.ps1 reset-password` on Windows.
+
+### Native daily-driver setup (Windows)
+
+The supported native launcher runs the FastAPI application on your machine while Docker remains
+available for sandboxes and model containers:
+
+```powershell
+# From the repository root; Docker can remain running separately.
+.\rasputin.ps1 start -Native -Port 8788
+```
+
+Open `http://localhost:8788`. Native mode uses its own local data store and therefore creates a
+separate first-run administrator account. For frontend work, edit `frontend-src/` only, then run
+`npm install` and `npm run build` from the repository root to rebuild the served `frontend/`
+assets. Do not hand-edit `frontend/`.
 
 ---
 
@@ -317,3 +370,24 @@ npm run preview:gui
 ---
 
 *For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) (frontend stack in §4).*
+
+---
+
+## 🤖 How this project used Codex and GPT-5.6
+
+Rasputin was built with a human-directed engineering workflow that used **Codex** as a coding
+partner and **GPT-5.6** as the reasoning model available through that environment. The model was
+used to accelerate repository exploration, turn product goals into implementation plans, draft
+and revise code, diagnose failures, improve documentation, and suggest focused verification
+steps. Codex also provided an interactive workspace for running builds, reviewing diffs, and
+checking the application in isolated test instances.
+
+The model did not operate as an unattended release system. The project owner set the product
+direction, supplied the requirements and security boundaries, reviewed meaningful changes, and
+made the decisions to merge, commit, and publish. Generated work was treated as a starting point:
+it was inspected against the codebase and verified with the repository's build, test, and
+running-app workflows before being accepted.
+
+GPT-5.6 is available in Codex on eligible plans, with model options and reasoning effort depending
+on the account and surface. See OpenAI's [GPT-5.6 in ChatGPT and Codex guide](https://help.openai.com/en/articles/20001354-gpt-56-in-chatgpt)
+for current availability details.
