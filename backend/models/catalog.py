@@ -542,7 +542,10 @@ def _warsat_cache_items():
         if (
             not model.get("managed")
             or not runtime.startswith("warsat-")
-            or not state.startswith("up")
+            # The registry reports a live Docker container as "running".
+            # Older callers used the Docker CLI display value ("Up ..."),
+            # so accept both representations while still requiring health.
+            or (state not in {"running", "healthy"} and not state.startswith("up"))
             or health not in {"reachable", "healthy", "ready", "running"}
         ):
             continue
