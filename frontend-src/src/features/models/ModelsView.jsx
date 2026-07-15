@@ -103,7 +103,7 @@ export function ModelsView({
   /* catalog state */
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogPurpose, setCatalogPurpose] = useState("all");
-  const [catalogRuntime, setCatalogRuntime] = useState("deployable");
+  const [catalogRuntime, setCatalogRuntime] = useState("all");
   const [catalogFit, setCatalogFit] = useState("all");
   const [searchMode, setSearchMode] = useState("catalog");
   const [hfQuery, setHfQuery] = useState("");
@@ -266,7 +266,7 @@ export function ModelsView({
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Healthy", c: "text-primary" },
             { v: runningModels.length, l: "Running", c: "text-amber-400" },
-            { v: catalogItems.length, l: "In Catalog", c: "text-sky-400" },
+            { v: catalogItems.length, l: "Saved locally", c: "text-sky-400" },
           ].map((s) => (
             <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
@@ -307,7 +307,7 @@ export function ModelsView({
               {/* Source toggle */}
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
-                  <Database size={14} /> Local Catalog
+                  <HardDrive size={14} /> Saved locally
                 </button>
                 <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("huggingface")}>
                   <Cloud size={14} /> Hugging Face
@@ -316,10 +316,10 @@ export function ModelsView({
                 {searchMode === "catalog" && (
                   <>
                     <button className="w2-button" type="button" onClick={() => handleLoadCatalog(false)}>
-                      <RefreshCw size={14} /> Local
+                      <RefreshCw size={14} /> Scan local storage
                     </button>
                     <Button primary onClick={() => handleLoadCatalog(true)} loading={modelCatalogLoading} loadingLabel="Refreshing…" icon={<Cloud size={14} />}>
-                      Refresh Remote
+                      Scan local storage
                     </Button>
                   </>
                 )}
@@ -332,7 +332,7 @@ export function ModelsView({
                   className="w2-input"
                   value={searchMode === "huggingface" ? hfQuery : catalogSearch}
                   onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
-                  placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter catalog by name, provider..."}
+                  placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter saved models by name..."}
                 />
                 <select className="w2-input" style={{ width: "140px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
                   <option value="all">All types</option>

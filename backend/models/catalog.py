@@ -11,6 +11,7 @@ from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
+MODELS_DIR = ROOT / "models"
 CACHE_FILE = DATA_DIR / "models_dev_catalog.json"
 HF_SEARCH_CACHE_FILE = DATA_DIR / "hf_search_cache.json"
 MODELS_DEV_URL = os.environ.get("MODELS_DEV_API_URL", "https://models.dev/api.json")
@@ -443,6 +444,125 @@ def catalog(refresh=False, force=False, hardware=None):
             return {**cached, "items": _apply_fit(cached.get("items", []), hardware), "source": {**cached.get("source", {}), "status": "cacheAfterRefreshError", "error": str(exc)}}
         payload = _catalog_payload(source_status="fallbackAfterRefreshError", source_error=str(exc), hardware=hardware)
         return payload
+
+
+def _local_model_roots():
+    """Folders Rasputin is allowed to treat as on-device model storage."""
+    roots = []
+    configured = os.environ.get("CONTAINER_MODELS_DIR")
+    for candidate in [Path(configured).expanduser() if configured else None, MODELS_DIR]:
+        if not candidate:
+            continue
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved not in roots:
+            roots.append(resolved)
+    return roots
+
+
+def _directory_size(path):
+    total = 0
+    try:
+        for child in path.rglob("*"):
+            if child.is_file():
+                total += child.stat().st_size
+    except OSError:
+        pass
+    return total
+
+
+def _local_item(model_id, name, path, protocol, source, size_bytes=0):
+    params = _parameter_count(model_id, {"name": name})
+    return {
+        "id": f"local:{path}", "modelId": model_id, "name": name,
+        "provider": "local storage", "providerId": "local",
+        "purpose": _purpose(model_id, {"name": name}, "local"),
+        "capabilities": ["local", "ready-to-deploy"], "contextWindow": None,
+        "parameterCountB": params, "vramEstimateGb": _vram_estimate(params),
+        "recommendedProfile": "balanced", "recommendedProtocol": protocol,
+        "toolCallParserHint": _tool_call_parser_hint(model_id, protocol),
+        "runtimeOptions": [{"protocolId": protocol, "label": f"Deploy with {protocol}"}],
+        "deployable": True, "apiOnly": False, "source": source, "sourceUrl": "",
+        "local": True, "localPath": str(path), "sizeBytes": size_bytes,
+        "summary": "Saved on this computer. Deployment reuses the local weights without downloading them again.",
+    }
+
+
+def _local_items():
+    """Inventory only persisted GGUF files and complete HF cache snapshots."""
+    items, seen = [], set()
+    for root in _local_model_roots():
+        if not root.is_dir():
+            continue
+        for cache_dir in root.glob("models--*"):
+            snapshots_dir = cache_dir / "snapshots"
+            snapshots = [path for path in snapshots_dir.iterdir() if path.is_dir()] if snapshots_dir.is_dir() else []
+            if not snapshots:
+                continue
+            snapshot = max(snapshots, key=lambda path: path.stat().st_mtime)
+            if not any(path.is_file() for path in snapshot.rglob("*")):
+                continue
+            resolved = str(snapshot.resolve()).lower()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            model_id = cache_dir.name.removeprefix("models--").replace("--", "/")
+            items.append(_local_item(model_id, model_id.split("/")[-1], snapshot, "vllmCudaOpenai", "local-huggingface-cache", _directory_size(snapshot)))
+        for gguf_path in root.rglob("*.gguf"):
+            try:
+                resolved = str(gguf_path.resolve()).lower()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                items.append(_local_item(gguf_path.name, gguf_path.stem, gguf_path, "llamaCppGgufServer", "local-gguf", gguf_path.stat().st_size))
+            except OSError:
+                continue
+    return items
+
+
+def _warsat_cache_items():
+    """Include models that Warsat successfully registered after deployment.
+
+    Their weights live in Warsat's persistent Docker volumes rather than the
+    host-mounted model folder, but they are still local artifacts and a
+    redeploy normally reuses that cache.
+    """
+    try:
+        from backend.models import registry
+        registered = registry.all_models()
+    except Exception:
+        return []
+    items = []
+    for model in registered:
+        runtime = str(model.get("runtime") or "")
+        if not model.get("managed") or not runtime.startswith("warsat-"):
+            continue
+        protocol = {
+            "warsat-vllm": "vllmCudaOpenai",
+            "warsat-llama.cpp": "llamaCppGgufServer",
+            "warsat-ollama": "ollamaOpenaiServer",
+        }.get(runtime)
+        model_id = str(model.get("model") or "").strip()
+        if not protocol or not model_id:
+            continue
+        item = _local_item(model_id, str(model.get("name") or model_id), f"Docker cache: {model.get('container') or model.get('key')}", protocol, "local-warsat-cache")
+        item["summary"] = "Previously deployed by Warsat. Its local Docker cache is retained for fast redeployment."
+        items.append(item)
+    return items
+
+
+def local_catalog(hardware=None):
+    """Catalog used by the UI's Saved locally view; it never contacts a remote catalog."""
+    unfiltered = _local_items() + _warsat_cache_items()
+    deduped = {item["id"]: item for item in unfiltered}
+    items = _apply_fit(list(deduped.values()), hardware)
+    return {
+        "items": items, "count": len(items), "deployableCount": len(items),
+        "categories": PURPOSES, "runtimes": RUNTIMES,
+        "source": {"name": "local model storage", "status": "local", "error": "", "updatedAt": _now(), "roots": [str(root) for root in _local_model_roots()]},
+    }
 
 
 # ── Hugging Face Hub API search ──────────────────────────────────────

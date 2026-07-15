@@ -292,7 +292,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
     return ok({
         "models": model_registry.all_models(),
         "model_providers": model_providers.public_provider_options(),
-        "model_catalog": model_catalog.catalog(refresh=False),
+        "model_catalog": model_catalog.local_catalog(),
         "skills": skill_store.enabled_names(),
         "tasks": hub.all_tasks(limit=80, include_details=False, owner_id=username),
         "memory": load_memory(username),
@@ -513,12 +513,12 @@ async def model_provider_list(_user=Depends(current_user)):
 
 async def model_catalog_get(fit: bool = False, _user=Depends(current_user)):
     hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
-    return ok(model_catalog.catalog(refresh=False, hardware=hardware))
+    return ok(model_catalog.local_catalog(hardware=hardware))
 
 @models_router.post("/model-catalog/refresh")
 
 async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=Depends(require_admin)):
-    return ok(model_catalog.catalog(refresh=True, force=bool(req.force if req else False)))
+    return ok(model_catalog.local_catalog())
 
 @models_router.get("/model-catalog/search")
 

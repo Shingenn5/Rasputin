@@ -214,7 +214,18 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIsInstance(data["models"], list)
 
     def testModelCatalogSupportsWarsatPlanning(self):
-        catalog = self.assertOk(self.client.get("/api/model-catalog"))
+        with tempfile.TemporaryDirectory() as model_dir, patch.dict(os.environ, {"CONTAINER_MODELS_DIR": model_dir}):
+            local_file = Path(model_dir) / "demo-model.gguf"
+            local_file.write_bytes(b"GGUF")
+            local = self.assertOk(self.client.get("/api/model-catalog"))
+            self.assertEqual(local["source"]["status"], "local")
+            self.assertEqual(local["count"], 1)
+            self.assertEqual(local["items"][0]["modelId"], "demo-model.gguf")
+            self.assertEqual(local["items"][0]["recommendedProtocol"], "llamaCppGgufServer")
+            refreshed = self.assertOk(self.client.post("/api/model-catalog/refresh", json={"force": True}))
+            self.assertEqual(refreshed["count"], 1)
+
+        catalog = model_catalog.catalog(refresh=False)
         self.assertIn("items", catalog)
         self.assertGreaterEqual(catalog["deployableCount"], 1)
         deployable = next(item for item in catalog["items"] if item["deployable"])
@@ -237,7 +248,7 @@ class BackendSmokeTests(unittest.TestCase):
                 },
             }
         }):
-            refreshed = self.assertOk(self.client.post("/api/model-catalog/refresh", json={"force": True}))
+            refreshed = model_catalog.catalog(refresh=True, force=True)
         self.assertTrue(any(item["modelId"] == "code-7b" for item in refreshed["items"]))
         self.assertIn("models.dev", refreshed["source"]["name"])
 
