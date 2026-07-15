@@ -147,12 +147,14 @@ export function ModelsView({
   ];
   const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
 
-  const installedModels = useMemo(() => (models || []).filter(m => m.key !== "dry-run" && m.provider !== "hash-vector"), [models]);
-  const runningModels = useMemo(() => (models || []).filter(m => {
-    const s = (m.runtime_status || m.runtimeStatus || "").toLowerCase();
-    return (s === "reachable" || s === "running" || m.container_status === "running")
-      && m.key !== "dry-run" && m.provider !== "hash-vector" && m.provider !== "mock";
-  }), [models]);
+  const registeredModels = useMemo(() => (models || []).filter(m => (
+    m.key !== "dry-run" && !["mock", "hash-vector"].includes(m.provider)
+  )), [models]);
+  const installedModels = registeredModels;
+  const reachableModels = useMemo(() => registeredModels.filter(m => runtimeStatus(m) === "reachable"), [registeredModels]);
+  const runningModels = useMemo(() => registeredModels.filter(m => (
+    m.managed && String(m.container_status || "").toLowerCase() === "running"
+  )), [registeredModels]);
 
   const filteredCatalog = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase();
@@ -248,8 +250,8 @@ export function ModelsView({
   };
 
   /* stats */
-  const totalModels = (models || []).length;
-  const healthyCount = (models || []).filter(m => isModelHealthy(m)).length;
+  const totalModels = registeredModels.length;
+  const healthyCount = reachableModels.length;
 
   return (
     <section className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
@@ -264,8 +266,8 @@ export function ModelsView({
         <div className="flex gap-3">
           {[
             { v: totalModels, l: "Registered", c: "text-foreground" },
-            { v: healthyCount, l: "Healthy", c: "text-primary" },
-            { v: runningModels.length, l: "Running", c: "text-amber-400" },
+            { v: healthyCount, l: "Reachable now", c: "text-primary" },
+            { v: runningModels.length, l: "Running containers", c: "text-amber-400" },
             { v: catalogItems.length, l: "Ready locally", c: "text-sky-400" },
           ].map((s) => (
             <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">

@@ -25,7 +25,10 @@ export function displayWorkspaceName(value) {
 }
 
 export function runtimeStatus(model) {
-  return model?.runtimeStatus || model?.lastHealth?.status || "unknown";
+  // The registry refreshes runtime_status on every live container check.
+  // Prefer it over the saved last-health snapshot, which may describe a
+  // container that was reachable before it was subsequently stopped.
+  return model?.runtimeStatus || model?.runtime_status || model?.lastHealth?.status || model?.last_health?.status || "unknown";
 }
 
 export function isUserFacingModel(model, testingMode) {
