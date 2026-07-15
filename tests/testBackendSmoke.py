@@ -218,10 +218,10 @@ class BackendSmokeTests(unittest.TestCase):
             local_file = Path(model_dir) / "demo-model.gguf"
             local_file.write_bytes(b"GGUF")
             local = self.assertOk(self.client.get("/api/model-catalog"))
-            self.assertEqual(local["source"]["status"], "ready")
-            self.assertEqual(local["count"], 0)
+            self.assertEqual(local["source"]["status"], "available")
+            self.assertEqual(local["count"], 1)
             refreshed = self.assertOk(self.client.post("/api/model-catalog/refresh", json={"force": True}))
-            self.assertEqual(refreshed["count"], 0)
+            self.assertEqual(refreshed["count"], 1)
 
         ready_item = model_catalog._local_item("demo-model", "Demo model", "Docker cache: demo", "vllmCudaOpenai", "local-warsat-cache")
         ready_item.update({"runtime_status": "reachable", "container_status": "running", "readyWithinThreeMinutes": True})

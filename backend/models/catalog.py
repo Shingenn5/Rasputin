@@ -450,7 +450,13 @@ def _local_model_roots():
     """Folders Rasputin is allowed to treat as on-device model storage."""
     roots = []
     configured = os.environ.get("CONTAINER_MODELS_DIR")
-    for candidate in [Path(configured).expanduser() if configured else None, MODELS_DIR]:
+    hf_cache = os.environ.get("RASPUTIN_HF_CACHE_DIR")
+    for candidate in [
+        Path(configured).expanduser() if configured else None,
+        Path(hf_cache).expanduser() / "hub" if hf_cache else None,
+        Path(hf_cache).expanduser() if hf_cache else None,
+        MODELS_DIR,
+    ]:
         if not candidate:
             continue
         try:
@@ -565,14 +571,19 @@ def _warsat_cache_items():
 
 
 def local_catalog(hardware=None):
-    """Catalog for models verified ready to use locally in under three minutes."""
-    unfiltered = _warsat_cache_items()
-    deduped = {item["id"]: item for item in unfiltered}
+    """Catalog of complete local weights, with running models marked ready now."""
+    # A complete cache snapshot is safe to expose as locally deployable even
+    # when it is not running. Running health-checked models replace the cache
+    # entry for the same model and carry readyWithinThreeMinutes=True.
+    unfiltered = _local_items()
+    deduped = {item["modelId"]: item for item in unfiltered}
+    for item in _warsat_cache_items():
+        deduped[item["modelId"]] = item
     items = _apply_fit(list(deduped.values()), hardware)
     return {
         "items": items, "count": len(items), "deployableCount": len(items),
         "categories": PURPOSES, "runtimes": RUNTIMES,
-        "source": {"name": "ready local models", "status": "ready", "error": "", "updatedAt": _now()},
+        "source": {"name": "local model cache", "status": "available", "error": "", "updatedAt": _now()},
     }
 
 

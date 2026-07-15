@@ -268,7 +268,7 @@ export function ModelsView({
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Reachable now", c: "text-primary" },
             { v: runningModels.length, l: "Running containers", c: "text-amber-400" },
-            { v: catalogItems.length, l: "Ready locally", c: "text-sky-400" },
+            { v: catalogItems.length, l: "Available locally", c: "text-sky-400" },
           ].map((s) => (
             <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
@@ -309,7 +309,7 @@ export function ModelsView({
               {/* Source toggle */}
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
-                  <HardDrive size={14} /> Ready locally
+                  <HardDrive size={14} /> Available locally
                 </button>
                 <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("huggingface")}>
                   <Cloud size={14} /> Hugging Face
@@ -334,7 +334,7 @@ export function ModelsView({
                   className="w2-input"
                   value={searchMode === "huggingface" ? hfQuery : catalogSearch}
                   onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
-                  placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter ready local models by name..."}
+                  placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter locally cached models by name..."}
                 />
                 <select className="w2-input" style={{ width: "140px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
                   <option value="all">All types</option>
@@ -364,7 +364,7 @@ export function ModelsView({
               {/* Status line */}
               <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
                 {searchMode === "catalog"
-                  ? `${filteredCatalog.length} verified ready model${filteredCatalog.length === 1 ? "" : "s"}`
+                  ? `${filteredCatalog.length} complete cached model${filteredCatalog.length === 1 ? "" : "s"} available to deploy`
                   : hfLoading ? "Searching Hugging Face..." : `${hfResults.length} results`}
               </div>
 
