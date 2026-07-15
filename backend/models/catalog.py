@@ -523,11 +523,11 @@ def _local_items():
 
 
 def _warsat_cache_items():
-    """Include models that Warsat successfully registered after deployment.
+    """Return only Warsat models proven ready for immediate interaction.
 
-    Their weights live in Warsat's persistent Docker volumes rather than the
-    host-mounted model folder, but they are still local artifacts and a
-    redeploy normally reuses that cache.
+    A cached artifact or a stale registry entry does not prove that the model
+    will start within three minutes. To avoid overstating readiness, this view
+    requires a running managed container and a healthy local endpoint.
     """
     try:
         from backend.models import registry
@@ -537,7 +537,14 @@ def _warsat_cache_items():
     items = []
     for model in registered:
         runtime = str(model.get("runtime") or "")
-        if not model.get("managed") or not runtime.startswith("warsat-"):
+        state = str(model.get("container_status") or "").lower()
+        health = str(model.get("runtime_status") or "").lower()
+        if (
+            not model.get("managed")
+            or not runtime.startswith("warsat-")
+            or not state.startswith("up")
+            or health not in {"reachable", "healthy", "ready", "running"}
+        ):
             continue
         protocol = {
             "warsat-vllm": "vllmCudaOpenai",
@@ -548,20 +555,21 @@ def _warsat_cache_items():
         if not protocol or not model_id:
             continue
         item = _local_item(model_id, str(model.get("name") or model_id), f"Docker cache: {model.get('container') or model.get('key')}", protocol, "local-warsat-cache")
-        item["summary"] = "Previously deployed by Warsat. Its local Docker cache is retained for fast redeployment."
+        item["readyWithinThreeMinutes"] = True
+        item["summary"] = "Running locally and health-checked. Ready to interact with now."
         items.append(item)
     return items
 
 
 def local_catalog(hardware=None):
-    """Catalog used by the UI's Saved locally view; it never contacts a remote catalog."""
-    unfiltered = _local_items() + _warsat_cache_items()
+    """Catalog for models verified ready to use locally in under three minutes."""
+    unfiltered = _warsat_cache_items()
     deduped = {item["id"]: item for item in unfiltered}
     items = _apply_fit(list(deduped.values()), hardware)
     return {
         "items": items, "count": len(items), "deployableCount": len(items),
         "categories": PURPOSES, "runtimes": RUNTIMES,
-        "source": {"name": "local model storage", "status": "local", "error": "", "updatedAt": _now(), "roots": [str(root) for root in _local_model_roots()]},
+        "source": {"name": "ready local models", "status": "ready", "error": "", "updatedAt": _now()},
     }
 
 

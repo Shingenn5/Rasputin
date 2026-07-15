@@ -149,6 +149,8 @@ export function App() {
   const [trialsStatus, setTrialsStatus] = useState("");
   const [setup, setSetup] = useState(null);
   const [globalStatus, setGlobalStatus] = useState("");
+  const [deleteDialogSession, setDeleteDialogSession] = useState(null);
+  const [deletingSession, setDeletingSession] = useState(false);
   const toast = useToast();
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -1432,21 +1434,26 @@ export function App() {
   async function deleteSession(sessionItem) {
     const sessionId = sessionItem?.id;
     if (!sessionId) return null;
-    const isEmpty = sessionItem.isEmpty
-      ?? (Number(sessionItem.messageCount || 0) === 0 && Number(sessionItem.taskCount || 0) === 0);
-    if (!isEmpty) {
-      const confirmed = window.confirm(`Delete “${sessionItem.title || "Untitled chat"}” and all of its messages and tasks? This cannot be undone.`);
-      if (!confirmed) return null;
-    }
+    setDeleteDialogSession(sessionItem);
+    return null;
+  }
+
+  async function confirmDeleteSession() {
+    const sessionItem = deleteDialogSession;
+    const sessionId = sessionItem?.id;
+    if (!sessionId || deletingSession) return null;
+    setDeletingSession(true);
     try {
       const result = await postJson(`/api/sessions/${sessionId}/delete`, {});
       clearDeletedSessionSelection([sessionId]);
       await loadChatFolders();
-      setGlobalStatus(`Deleted ${result.title || sessionItem.title || "chat"}.`);
+      setDeleteDialogSession(null);
       return result;
     } catch (error) {
       setGlobalStatus(error.message);
       return null;
+    } finally {
+      setDeletingSession(false);
     }
   }
 
@@ -1455,8 +1462,6 @@ export function App() {
       const result = await postJson("/api/sessions/cleanup-empty", {});
       clearDeletedSessionSelection(result.sessionIds || []);
       await loadChatFolders();
-      const count = Number(result.deletedCount || 0);
-      setGlobalStatus(count ? `Removed ${count} empty chat${count === 1 ? "" : "s"}.` : "No empty chats to remove.");
       return result;
     } catch (error) {
       setGlobalStatus(error.message);
@@ -1513,7 +1518,6 @@ export function App() {
       });
       setObjective("");
       go("chat");
-      setGlobalStatus("Chat restored.");
     } catch (error) {
       setGlobalStatus(error.message);
     }
@@ -2210,7 +2214,68 @@ export function App() {
           onDismiss={() => setOnboarded(true)}
         />
       )}
+      {deleteDialogSession && (
+        <DeleteChatDialog
+          session={deleteDialogSession}
+          busy={deletingSession}
+          onCancel={() => !deletingSession && setDeleteDialogSession(null)}
+          onConfirm={confirmDeleteSession}
+        />
+      )}
     </AppShell>
+  );
+}
+
+function DeleteChatDialog({ session, busy, onCancel, onConfirm }) {
+  const confirmRef = useRef(null);
+  const title = session?.title || "Untitled chat";
+
+  useEffect(() => {
+    confirmRef.current?.focus();
+  }, []);
+
+  function onKeyDown(event) {
+    if (event.key === "Escape" && !busy) {
+      event.preventDefault();
+      onCancel();
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-chat-title"
+        aria-describedby="delete-chat-description"
+        onKeyDown={onKeyDown}
+        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-400">Permanent action</p>
+        <h2 id="delete-chat-title" className="mt-2 text-xl font-semibold text-foreground">Delete this chat?</h2>
+        <p id="delete-chat-description" className="mt-2 text-sm leading-6 text-muted-foreground">
+          <strong className="text-foreground">{title}</strong> and its messages and tasks will be permanently removed.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" className="w2-button" disabled={busy} onClick={onCancel}>Cancel</button>
+          <button
+            ref={confirmRef}
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            className="inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? "Deleting…" : "Delete chat"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
