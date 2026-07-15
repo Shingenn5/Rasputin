@@ -149,8 +149,6 @@ export function App() {
   const [trialsStatus, setTrialsStatus] = useState("");
   const [setup, setSetup] = useState(null);
   const [globalStatus, setGlobalStatus] = useState("");
-  const [deleteDialogSession, setDeleteDialogSession] = useState(null);
-  const [deletingSession, setDeletingSession] = useState(false);
   const toast = useToast();
   const eventSourceRef = useRef(null);
   const selectedTaskIdRef = useRef(null);
@@ -1434,26 +1432,14 @@ export function App() {
   async function deleteSession(sessionItem) {
     const sessionId = sessionItem?.id;
     if (!sessionId) return null;
-    setDeleteDialogSession(sessionItem);
-    return null;
-  }
-
-  async function confirmDeleteSession() {
-    const sessionItem = deleteDialogSession;
-    const sessionId = sessionItem?.id;
-    if (!sessionId || deletingSession) return null;
-    setDeletingSession(true);
     try {
       const result = await postJson(`/api/sessions/${sessionId}/delete`, {});
       clearDeletedSessionSelection([sessionId]);
       await loadChatFolders();
-      setDeleteDialogSession(null);
       return result;
     } catch (error) {
       setGlobalStatus(error.message);
       return null;
-    } finally {
-      setDeletingSession(false);
     }
   }
 
@@ -2214,19 +2200,14 @@ export function App() {
           onDismiss={() => setOnboarded(true)}
         />
       )}
-      {deleteDialogSession && (
-        <DeleteChatDialog
-          session={deleteDialogSession}
-          busy={deletingSession}
-          onCancel={() => !deletingSession && setDeleteDialogSession(null)}
-          onConfirm={confirmDeleteSession}
-        />
-      )}
     </AppShell>
   );
 }
 
 function DeleteChatDialog({ session, busy, onCancel, onConfirm }) {
+  return null;
+
+  /*
   const confirmRef = useRef(null);
   const title = session?.title || "Untitled chat";
 
@@ -2277,6 +2258,7 @@ function DeleteChatDialog({ session, busy, onCancel, onConfirm }) {
       </section>
     </div>
   );
+  */
 }
 
 async function fetchModels() {
