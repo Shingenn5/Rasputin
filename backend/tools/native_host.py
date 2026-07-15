@@ -177,6 +177,7 @@ def _run_server(args: argparse.Namespace, paths: dict[str, Path]) -> int:
         os.environ["HOST"] = host
         os.environ["PORT"] = str(port)
         os.environ["RASPUTIN_DATA_DIR"] = str(paths["data"])
+        os.environ["RASPUTIN_NATIVE_DOCKER_CACHE"] = "1"
         os.environ.pop("WRAPPER_RUNTIME", None)
         from server import _tls_config
         import uvicorn

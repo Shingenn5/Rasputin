@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -451,10 +452,16 @@ def _local_model_roots():
     roots = []
     configured = os.environ.get("CONTAINER_MODELS_DIR")
     hf_cache = os.environ.get("RASPUTIN_HF_CACHE_DIR")
+    host_hf_home = os.environ.get("HF_HOME")
+    host_hub_cache = os.environ.get("HUGGINGFACE_HUB_CACHE") or os.environ.get("HF_HUB_CACHE")
     for candidate in [
         Path(configured).expanduser() if configured else None,
         Path(hf_cache).expanduser() / "hub" if hf_cache else None,
         Path(hf_cache).expanduser() if hf_cache else None,
+        Path(host_hub_cache).expanduser() if host_hub_cache else None,
+        Path(host_hf_home).expanduser() / "hub" if host_hf_home else None,
+        Path.home() / ".cache" / "huggingface" / "hub",
+        Path(os.environ["LOCALAPPDATA"]) / "huggingface" / "hub" if os.environ.get("LOCALAPPDATA") else None,
         MODELS_DIR,
     ]:
         if not candidate:
@@ -477,6 +484,22 @@ def _directory_size(path):
     except OSError:
         pass
     return total
+
+
+def _has_readable_file(path):
+    """Return whether a snapshot contains at least one accessible file."""
+    try:
+        for child in path.rglob("*"):
+            try:
+                if child.is_file():
+                    return True
+            except OSError:
+                # Windows can expose dangling Hugging Face cache symlinks.
+                # They are not complete local weights and should be skipped.
+                continue
+    except OSError:
+        return False
+    return False
 
 
 def _local_item(model_id, name, path, protocol, source, size_bytes=0):
@@ -504,11 +527,17 @@ def _local_items():
             continue
         for cache_dir in root.glob("models--*"):
             snapshots_dir = cache_dir / "snapshots"
-            snapshots = [path for path in snapshots_dir.iterdir() if path.is_dir()] if snapshots_dir.is_dir() else []
+            try:
+                snapshots = [path for path in snapshots_dir.iterdir() if path.is_dir()]
+            except OSError:
+                snapshots = []
             if not snapshots:
                 continue
-            snapshot = max(snapshots, key=lambda path: path.stat().st_mtime)
-            if not any(path.is_file() for path in snapshot.rglob("*")):
+            try:
+                snapshot = max(snapshots, key=lambda path: path.stat().st_mtime)
+            except OSError:
+                continue
+            if not _has_readable_file(snapshot):
                 continue
             resolved = str(snapshot.resolve()).lower()
             if resolved in seen:
@@ -526,6 +555,72 @@ def _local_items():
             except OSError:
                 continue
     return items
+
+
+def _native_docker_cache_items():
+    """Read the Docker wrapper's cache inventory when serving natively.
+
+    Docker Desktop named volumes are intentionally not exposed as Windows
+    paths. The native host therefore asks the running Docker wrapper to
+    inventory its read-only cache, rather than copying model weights or
+    treating a stopped container as a ready model.
+    """
+    if os.environ.get("RASPUTIN_NATIVE_DOCKER_CACHE") != "1":
+        return []
+    try:
+        listed = subprocess.run(
+            ["docker", "ps", "--filter", "label=com.docker.compose.service=rasputin-wrapper", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if listed.returncode != 0:
+        return []
+    script = "import json; from backend.models.catalog import _local_items; print(json.dumps(_local_items()))"
+
+    def parse_items(text):
+        try:
+            items = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict) and item.get("source") in {"local-huggingface-cache", "local-gguf"}]
+
+    for container in (line.strip() for line in listed.stdout.splitlines()):
+        if not container:
+            continue
+        try:
+            result = subprocess.run(
+                ["docker", "exec", container, "python", "-c", script],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                continue
+            items = parse_items(result.stdout)
+            if items:
+                return items
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+
+    # Native/Electron can still be the only Rasputin host. In that case, use
+    # the locally built wrapper image solely as a read-only volume inspector;
+    # this does not start a server or modify the cache.
+    try:
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm", "--mount",
+                "type=volume,source=rasputin-huggingface-cache,target=/cache,readonly",
+                "-e", "RASPUTIN_HF_CACHE_DIR=/cache", "--entrypoint", "python",
+                os.environ.get("WRAPPER_SELF_IMAGE", "rasputin-wrapper:latest"), "-c", script,
+            ],
+            capture_output=True, text=True, timeout=45,
+        )
+        if result.returncode == 0:
+            return parse_items(result.stdout)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return []
 
 
 def _warsat_cache_items():
@@ -575,7 +670,7 @@ def local_catalog(hardware=None):
     # A complete cache snapshot is safe to expose as locally deployable even
     # when it is not running. Running health-checked models replace the cache
     # entry for the same model and carry readyWithinThreeMinutes=True.
-    unfiltered = _local_items()
+    unfiltered = _local_items() + _native_docker_cache_items()
     deduped = {item["modelId"]: item for item in unfiltered}
     for item in _warsat_cache_items():
         deduped[item["modelId"]] = item

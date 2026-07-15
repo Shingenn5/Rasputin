@@ -214,7 +214,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIsInstance(data["models"], list)
 
     def testModelCatalogSupportsWarsatPlanning(self):
-        with tempfile.TemporaryDirectory() as model_dir, patch.dict(os.environ, {"CONTAINER_MODELS_DIR": model_dir}):
+        with tempfile.TemporaryDirectory() as model_dir, patch.dict(os.environ, {"CONTAINER_MODELS_DIR": model_dir, "RASPUTIN_NATIVE_DOCKER_CACHE": "0"}):
             local_file = Path(model_dir) / "demo-model.gguf"
             local_file.write_bytes(b"GGUF")
             local = self.assertOk(self.client.get("/api/model-catalog"))
