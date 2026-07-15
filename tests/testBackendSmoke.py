@@ -1535,6 +1535,24 @@ class BackendSmokeTests(unittest.TestCase):
         finally:
             model_providers._TOOLS_UNSUPPORTED.discard(model["key"])
 
+    def testToollessManagedModelFallsBackToChatBeforeTaskStarts(self):
+        hub = agent.AgentHub()
+        model = {
+            "key": "plain-local",
+            "provider": "vllm",
+            "managed": True,
+            "tool_support": "chat",
+        }
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model), patch.object(hub, "_schedule_queued_task"):
+            task = hub.start("Inspect this workspace", "plain-local", "general", mode="analyze")
+        self.assertEqual(task.mode, "chat")
+        self.assertTrue(any(item["kind"] == "tool_mode_fallback" for item in task.trace))
+        self.assertTrue(any("switched to Chat mode" in line for line in task.logs))
+
+    def testManagedToolSupportRequiresParser(self):
+        self.assertFalse(model_providers.supports_agentic_tools({"key": "plain", "provider": "vllm", "managed": True, "tool_support": "chat"}))
+        self.assertTrue(model_providers.supports_agentic_tools({"key": "agentic", "provider": "vllm", "managed": True, "tool_call_parser": "hermes"}))
+
     def testProviderStreamingAssemblesTextAndToolCalls(self):
         from backend.models import providers as model_providers
 

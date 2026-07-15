@@ -1280,6 +1280,11 @@ def make_plan(payload):
             "image": protocol["image"],
             "contextWindow": tuning.get("contextWindow") or tuning.get("maxModelLen"),
             "maxTokens": 512,
+            "toolCallParser": tuning.get("toolCallParser") or "",
+            # Local runtimes only receive agentic modes after a model-specific
+            # parser has been configured. Unknown models remain plain chat
+            # candidates instead of discovering this through a failed task.
+            "toolSupport": "agentic" if tuning.get("toolCallParser") else "chat",
         },
         "securityChecks": {
             "localhostOnly": protocol.get("hostBinding") == "127.0.0.1",
@@ -1731,6 +1736,8 @@ def _registry_entry_from_plan(plan):
         "image": entry.get("image") or plan.get("image"),
         "context_window": int(entry.get("contextWindow") or plan.get("tuning", {}).get("contextWindow") or plan.get("tuning", {}).get("maxModelLen") or 4096),
         "max_tokens": int(entry.get("maxTokens") or 512),
+        "tool_call_parser": entry.get("toolCallParser") or entry.get("tool_call_parser") or "",
+        "tool_support": entry.get("toolSupport") or entry.get("tool_support") or "chat",
         "notes": "Managed by Warsat. Review Docker control before changing this entry.",
     }
 

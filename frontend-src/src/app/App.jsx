@@ -650,10 +650,19 @@ export function App() {
   }, [models, modeModelOverrides, selectedModel, testingMode]);
 
   const chooseTaskMode = useCallback((mode) => {
-    setTaskMode(mode);
     const routedModel = modelKeyForMode(mode);
-    if (routedModel) setSelectedModel(routedModel);
-  }, [modelKeyForMode]);
+    const routedConfig = models.find((model) => model.key === routedModel);
+    const supportsAgenticMode = !routedConfig?.managed
+      || routedConfig.toolSupport === "agentic"
+      || Boolean(routedConfig.toolCallParser);
+    const resolvedMode = mode !== "chat" && !supportsAgenticMode ? "chat" : mode;
+    setTaskMode(resolvedMode);
+    const resolvedModel = resolvedMode === mode ? routedModel : modelKeyForMode(resolvedMode);
+    if (resolvedModel) setSelectedModel(resolvedModel);
+    if (resolvedMode !== mode) {
+      setGlobalStatus("The selected local model is chat-only, so Rasputin switched to Chat mode before sending your message.");
+    }
+  }, [modelKeyForMode, models]);
 
   const setModeModelOverride = useCallback((mode, modelKey) => {
     setModeModelOverrides((current) => {
@@ -1639,6 +1648,7 @@ export function App() {
     const profile = options.strengthProfile || item.recommendedProfile || "balanced";
     const modelRef = item.warsatModelRef || item.modelId || item.id;
     const port = Number(options.hostPort || 0) || undefined;
+    const toolCallParser = options.toolCallParser || item.toolCallParserHint || undefined;
     setWarsatError("");
     try {
       await loadWarsat();
@@ -1653,6 +1663,9 @@ export function App() {
         role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),
         maxModelLen: item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
         containerName: options.containerName || undefined,
+        // Catalog hints are deliberately conservative. When one is present,
+        // use it so a known tool-capable model is deployed agent-ready.
+        toolCallParser,
       });
       setWarsatPlan(plan);
       setWarsatDeployment(null);

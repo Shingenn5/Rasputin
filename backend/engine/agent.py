@@ -879,6 +879,10 @@ class AgentHub:
     ):
         if session_id:
             self.session(session_id, owner_id)
+        requested_mode = mode
+        selected = model_registry.get_model(model)
+        if mode != "chat" and selected and not model_providers.supports_agentic_tools(selected):
+            mode = "chat"
         task = AgentTask(
             objective,
             model,
@@ -893,6 +897,9 @@ class AgentHub:
             max_attempts=max_attempts,
             source_task_id=source_task_id,
         )
+        if mode != requested_mode:
+            task.log("Selected model does not support tool execution; switched to Chat mode before starting.")
+            task.seen("tool_mode_fallback", {"model": model, "requestedMode": requested_mode, "resolvedMode": "chat"})
         task.owner_id = owner_id
         self._wire(task)
         self.tasks[task.id] = task

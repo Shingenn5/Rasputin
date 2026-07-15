@@ -613,6 +613,25 @@ def tools_unavailable(model_or_key):
     return bool(model_key and model_key in _TOOLS_UNSUPPORTED)
 
 
+def supports_agentic_tools(model):
+    """Whether a model can safely enter a tool-executing task mode.
+
+    WarSat records this at deployment time. A missing parser for a managed
+    local runtime means plain chat is safe but tool definitions are not.
+    """
+    if not model:
+        return False
+    if model.get("key") == "dry-run" or model.get("provider") == "mock":
+        return True
+    if tools_unavailable(model):
+        return False
+    if is_api_provider(model):
+        return True
+    if model.get("managed"):
+        return model.get("tool_support") == "agentic" or bool(model.get("tool_call_parser"))
+    return True
+
+
 def _http_error_body(exc):
     try:
         return exc.read().decode("utf-8", "replace")
