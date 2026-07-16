@@ -62,6 +62,11 @@ def _load():
     return data
 
 
+def raw_graph():
+    """Return the persisted graph for local export/integration adapters."""
+    return _load()
+
+
 def _rebuild_stats_summary(graph):
     # Mirrors rag/vector.py's _rebuild_stats_summary: stats() must never load
     # the full graph blob, which for a real workspace can run into the

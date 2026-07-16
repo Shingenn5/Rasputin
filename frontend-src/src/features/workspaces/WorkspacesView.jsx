@@ -54,6 +54,7 @@ export function WorkspacesView({
   ragStats,
   graphStats,
   indexWorkspaceKnowledge,
+  exportWorkspaceGraphToObsidian,
   searchWorkspaceKnowledge,
   refreshKnowledgeStats,
   setPrompt,
@@ -189,6 +190,22 @@ export function WorkspacesView({
         const chunks = result.ragResult?.chunksIndexed || 0;
         setKnowledgeStatus(`Indexed ${docs} docs into ${chunks} local chunks, then rebuilt Graphify links.`);
         refreshKnowledgeStats?.();
+      }, setUiState);
+    } catch (error) {
+      setKnowledgeStatus(error.message);
+    }
+  }
+
+  async function exportCurrentGraphToObsidian() {
+    if (!exportWorkspaceGraphToObsidian || activeReadOnly || !taskAccess) return;
+    const path = workspaceBrowse?.path || workspace.activePath || ".";
+    try {
+      await executeAction("ExportGraphToObsidian", path, async () => {
+        setKnowledgeStatus("Refreshing the graph and exporting Obsidian notes...");
+        const result = await exportWorkspaceGraphToObsidian(path);
+        setKnowledgeStatus(
+          `Exported ${result.nodesExported || 0} nodes and ${result.edgesExported || 0} relationships to ${result.relativePath || "Rasputin Graph/Index.md"}.`,
+        );
       }, setUiState);
     } catch (error) {
       setKnowledgeStatus(error.message);
@@ -809,8 +826,25 @@ export function WorkspacesView({
                     
                     <div className="w2-action-panel-grid">
                       {taskAccess && <button className="w2-button primary" onClick={indexCurrentFolder}>Index Workspace</button>}
+                      <button
+                        className="w2-button"
+                        type="button"
+                        data-testid="workspace-export-obsidian"
+                        onClick={exportCurrentGraphToObsidian}
+                        disabled={!taskAccess || activeReadOnly}
+                        aria-describedby={activeReadOnly ? "obsidian-export-readonly-help" : undefined}
+                        title={activeReadOnly ? "Read / Write workspace access is required to create Obsidian notes" : "Create or refresh linked Markdown notes for Obsidian Graph View"}
+                      >
+                        Export to Obsidian
+                      </button>
                       <button className="w2-button" onClick={refreshKnowledgeStats}>Refresh Status</button>
                     </div>
+
+                    {activeReadOnly && (
+                      <p id="obsidian-export-readonly-help" style={{ fontSize: '0.75rem', margin: 0, color: 'var(--cc-muted)' }}>
+                        Obsidian export creates a managed <code>Rasputin Graph</code> folder. Re-add this folder as Read / Write to enable the export action.
+                      </p>
+                    )}
 
                     {knowledgeStatus && <p style={{ fontSize: '0.75rem', margin: '4px 0 0 0', color: 'var(--cc-muted)' }}>{knowledgeStatus}</p>}
 

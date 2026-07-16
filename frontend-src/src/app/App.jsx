@@ -1144,6 +1144,19 @@ export function App() {
     return { ragResult, graphResult };
   }
 
+  async function exportWorkspaceGraphToObsidian(path) {
+    const targetPath = path || workspace.activePath || ".";
+    const result = await postJson("/api/graph/export-obsidian", { path: targetPath });
+    await refreshKnowledgeStats();
+    setWorkspace(await api("/api/workspace"));
+    await loadWorkspaceRoots(targetPath, {
+      rootId: workspaceBrowse?.root?.id || workspaceExplorer?.rootId,
+      path: targetPath,
+    });
+    setGlobalStatus(`Exported ${result.nodesExported || 0} graph nodes to Obsidian.`);
+    return result;
+  }
+
   async function searchWorkspaceKnowledge(query, path) {
     const targetPath = path || workspace.activePath || ".";
     const [ragResult, graphResult] = await Promise.all([
@@ -1972,6 +1985,7 @@ export function App() {
         ragStats={ragStats}
         graphStats={graphStats}
         indexWorkspaceKnowledge={indexWorkspaceKnowledge}
+        exportWorkspaceGraphToObsidian={exportWorkspaceGraphToObsidian}
         searchWorkspaceKnowledge={searchWorkspaceKnowledge}
         refreshKnowledgeStats={refreshKnowledgeStats}
         setPrompt={(prompt, mode) => {

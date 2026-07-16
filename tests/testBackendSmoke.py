@@ -897,6 +897,97 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(compact[0]["evidence"][0]["path"])
         self.assertLessEqual(len(compact[0]["evidence"][0].get("snippet", "")), 260)
 
+    def testGraphExportCreatesStableObsidianVaultNotes(self):
+        target_dir = Path(os.environ["RASPUTIN_DATA_DIR"]) / f"obsidian-export-{runtime_store.new_id('obs')[-6:]}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "engine.py").write_text(
+            "\n".join([
+                "class WarmindNode:",
+                "    def transmit_signal(self):",
+                "        return parse_signal('warsat')",
+                "def parse_signal(value):",
+                "    return value",
+            ]),
+            encoding="utf-8",
+        )
+        (target_dir / "notes.md").write_text(
+            "WarmindNode uses the Data USA API and references engine.py.\n",
+            encoding="utf-8",
+        )
+        obsidian_config = target_dir / ".obsidian"
+        obsidian_config.mkdir()
+        (obsidian_config / "graph.json").write_text('{"showOrphans": true}', encoding="utf-8")
+        stale_source = target_dir / "stale.txt"
+        stale_source.write_text("This source should disappear from the refreshed export.", encoding="utf-8")
+
+        approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": str(target_dir),
+            "name": "Obsidian Export Smoke",
+            "readOnly": False,
+        }))
+        self.assertOk(self.client.post("/api/workspace/select", json={"path": approved["id"]}))
+        self.assertOk(self.client.post("/api/rag/ingest", json={
+            "path": str(target_dir), "label": "Obsidian Export Smoke",
+        }))
+        stale_source.unlink()
+
+        with patch("backend.api.agent.security.require", lambda flag: True):
+            exported = self.assertOk(self.client.post("/api/graph/export-obsidian", json={
+                "path": str(target_dir),
+            }))
+
+        export_dir = target_dir / "Rasputin Graph"
+        nodes_dir = export_dir / "Nodes"
+        self.assertTrue((export_dir / "Index.md").is_file())
+        self.assertTrue((export_dir / ".rasputin-export.json").is_file())
+        node_files = sorted(nodes_dir.glob("*.md"))
+        self.assertEqual(len(node_files), exported["nodesExported"])
+        self.assertGreater(exported["nodesExported"], 3)
+        self.assertGreater(exported["edgesExported"], 3)
+        self.assertGreaterEqual(exported["ragResult"]["docsRemoved"], 1)
+        generated_text = "\n".join(path.read_text(encoding="utf-8") for path in node_files)
+        self.assertIn("[[Rasputin Graph/Nodes/", generated_text)
+        self.assertIn("rasputin_generated: true", generated_text)
+
+        scoped_stats = self.assertOk(self.client.get(f"/api/rag/stats?workspace_id={approved['id']}"))
+        indexed_paths = {source["path"] for source in scoped_stats["sources"]}
+        self.assertEqual(indexed_paths, {"engine.py", "notes.md"})
+        self.assertFalse(any(path.startswith(".obsidian/") for path in indexed_paths))
+        self.assertFalse(any(path.startswith("Rasputin Graph/") for path in indexed_paths))
+
+        obsolete = nodes_dir / "obsolete.md"
+        obsolete.write_text("---\nrasputin_generated: true\n---\n", encoding="utf-8")
+        manual = nodes_dir / "my-notes.md"
+        manual.write_text("# Keep my note\n", encoding="utf-8")
+        with patch("backend.api.agent.security.require", lambda flag: True):
+            repeated = self.assertOk(self.client.post("/api/graph/export-obsidian", json={
+                "path": str(target_dir),
+            }))
+        self.assertEqual(repeated["nodesExported"], exported["nodesExported"])
+        self.assertEqual(repeated["ragResult"]["docsIndexed"], 0)
+        self.assertEqual(repeated["staleFilesRemoved"], 1)
+        self.assertFalse(obsolete.exists())
+        self.assertTrue(manual.exists())
+
+        with patch("backend.api.agent.security.require", side_effect=lambda flag: (_ for _ in ()).throw(PermissionError("write disabled")) if flag == "allow_file_write" else True):
+            denied = self.client.post("/api/graph/export-obsidian", json={"path": str(target_dir)})
+        self.assertEqual(denied.status_code, 403)
+
+        read_only_dir = Path(os.environ["RASPUTIN_DATA_DIR"]) / f"obsidian-readonly-{runtime_store.new_id('obs')[-6:]}"
+        read_only_dir.mkdir(parents=True, exist_ok=True)
+        (read_only_dir / "note.md").write_text("Read-only graph source.", encoding="utf-8")
+        read_only = self.assertOk(self.client.post("/api/workspace/approve", json={
+            "path": str(read_only_dir),
+            "name": "Obsidian Read Only",
+            "readOnly": True,
+        }))
+        with patch("backend.api.agent.security.require", lambda flag: True):
+            denied_read_only = self.client.post("/api/graph/export-obsidian", json={
+                "path": read_only["id"],
+            })
+        self.assertEqual(denied_read_only.status_code, 403)
+        self.assertFalse((read_only_dir / "Rasputin Graph").exists())
+
     def testGraphRelationsAnswersStructuralQueries(self):
         target_dir = main.ROOT / "workspace" / f"graph-rel-{runtime_store.new_id('graph')[-6:]}"
         target_dir.mkdir(parents=True, exist_ok=True)

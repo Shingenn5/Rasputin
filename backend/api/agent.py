@@ -12,6 +12,7 @@ from backend.core.response import ok, AppError
 from backend.mcp import skills as skill_store
 from backend.rag import graph as graphify
 from backend.rag import memory as memory_store
+from backend.rag import obsidian as obsidian_export
 from backend.rag import vector as rag
 from backend.rag.memory import load_memory, remember
 
@@ -398,6 +399,9 @@ class GraphSearchIn(CamelModel):
 class GraphBuildIn(CamelModel):
     path: str | None = None
 
+class GraphExportObsidianIn(CamelModel):
+    path: str | None = None
+
 class GraphRelationsIn(CamelModel):
     entity: str
     relation: str | None = None
@@ -442,6 +446,23 @@ async def graph_build(req: GraphBuildIn, _user=Depends(current_user)):
     # build() calls rag.ingest() itself when the index is empty -- same
     # reasoning as /rag/ingest above.
     return ok(await asyncio.to_thread(graphify.build, req.path))
+
+@rag_router.post("/graph/export-obsidian")
+
+async def graph_export_obsidian(req: GraphExportObsidianIn, _user=Depends(require_member)):
+    security.require("allow_file_read")
+    security.require("allow_file_write")
+    target = workspace.resolve_path(req.path or ".")
+    workspace.require_user_access(target, _user["username"], "developer", _user["role"] == "admin")
+    workspace.require_path_permission(target, "write")
+    result = await asyncio.to_thread(obsidian_export.export_workspace, str(target))
+    audit.log("graph_export_obsidian", {
+        "workspace_id": result.get("workspace_id"),
+        "path": result.get("path"),
+        "nodes": result.get("nodes_exported"),
+        "edges": result.get("edges_exported"),
+    }, actor=_user["username"])
+    return ok(result)
 
 @rag_router.post("/graph/search")
 
