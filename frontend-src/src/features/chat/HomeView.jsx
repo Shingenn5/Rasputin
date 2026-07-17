@@ -159,6 +159,7 @@ export function HomeView(props) {
 
   const threadScrollRef = useRef(null);
   const composerRef = useRef(null);
+  const cmdMenuRef = useRef(null);
   const fileInputRef = useRef(null);
   const modeButtonRef = useRef(null);
   const modePanelRef = useRef(null);
@@ -236,6 +237,7 @@ export function HomeView(props) {
   // chip; browse with arrows/mouse, composer draft is left alone.
   const [cmd, setCmd] = useState(null); // null | { path, source }
   const [cmdIndex, setCmdIndex] = useState(0);
+  const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
 
   const cmdQuery = cmd?.source === "typed" && objective.startsWith("/")
     ? objective.slice(1).trim().toLowerCase()
@@ -244,6 +246,7 @@ export function HomeView(props) {
   const closeCmd = useCallback((consumeSlashText = false) => {
     setCmd(null);
     setCmdIndex(0);
+    setSlashMenuDismissed(false);
     if (consumeSlashText) {
       setObjective((current) => (typeof current === "string" && current.startsWith("/") ? "" : current));
     }
@@ -260,6 +263,7 @@ export function HomeView(props) {
     } else {
       setCmd({ path, source: "button" });
     }
+    setSlashMenuDismissed(false);
     setCmdIndex(0);
     window.requestAnimationFrame(() => composerRef.current?.focus());
   }, [setObjective]);
@@ -376,6 +380,24 @@ export function HomeView(props) {
 
   useEffect(() => { setCmdIndex(0); }, [cmdQuery, cmd?.path]);
 
+  useEffect(() => {
+    if (!cmd) return undefined;
+    function closeOnOutsideClick(event) {
+      if (cmdMenuRef.current && !cmdMenuRef.current.contains(event.target)) {
+        setCmd(null);
+        setCmdIndex(0);
+        if (cmd.source === "typed") setSlashMenuDismissed(true);
+      }
+    }
+    const attachTimer = window.setTimeout(() => {
+      document.addEventListener("mousedown", closeOnOutsideClick);
+    }, 0);
+    return () => {
+      window.clearTimeout(attachTimer);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, [cmd]);
+
   function runCmdItem(item) {
     if (!item) return;
     if (item.submenu) {
@@ -393,12 +415,13 @@ export function HomeView(props) {
     const value = event.target.value;
     setObjective(value);
     if (value.startsWith("/")) {
-      if (!cmd) {
+      if (!cmd && !slashMenuDismissed) {
         setCmd({ path: null, source: "typed" });
         setCmdIndex(0);
       }
-    } else if (cmd?.source === "typed") {
-      setCmd(null);
+    } else {
+      setSlashMenuDismissed(false);
+      if (cmd?.source === "typed") setCmd(null);
     }
   }
 
@@ -808,7 +831,7 @@ export function HomeView(props) {
               )}
               <div className="composer-box">
                 {cmd && (
-                  <div className="cmd-menu" data-testid="command-menu">
+                  <div ref={cmdMenuRef} className="cmd-menu" data-testid="command-menu">
                     {cmd.path && (
                       <div className="cmd-menu-crumb">
                         <button
@@ -1006,10 +1029,6 @@ export function HomeView(props) {
                   modes={modeOptions}
                   initialMode={recipePanelMode}
                   initialRecipeId={recipePanelRecipeId}
-                  models={models}
-                  modeModelOverrides={modeModelOverrides || {}}
-                  modelKeyForMode={modelKeyForMode}
-                  allowWebSearch={security.allowWebSearch !== false}
                   returnFocusRef={recipeButtonRef}
                   onApply={applyRecipe}
                   onClose={() => {

@@ -5,7 +5,6 @@ import {
   buildRecipeObjective,
   initialRecipeValues,
   missingRecipeFields,
-  recipeAvailability,
   recipesForMode,
 } from "./promptRecipes.js";
 
@@ -13,10 +12,6 @@ export function PromptRecipePanel({
   modes,
   initialMode,
   initialRecipeId,
-  models,
-  modeModelOverrides,
-  modelKeyForMode,
-  allowWebSearch,
   returnFocusRef,
   onApply,
   onClose,
@@ -52,25 +47,12 @@ export function PromptRecipePanel({
     setObjective(buildRecipeObjective(selected, nextValues));
   }, [selected]);
 
-  function routedModel(item) {
-    const key = modelKeyForMode?.(item.mode, modeModelOverrides || {});
-    return models.find((model) => model.key === key) || null;
-  }
-
-  function availabilityFor(item) {
-    return recipeAvailability(item, {
-      model: routedModel(item),
-      allowWebSearch,
-    });
-  }
-
   function chooseMode(nextMode) {
     setMode(nextMode);
     setSelectedId(null);
   }
 
   function chooseRecipe(item) {
-    if (!availabilityFor(item).available) return;
     setSelectedId(item.id);
   }
 
@@ -81,8 +63,7 @@ export function PromptRecipePanel({
   }
 
   const missing = missingRecipeFields(selected, values);
-  const selectedAvailability = selected ? availabilityFor(selected) : { available: false, reason: "" };
-  const canApply = selectedAvailability.available && missing.length === 0 && objective.trim().length > 0;
+  const canApply = Boolean(selected) && missing.length === 0 && objective.trim().length > 0;
 
   return (
     <aside
@@ -177,27 +158,21 @@ export function PromptRecipePanel({
           </div>
 
           <div className="prompt-recipe-list" aria-live="polite">
-            {recipes.map((item) => {
-              const availability = availabilityFor(item);
-              return (
+            {recipes.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   className="prompt-recipe-card"
                   data-testid="prompt-recipe-card"
-                  disabled={!availability.available}
-                  aria-describedby={!availability.available ? `recipe-reason-${item.id}` : undefined}
                   onClick={() => chooseRecipe(item)}
                 >
                   <span>
                     <strong>{item.title}</strong>
                     <small>{item.description}</small>
-                    {!availability.available && <em id={`recipe-reason-${item.id}`}>{availability.reason}</em>}
                   </span>
-                  {availability.available ? <ChevronRight size={16} aria-hidden="true" /> : <span className="prompt-recipe-locked">Unavailable</span>}
+                  <ChevronRight size={16} aria-hidden="true" />
                 </button>
-              );
-            })}
+              ))}
           </div>
         </div>
       )}
@@ -217,7 +192,7 @@ export function PromptRecipePanel({
             </button>
           </>
         ) : (
-          <p>Recipes respect the model routed to each mode and the current security policy.</p>
+          <p>Choose any recipe now. Rasputin checks model readiness when you send it.</p>
         )}
       </footer>
     </aside>
