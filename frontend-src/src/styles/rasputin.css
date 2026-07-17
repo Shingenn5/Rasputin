@@ -1491,6 +1491,29 @@ button.runtime-chip {
   margin-bottom: 0;
 }
 
+.markdown-body.is-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: .45em;
+  height: .9em;
+  margin-left: .22em;
+  border-radius: 1px;
+  background: var(--ras-accent);
+  vertical-align: -.08em;
+  animation: ras-stream-caret 1s steps(1, end) infinite;
+}
+
+@keyframes ras-stream-caret {
+  0%, 48% { opacity: 1; }
+  49%, 100% { opacity: .18; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-body.is-streaming > :last-child::after {
+    animation: none;
+  }
+}
+
 .markdown-body pre,
 .markdown-body code {
   border-radius: 6px;

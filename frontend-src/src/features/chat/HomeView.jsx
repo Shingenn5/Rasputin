@@ -198,7 +198,7 @@ export function HomeView(props) {
     [homeTasks],
   );
   const threadVersion = useMemo(
-    () => orderedHomeTasks.map((task) => `${task.id}:${task.status}:${task.progress}:${String(task.result || "").length}:${(task.logs || []).join("").length}`).join("|"),
+    () => orderedHomeTasks.map((task) => `${task.id}:${task.status}:${task.progress}:${String(task.streamText || "").length}:${String(task.result || "").length}:${(task.logs || []).join("").length}`).join("|"),
     [orderedHomeTasks],
   );
   const activeHomeTasks = orderedHomeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
@@ -1068,9 +1068,16 @@ function ModeSidePanel({
 }
 
 function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskDetails }) {
-  const response = task.result || task.logs?.slice(-4).join("\n") || "Working...";
   const status = task.status || "queued";
   const active = ["queued", "running", "paused"].includes(status);
+  const runningPhase = [...(task.steps || [])].reverse().find((step) => step.kind === "phase" && step.status === "running")?.name;
+  // Planning/execution streams remain available in task details; the chat
+  // bubble presents only a direct chat reply or the final reflection so it
+  // never flashes internal intermediate drafts as if they were the answer.
+  const presentsAnswer = task.mode === "chat" || runningPhase === "chat" || runningPhase === "reflection";
+  const liveText = presentsAnswer ? String(task.streamText || "") : "";
+  const streaming = status === "running" && Boolean(liveText);
+  const response = task.result || liveText || task.logs?.slice(-4).join("\n") || "Working...";
   return (
     <article className="thread-item">
       <div className="message user-message">
@@ -1086,10 +1093,16 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           <span>Rasputin</span>
           <span className={`status-pill status-${status}`}>{status}</span>
           {active && (
-            <span className="status-pill status-running">{Number(task.progress || 0)}%</span>
+            <span className="status-pill status-running">
+              {streaming ? "Generating…" : `${Number(task.progress || 0)}%`}
+            </span>
           )}
         </div>
-        <div className="markdown-body">
+        <div
+          className={`markdown-body${streaming ? " is-streaming" : ""}`}
+          data-testid="chat-assistant-response"
+          data-streaming={streaming ? "true" : "false"}
+        >
           <ReactMarkdown
             rehypePlugins={[rehypeSanitize]}
             components={{
