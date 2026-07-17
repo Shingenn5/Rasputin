@@ -202,6 +202,8 @@ export function buildRecipeObjective(item, values = {}) {
 
 export function modelSupportsAgenticRecipes(model) {
   if (!model) return false;
+  const certifiedModes = model.compatibility?.supportedModes;
+  if (Array.isArray(certifiedModes) && !certifiedModes.some((mode) => mode !== "chat")) return false;
   return !model.managed || model.toolSupport === "agentic" || Boolean(model.toolCallParser);
 }
 

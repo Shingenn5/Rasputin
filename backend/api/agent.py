@@ -12,6 +12,8 @@ from backend.core import connectors
 from backend.core import intake
 from backend.core.response import ok, AppError
 from backend.mcp import skills as skill_store
+from backend.models import providers as model_providers
+from backend.models import registry as model_registry
 from backend.rag import graph as graphify
 from backend.rag import memory as memory_store
 from backend.rag import obsidian as obsidian_export
@@ -152,13 +154,31 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
     objective = str(req.objective or "").strip()
     if attachment_context:
         objective = f"{objective or 'Analyze the attached files.'}\n\n{attachment_context}"
+    requested_mode = req.mode
+    resolved_mode = requested_mode
+    selected_model = model_registry.get_model(req.model)
+    compatibility = (selected_model or {}).get("compatibility") or {}
+    certified_modes = compatibility.get("supportedModes")
+    if compatibility.get("status") == "incompatible":
+        issue = next(iter(compatibility.get("issues") or []), "The model failed Rasputin's compatibility checks.")
+        raise AppError("model_incompatible", f"This model is reachable but incompatible: {issue}", 409)
+    if requested_mode != "chat" and (
+        (isinstance(certified_modes, list) and requested_mode not in certified_modes)
+        or not model_providers.supports_agentic_tools(selected_model)
+    ):
+        resolved_mode = "chat"
+        audit.log("task_mode_compatibility_fallback", {
+            "model": req.model,
+            "requested_mode": requested_mode,
+            "resolved_mode": resolved_mode,
+        }, actor=_user["username"])
     task = hub.start(
         objective,
         req.model,
         req.skill,
         max(0, min(req.subagents, 4)),
         workspace_ref,
-        req.mode,
+        resolved_mode,
         req.session_id,
         reasoning=req.reasoning,
         owner_id=_user["username"],

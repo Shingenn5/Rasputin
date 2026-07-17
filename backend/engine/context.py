@@ -31,6 +31,10 @@ def normalize_limits(cfg=None):
 
 def limits_for_model(model_key):
     cfg = model_registry.get_model(model_key) or {}
+    compatibility = cfg.get("compatibility") or {}
+    reliable = compatibility.get("reliableContextWindow")
+    if reliable:
+        cfg = {**cfg, "context_window": min(int(cfg.get("context_window") or cfg.get("context") or reliable), int(reliable))}
     return normalize_limits(cfg)
 
 

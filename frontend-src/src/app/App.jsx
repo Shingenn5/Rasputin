@@ -220,6 +220,7 @@ export function App() {
     ? { active: true, id: activeWorkspaceEntry.id, name: activeWorkspaceEntry.displayName || activeWorkspaceEntry.name || activeWorkspaceName }
     : null;
   const healthy = isModelHealthy(selectedModelObject);
+  const modelReady = healthy && selectedModelObject?.compatibility?.status !== "incompatible";
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const queuedMessages = tasks
@@ -652,9 +653,11 @@ export function App() {
   const chooseTaskMode = useCallback((mode) => {
     const routedModel = modelKeyForMode(mode);
     const routedConfig = models.find((model) => model.key === routedModel);
-    const supportsAgenticMode = !routedConfig?.managed
+    const certifiedModes = routedConfig?.compatibility?.supportedModes;
+    const certificationAllowsMode = !Array.isArray(certifiedModes) || certifiedModes.includes(mode);
+    const supportsAgenticMode = certificationAllowsMode && (!routedConfig?.managed
       || routedConfig.toolSupport === "agentic"
-      || Boolean(routedConfig.toolCallParser);
+      || Boolean(routedConfig.toolCallParser));
     const resolvedMode = mode !== "chat" && !supportsAgenticMode ? "chat" : mode;
     setTaskMode(resolvedMode);
     const resolvedModel = resolvedMode === mode ? routedModel : modelKeyForMode(resolvedMode);
@@ -1911,7 +1914,7 @@ export function App() {
         objective={objective}
         setObjective={setObjective}
         sendTask={sendTask}
-        healthy={healthy}
+        healthy={modelReady}
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
@@ -1933,7 +1936,7 @@ export function App() {
         cancelTask={cancelTask}
         pauseTask={pauseTask}
         resumeTask={resumeTask}
-        healthy={healthy}
+        healthy={modelReady}
         composerStatus={composerStatus}
         approvalCount={approvalCount}
         taskMode={taskMode}

@@ -29,6 +29,7 @@ from backend.engine import prompt_security as prompt_security
 from backend.models import catalog as model_catalog
 from backend.models import registry as model_registry
 from backend.models import providers as model_providers
+from backend.models import compatibility as model_compatibility
 from backend.mcp import relay as mcp_relay
 from backend.rag import vector as rag
 from backend.core import runtime_store as runtime_store
@@ -355,6 +356,142 @@ class BackendSmokeTests(unittest.TestCase):
         section_status = {item["key"]: item["status"] for item in trace["sections"]}
         self.assertIn(section_status["current_user_message"], {"included", "trimmed"})
         self.assertIn(section_status["workspace_tree"], {"trimmed", "omitted"})
+
+    def testCompatibilityCertificationDowngradesContextWeakModel(self):
+        responses = [
+            ("RASPUTIN_READY_7319", []),
+            ("Okay, Rasputin is ready to respond.", []),
+            ("- red\n- blue\n- yellow", []),
+            ("I cannot call that tool.", []),
+        ]
+        with patch("backend.models.compatibility._chat", side_effect=responses):
+            profile = model_compatibility.certify({
+                "key": "tiny-model",
+                "model": "tiny-model",
+                "runtime": "docker-llamacpp",
+                "context_window": 4096,
+            })
+        self.assertEqual(profile["status"], "limited")
+        self.assertEqual(profile["tier"], "basic-chat")
+        self.assertEqual(profile["promptProfile"], "light")
+        self.assertEqual(profile["supportedModes"], ["chat"])
+        self.assertEqual(profile["reliableContextWindow"], 1024)
+        self.assertFalse(profile["tests"]["contextRetention"]["passed"])
+
+    def testCompatibilityCertificationRecognizesAgenticModel(self):
+        responses = [
+            ("RASPUTIN_READY_7319", []),
+            ("RASPUTIN_RETAINED_4826", []),
+            ("- red\n- blue\n- yellow", []),
+            ("", [{"id": "probe", "name": "rasputin_compatibility_probe", "args": {"value": "READY"}}]),
+        ]
+        with patch("backend.models.compatibility._chat", side_effect=responses):
+            profile = model_compatibility.certify({"key": "capable", "model": "capable", "context_window": 8192})
+        self.assertEqual(profile["status"], "certified")
+        self.assertEqual(profile["tier"], "agentic")
+        self.assertIn("code", profile["supportedModes"])
+        self.assertEqual(profile["toolSupport"], "agentic")
+
+    def testCompatibilityCertificationKeepsOneBillionParameterModelLight(self):
+        responses = [
+            ("RASPUTIN_READY_7319", []),
+            ("RASPUTIN_RETAINED_4826", []),
+            ("- red\n- blue\n- yellow", []),
+            ("No tool call", []),
+        ]
+        with patch("backend.models.compatibility._chat", side_effect=responses):
+            profile = model_compatibility.certify({
+                "key": "gemma-3-1b-it",
+                "name": "Gemma 3 1B IT",
+                "model": "gemma-3-1b-it-q4",
+                "context_window": 4096,
+            })
+        self.assertEqual(profile["tier"], "basic-chat")
+        self.assertEqual(profile["promptProfile"], "light")
+        self.assertEqual(profile["reliableContextWindow"], 1024)
+        self.assertEqual(profile["parameterBillions"], 1.0)
+
+    def testCompatibilityRejectsModelThatExposesUnclosedThinking(self):
+        responses = [
+            ("RASPUTIN_READY_7319", []),
+            ("RASPUTIN_RETAINED_4826", []),
+            ("<think>I should list colors. Red, blue, and yellow are colors, so I will keep reasoning", []),
+        ]
+        with patch("backend.models.compatibility._chat", side_effect=responses):
+            profile = model_compatibility.certify({"key": "broken-thinking", "model": "broken-thinking"})
+        self.assertEqual(profile["status"], "incompatible")
+        self.assertEqual(profile["supportedModes"], [])
+        self.assertFalse(profile["tests"]["ordinaryResponse"]["passed"])
+
+    def testPromptEchoDetectionMatchesRasputinBundle(self):
+        echoed = (
+            "You are Rasputin, the user's local AI workbench assistant.\n"
+            "User Message: make a list\nPrevious Conversation: none\n"
+            "Workspace: C:/example\nRelevant Memory Recall: none\n"
+            "Actual local RAG context: untrusted content"
+        )
+        self.assertTrue(model_compatibility.looks_like_prompt_echo(echoed))
+        self.assertFalse(model_compatibility.looks_like_prompt_echo("Here is a useful list:\n- One\n- Two"))
+
+    def testContextGovernorUsesCertifiedReliableWindow(self):
+        model = {
+            "context_window": 8192,
+            "max_tokens": 160,
+            "compatibility": {"reliableContextWindow": 1024},
+        }
+        with patch("backend.engine.context.model_registry.get_model", return_value=model):
+            limits = context_governor.limits_for_model("small-certified")
+        self.assertEqual(limits["contextWindow"], 1024)
+
+    def testLightChatProfileSkipsRetrievalAndTools(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask("hello", "small-certified", "general", mode="chat", workspace_path=".")
+        local_hub.phase_model = lambda _task, _role: "small-certified"
+
+        async def retrieval_must_not_run(*_args, **_kwargs):
+            raise AssertionError("light chat should not run retrieval")
+
+        captured = {}
+
+        async def capture_governed(_task, phase, role, sections, tools=None):
+            captured.update({"phase": phase, "role": role, "sections": sections, "tools": tools})
+            return "ok"
+
+        local_hub.mcp.call_tool = retrieval_must_not_run
+        local_hub.governed_chat = capture_governed
+        model = {"key": "small-certified", "compatibility": {"promptProfile": "light"}}
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model):
+            result = asyncio.run(local_hub.chat_reply(task))
+        self.assertEqual(result, "ok")
+        self.assertIsNone(captured["tools"])
+        by_key = {item["key"]: item["content"] for item in captured["sections"]}
+        self.assertEqual(by_key["rag_sources"], "")
+        self.assertEqual(by_key["workspace_tree"], "")
+        self.assertTrue(any(item["kind"] == "adaptive_context" for item in task.trace))
+
+    def testGovernedChatRecoversFromPromptEcho(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask("generate a list", "echo-model", "general", mode="chat", workspace_path=".")
+        local_hub.phase_model = lambda _task, _role: "echo-model"
+        sections = [context_governor.section("task", "Task", task.objective, required=True, priority=0)]
+        calls = {"count": 0}
+
+        async def scripted_chat(_model_key, _messages, tools=None, on_delta=None, reasoning="auto"):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return (
+                    "You are Rasputin. User Message: generate a list. Previous Conversation: none. "
+                    "Workspace: C:/example. Relevant Memory Recall: none. Actual local RAG context: none.",
+                    [],
+                )
+            return "- First\n- Second", []
+
+        with patch("backend.engine.agent._chat", scripted_chat), patch("backend.engine.agent.model_registry.record_prompt_echo") as downgrade:
+            result = asyncio.run(local_hub.governed_chat(task, "chat", "main", sections, tools=None))
+        self.assertEqual(result, "- First\n- Second")
+        self.assertEqual(calls["count"], 2)
+        downgrade.assert_called_once_with("echo-model")
+        self.assertTrue(any(item["kind"] == "prompt_echo_recovery" for item in task.trace))
 
     def testAgentChatRecordsContextBudgetTrace(self):
         hub = agent.AgentHub()
@@ -766,7 +903,13 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertGreaterEqual(fit_item["fitScore"], 70)
         self.assertTrue(any("VRAM" in reason for reason in fit_item["fitReasons"]))
 
-        with patch("backend.warsat.hardware_probe", return_value=hardware):
+        # The route intentionally returns locally available weights. Make the
+        # fixture deterministic instead of depending on whether the test host
+        # happens to have a populated Hugging Face/Docker model cache.
+        with patch("backend.warsat.hardware_probe", return_value=hardware), \
+             patch("backend.models.catalog._local_items", return_value=[model_catalog._curated_items()[0]]), \
+             patch("backend.models.catalog._native_docker_cache_items", return_value=[]), \
+             patch("backend.models.catalog._warsat_cache_items", return_value=[]):
             routed = self.assertOk(self.client.get("/api/model-catalog?fit=true"))
         self.assertIn("fitScore", routed["items"][0])
 

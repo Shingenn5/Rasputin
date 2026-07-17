@@ -564,6 +564,11 @@ async def model_registry_stop(req: ModelKeyIn, _user=Depends(require_admin)):
 async def model_registry_test(req: ModelKeyIn, _user=Depends(require_admin)):
     return ok(model_registry.test_model(req.key))
 
+@models_router.post("/model-registry/certify")
+
+async def model_registry_certify(req: ModelKeyIn, _user=Depends(require_admin)):
+    return ok(model_registry.certify_model(req.key))
+
 @models_router.post("/model-registry/discover")
 
 async def model_registry_discover(req: ModelKeyIn, _user=Depends(require_admin)):

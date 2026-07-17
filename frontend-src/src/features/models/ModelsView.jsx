@@ -67,6 +67,34 @@ function statusColor(st) {
   return "var(--cc-muted)";
 }
 
+function CompatibilitySummary({ model }) {
+  const profile = model?.compatibility;
+  if (!profile) {
+    return (
+      <div data-testid="model-compatibility" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        Not certified yet. Run Test to verify chat, context retention, and tool calling automatically.
+      </div>
+    );
+  }
+  const status = profile.status || "unknown";
+  const modes = Array.isArray(profile.supportedModes) ? profile.supportedModes : [];
+  const issues = Array.isArray(profile.issues) ? profile.issues : [];
+  const tone = status === "certified" ? "text-emerald-400" : status === "incompatible" ? "text-red-400" : "text-amber-400";
+  return (
+    <div data-testid="model-compatibility" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <strong className={tone}>{labelize(status)}</strong>
+        <span className="text-muted-foreground">Tier: {labelize(profile.tier || "unknown")}</span>
+        <span className="text-muted-foreground">Context profile: {labelize(profile.promptProfile || "standard")}</span>
+      </div>
+      <div className="mt-1 text-muted-foreground">
+        Modes: {modes.length ? modes.map(labelize).join(", ") : "None"}
+      </div>
+      {issues[0] && <div className="mt-1 text-amber-400">{issues[0]}</div>}
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════ */
@@ -693,6 +721,8 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
         </div>
       )}
 
+      <CompatibilitySummary model={model} />
+
       <div className="flex gap-2">
         <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Test</Button>
         <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Discover</Button>
@@ -743,6 +773,9 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
           <Wrench size={13} /> {mismatch}
         </div>
       )}
+
+
+      <CompatibilitySummary model={model} />
 
       <div style={{ display: "flex", gap: "8px" }}>
         <button className="w2-button" type="button" onClick={handleTest}><CheckCircle2 size={14} /> Test</button>

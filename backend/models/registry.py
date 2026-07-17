@@ -11,6 +11,7 @@ from urllib.parse import urlparse, urlunparse
 
 from backend.core import audit as audit
 from backend.models import providers as model_providers
+from backend.models import compatibility as model_compatibility
 from backend.models import secrets as model_secrets
 from backend.core import security as security
 from backend.core import workspace
@@ -269,6 +270,61 @@ def _store_health(key, status, latency_ms=None, error=None, models=None):
         _save(data)
 
 
+def _store_compatibility(key, profile):
+    data = _load()
+    saved = None
+    for model in data["models"]:
+        if model.get("key") != key:
+            continue
+        model["compatibility"] = dict(profile or {})
+        # Keep these established top-level fields in sync so existing mode
+        # routing remains conservative without every caller understanding the
+        # full certification document.
+        model["tool_support"] = profile.get("toolSupport") or "chat-only"
+        model["certification_status"] = profile.get("status") or "unknown"
+        saved = dict(model)
+        break
+    if saved:
+        _save(data)
+    return saved
+
+
+def record_prompt_echo(key):
+    """Persist a runtime downgrade after an actual prompt-echo response."""
+    data = _load()
+    saved = None
+    for model in data["models"]:
+        if model.get("key") != key:
+            continue
+        profile = dict(model.get("compatibility") or {})
+        issues = list(profile.get("issues") or [])
+        issue = "Prompt echo was detected at runtime; lightweight Chat context is enforced."
+        if issue not in issues:
+            issues.append(issue)
+        profile.update({
+            "status": "limited",
+            "tier": "basic-chat",
+            "promptProfile": "light",
+            "supportedModes": ["chat"],
+            "reliableContextWindow": min(
+                int(model.get("context_window") or model.get("context") or 4096),
+                1024,
+            ),
+            "toolSupport": "chat-only",
+            "issues": issues,
+            "lastPromptEchoAt": time.time(),
+        })
+        model["compatibility"] = profile
+        model["tool_support"] = "chat-only"
+        model["certification_status"] = "limited"
+        saved = dict(model)
+        break
+    if saved:
+        _save(data)
+        audit.log("model_prompt_echo_downgrade", {"key": key})
+    return saved
+
+
 def _http_error_payload(exc):
     try:
         raw = exc.read().decode("utf-8")
@@ -473,6 +529,16 @@ def upsert(model):
         model.pop("secret_ref", None)
     elif model_secrets.public_state({**model, "key": key}).get("has_api_key"):
         model["secret_ref"] = f"model:{key}"
+    existing = next((m for m in data["models"] if m.get("key") == key), None)
+    if existing and "compatibility" not in model:
+        same_runtime = all(
+            str(existing.get(field) or "") == str(model.get(field) or existing.get(field) or "")
+            for field in ("provider", "runtime", "model", "image", "base_url")
+        )
+        if same_runtime:
+            for field in ("compatibility", "tool_support", "certification_status"):
+                if field in existing:
+                    model[field] = existing[field]
     kept = [m for m in data["models"] if m.get("key") != key]
     kept.append(model)
     data["models"] = kept
@@ -900,8 +966,56 @@ def test_model(key):
         audit.log("model_test_failed", {"key": key, "url": url, "error": str(exc)})
         return {"ok": False, "status": "unhealthy", "url": url, "error": str(exc), "available_models": []}
     _store_health(key, "reachable", latency_ms, "", [model.get("model")] if model.get("model") else [])
-    audit.log("model_test", {"key": key, "url": url})
-    return {"ok": True, "status": "reachable", "latency_ms": latency_ms, "url": url, "response": data}
+    compatibility = None
+    certification_error = ""
+    try:
+        # WarSat already calls test_model after a successful deployment, so
+        # this makes certification automatic for pulled models while retaining
+        # the existing Test button behavior for manually registered endpoints.
+        compatibility = model_compatibility.certify(get_model(key) or model)
+        _store_compatibility(key, compatibility)
+    except Exception as exc:
+        certification_error = str(exc)
+        audit.log("model_certification_failed", {"key": key, "error": certification_error})
+    audit.log("model_test", {
+        "key": key,
+        "url": url,
+        "certification": (compatibility or {}).get("status") or "failed",
+    })
+    return {
+        "ok": True,
+        "status": "reachable",
+        "latency_ms": latency_ms,
+        "url": url,
+        "response": data,
+        "compatibility": compatibility,
+        "certification_error": certification_error,
+    }
+
+
+def certify_model(key):
+    security.require("allow_model_tests")
+    model = get_model(key)
+    if not model:
+        raise AppError("model_missing", "Model is not registered.", 404)
+    if key == "dry-run" or model.get("provider") in {"mock", "hash-vector"}:
+        profile = {
+            "version": model_compatibility.CERTIFICATION_VERSION,
+            "status": "certified",
+            "tier": "test",
+            "promptProfile": "light",
+            "supportedModes": ["chat", "analyze", "research", "code", "write", "organize", "review"],
+            "reliableContextWindow": 4096,
+            "toolSupport": "agentic",
+            "issues": [],
+            "tests": {},
+            "testedAt": time.time(),
+        }
+    else:
+        profile = model_compatibility.certify(model)
+    _store_compatibility(key, profile)
+    audit.log("model_certified", {"key": key, "status": profile.get("status"), "tier": profile.get("tier")})
+    return {"key": key, "compatibility": profile}
 
 
 def logs_model(key, limit=120):

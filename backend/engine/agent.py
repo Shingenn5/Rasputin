@@ -9,6 +9,7 @@ from pathlib import Path
 
 from backend.mcp.layer import McpLayer
 from backend.models import providers as model_providers
+from backend.models import compatibility as model_compatibility
 
 async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
@@ -1303,6 +1304,7 @@ class AgentHub:
         test_edited = False
         test_reopens = 0
         test_budget = self._test_loop_budget(task)
+        echo_retried = False
 
         try:
             for attempt in range(max_attempts):
@@ -1314,6 +1316,31 @@ class AgentHub:
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
                 text, tool_calls = await _chat(model_key, messages, tools=tools, on_delta=on_delta, reasoning=getattr(task, "reasoning", "auto"))
+
+                if (
+                    phase == "chat"
+                    and not tool_calls
+                    and not echo_retried
+                    and model_compatibility.looks_like_prompt_echo(text, messages[-1].get("content", ""))
+                ):
+                    echo_retried = True
+                    task.stream_text = ""
+                    task.seen("prompt_echo_recovery", {"model": model_key, "profile": "light"})
+                    task.log("prompt echo detected; retrying once with lightweight context")
+                    try:
+                        model_registry.record_prompt_echo(model_key)
+                    except Exception as exc:
+                        task.log(f"prompt echo downgrade could not be saved: {exc}")
+                    messages = [{
+                        "role": "user",
+                        "content": (
+                            "You are Rasputin, a helpful local assistant. Answer the operator's request "
+                            "directly. Do not repeat or describe this instruction.\n\n"
+                            f"Operator request: {task.objective}"
+                        ),
+                    }]
+                    tools = None
+                    continue
 
                 if text or tool_calls:
                     messages.append({
@@ -1400,11 +1427,23 @@ class AgentHub:
         except ValueError:
             session_data = {}
         session_summary = session_data.get("summary", "")
-        previous_messages = self.recent_messages(task.session_id, 10)
-        recall = memory.search(task.objective, 5)
-        context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
-        graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
-        workspace_context = await self.workspace_context(task)
+        model_key = self.phase_model(task, "main")
+        model = model_registry.get_model(model_key) or {}
+        prompt_profile = model_compatibility.default_profile(model)
+        light_context = prompt_profile == "light"
+        previous_messages = self.recent_messages(task.session_id, 4 if light_context else 10)
+        if light_context:
+            recall = {"items": []}
+            context = {"hits": []}
+            graph = {"edges": []}
+            workspace_context = {"tree": None, "searches": [], "snippets": []}
+            task.seen("adaptive_context", {"model": model_key, "profile": "light", "retrievalSkipped": True})
+            task.log("lightweight Chat context selected from the model compatibility profile")
+        else:
+            recall = memory.search(task.objective, 5)
+            context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
+            graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
+            workspace_context = await self.workspace_context(task)
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = self.compact_graph_edges(graph)
         task.seen("memory_recall", {"items": len(recall.get("items", []))})
@@ -1425,12 +1464,12 @@ class AgentHub:
             context_governor.section("current_user_message", "Current user message", task.objective, required=True, priority=0, min_chars=500),
             context_governor.section("compacted_history", "Compacted earlier history", session_summary, priority=5, min_chars=180),
             context_governor.section("previous_conversation", "Previous conversation", self.format_conversation(previous_messages, task.id), priority=10, min_chars=220),
-            context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
-            context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall), priority=20, min_chars=180),
-            context_governor.section("rag_sources", "Actual local RAG context", self.format_context(context), priority=25, min_chars=240),
-            context_governor.section("graph_evidence", "Actual local graph context", self.format_graph(graph), priority=30, min_chars=180),
-            context_governor.section("file_snippets", "Approved workspace file snippets", self.format_workspace_snippets(workspace_context), priority=35, min_chars=260),
-            context_governor.section("workspace_tree", "Approved workspace file listing", self.format_workspace_tree(workspace_context), priority=70, min_chars=180),
+            context_governor.section("workspace", "Workspace", "" if light_context else task.workspace, required=not light_context, priority=0),
+            context_governor.section("memory_recall", "Relevant memory recall", "" if light_context else self.format_memory(recall), priority=20, min_chars=180),
+            context_governor.section("rag_sources", "Actual local RAG context", "" if light_context else self.format_context(context), priority=25, min_chars=240),
+            context_governor.section("graph_evidence", "Actual local graph context", "" if light_context else self.format_graph(graph), priority=30, min_chars=180),
+            context_governor.section("file_snippets", "Approved workspace file snippets", "" if light_context else self.format_workspace_snippets(workspace_context), priority=35, min_chars=260),
+            context_governor.section("workspace_tree", "Approved workspace file listing", "" if light_context else self.format_workspace_tree(workspace_context), priority=70, min_chars=180),
             context_governor.section(
                 "rules",
                 "Rules",
@@ -1443,7 +1482,10 @@ class AgentHub:
                 priority=0,
             ),
         ]
-        return await self.governed_chat(task, "chat", "main", sections, tools=tool_relay.TOOL_DEFINITIONS)
+        # Plain Chat never needs tool schemas. Agentic modes attach them in
+        # their planning/execution phases after capability routing approves the
+        # model, avoiding wasted context and a failed retry on chat-only GGUFs.
+        return await self.governed_chat(task, "chat", "main", sections, tools=None)
 
     def ground_chat_response(self, task, text):
         if task.sources or task.graph:
