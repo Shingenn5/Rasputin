@@ -5,6 +5,7 @@ param(
     [switch]$EnableWarSat,
     [switch]$Native,
     [switch]$Lan,
+    [switch]$NoOpen,
     [string[]]$TlsName = @(),
     [string[]]$AllowedHost = @(),
     [ValidateRange(0, 65535)]
@@ -39,6 +40,44 @@ function Open-Browser {
     param([string]$Url)
     Write-Host "Opening $Url in your default browser..." -ForegroundColor Cyan
     Start-Process $Url
+}
+
+function Set-RasputinCommandShim {
+    param([switch]$Remove)
+
+    $shimDir = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
+    $shimPath = Join-Path $shimDir "rasputin.cmd"
+    $marker = "rem Rasputin CLI shim"
+
+    if ($Remove) {
+        if (-not (Test-Path -LiteralPath $shimPath)) {
+            Write-Host "The global 'rasputin' command is not installed." -ForegroundColor Yellow
+            return
+        }
+        $existing = [System.IO.File]::ReadAllText($shimPath)
+        if (-not $existing.Contains($marker)) {
+            Write-Host "Refusing to remove an unrelated command at $shimPath" -ForegroundColor Red
+            exit 1
+        }
+        Remove-Item -LiteralPath $shimPath -Force
+        Write-Host "Removed the global 'rasputin' command." -ForegroundColor Green
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+    if (Test-Path -LiteralPath $shimPath) {
+        $existing = [System.IO.File]::ReadAllText($shimPath)
+        if (-not $existing.Contains($marker)) {
+            Write-Host "Refusing to replace an unrelated command at $shimPath" -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    $launcher = Join-Path $PSScriptRoot "rasputin.ps1"
+    $content = "@echo off`r`n$marker`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$launcher`" %*`r`n"
+    [System.IO.File]::WriteAllText($shimPath, $content, [System.Text.Encoding]::ASCII)
+    Write-Host "Installed the global 'rasputin' command." -ForegroundColor Green
+    Write-Host "You can now run 'rasputin native' from any PowerShell window." -ForegroundColor Cyan
 }
 
 function Get-Credentials {
@@ -161,14 +200,12 @@ function Stop-Rasputin {
     Write-Host "Rasputin stopped." -ForegroundColor Green
 }
 
-function Start-Native {
-    param([int]$RequestedPort = 0, [switch]$AllowLan)
+function Initialize-NativeEnvironment {
+    param([switch]$RefreshDependencies)
 
-    # Native (no-Docker) launch: venv bootstrap + uvicorn. Runtime data goes to
-    # %LOCALAPPDATA%\Rasputin\data (a fresh instance) unless RASPUTIN_DATA_DIR is
-    # set. Serves the prebuilt frontend\ exactly as the container does.
     $venv = Join-Path $PSScriptRoot ".venv"
     $vpy = Join-Path $venv "Scripts\python.exe"
+    $created = $false
     if (-not (Test-Path $vpy)) {
         $bootstrapPython = Get-Command python -ErrorAction SilentlyContinue
         $bootstrapArgs = @()
@@ -182,15 +219,50 @@ function Start-Native {
             exit 1
         }
 
-        Write-Host "Creating .venv and installing dependencies (first run only)..." -ForegroundColor Cyan
+        Write-Host "Creating .venv (first run only)..." -ForegroundColor Cyan
         & $bootstrapPython.Source @bootstrapArgs -m venv $venv
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $vpy)) {
             Write-Host "Failed to create the native Python environment." -ForegroundColor Red
             exit 1
         }
         & $vpy -m pip install --quiet --upgrade pip
-        & $vpy -m pip install --quiet -r (Join-Path $PSScriptRoot "requirements.txt")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $created = $true
     }
+
+    if ($created -or $RefreshDependencies) {
+        Write-Host "Installing native Python dependencies..." -ForegroundColor Cyan
+        & $vpy -m pip install --quiet -r (Join-Path $PSScriptRoot "requirements.txt")
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+}
+
+function Build-NativeFrontend {
+    param([switch]$RefreshDependencies)
+
+    $frontend = Join-Path $PSScriptRoot "frontend\index.html"
+    if ((Test-Path $frontend) -and -not $RefreshDependencies) { return }
+
+    if ($RefreshDependencies -or -not (Test-Path (Join-Path $PSScriptRoot "node_modules"))) {
+        Write-Host "Installing frontend dependencies..." -ForegroundColor Cyan
+        & npm.cmd ci
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    Write-Host "Building the native frontend..." -ForegroundColor Cyan
+    & npm.cmd run build
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+function Start-Native {
+    param([int]$RequestedPort = 0, [switch]$AllowLan)
+
+    # Native (no-Docker) launch: venv bootstrap + uvicorn. Runtime data goes to
+    # %LOCALAPPDATA%\Rasputin\data (a fresh instance) unless RASPUTIN_DATA_DIR is
+    # set. Serves the prebuilt frontend\ exactly as the container does.
+    Initialize-NativeEnvironment
+    Build-NativeFrontend
+    $vpy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 
     $port = if ($RequestedPort -gt 0) { "$RequestedPort" } elseif ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
     if (Get-NetTCPConnection -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue) {
@@ -234,12 +306,20 @@ function Start-Native {
 }
 
 function Invoke-NativeHost {
-    param([string]$Action)
+    param(
+        [string]$Action,
+        [switch]$Bootstrap,
+        [switch]$Rebuild,
+        [switch]$OpenAfterStart
+    )
 
     $vpy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-    if (-not (Test-Path -LiteralPath $vpy)) {
+    if ($Bootstrap -or $Rebuild) {
+        Initialize-NativeEnvironment -RefreshDependencies:$Rebuild
+        Build-NativeFrontend -RefreshDependencies:$Rebuild
+    } elseif (-not (Test-Path -LiteralPath $vpy)) {
         Write-Host "The native environment has not been created yet." -ForegroundColor Yellow
-        Write-Host "Run '.\rasputin.ps1 start -Native -Port 8788' once, then stop it with Ctrl+C." -ForegroundColor Cyan
+        Write-Host "Run '.\rasputin.ps1 native' to set it up and start it." -ForegroundColor Cyan
         exit 1
     }
     $arguments = @("-m", "backend.tools.native_host", $Action)
@@ -247,7 +327,15 @@ function Invoke-NativeHost {
     if ($Lan) { $arguments += "--lan" }
     foreach ($hostName in $AllowedHost) { $arguments += @("--allowed-host", $hostName) }
     & $vpy @arguments
-    exit $LASTEXITCODE
+    $result = $LASTEXITCODE
+    if ($result -eq 0 -and $OpenAfterStart -and $Action -in @("start", "restart")) {
+        $statusJson = & $vpy -m backend.tools.native_host status --json 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $status = $statusJson | ConvertFrom-Json
+            if ($status.url) { Open-Browser -Url $status.url }
+        }
+    }
+    exit $result
 }
 
 function Setup-Https {
@@ -339,6 +427,13 @@ switch ($Command.ToLower()) {
     "reset-password" { Test-DockerEnv; Reset-Password }
     "migrate-data" { Invoke-DataMigration }
     "setup-https" { Setup-Https }
+    "install-cli" { Set-RasputinCommandShim }
+    "uninstall-cli" { Set-RasputinCommandShim -Remove }
+    "native" { Invoke-NativeHost -Action "start" -Bootstrap -OpenAfterStart:(-not $NoOpen) }
+    "native-rebuild" { Invoke-NativeHost -Action "restart" -Rebuild -OpenAfterStart:(-not $NoOpen) }
+    "native-stop" { Invoke-NativeHost -Action "stop" }
+    "native-restart" { Invoke-NativeHost -Action "restart" -Bootstrap -OpenAfterStart:(-not $NoOpen) }
+    "native-status" { Invoke-NativeHost -Action "status" }
     "native-host-start" { Invoke-NativeHost -Action "start" }
     "native-host-stop" { Invoke-NativeHost -Action "stop" }
     "native-host-restart" { Invoke-NativeHost -Action "restart" }
@@ -356,6 +451,11 @@ switch ($Command.ToLower()) {
         Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
         Write-Host "  .\rasputin.ps1 migrate-data      - Moves existing .\data into the named volume (idempotent)"
         Write-Host "  .\rasputin.ps1 setup-https [-TlsName rasputin.home,192.168.1.10] - Creates a trusted mkcert certificate"
+        Write-Host "  .\rasputin.ps1 install-cli       - Makes 'rasputin' available in every PowerShell window"
+        Write-Host "  .\rasputin.ps1 uninstall-cli     - Removes the global 'rasputin' command"
+        Write-Host "  .\rasputin.ps1 native [-NoOpen]  - Sets up, starts, and opens the native server"
+        Write-Host "  .\rasputin.ps1 native-rebuild    - Rebuilds dependencies/frontend, restarts, and opens it"
+        Write-Host "  .\rasputin.ps1 native-stop|native-restart|native-status - Short native server controls"
         Write-Host "  .\rasputin.ps1 native-host-start [-Port 8788] [-Lan] [-AllowedHost name] - Starts the persistent native host"
         Write-Host "  .\rasputin.ps1 native-host-stop|native-host-restart|native-host-status - Controls the native host"
         Write-Host "  .\rasputin.ps1 native-host-install|native-host-uninstall - Controls start-at-login registration"
