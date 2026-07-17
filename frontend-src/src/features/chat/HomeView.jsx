@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
-  ArrowUpRight,
   Bot,
+  BookOpen,
   Box,
   Brain,
   Check,
@@ -37,6 +37,8 @@ import { useReliableAction } from "../../lib/actionRegistry.js";
 import { extractFileContent } from "../../lib/fileExtraction.js";
 import { Avatar } from "../../components/Avatar.jsx";
 import { CodeSandbox } from "../../components/CodeSandbox.jsx";
+import { PromptRecipePanel } from "./PromptRecipePanel.jsx";
+import { featuredRecipes, recipesForMode } from "./promptRecipes.js";
 
 const modeOptions = [
   {
@@ -108,16 +110,8 @@ const modePlaceholders = {
   review: "What output should we review?",
 };
 
-const quickPrompts = [
-  { text: "Deep dive a topic", mode: "research" },
-  { text: "Find latest references", mode: "research" },
-  { text: "Summarize active workspace", mode: "analyze" },
-  { text: "Organize files", mode: "organize" },
-  { text: "Review code", mode: "code" },
-  { text: "Plan next feature", mode: "code" },
-  { text: "Find bugs", mode: "code" },
-  { text: "Brainstorm ideas", mode: "chat" },
-];
+const featuredPromptRecipes = featuredRecipes()
+  .filter((item) => ["analyze", "research", "code", "write"].includes(item.mode));
 
 export function HomeView(props) {
   const {
@@ -165,11 +159,15 @@ export function HomeView(props) {
   const modePanelRef = useRef(null);
   const modelButtonRef = useRef(null);
   const modelPanelRef = useRef(null);
+  const recipeButtonRef = useRef(null);
   const previousThreadVersionRef = useRef("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [hasNewActivity, setHasNewActivity] = useState(false);
   const [modePanelOpen, setModePanelOpen] = useState(false);
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
+  const [recipePanelOpen, setRecipePanelOpen] = useState(false);
+  const [recipePanelMode, setRecipePanelMode] = useState(taskMode);
+  const [recipePanelRecipeId, setRecipePanelRecipeId] = useState(null);
 
   // Phase 10: Button Reliability Framework State
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
@@ -261,6 +259,30 @@ export function HomeView(props) {
     window.requestAnimationFrame(() => composerRef.current?.focus());
   }, [setObjective]);
 
+  const openRecipePanel = useCallback((mode = taskMode, recipeId = null) => {
+    setCmd(null);
+    setCmdIndex(0);
+    setModePanelOpen(false);
+    setModelPanelOpen(false);
+    setRecipePanelMode(mode);
+    setRecipePanelRecipeId(recipeId);
+    setRecipePanelOpen(true);
+  }, [taskMode]);
+
+  const applyRecipe = useCallback(({ recipe: selectedRecipe, objective: nextObjective }) => {
+    setTaskMode(selectedRecipe.mode);
+    if (selectedRecipe.reasoning && selectedRecipe.reasoning !== "auto") {
+      setReasoningMode(selectedRecipe.reasoning);
+    }
+    setObjective(nextObjective);
+    setRecipePanelOpen(false);
+    setRecipePanelRecipeId(null);
+    window.requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      resizeComposer();
+    });
+  }, [resizeComposer, setObjective, setReasoningMode, setTaskMode]);
+
   function openFilePicker() {
     fileInputRef.current?.click();
   }
@@ -314,12 +336,11 @@ export function HomeView(props) {
         run: () => setReasoningMode(option.value),
       }));
     } else if (cmd?.path === "prompts") {
-      items = quickPrompts.map((prompt, index) => ({
-        id: `prompt-${index}`,
-        name: prompt.text,
-        hint: `${labelize(prompt.mode)} mode`,
-        keepText: prompt.text,
-        run: () => setTaskMode(prompt.mode),
+      items = modeOptions.map((mode) => ({
+        id: `prompt-mode-${mode.value}`,
+        name: mode.label,
+        hint: `${recipesForMode(mode.value).length} guided recipes - ${mode.description}`,
+        run: () => openRecipePanel(mode.value),
       }));
     } else {
       items = [
@@ -329,7 +350,7 @@ export function HomeView(props) {
         { id: "attach", name: "/attach", hint: "Attach files to the next message.", run: openFilePicker },
         { id: "queue", name: "/queue", hint: "Queue the current draft to run after the active task.", run: queueCurrentDraft },
         ...(queuedMessages.length ? [{ id: "clear-queue", name: "/clear-queue", hint: `Remove ${queuedMessages.length} queued message${queuedMessages.length === 1 ? "" : "s"}.`, run: clearQueuedMessages }] : []),
-        { id: "prompts", name: "/prompts", hint: "Starter prompts for each mode.", submenu: "prompts" },
+        { id: "prompts", name: "/prompts", hint: "Guided prompt recipes for each mode.", submenu: "prompts" },
         { id: "new", name: "/new", hint: "Start a new chat session.", run: () => startNewChat?.() },
         ...(latestActiveTask ? [{ id: "stop", name: "/stop", hint: "Stop the latest running task.", run: () => cancelTask(latestActiveTask.id) }] : []),
         { id: "models-view", name: "/models", hint: "Open the Models view.", run: () => go("models") },
@@ -342,7 +363,7 @@ export function HomeView(props) {
     return items.filter((item) =>
       `${item.name} ${item.hint || ""}`.toLowerCase().includes(cmdQuery));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cmd, cmdQuery, taskMode, reasoningMode, selectedModel, selectedModelObject, models, visibleModels, queuedMessages.length, latestActiveTask?.id]);
+  }, [cmd, cmdQuery, taskMode, reasoningMode, selectedModel, selectedModelObject, models, visibleModels, queuedMessages.length, latestActiveTask?.id, openRecipePanel]);
 
   useEffect(() => { setCmdIndex(0); }, [cmdQuery, cmd?.path]);
 
@@ -592,15 +613,6 @@ export function HomeView(props) {
 
   const canSubmit = (objective.trim() && !objective.trim().startsWith("/")) || attachments.length > 0;
 
-  const chooseQuickPrompt = (prompt) => {
-    setTaskMode(prompt.mode);
-    setObjective(prompt.text);
-    requestAnimationFrame(() => {
-      composerRef.current?.focus();
-      resizeComposer();
-    });
-  };
-
   return (
     <section className={`cc-layout app-view home-view tw ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
       {/* Header */}
@@ -619,7 +631,10 @@ export function HomeView(props) {
             className="cc-model-indicator"
             data-testid="header-model-indicator"
             type="button"
-            onClick={() => setModelPanelOpen(true)}
+            onClick={() => {
+              setRecipePanelOpen(false);
+              setModelPanelOpen(true);
+            }}
             title={`${selectedModelHealthLine} Click to change model.`}
           >
             <span
@@ -663,11 +678,17 @@ export function HomeView(props) {
                 <p className="cc-empty-kicker">READY · PRIVATE · LOCAL</p>
                 <h1 className="cc-objective-title">What should we tackle?</h1>
                 <p className="cc-objective-subtitle">Start with a goal, or choose a direction. Rasputin will keep the work grounded in your active workspace.</p>
-                <div className="cc-quick-actions" aria-label="Starter prompts">
-                  {quickPrompts.slice(2, 6).map((prompt) => (
-                    <button key={prompt.text} type="button" className="cc-quick-action-chip" onClick={() => chooseQuickPrompt(prompt)}>
-                      <span><small>{labelize(prompt.mode)}</small>{prompt.text}</span>
-                      <ArrowUpRight size={14} aria-hidden="true" />
+                <div className="cc-quick-actions" aria-label="Featured prompt recipes">
+                  {featuredPromptRecipes.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="cc-quick-action-chip"
+                      data-testid="featured-prompt-recipe"
+                      onClick={() => openRecipePanel(item.mode, item.id)}
+                    >
+                      <span><small>{labelize(item.mode)} recipe</small>{item.title}</span>
+                      <BookOpen size={14} aria-hidden="true" />
                     </button>
                   ))}
                 </div>
@@ -797,6 +818,17 @@ export function HomeView(props) {
                     </button>
                     <button
                       type="button"
+                      ref={recipeButtonRef}
+                      className="composer-chip"
+                      data-testid="prompt-recipe-trigger"
+                      title={`Browse guided prompts for ${activeMode.label} mode`}
+                      onClick={() => (recipePanelOpen ? setRecipePanelOpen(false) : openRecipePanel(taskMode))}
+                    >
+                      <BookOpen size={14} />
+                      <span>Recipes</span>
+                    </button>
+                    <button
+                      type="button"
                       ref={modeButtonRef}
                       className="composer-chip"
                       data-testid="chat-mode-chip"
@@ -904,6 +936,23 @@ export function HomeView(props) {
                   close={() => {
                     setModelPanelOpen(false);
                     window.requestAnimationFrame(() => modelButtonRef.current?.focus());
+                  }}
+                />
+              )}
+              {recipePanelOpen && (
+                <PromptRecipePanel
+                  modes={modeOptions}
+                  initialMode={recipePanelMode}
+                  initialRecipeId={recipePanelRecipeId}
+                  models={models}
+                  modeModelOverrides={modeModelOverrides || {}}
+                  modelKeyForMode={modelKeyForMode}
+                  allowWebSearch={security.allowWebSearch !== false}
+                  returnFocusRef={recipeButtonRef}
+                  onApply={applyRecipe}
+                  onClose={() => {
+                    setRecipePanelOpen(false);
+                    setRecipePanelRecipeId(null);
                   }}
                 />
               )}

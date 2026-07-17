@@ -999,6 +999,370 @@ html[data-theme="rasputin-dark"] .login-submit {
   background: var(--dash-panel-2);
 }
 
+/* Guided prompt recipes -------------------------------------------------- */
+.prompt-recipe-panel {
+  position: fixed;
+  top: 76px;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1090;
+  width: min(560px, calc(100vw - 2rem));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--dash-accent) 46%, var(--dash-border));
+  border-radius: 16px 5px 16px 5px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--dash-accent) 8%, transparent), transparent 180px),
+    var(--dash-panel);
+  box-shadow: var(--ras-shadow-overlay);
+}
+
+.prompt-recipe-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--dash-border);
+  padding: 18px 20px 16px;
+}
+
+.prompt-recipe-head > div {
+  min-width: 0;
+}
+
+.prompt-recipe-head h2 {
+  margin: 5px 0 4px;
+  color: var(--dash-text);
+  font-size: 1.22rem;
+}
+
+.prompt-recipe-head p,
+.prompt-recipe-footer p,
+.prompt-recipe-summary > p {
+  margin: 0;
+  color: var(--dash-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.prompt-recipe-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dash-accent);
+  font-family: var(--ras-font-mono);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.prompt-recipe-browser,
+.prompt-recipe-editor {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.prompt-recipe-modes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.prompt-recipe-modes button {
+  min-width: 0;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+  background: var(--dash-panel-2);
+  color: var(--dash-muted);
+  padding: 7px 9px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.prompt-recipe-modes button small {
+  color: var(--dash-faint);
+  font-family: var(--ras-font-mono);
+  font-size: 0.62rem;
+}
+
+.prompt-recipe-modes button:hover,
+.prompt-recipe-modes button:focus-visible,
+.prompt-recipe-modes button.is-active {
+  border-color: color-mix(in srgb, var(--dash-accent) 58%, var(--dash-border));
+  background: color-mix(in srgb, var(--dash-accent) 10%, var(--dash-panel));
+  color: var(--dash-text);
+}
+
+.prompt-recipe-list {
+  display: grid;
+  gap: 8px;
+}
+
+.prompt-recipe-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--dash-border);
+  border-radius: 11px 4px 11px 4px;
+  background: color-mix(in srgb, var(--dash-panel-2) 74%, transparent);
+  color: var(--dash-text);
+  padding: 12px 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.prompt-recipe-card:not(:disabled):hover,
+.prompt-recipe-card:not(:disabled):focus-visible {
+  border-color: color-mix(in srgb, var(--dash-accent) 60%, var(--dash-border));
+  background: color-mix(in srgb, var(--dash-accent) 8%, var(--dash-panel));
+}
+
+.prompt-recipe-card > span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.prompt-recipe-card strong {
+  font-size: 0.86rem;
+}
+
+.prompt-recipe-card small,
+.prompt-recipe-card em {
+  color: var(--dash-muted);
+  font-size: 0.73rem;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.prompt-recipe-card em {
+  color: var(--ras-warning);
+}
+
+.prompt-recipe-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.prompt-recipe-locked {
+  flex: 0 0 auto;
+  color: var(--dash-faint);
+  font-family: var(--ras-font-mono);
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.prompt-recipe-editor {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.prompt-recipe-back {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--dash-accent);
+  padding: 2px 0;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.prompt-recipe-summary {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  background: var(--dash-panel-2);
+  padding: 12px;
+}
+
+.prompt-recipe-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.prompt-recipe-summary dl div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.prompt-recipe-summary dt {
+  color: var(--dash-faint);
+  font-family: var(--ras-font-mono);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.prompt-recipe-summary dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--dash-text);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.prompt-recipe-fields {
+  display: grid;
+  gap: 11px;
+}
+
+.prompt-recipe-fields label,
+.prompt-recipe-preview {
+  display: grid;
+  gap: 6px;
+  color: var(--dash-text);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.prompt-recipe-fields label > span,
+.prompt-recipe-preview > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prompt-recipe-fields em,
+.prompt-recipe-fields small {
+  color: var(--dash-faint);
+  font-family: var(--ras-font-mono);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.prompt-recipe-fields input,
+.prompt-recipe-fields textarea,
+.prompt-recipe-preview textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--dash-border-strong);
+  border-radius: 9px;
+  background: var(--dash-panel-2);
+  color: var(--dash-text);
+  padding: 10px 11px;
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.prompt-recipe-fields input:focus,
+.prompt-recipe-fields textarea:focus,
+.prompt-recipe-preview textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--dash-accent) 28%, transparent);
+  border-color: var(--dash-accent);
+}
+
+.prompt-recipe-preview textarea {
+  min-height: 150px;
+  font-family: var(--ras-font-mono);
+  font-size: 0.72rem;
+}
+
+.prompt-recipe-validation {
+  margin: -4px 0 0;
+  color: var(--ras-warning);
+  font-size: 0.72rem;
+}
+
+.prompt-recipe-footer {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--dash-border);
+  padding: 12px 18px;
+}
+
+.prompt-recipe-apply {
+  flex: 0 0 auto;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--dash-accent) 70%, var(--dash-border));
+  border-radius: 9px 3px 9px 3px;
+  background: var(--dash-accent);
+  color: var(--dash-accent-ink, #07110f);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.prompt-recipe-apply:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.2);
+  opacity: 0.48;
+}
+
+@media (max-width: 639px) {
+  .prompt-recipe-panel {
+    top: 58px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+    border-radius: 13px 4px 13px 4px;
+  }
+
+  .prompt-recipe-head {
+    padding: 14px;
+  }
+
+  .prompt-recipe-modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prompt-recipe-summary dl {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-recipe-footer {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 10px 14px;
+  }
+
+  .prompt-recipe-apply {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
 .cmd-menu {
   bottom: calc(100% + 10px);
   border-color: var(--dash-border-strong);
@@ -1443,10 +1807,13 @@ button.workspace-add-folder:focus-visible {
 
   .composer-toolbar {
     align-items: flex-end;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .composer-tools {
-    max-width: calc(100% - 44px);
+    width: 100%;
+    max-width: 100%;
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
