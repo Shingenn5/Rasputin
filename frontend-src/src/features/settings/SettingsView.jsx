@@ -62,6 +62,7 @@ export function SettingsView(props) {
     view,
     section,
     setSection,
+    theme,
     setTheme,
     motionMode,
     setMotionMode,
@@ -207,6 +208,7 @@ export function SettingsView(props) {
           <div className="settings-panel-surface">
             {section === "general" && (
               <GeneralSettings
+                theme={theme}
                 setTheme={setTheme}
                 motionMode={motionMode}
                 setMotionMode={setMotionMode}

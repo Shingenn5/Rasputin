@@ -21,7 +21,13 @@
           "ocean-abyss": { bg: "#010b14", text: "#e0f2f1", accent: "#00ccff", a1: "rgba(0, 204, 255, 0.5)", a2: "rgba(0, 153, 204, 0.42)", a3: "rgba(0, 102, 255, 0.4)", dark: true },
           "hacker-matrix": { bg: "#000000", text: "#00ff00", accent: "#00ff00", a1: "rgba(0, 255, 0, 0.4)", a2: "rgba(0, 200, 0, 0.3)", a3: "rgba(0, 100, 0, 0.5)", dark: true },
           "crimson-forge": { bg: "#0f0a0a", text: "#f0e6e6", accent: "#ff3333", a1: "rgba(255, 51, 51, 0.5)", a2: "rgba(204, 0, 0, 0.4)", a3: "rgba(255, 102, 0, 0.4)", dark: true },
-          "nord-frost": { bg: "#2e3440", text: "#eceff4", accent: "#88c0d0", a1: "rgba(136, 192, 208, 0.5)", a2: "rgba(129, 161, 193, 0.4)", a3: "rgba(180, 142, 173, 0.4)", dark: true }
+          "nord-frost": { bg: "#2e3440", text: "#eceff4", accent: "#88c0d0", a1: "rgba(136, 192, 208, 0.5)", a2: "rgba(129, 161, 193, 0.4)", a3: "rgba(180, 142, 173, 0.4)", dark: true },
+          "violet-circuit": { bg: "#151126", text: "#eee9ff", accent: "#9b7cf8", a1: "rgba(155, 124, 248, 0.34)", a2: "rgba(88, 204, 255, 0.18)", a3: "rgba(232, 121, 249, 0.16)", dark: true },
+          "evergreen-console": { bg: "#0f1813", text: "#e3eee6", accent: "#63c174", a1: "rgba(99, 193, 116, 0.28)", a2: "rgba(65, 176, 156, 0.18)", a3: "rgba(190, 154, 79, 0.14)", dark: true },
+          "ember-noir": { bg: "#1a1210", text: "#f5e9df", accent: "#e97842", a1: "rgba(233, 120, 66, 0.30)", a2: "rgba(196, 83, 65, 0.18)", a3: "rgba(239, 176, 91, 0.14)", dark: true },
+          "porcelain-blue": { bg: "#edf4f8", text: "#1d2b35", accent: "#276c9b", a1: "rgba(39, 108, 155, 0.15)", a2: "rgba(69, 142, 164, 0.11)", a3: "rgba(91, 105, 168, 0.09)", dark: false },
+          "sepia-studio": { bg: "#f1e7d2", text: "#352a20", accent: "#a6532c", a1: "rgba(166, 83, 44, 0.16)", a2: "rgba(122, 104, 63, 0.11)", a3: "rgba(190, 132, 55, 0.10)", dark: false },
+          "orchid-paper": { bg: "#f7f0f5", text: "#352b35", accent: "#88416f", a1: "rgba(136, 65, 111, 0.15)", a2: "rgba(100, 91, 160, 0.10)", a3: "rgba(190, 104, 143, 0.09)", dark: false }
         };
         function normalize(theme) {
           return themes[theme] ? theme : "rasputin-dark";
@@ -72,16 +78,8 @@
       html, body, #root { min-height: 100%; }
       body {
         margin: 0;
-        background: #eee9df;
-        color: #20231f;
-      }
-      html[data-theme="rasputin-dark"] body {
-        background: #10120f;
-        color: #ece8de;
-      }
-      html[data-theme^="bootswatch-"] body {
-        background: #111;
-        color: #f4f4f4;
+        background: var(--base-bg, #eee9df);
+        color: var(--base-text, #20231f);
       }
       #rasputinLoader {
         position: fixed;
@@ -90,15 +88,13 @@
         display: grid;
         place-items: center;
         background:
-          linear-gradient(135deg, rgba(189, 74, 40, .12), transparent 34%),
-          linear-gradient(90deg, rgba(49, 94, 132, .06) 1px, transparent 1px),
-          linear-gradient(0deg, rgba(189, 74, 40, .06) 1px, transparent 1px),
-          var(--loader-bg, #eee9df);
+          linear-gradient(135deg, var(--aurora-1, rgba(189, 74, 40, .12)), transparent 34%),
+          linear-gradient(90deg, color-mix(in srgb, var(--base-accent, #c24f32) 6%, transparent) 1px, transparent 1px),
+          linear-gradient(0deg, color-mix(in srgb, var(--base-accent, #c24f32) 6%, transparent) 1px, transparent 1px),
+          var(--base-bg, #eee9df);
         background-size: auto, 38px 38px, 38px 38px, auto;
         transition: opacity .24s ease, visibility .24s ease;
       }
-      html[data-theme="rasputin-dark"] #rasputinLoader { --loader-bg: #10120f; }
-      html[data-theme^="bootswatch-"] #rasputinLoader { --loader-bg: #111; }
       body[data-ready="true"] #rasputinLoader {
         opacity: 0;
         visibility: hidden;
@@ -107,11 +103,11 @@
       .loader-core {
         width: 54px;
         height: 54px;
-        border: 1px solid rgba(194, 79, 50, .42);
+        border: 1px solid color-mix(in srgb, var(--base-accent, #c24f32) 42%, transparent);
         border-radius: 16px;
         display: grid;
         place-items: center;
-        color: #c24f32;
+        color: var(--base-accent, #c24f32);
         font: 700 18px/1 "Rajdhani", system-ui, sans-serif;
         box-shadow: 0 12px 36px rgba(32, 35, 31, .12);
         animation: loaderPulse 1.2s ease-in-out infinite;

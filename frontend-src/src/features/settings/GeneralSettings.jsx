@@ -5,7 +5,7 @@ import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 import { themeOptions } from "../../lib/constants.js";
 
-export function GeneralSettings({ setTheme, motionMode = "full", setMotionMode, testingMode, updateTestingMode }) {
+export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotionMode, testingMode, updateTestingMode }) {
   const general = useSettingsStore(state => state.general);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.general);
@@ -16,9 +16,14 @@ export function GeneralSettings({ setTheme, motionMode = "full", setMotionMode, 
 
   useEffect(() => {
     if (general) {
-      setFormData(general);
-      setIsDirty(false);
+      const next = { ...general, theme: theme || general.theme || "rasputin-dark" };
+      setFormData(next);
+      setIsDirty(next.theme !== general.theme);
     }
+    // Rehydrate only when the persisted settings snapshot changes. Theme
+    // changes already flow through handleChange; replaying this effect for
+    // each selection would overwrite other unsaved fields.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [general]);
 
   const handleChange = (key, val) => {
@@ -82,7 +87,7 @@ export function GeneralSettings({ setTheme, motionMode = "full", setMotionMode, 
                 <Form.Select 
                   size="lg"
                   className="fs-6"
-                  value={formData?.theme || "rasputin-dark"}
+                  value={formData?.theme || theme || "rasputin-dark"}
                   onChange={(e) => handleChange("theme", e.target.value)}
                 >
                   {themeOptions.map(([val, label, desc]) => (
