@@ -885,6 +885,7 @@ export function App() {
         priority: options.priority || 0,
         scheduledFor: options.scheduledFor || undefined,
         maxAttempts: options.maxAttempts || 1,
+        attachmentIds: options.attachmentIds || [],
       });
       setTasks((current) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
       queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);

@@ -912,6 +912,52 @@ html[data-theme="rasputin-dark"] .login-submit {
   border-radius: 0;
 }
 
+.attachment-strip {
+  max-height: 154px;
+  overflow-y: auto;
+}
+
+.attachment-chip {
+  min-width: min(360px, 100%);
+  flex: 1 1 320px;
+  gap: 8px;
+  border-color: var(--dash-border);
+  background: var(--dash-panel);
+  padding: 7px 8px;
+}
+
+.attachment-chip-detail {
+  min-width: 0;
+  display: grid;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.attachment-chip-detail small {
+  overflow: hidden;
+  color: var(--dash-faint);
+  font-size: 0.62rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-retention {
+  flex: 0 0 auto;
+}
+
+.attachment-retention select {
+  max-width: 132px;
+  min-height: 28px;
+  border: 1px solid var(--dash-border);
+  border-radius: 7px;
+  background: var(--dash-panel-2);
+  color: var(--dash-muted);
+  padding: 3px 7px;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
 .composer-box {
   border-color: var(--dash-border-strong);
   border-radius: 18px 6px 18px 6px;

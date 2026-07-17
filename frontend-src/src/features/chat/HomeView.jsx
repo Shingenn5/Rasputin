@@ -34,7 +34,12 @@ import {
   runtimeStatus,
 } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";
-import { extractFileContent } from "../../lib/fileExtraction.js";
+import {
+  deleteAttachment,
+  readableAttachmentSize,
+  updateAttachmentRetention,
+  uploadAttachment,
+} from "../../lib/fileExtraction.js";
 import { Avatar } from "../../components/Avatar.jsx";
 import { CodeSandbox } from "../../components/CodeSandbox.jsx";
 import { PromptRecipePanel } from "./PromptRecipePanel.jsx";
@@ -288,6 +293,10 @@ export function HomeView(props) {
   }
 
   function queueCurrentDraft() {
+    if (attachments.length) {
+      setUiState({ status: "failed", message: "Send attachments directly; attachment-aware queueing is not available yet." });
+      return;
+    }
     const text = buildOutgoingMessage();
     if (!text) return;
     queueMessage(text);
@@ -444,13 +453,9 @@ export function HomeView(props) {
 
   // ---- Sending / queueing ---------------------------------------------
   function buildOutgoingMessage() {
-    let combined = objective.trim();
+    const combined = objective.trim();
     if (combined.startsWith("/")) return "";
-    if (attachments.length > 0) {
-      const attachStr = attachments.map((a) => `<document name="${a.name}">\n${a.content}\n</document>`).join("\n\n");
-      combined = combined ? `${combined}\n\n${attachStr}` : attachStr;
-    }
-    return combined;
+    return combined || (attachments.length ? "Analyze the attached files." : "");
   }
 
   const handleSendTask = async (e) => {
@@ -460,6 +465,10 @@ export function HomeView(props) {
     if (!combinedMessage) return;
 
     if (composerBusy) {
+      if (attachments.length) {
+        setUiState({ status: "failed", message: "Wait for the active task to finish before sending attachments." });
+        return;
+      }
       queueMessage(combinedMessage);
       setObjective("");
       setAttachments([]);
@@ -468,7 +477,9 @@ export function HomeView(props) {
 
     try {
       await executeAction("SendTask", taskMode, async () => {
-        const sent = await sendTask(null, combinedMessage);
+        const sent = await sendTask(null, combinedMessage, {
+          attachmentIds: attachments.map((attachment) => attachment.id),
+        });
         if (sent === false) throw new Error("Send failed. Check the model status.");
         setAttachments([]);
         setObjective("");
@@ -571,22 +582,56 @@ export function HomeView(props) {
   // ---- Attachments ------------------------------------------------------
   const addFiles = async (files) => {
     if (!files.length) return;
-    setUiState({ status: 'running', message: 'Extracting file content...' });
+    const availableSlots = Math.max(0, 8 - attachments.length);
+    if (!availableSlots) {
+      setUiState({ status: "failed", message: "A task can include at most 8 attachments." });
+      return;
+    }
+    setUiState({ status: 'running', message: 'Validating and extracting attachments locally...' });
     const newAttachments = [];
-    for (const file of files) {
+    const failures = files.length > availableSlots ? [`Only the first ${availableSlots} files were attached; the limit is 8 per task.`] : [];
+    for (const file of files.slice(0, availableSlots)) {
       try {
-        const content = await extractFileContent(file);
-        newAttachments.push({ name: file.name, content });
+        newAttachments.push(await uploadAttachment(file));
       } catch (err) {
         console.error("Failed to parse file", file.name, err);
+        failures.push(`${file.name}: ${err.message}`);
       }
     }
     if (newAttachments.length > 0) {
       setAttachments(prev => [...prev, ...newAttachments]);
-      setUiState({ status: 'success', message: `Attached ${newAttachments.length} file(s)` });
+      setUiState({
+        status: failures.length ? 'failed' : 'success',
+        message: failures.length
+          ? `Attached ${newAttachments.length}; ${failures.join(" ")}`
+          : `Attached ${newAttachments.length} file(s) with provenance`,
+      });
       setTimeout(() => setUiState({ status: 'idle', message: '' }), 3000);
     } else {
-      setUiState({ status: 'failed', message: 'Failed to extract any text from files.' });
+      setUiState({ status: 'failed', message: failures.join(" ") || 'Failed to extract any supported file content.' });
+    }
+  };
+
+  const changeAttachmentRetention = async (index, retention) => {
+    const attachment = attachments[index];
+    if (!attachment) return;
+    try {
+      const updated = await updateAttachmentRetention(attachment.id, retention);
+      setAttachments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...updated } : item));
+      setUiState({ status: "success", message: retention === "save_artifact" ? `${attachment.name} will be saved as an artifact.` : `${attachment.name} will expire after this task.` });
+    } catch (error) {
+      setUiState({ status: "failed", message: error.message });
+    }
+  };
+
+  const removeAttachment = async (index) => {
+    const attachment = attachments[index];
+    if (!attachment) return;
+    try {
+      await deleteAttachment(attachment.id);
+      setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    } catch (error) {
+      setUiState({ status: "failed", message: error.message });
     }
   };
 
@@ -733,12 +778,28 @@ export function HomeView(props) {
                 </div>
               )}
               {attachments.length > 0 && (
-                <div className="attachment-strip">
+                <div className="attachment-strip" data-testid="attachment-strip" aria-label="Attached files">
                   {attachments.map((att, idx) => (
-                    <div key={idx} className="attachment-chip">
+                    <div key={att.id} className="attachment-chip" data-testid="attachment-chip">
                       <FileText size={14} color="var(--ras-primary)" />
-                      <span className="attachment-chip-name">{att.name}</span>
-                      <button type="button" aria-label="Remove attachment" onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}>
+                      <span className="attachment-chip-detail">
+                        <span className="attachment-chip-name">{att.name}</span>
+                        <small>{readableAttachmentSize(att.sizeBytes)} · {att.parser === "image_metadata" ? "image metadata" : att.parser} · {att.provenance?.length || 1} source chunk{att.provenance?.length === 1 ? "" : "s"}</small>
+                      </span>
+                      <label className="attachment-retention">
+                        <span className="visually-hidden">Retention for {att.name}</span>
+                        <select
+                          data-testid="attachment-retention"
+                          value={att.retention}
+                          onChange={(event) => changeAttachmentRetention(idx, event.target.value)}
+                          aria-label={`Retention for ${att.name}`}
+                        >
+                          <option value="use_once">Use once</option>
+                          <option value="save_artifact">Save as artifact</option>
+                          <option value="workspace_knowledge" disabled>Add to knowledge (next)</option>
+                        </select>
+                      </label>
+                      <button type="button" aria-label={`Remove ${att.name}`} onClick={() => removeAttachment(idx)}>
                         <X size={12} />
                       </button>
                     </div>
@@ -892,6 +953,7 @@ export function HomeView(props) {
                 ref={fileInputRef}
                 type="file"
                 multiple
+                accept=".txt,.md,.csv,.tsv,.json,.yml,.yaml,.toml,.ini,.sql,.xml,.html,.css,.js,.py,.pdf,.docx,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
                 className="visually-hidden"
                 aria-label="Attach files"
                 tabIndex={-1}

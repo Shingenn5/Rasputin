@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import Field
 from backend.api.core import CamelModel, current_user, require_admin, require_member, hub
 from backend.core import audit
 from backend.core import schedules
@@ -8,6 +9,7 @@ from backend.core import security
 from backend.core import workspace
 from backend.core import runtime_store as store
 from backend.core import connectors
+from backend.core import intake
 from backend.core.response import ok, AppError
 from backend.mcp import skills as skill_store
 from backend.rag import graph as graphify
@@ -110,6 +112,17 @@ class TaskIn(CamelModel):
     priority: int = 0
     scheduled_for: float | None = None
     max_attempts: int = 1
+    attachment_ids: list[str] = Field(default_factory=list)
+
+class IntakeCreateIn(CamelModel):
+    name: str
+    content_base64: str
+    mime_type: str | None = ""
+    size_bytes: int | None = None
+    retention: str = "use_once"
+
+class IntakeRetentionIn(CamelModel):
+    retention: str = "use_once"
 
 class TaskPriorityIn(CamelModel):
     priority: int = 0
@@ -135,8 +148,12 @@ class ScheduleIn(CamelModel):
 async def create_task(req: TaskIn, _user=Depends(require_member)):
     workspace_ref = req.workspace_path or workspace.get_active(_user["username"], _user["role"] == "admin").get("active_path") or "."
     workspace.require_user_access(workspace_ref, _user["username"], "contributor", _user["role"] == "admin")
+    attachment_context, attachment_records = intake.prepare_task_context(_user["username"], req.attachment_ids)
+    objective = str(req.objective or "").strip()
+    if attachment_context:
+        objective = f"{objective or 'Analyze the attached files.'}\n\n{attachment_context}"
     task = hub.start(
-        req.objective,
+        objective,
         req.model,
         req.skill,
         max(0, min(req.subagents, 4)),
@@ -149,7 +166,53 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
         scheduled_for=req.scheduled_for,
         max_attempts=req.max_attempts,
     )
+    intake.bind_to_task(_user["username"], attachment_records, task.id)
+    if attachment_records:
+        audit.log("attachments_bound_to_task", {
+            "task_id": task.id,
+            "attachment_ids": [record["id"] for record in attachment_records],
+            "retentions": [record["retention"] for record in attachment_records],
+        }, actor=_user["username"])
     return ok(hub.snapshot_task(task))
+
+@tasks_router.post("/intake")
+
+async def intake_create(req: IntakeCreateIn, _user=Depends(require_member)):
+    record = await asyncio.to_thread(
+        intake.create,
+        _user["username"],
+        req.name,
+        req.content_base64,
+        req.mime_type or "",
+        req.size_bytes,
+        req.retention,
+    )
+    audit.log("attachment_intake_created", {
+        "intake_id": record["id"],
+        "name": record["name"],
+        "mime_type": record["mimeType"],
+        "size_bytes": record["sizeBytes"],
+        "retention": record["retention"],
+        "parser": record["parser"],
+    }, actor=_user["username"])
+    return ok(record)
+
+@tasks_router.post("/intake/{intake_id}/retention")
+
+async def intake_retention(intake_id: str, req: IntakeRetentionIn, _user=Depends(require_member)):
+    record = intake.set_retention(_user["username"], intake_id, req.retention)
+    audit.log("attachment_retention_changed", {
+        "intake_id": intake_id,
+        "retention": record["retention"],
+    }, actor=_user["username"])
+    return ok(record)
+
+@tasks_router.post("/intake/{intake_id}/delete")
+
+async def intake_delete(intake_id: str, _user=Depends(require_member)):
+    result = intake.remove(_user["username"], intake_id)
+    audit.log("attachment_intake_deleted", {"intake_id": intake_id}, actor=_user["username"])
+    return ok(result)
 
 @tasks_router.post("/tasks/{task_id}/cancel")
 
