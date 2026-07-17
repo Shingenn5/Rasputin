@@ -1,83 +1,123 @@
 <div align="center">
   <h1>🛡️ Rasputin</h1>
-  <p><b>Private, localhost AI workbench for autonomous agents, secure model routing, and brokered research.</b></p>
+  <p><b>Private, local-first AI workbench for autonomous agents, secure model routing, and brokered research.</b></p>
 
   ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
-  ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
+  ![FastAPI](https://img.shields.io/badge/FastAPI-005571.svg?style=for-the-badge&logo=fastapi)
   ![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
-  ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+  ![Python](https://img.shields.io/badge/python-3670A0.svg?style=for-the-badge&logo=python&logoColor=ffdd54)
   ![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
 </div>
 
----
+Rasputin runs on your own machine. One FastAPI backend and one React frontend support a desktop
+application, a persistent native Windows server, a Docker server, and private remote access. The
+same permission and approval model governs every shape.
 
-Rasputin is a privacy-first AI orchestration platform designed to run on your own machine. The
-same wrapper supports a native workstation mode and a Docker server mode; it routes LLM tasks,
-executes **Action Skills** in networkless ephemeral Docker sandboxes, processes RAG operations,
-and gates sensitive capabilities through explicit permissions and approvals.
+## Table of contents
 
-## 📑 Table of Contents
-- [Core Architecture & Privacy](#-core-architecture--privacy)
-- [Key Features](#-key-features)
-- [Setup at a Glance](#-setup-at-a-glance)
-- [Quick Start (Docker)](#-quick-start-docker)
-- [Native Development](#-native-development)
-- [Security & Approvals](#-security--approvals)
-- [Model Integrations & WarSat](#-model-integrations--warsat)
-- [Testing](#-testing)
-- [How this project used Codex and GPT-5.6](#-how-this-project-used-codex-and-gpt-56)
+- [Architecture and privacy](#architecture-and-privacy)
+- [Choose how to run Rasputin](#choose-how-to-run-rasputin)
+- [Prerequisites](#prerequisites)
+- [Option 1: Docker Server](#option-1-docker-server)
+- [Option 2: Native Server on Windows](#option-2-native-server-on-windows)
+- [Option 3: Rasputin Desktop](#option-3-rasputin-desktop)
+- [Option 4: Foreground native development](#option-4-foreground-native-development)
+- [Private LAN and remote access](#private-lan-and-remote-access)
+- [First-run setup](#first-run-setup)
+- [Models and WarSat](#models-and-warsat)
+- [Security defaults](#security-defaults)
+- [Development and testing](#development-and-testing)
+- [Distribution status](#distribution-status)
 
----
+## Architecture and privacy
 
-## 🏗 Core Architecture & Privacy
-
-Rasputin operates on a strict zero-trust privacy model:
 ```text
 Approved Local Folders → Rasputin → Local Model Endpoints
-Internet Access        → MCP Web Broker Only
+Internet Access        → Brokered and policy-gated services
 ```
-Models **do not receive direct internet access**. Web search is brokered, query-guarded,
-approval-gated by default, and heavily audited. Action Skills run in fresh
-`rasputin-sandbox` containers with `--network none`; tool requests cross a private stdio RPC and
-the container is destroyed after execution. Native-Windows Host Shell is a different execution
-surface: it runs as the low-privilege `Rasputin_sbx` account inside the explicitly enabled
-workspace. See `THREAT_MODEL.md` for the boundaries and residual caveats.
 
-## ✨ Key Features
+Models do not receive unrestricted internet access. Web search is brokered and audited. Action
+Skills run in fresh Docker containers with `--network none`. Native Windows Host Shell is a
+separate capability that runs as the low-privilege `Rasputin_sbx` account inside explicitly
+enabled workspaces. Read [THREAT_MODEL.md](THREAT_MODEL.md) before changing security-sensitive
+behavior.
 
-- **Secure Agent Execution:** Networkless ephemeral Skill containers plus a low-privilege,
-  workspace-ACL-scoped Host Shell on native Windows.
-- **Task Orchestration:** Live SSE updates, cancellation, multi-modal tracing, and human-in-the-loop approvals.
-- **Graph RAG & Memory:** Persistent Warmind context engine that compacts old chat history into structured, graph-based local knowledge edges.
-- **Warsat Deployment Layer:** Curated protocols to acquire, build, containerize, and deploy AI models natively inside your Docker engine.
-- **Approval Gateways:** Pause/resume functionality with an asynchronous, persistent queue for risky actions (file writes, shell commands, model downloads).
-- **SQLite Runtime:** Durable storage for sessions, messages, memory schemas, traces, and metrics inside `data/rasputin.db`.
+Core features include:
 
----
+- agentic chat, plan, execute, and reflect workflows;
+- durable tasks, approvals, audit records, memory, and local accounts;
+- direct native workspaces or explicit Docker mounts;
+- local and remote model registration;
+- WarSat-managed Docker model deployment;
+- networkless Action Skills and an opt-in native Host Shell.
 
-## 🛠 Setup at a Glance
+## Choose how to run Rasputin
 
-### Prerequisites
+| Option | Best for | Lifecycle | Default address | Main requirements |
+| --- | --- | --- | --- | --- |
+| **Docker Server** | Shared browser appliance and repeatable server boundary | Docker Compose | `http://127.0.0.1:8787` | Docker Desktop or Docker Engine |
+| **Native Server** | Persistent Windows daily driver with direct folders | Background native controller | `http://localhost:8788` | Windows and Python 3.12+; Docker for Skills/WarSat |
+| **Desktop** | One Windows operator using an app window and tray | Electron | Random loopback port | Source launch: Python 3.12+ and Node 22+ |
+| **Foreground native** | Development, logs, and manual debugging | Current terminal | Configurable | Windows, Python 3.12+, Node 22+ for frontend rebuilds |
+| **Private remote access** | Other trusted devices on a LAN or tailnet | Native or Docker plus TLS/proxy | Stable HTTPS name | An existing server option plus Tailscale or Caddy |
 
-- **Docker Desktop** running with WSL 2 enabled. Docker is required for the Docker deployment,
-  Action Skills, and WarSat model containers.
-- **Windows:** PowerShell 5.1+ is supported. For the native development workflow, install
-  **Python 3.12+** and **Node.js 22+**. macOS and Linux users can use the Bash launcher.
-- **Git** is needed only when cloning manually; the Windows bootstrapper can install what it needs.
+Desktop and Native Server share `%LOCALAPPDATA%\Rasputin\data`. Do not run two independent native
+backends against that store. Desktop attaches to an already-running Native Server instead.
 
-### Fastest first run (Windows)
+Docker uses its own named volume and account database. Native and Docker are intentionally
+separate installations even when they run on the same computer.
 
-1. Start Docker Desktop and wait until its engine reports that it is running.
-2. Open PowerShell and run:
+## Prerequisites
 
-   ```powershell
-   iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -useb | iex
-   ```
+### Docker-backed features
 
-3. The bootstrapper downloads and starts Rasputin. Open the address it prints (normally
-   `http://127.0.0.1:8787`) and use the first-run credentials printed in that same console.
+Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Windows or
+macOS, or Docker Engine with the Compose plugin on Linux. On Windows, Docker Desktop normally uses
+WSL 2 and requires hardware virtualization.
 
-### Manual clone and start
+Docker is required for:
+
+- Docker Server;
+- Action Skill containers;
+- WarSat-managed model containers.
+
+Native Server and Desktop can open without Docker, but those Docker-backed features remain
+unavailable until the Docker engine is running.
+
+### Source-based Windows options
+
+- Windows PowerShell 5.1 or newer;
+- Python 3.12+ for Native Server, foreground native, and Desktop development;
+- Node.js 22+ when rebuilding the frontend or launching/packaging Desktop;
+- Git only when cloning manually.
+
+## Option 1: Docker Server
+
+Docker Server is the simplest cross-platform source deployment and the preferred shared appliance
+boundary. Python and Node are not required on the host because the image builds them into the
+container.
+
+### One-line Windows bootstrap
+
+Start Docker Desktop, open PowerShell, and run:
+
+```powershell
+iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -UseBasicParsing | iex
+```
+
+The installer downloads the `main` branch into a `Rasputin` folder under the current directory,
+builds the Docker image, starts the server, opens the browser, and prints fresh first-run
+credentials. The GitHub repository must be accessible to the person running this command.
+
+### One-line macOS/Linux bootstrap
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.sh | bash
+```
+
+This requires `curl`, `unzip`, Docker, and Docker Compose.
+
+### Manual clone
 
 ```powershell
 git clone https://github.com/Shingenn5/Rasputin.git
@@ -85,309 +125,382 @@ cd Rasputin
 .\rasputin.ps1 start
 ```
 
-On macOS or Linux, use `./rasputin.sh start`. To stop the Docker deployment later, run
-`.\rasputin.ps1 stop` (or `./rasputin.sh stop`). If the first-run password is no longer in
-the container logs, use `.\rasputin.ps1 reset-password` on Windows.
-
-### Native daily-driver setup (Windows)
-
-The supported native launcher runs the FastAPI application on your machine while Docker remains
-available for sandboxes and model containers:
-
-```powershell
-# From the repository root; Docker can remain running separately.
-.\rasputin.ps1 start -Native -Port 8788
-```
-
-Open `http://localhost:8788`. Native mode uses its own local data store and therefore creates a
-separate first-run administrator account. For frontend work, edit `frontend-src/` only, then run
-`npm install` and `npm run build` from the repository root to rebuild the served `frontend/`
-assets. Do not hand-edit `frontend/`.
-
----
-
-## 🚀 Installation & Quick Start
-
-Rasputin can run as a Docker-hosted wrapper (the default commands below) or as a native Windows
-wrapper. Docker is still used for Action Skills and WarSat model containers in either topology.
-
-### 🟢 Option 1: The Absolute Beginner's Guide (Windows)
-
-If you have never used Docker, WSL, or coding tools before, follow these exact steps to get Rasputin running on a completely fresh Windows PC.
-
-**Step 1: Enable BIOS Virtualization (Crucial First Step)**
-Before Docker can run on Windows, your computer must allow "Virtualization." Sometimes this is turned off by default.
-1. Open your Windows Start Menu, type **Task Manager**, and open it.
-2. Go to the **Performance** tab and click on **CPU**.
-3. Look at the bottom right. If **Virtualization: Enabled** is there, skip to Step 2!
-4. If it says **Disabled**, you need to turn it on in your BIOS.
-   <details>
-   <summary><b>Click here for a quick guide on enabling Virtualization in BIOS</b></summary>
-
-   - Restart your computer. As it turns on, repeatedly tap the BIOS key (usually `F2`, `F12`, `Delete`, or `Esc` depending on your PC brand).
-   - Once in the BIOS, use your arrow keys to look for an "Advanced", "Configuration", or "Security" tab.
-   - **For Intel CPUs:** Look for `Intel Virtualization Technology`, `Intel VT-x`, or `Virtualization`.
-   - **For AMD CPUs:** Look for `SVM Mode`, `AMD-V`, or `Secure Virtual Machine`.
-   - Change the setting from **Disabled** to **Enabled**.
-   - Save and Exit (usually `F10`), and let Windows boot up normally.
-   </details>
-
-**Step 2: Install Docker Desktop**
-Docker is the engine that runs Rasputin's isolated sandboxes.
-1. Download **Docker Desktop for Windows** from the [official website](https://www.docker.com/products/docker-desktop/).
-2. Run the installer. On the configuration screen, ensure the **"Use WSL 2 instead of Hyper-V"** option is checked (it usually is by default). *Note: This automatically installs the necessary Windows Subsystem for Linux (WSL) components for you.*
-3. Finish the installation. Windows will likely ask you to **Restart your computer**.
-
-**Step 3: Start the Docker Engine**
-1. After your PC restarts, open the **Docker Desktop** application from your Start Menu.
-2. Accept the Service Agreement.
-3. Wait a few moments for the engine to start. You will know it is ready when the bottom-left of the Docker dashboard says "Engine running" and the icon turns green.
-
-**Step 4: Run the Rasputin Bootstrapper**
-You don't need to manually install Git or Python. This command handles everything.
-1. Open **Windows PowerShell** (search for "PowerShell" in your start menu).
-2. Paste the following command and hit **Enter**:
-   ```powershell
-   iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -useb | iex
-   ```
-3. The bootstrapper will download Rasputin, build the sandboxes, and automatically open your browser. **Check your PowerShell window** for your temporary Username and Password to log in!
-
----
-
-### 🔵 Option 2: 1-Line Bootstrapper (For Devs)
-
-If you already have Docker running, just run the bootstrapper:
-
-**Windows (PowerShell):**
-```powershell
-iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -useb | iex
-```
-
-**macOS / Linux (Bash):**
-```bash
-curl -s https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.sh | bash
-```
-
----
-
-### Option 2: Manual Clone & CLI
-
-If you prefer to clone the repository manually, you can use the interactive CLI tools provided in the project root:
+On macOS/Linux:
 
 ```bash
-git clone --recurse-submodules https://github.com/Shingenn5/Rasputin.git
+git clone https://github.com/Shingenn5/Rasputin.git
 cd Rasputin
+./rasputin.sh start
 ```
 
-The `token-optimizer` submodule is optional developer tooling; the Rasputin runtime does not
-depend on it. A normal clone without submodules is sufficient when you only want to run the app.
+The optional `token-optimizer` submodule is developer tooling; the application does not require it.
 
-Then, launch the manager:
-- **Windows:** `.\rasputin.ps1 start`
-- **macOS/Linux:** `./rasputin.sh start`
-
-*Note: For the raw, unmanaged startup scripts, you can also use `scripts\start-wrapper.ps1` and `scripts\stop-wrapper.ps1` directly.*
-
-### Interactive CLI Commands
-The `rasputin` manager supports the following commands:
-- `start` : Builds and runs Rasputin in the background.
-- `start -Native [-Port 8788]` *(Windows)* : Runs the wrapper natively in the foreground; runtime data uses `%LOCALAPPDATA%` by default. `-Port` applies only to native mode.
-- `start -Native [-Port 8788] [-Lan]` *(Windows)* : Add `-Lan` to listen on the host network after configuring HTTPS.
-- `setup-https [-TlsName name,address]` *(Windows)* : Uses the installed `mkcert` executable to create a locally trusted leaf certificate under ignored `data/tls/`.
-- `start -EnableWarSat` : Runs Rasputin with the Docker Control layer enabled (allowing it to deploy local models).
-- `stop` : Safely tears down the containers.
-- `credentials` : Reads the original generated login from current container logs, if that line still exists.
-- `reset-password` *(Windows manager)* : Generates and prints a new Docker-mode admin password when the original is unavailable.
-
-### Desktop daily driver
-
-The native daily driver now has an Electron lifecycle shell. From a repository checkout, run
-`npm run desktop` to build the frontend and open Rasputin as a desktop application. Closing the
-window keeps it available in the system tray, where the Electron-owned Desktop Runtime can be started, stopped,
-restarted, or fully quit. Docker remains the browser-based server/appliance deployment.
-
-Development uses the checkout's Python environment. `npm run desktop:package` builds a
-self-contained Windows installer with a bundled backend runtime, so target machines do not need
-Python or Node.js. See [`docs/DEPLOYMENT_MATRIX.md`](docs/DEPLOYMENT_MATRIX.md) for Desktop, Native
-Host, Docker Server, and private remote-access workflows.
-
-The first-run password is generated only when a fresh data store creates its admin account.
-`credentials` cannot recover a changed password and may find nothing after container replacement
-or log loss even though the account persists. In that case run `.\rasputin.ps1 reset-password`.
-On macOS/Linux use `docker compose exec rasputin-wrapper python -m backend.tools.reset_password`.
-For native mode, use `python -m backend.tools.reset_password` against that instance's data dir.
-
-### Local accounts and simultaneous users
-
-An administrator can create multiple local accounts in **Settings → Accounts**. Accounts are
-stored in the appliance's local data store; login sessions are persistent, revocable, hashed
-server-side records. Each user gets private chats, tasks, preferences, and memory. Approved
-workspaces are shared only through explicit viewer/contributor/developer/owner membership. Models,
-security policy, WarSat, providers, and platform settings remain appliance-wide and admin-only.
-This is a single-appliance account model, not SaaS tenant isolation: the machine administrator
-still controls the data directory and process.
-
-### Trusted local HTTPS with mkcert
-
-Rasputin integrates with the official [mkcert project](https://github.com/FiloSottile/mkcert) for
-development and private-LAN certificates. Install `mkcert` first (on Windows, `choco install
-mkcert` or `scoop bucket add extras; scoop install mkcert`), then run:
+### Docker lifecycle commands
 
 ```powershell
-# localhost + loopback + this computer's hostname
-.\rasputin.ps1 setup-https
-
-# Include every DNS name/IP other devices will use
-.\rasputin.ps1 setup-https -TlsName rasputin.home,192.168.1.25
-
-# Docker server or native daily driver, reachable on the LAN
-.\rasputin.ps1 start -Lan
-.\rasputin.ps1 start -Native -Port 8788 -Lan
+.\rasputin.ps1 start
+.\rasputin.ps1 stop
+.\rasputin.ps1 credentials
+.\rasputin.ps1 reset-password
 ```
 
-The launcher detects `data/tls/rasputin.pem` and `rasputin-key.pem`, enables TLS, and marks session
-cookies Secure. For another device to trust the site, install the **public** mkcert `rootCA.pem` on
-that device. Never copy or share `rootCA-key.pem`. mkcert is for local/private use; use a publicly
-trusted certificate and reverse proxy for an Internet-facing deployment.
+Use `./rasputin.sh` with `start`, `stop`, or `credentials` on macOS/Linux. To use a different Docker
+port in PowerShell, set `$env:WRAPPER_PORT` before `start`.
 
-### Advanced Docker Profiles (Manual Mode)
-- **RAG Vector Database:** `docker compose --profile rag up --build`
-- **Search Broker (SearXNG):** `docker compose --profile search up --build`
+### Docker Server with WarSat control
 
----
-
-## 💻 Native Development
-
-For the supported native launcher on Windows, use `.\rasputin.ps1 start -Native`. For a manual
-bare-metal development loop, ensure you have Python 3.12+ and Node.js v22+ installed.
-
-### Run Docker and native side by side
-
-Keep the normal Docker instance on `127.0.0.1:8787`, then start the native daily driver on 8788
-from a second PowerShell window:
+The normal Docker Server does not mount the host Docker socket. To let WarSat create sibling model
+containers, start the opt-in Docker-control overlay:
 
 ```powershell
-# Docker remains detached on its normal port.
+.\rasputin.ps1 stop
+.\rasputin.ps1 start -EnableWarSat
+```
+
+On macOS/Linux:
+
+```bash
+./rasputin.sh stop
+./rasputin.sh start -EnableWarSat
+```
+
+After login, an administrator must also enable **Docker control** in **Settings → Safety**. The
+socket grants powerful host control, so both the launch-time overlay and the in-app safety setting
+are deliberate gates.
+
+### Optional Docker profiles
+
+```powershell
+docker compose --profile rag up --build -d
+docker compose --profile search up --build -d
+```
+
+The `rag` profile adds Chroma; the `search` profile adds SearXNG.
+
+## Option 2: Native Server on Windows
+
+Native Server runs FastAPI directly on Windows, gives workspaces direct access to approved host
+folders, and remains running after the launching terminal exits. Docker Desktop may run alongside
+it for Action Skills and WarSat.
+
+### Clone and install the global command
+
+```powershell
+git clone https://github.com/Shingenn5/Rasputin.git
+cd Rasputin
+powershell -NoProfile -ExecutionPolicy Bypass -File .\rasputin.ps1 install-cli
+```
+
+The one-time installer creates a user-level `rasputin` command. From any later PowerShell window:
+
+```powershell
+rasputin native
+```
+
+This creates `.venv` if needed, installs Python dependencies, builds the frontend only when it is
+missing, starts the persistent server on port 8788, and opens the browser.
+
+### Native lifecycle commands
+
+```powershell
+rasputin native
+rasputin native-status
+rasputin native-restart
+rasputin native-stop
+```
+
+After pulling source or dependency changes, rebuild and restart with:
+
+```powershell
+rasputin native-rebuild
+```
+
+Use `-NoOpen` with `native`, `native-restart`, or `native-rebuild` when no browser should open. Use
+`-Port <number>` to override port 8788.
+
+To remove the global command:
+
+```powershell
+rasputin uninstall-cli
+```
+
+### Start Native Server at login
+
+```powershell
+rasputin native-host-install -Port 8788
+rasputin native-host-status
+rasputin native-host-uninstall
+```
+
+This creates a current-user startup entry, not a Windows service. The Windows user must remain
+signed in for an always-on Native Server.
+
+### Native Server plus Docker/WarSat
+
+Starting Native Server does not start Docker Desktop. For WarSat deployments:
+
+1. Start Docker Desktop and wait for the engine to report ready.
+2. Start Native Server with `rasputin native`.
+3. Sign in as an administrator.
+4. Enable **Docker control** in **Settings → Safety**.
+5. Open WarSat, run readiness, create a plan, approve it, and deploy.
+
+Native WarSat calls the host `docker` CLI directly; it does not use `-EnableWarSat` or the Docker
+socket Compose overlay.
+
+### Run Native and Docker side by side
+
+```powershell
+# Docker Server
 .\rasputin.ps1 start
 
-# In a second PowerShell, use the canonical native data store and a separate port.
-Remove-Item Env:\RASPUTIN_DATA_DIR -ErrorAction SilentlyContinue
+# Native Server
+rasputin native
+```
+
+Use `http://127.0.0.1:8787` for Docker and `http://localhost:8788` for Native. The different
+hostnames prevent their host-scoped login cookies from colliding.
+
+## Option 3: Rasputin Desktop
+
+Desktop is an Electron lifecycle shell around the same native backend and frontend. It binds only
+to loopback, manages the backend from the window and system tray, and uses the native data store.
+
+### Launch Desktop from source
+
+```powershell
+git clone https://github.com/Shingenn5/Rasputin.git
+cd Rasputin
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+npm ci
+npm run desktop
+```
+
+Closing the window keeps Rasputin in the tray by default. The tray can open, start, stop, restart,
+or fully quit the Desktop Runtime.
+
+### Build the Windows application or installer
+
+```powershell
+npm run desktop:package:dir
+npm run desktop:package
+```
+
+Outputs land under `dist/electron/`. The packaged application bundles the backend runtime, so a
+target computer does not need Python or Node. Current packages are unsigned and may trigger a
+Windows publisher warning. Docker Desktop is still required on the target for Action Skills and
+WarSat.
+
+See [docs/DESKTOP_ARCHITECTURE.md](docs/DESKTOP_ARCHITECTURE.md) for lifecycle and packaging
+details.
+
+## Option 4: Foreground native development
+
+Use the foreground launcher when you want server logs in the current terminal or want `Ctrl+C` to
+stop the backend:
+
+```powershell
+git clone https://github.com/Shingenn5/Rasputin.git
+cd Rasputin
 .\rasputin.ps1 start -Native -Port 8788
 ```
 
-Without HTTPS, open the two instances with these exact hostnames:
+It uses the same native data store as Desktop and Native Server. Stop those first unless you set an
+isolated `RASPUTIN_DATA_DIR`.
 
-- Docker: `http://127.0.0.1:8787`
-- Native: `http://localhost:8788`
+For a decoupled hot-reload loop:
 
-Use `localhost` for native and `127.0.0.1` for Docker deliberately. The `rasputin_session` cookie is
-scoped by hostname, not port; using `127.0.0.1` for both instances would make their cookies collide.
-Native uses the separate `%LOCALAPPDATA%\Rasputin\data` store and therefore has its **own admin
-account**. On the first native boot, use the credentials printed in that foreground console; Docker
-credentials do not automatically work there. `Ctrl+C` stops only the native process.
-
-`RASPUTIN_DATA_DIR`, when set, overrides `%LOCALAPPDATA%\Rasputin\data`; clear a leftover test value
-as shown above before judging the canonical daily-driver state. The launcher reuses an existing
-`.venv\Scripts\python.exe`, so Python needs to be on `PATH` only when that virtual environment must
-be created for the first time.
-
-To prove the native workspace path is direct: open **Workspaces** at `http://localhost:8788`, add a
-normal project folder, approve it, and confirm it appears and is browsable immediately with no mount
-request, restart badge, or wrapper restart. Docker's folder flow remains mount → restart → approve.
-
-### 1. Start the Backend (FastAPI)
 ```powershell
-pip install -r requirements.txt
-python server.py
-```
+# Terminal 1: backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8787
 
-### 2. Start the Frontend (Vite/React)
-```powershell
-cd frontend-src
-npm install
+# Terminal 2: frontend
+npm ci
 npm run dev
 ```
 
-### 3. Build for Production
-To bake the React frontend into static assets served natively by FastAPI:
+Edit `frontend-src/`, never generated `frontend/`. Build production assets with `npm run build`.
+
+## Private LAN and remote access
+
+Do not expose a default HTTP instance directly to the public internet.
+
+### Trusted LAN HTTPS with mkcert
+
+Install the official [`mkcert`](https://github.com/FiloSottile/mkcert) binary, then generate a leaf
+certificate containing every hostname or IP clients will use:
+
 ```powershell
-npm run build
+rasputin setup-https -TlsName rasputin.home,192.168.1.25
+
+# Native Server on the LAN
+rasputin native-restart -Lan
+
+# Or Docker Server on the LAN
+rasputin start -Lan
 ```
 
----
+Install only mkcert's public `rootCA.pem` on trusted client devices. Never copy `rootCA-key.pem`.
+mkcert is for private trust, not public internet deployment.
 
-## 🔒 Security & Approvals
+### Tailscale Serve
 
-Rasputin prioritizes local safety through stringent defaults:
-- **Privacy Lock:** ON by default (disables remote model routing).
-- **Remote Endpoints:** BLOCKED unless manually trusted.
-- **Docker/Shell Control:** OFF by default.
-- **Workspace Operations:** Read-only unless explicitly granted; moves/writes trigger approval reviews.
-- **Web Brokering:** Searches are paused and sent to the approval queue.
-- **Capability Split:** Trusted Dev Mode auto-approves file/git writes; Host Shell is a separate per-workspace opt-in.
-- **Sandbox Isolation:** Skills have no container network. Native-Windows shell commands run as `Rasputin_sbx`; Docker/native-non-Windows shell and git paths have different boundaries documented in `THREAT_MODEL.md`.
+The helper plans a loopback-only Tailscale Serve configuration before changing anything:
 
-> **Important:** Local models, memory databases, vector indexes, workspaces, and `data/model_secrets.json` are automatically ignored by Git.
-
----
-
-## 🧠 Model Integrations & WarSat
-
-### Local Models (vLLM / llama.cpp)
-Rasputin defaults to a local vLLM endpoint (`http://127.0.0.1:8000/v1`). Any OpenAI-compatible backend (LM Studio, Ollama, text-generation-webui) can be natively registered in the interface.
-
-### WarSat Automation
-WarSat is Rasputin's model-runtime orchestration layer. It reads curated JSON protocols, generates safe Docker launch plans, approval-gates deployments, and manages local model endpoints directly through the host's Docker socket.
-
-### Cloud Providers
-You can configure OpenAI, Anthropic, or Gemini API keys within the UI (stored securely in `data/model_secrets.json`). However, the Privacy Lock **must** be disabled to route requests outside the host machine.
-
----
-
-## 🧪 Testing
-
-Rasputin includes a dedicated testing harness that runs in a completely isolated environment mapping to `testdata/`.
-
-**Run Backend Smoke Tests (Windows):**
 ```powershell
-.\scripts\test.ps1
+.\.venv\Scripts\python.exe scripts\setup_remote_access.py tailscale `
+  --target http://127.0.0.1:8788
 ```
-*(Use `sh scripts/test.sh` on macOS/Linux)*
 
-**Run E2E UI Tests (Playwright):**
+Review the reported URL and allowed hostname, then rerun with `--apply`. Add the reported hostname
+to start-at-login configuration when needed:
+
 ```powershell
-npm install
+rasputin native-host-install -Port 8788 -AllowedHost rasputin.tailnet.ts.net
+```
+
+The helper does not enable Tailscale Funnel or public internet access.
+
+### Caddy reverse proxy
+
+Generate a Caddyfile for review:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\setup_remote_access.py caddy `
+  --hostname rasputin.example.com `
+  --target http://127.0.0.1:8788 `
+  --output C:\Rasputin\Caddyfile
+```
+
+Public access additionally requires real DNS, a trusted certificate, hardened firewall rules, an
+approved Host/Origin name, and an operator security review. Start from
+[deploy/Caddyfile.example](deploy/Caddyfile.example).
+
+See [docs/DEPLOYMENT_MATRIX.md](docs/DEPLOYMENT_MATRIX.md) for the complete remote-access and
+verification workflow.
+
+## First-run setup
+
+### Credentials
+
+- **Docker Server:** first-run credentials print in the launcher/container logs. Use
+  `.\rasputin.ps1 credentials` while that log line remains, or `.\rasputin.ps1 reset-password`.
+- **Native Server:** fresh credentials print once when `rasputin native` creates the data store.
+- **Desktop:** fresh credentials appear once in the Desktop UI and can be copied before dismissal.
+
+Change the generated administrator password after signing in. Never place credentials in Git,
+screenshots, documentation, or issue reports.
+
+### Complete the application setup
+
+1. Open **Settings → Admin** and change the generated password.
+2. Open **Models** and register, discover, or deploy a model.
+3. Open **Workspaces** and approve a project folder.
+4. Review **Settings → Safety** before enabling shell, Docker, remote model, or web capabilities.
+5. Open **Settings → Output** and choose a visible Markdown export folder.
+6. Add additional local users under **Settings → Accounts** when sharing an appliance.
+
+Native workspaces are available immediately after approval. Docker workspaces must already be
+visible inside the container; new host folders follow the mount request → restart → approve flow.
+
+## Models and WarSat
+
+### Existing local endpoints
+
+Register any OpenAI-compatible endpoint, including vLLM, llama.cpp, Ollama, LM Studio, or
+text-generation-webui, from **Models**. Native endpoints normally use `127.0.0.1`; Docker Server
+reaches host endpoints through `host.docker.internal`.
+
+### WarSat deployments
+
+WarSat reads curated protocols, checks hardware, creates approval-gated Docker launch plans, pulls
+images, starts model containers bound to loopback, probes health, and registers successful models.
+
+- **Native Server/Desktop:** Docker Desktop running + Docker control enabled in Safety.
+- **Docker Server:** launch with `-EnableWarSat` + Docker control enabled in Safety.
+
+Model-specific GPU, VRAM, runtime, and tool-call-parser requirements still apply. Run WarSat
+readiness before deploying.
+
+### Cloud providers
+
+OpenAI, Anthropic, Gemini, and other supported remote endpoints can be configured in the UI. Remote
+routing remains blocked while Privacy Lock or remote-model restrictions are enabled. Store API keys
+only in the ignored local secret store or environment variables.
+
+## Security defaults
+
+- Privacy Lock is on.
+- Remote model routing is blocked.
+- Docker control and Host Shell are off.
+- File moves and risky writes require approval.
+- Web access is brokered and audited.
+- Native Host Shell is a separate per-workspace opt-in from Trusted Dev Mode.
+- Local databases, secrets, models, workspaces, logs, and generated indexes are ignored by Git.
+
+Rasputin is a single-appliance account model, not SaaS tenant isolation. The machine administrator
+ultimately controls the process and data directory.
+
+## Development and testing
+
+Install development dependencies:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+npm ci
 npx playwright install chromium
+```
+
+Common checks:
+
+```powershell
+# Frontend production build
+npm run build
+
+# Backend tests
+.\.venv\Scripts\python.exe -m unittest tests.testBackendSmoke tests.testMultiUser
+
+# Repository safety and Docker/UI harness
+npm run checkRepoSafety
 .\scripts\test.ps1 -Ui
 ```
 
-**GUI Preview Environment:**
+On macOS/Linux, use `sh scripts/test.sh`. For isolated native UI verification, set a temporary
+`RASPUTIN_DATA_DIR` and use a non-production port such as 8899.
+
+Validate active deployment shapes with:
+
 ```powershell
-npm run preview:gui
+.\.venv\Scripts\python.exe scripts\verify_deployment_matrix.py `
+  --endpoint docker=http://127.0.0.1:8787 `
+  --endpoint native=http://127.0.0.1:8788 `
+  --require-desktop-artifacts
 ```
-*(Preview UI available at `http://127.0.0.1:8899/preview/home`)*
 
----
+## Distribution status
 
-*For detailed architectural insights, review the [Architecture Guide](docs/RASPUTIN_ARCHITECTURE_GUIDE.md) (frontend stack in §4).*
+The repository can be run from source and can build a self-contained Windows installer. It is not
+yet a polished public release channel:
 
----
+- Desktop packages are unsigned.
+- No installer artifact or container image is automatically published.
+- Update-channel metadata and upgrade testing remain open.
+- Clean-machine installation must be verified before a release.
+- Licensing and public-distribution terms must be decided before making the repository public.
 
-## 🤖 How this project used Codex and GPT-5.6
+Track those items in [docs/REMAINING_WORK.md](docs/REMAINING_WORK.md) and use
+[docs/RELEASE_SETUP.md](docs/RELEASE_SETUP.md) for release validation.
 
-Rasputin was built with a human-directed engineering workflow that used **Codex** as a coding
-partner and **GPT-5.6** as the reasoning model available through that environment. The model was
-used to accelerate repository exploration, turn product goals into implementation plans, draft
-and revise code, diagnose failures, improve documentation, and suggest focused verification
-steps. Codex also provided an interactive workspace for running builds, reviewing diffs, and
-checking the application in isolated test instances.
+## How this project used Codex and GPT-5.6
 
-The model did not operate as an unattended release system. The project owner set the product
-direction, supplied the requirements and security boundaries, reviewed meaningful changes, and
-made the decisions to merge, commit, and publish. Generated work was treated as a starting point:
-it was inspected against the codebase and verified with the repository's build, test, and
-running-app workflows before being accepted.
+Rasputin was built with a human-directed engineering workflow using Codex as a coding partner and
+GPT-5.6 as the reasoning model available through that environment. The project owner set product
+direction and security boundaries, reviewed meaningful changes, and controlled commits and
+publication. Generated work was inspected against the codebase and verified with repository build,
+test, and running-app workflows before acceptance.
 
-GPT-5.6 is available in Codex on eligible plans, with model options and reasoning effort depending
-on the account and surface. See OpenAI's [GPT-5.6 in ChatGPT and Codex guide](https://help.openai.com/en/articles/20001354-gpt-56-in-chatgpt)
-for current availability details.
+For architecture details, see [docs/RASPUTIN_ARCHITECTURE_GUIDE.md](docs/RASPUTIN_ARCHITECTURE_GUIDE.md).
