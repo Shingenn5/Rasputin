@@ -1323,6 +1323,16 @@ class AgentHub:
         test_budget = self._test_loop_budget(task)
         echo_retried = False
         user_echo_retried = False
+        effective_reasoning = getattr(task, "reasoning", "auto")
+        if phase == "chat" and effective_reasoning == "auto" and not model_providers.is_api_provider(model):
+            # Local hybrid models often interpret their template default as
+            # "thinking on" and can exhaust a small output budget before they
+            # emit answer content. In ordinary Chat, Auto therefore selects a
+            # direct response; users can still explicitly choose Low/Medium/
+            # High when they want a reasoning pass.
+            effective_reasoning = "off"
+            task.seen("adaptive_reasoning", {"model": model_key, "requested": "auto", "resolved": "off"})
+            task.log("Auto reasoning selected a direct response for local Chat")
 
         try:
             for attempt in range(max_attempts):
@@ -1333,7 +1343,9 @@ class AgentHub:
 
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
-                text, tool_calls = await _chat(model_key, messages, tools=tools, on_delta=on_delta, reasoning=getattr(task, "reasoning", "auto"))
+                text, tool_calls = await _chat(
+                    model_key, messages, tools=tools, on_delta=on_delta, reasoning=effective_reasoning,
+                )
 
                 if minimal_inference and not tool_calls:
                     text = model_compatibility.clean_minimal_response(text)

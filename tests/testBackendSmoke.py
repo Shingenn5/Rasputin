@@ -1855,6 +1855,55 @@ class BackendSmokeTests(unittest.TestCase):
         finally:
             model_providers._TOOLS_UNSUPPORTED.discard(model["key"])
 
+    def testProviderRetriesReasoningOnlyLocalResponseWithThinkingDisabled(self):
+        model = {
+            "key": "thinking-local",
+            "provider": "llama.cpp",
+            "runtime": "warsat-llama.cpp",
+            "base_url": "http://127.0.0.1:8082/v1",
+            "model": "qwen-thinking",
+        }
+        payloads = []
+
+        def fake_request(_url, _method, payload, _headers, _timeout):
+            payloads.append(payload)
+            if len(payloads) == 1:
+                return {"choices": [{"message": {"content": "", "reasoning_content": "still thinking"}}]}
+            return {"choices": [{"message": {"content": "Yes."}}]}
+
+        with patch("backend.models.providers._request_json", side_effect=fake_request):
+            text, tool_calls = model_providers.chat_sync(
+                model, [{"role": "user", "content": "Reply yes."}], 512, 0.2,
+            )
+        self.assertEqual(text, "Yes.")
+        self.assertEqual(tool_calls, [])
+        self.assertNotIn("chat_template_kwargs", payloads[0])
+        self.assertEqual(payloads[1]["chat_template_kwargs"], {"enable_thinking": False})
+
+    def testGovernedLocalChatAutoReasoningSelectsDirectResponse(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask("Reply yes.", "thinking-local", "general", mode="chat", workspace_path=".")
+        local_hub.phase_model = lambda _task, _role: "thinking-local"
+        captured = {}
+
+        async def scripted_chat(_model_key, _messages, tools=None, on_delta=None, reasoning="auto"):
+            captured["reasoning"] = reasoning
+            return "Yes.", []
+
+        model = {
+            "key": "thinking-local",
+            "provider": "llama.cpp",
+            "runtime": "warsat-llama.cpp",
+            "compatibility": {"status": "certified", "promptProfile": "standard"},
+        }
+        sections = [context_governor.section("task", "Task", task.objective, required=True, priority=0)]
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model), \
+             patch("backend.engine.agent._chat", scripted_chat):
+            result = asyncio.run(local_hub.governed_chat(task, "chat", "main", sections))
+        self.assertEqual(result, "Yes.")
+        self.assertEqual(captured["reasoning"], "off")
+        self.assertTrue(any(item["kind"] == "adaptive_reasoning" for item in task.trace))
+
     def testToollessManagedModelFallsBackToChatBeforeTaskStarts(self):
         hub = agent.AgentHub()
         model = {

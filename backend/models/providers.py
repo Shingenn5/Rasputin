@@ -693,12 +693,13 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
     model_key = model.get("key")
     cur_tools = None if (local_like and tools and model_key in _TOOLS_UNSUPPORTED) else tools
     cur_max = max_tokens
+    cur_reasoning = reasoning
 
     first_error = None
     text, tool_calls = None, None
     for _ in range(3):
         payload, headers, parser, streamer = _build_chat_payload(
-            provider, model, messages, cur_max, temperature, cur_tools, stream, reasoning
+            provider, model, messages, cur_max, temperature, cur_tools, stream, cur_reasoning
         )
         try:
             if stream:
@@ -706,6 +707,13 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
             else:
                 data = _request_json(url, "POST", payload, headers, 60)
                 text, tool_calls = parser(data)
+            # Hybrid-thinking local models can spend the entire output budget
+            # in reasoning_content and return an empty ordinary answer. Retry
+            # once with their thinking template disabled instead of surfacing
+            # a misleading empty-provider failure.
+            if not text and not tool_calls and local_like and cur_reasoning != "off":
+                cur_reasoning = "off"
+                continue
             break
         except urllib.error.HTTPError as exc:
             if first_error is None:
