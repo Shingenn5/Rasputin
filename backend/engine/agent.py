@@ -1303,7 +1303,7 @@ class AgentHub:
         messages = [{"role": "user", "content": bundle["prompt"]}]
 
         budget = self._tool_loop_budget(task)
-        max_attempts = budget["max_attempts"]
+        max_attempts = max(2, budget["max_attempts"]) if minimal_inference else budget["max_attempts"]
         max_seconds = budget["max_seconds"]
         started_at = time.time()
 
@@ -1322,6 +1322,7 @@ class AgentHub:
         test_reopens = 0
         test_budget = self._test_loop_budget(task)
         echo_retried = False
+        user_echo_retried = False
 
         try:
             for attempt in range(max_attempts):
@@ -1336,6 +1337,23 @@ class AgentHub:
 
                 if minimal_inference and not tool_calls:
                     text = model_compatibility.clean_minimal_response(text)
+
+                if minimal_inference and not tool_calls and model_compatibility.looks_like_user_echo(text, task.objective):
+                    if not user_echo_retried:
+                        user_echo_retried = True
+                        task.stream_text = ""
+                        task.seen("user_echo_recovery", {"model": model_key, "profile": "minimal"})
+                        task.log("model repeated the operator message; retrying once with an anti-echo prompt")
+                        messages = [{"role": "user", "content": model_compatibility.minimal_retry_prompt(task.objective)}]
+                        continue
+                    message = (
+                        "The selected model repeated your message instead of answering it, including after "
+                        "Rasputin retried with a simpler prompt. Try the request again or choose another model."
+                    )
+                    task.seen("user_echo_failure", {"model": model_key, "profile": "minimal"})
+                    task.log(message)
+                    self._finish_step(task, phase_step, "error")
+                    raise RuntimeError(message)
 
                 if (
                     phase == "chat"

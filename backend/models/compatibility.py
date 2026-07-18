@@ -37,6 +37,35 @@ def looks_like_prompt_echo(text, prompt=""):
     return False
 
 
+def looks_like_user_echo(text, user_text):
+    """Detect a short answer that merely repeats the operator's message."""
+    output = str(text or "").strip()
+    source = str(user_text or "").strip()
+    if not output or not source:
+        return False
+
+    def normalized(value):
+        value = re.sub(r"\s+", " ", value).strip(" \t\r\n\"'`*_.,:;!?")
+        value = re.sub(
+            r"^(?:you (?:said|asked)|the (?:answer|actual words?) (?:is|are)|"
+            r"(?:user )?(?:message|question|request|prompt)|answer)\s*[:=-]\s*",
+            "",
+            value,
+            flags=re.IGNORECASE,
+        )
+        return _clean(value)
+
+    return bool(normalized(source)) and normalized(output) == normalized(source)
+
+
+def minimal_retry_prompt(user_text):
+    return (
+        "Do not copy or repeat the request below. Produce a substantive answer to it. "
+        "If you cannot answer, briefly explain why. Output only your answer.\n\n"
+        f"Request:\n{str(user_text or '').strip()}\n\nAnswer:"
+    )
+
+
 def clean_minimal_response(text):
     """Clean exposed thinking from a raw/basic inference response."""
     output = str(text or "").strip()

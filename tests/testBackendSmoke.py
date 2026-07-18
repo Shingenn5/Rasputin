@@ -432,6 +432,16 @@ class BackendSmokeTests(unittest.TestCase):
         )
         self.assertEqual(model_compatibility.clean_minimal_response(raw), "* Red\n* Blue\n* Yellow")
 
+    def testMinimalEchoDetectionHandlesExactAndWrappedCopies(self):
+        prompt = "explain local inference"
+        self.assertTrue(model_compatibility.looks_like_user_echo(prompt, prompt))
+        self.assertTrue(model_compatibility.looks_like_user_echo(
+            'The actual words are: "explain local inference."', prompt,
+        ))
+        self.assertFalse(model_compatibility.looks_like_user_echo(
+            "Local inference runs a model on your own hardware.", prompt,
+        ))
+
     def testGovernedMinimalInferenceSendsOnlyOperatorMessage(self):
         local_hub = agent.AgentHub()
         task = agent.AgentTask("generate a list", "fallback-model", "general", mode="chat", workspace_path=".")
@@ -459,6 +469,45 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIsNone(captured["on_delta"])
         self.assertEqual(result, "* One\n* Two")
         self.assertTrue(any(item["kind"] == "minimal_inference" for item in task.trace))
+
+    def testGovernedMinimalInferenceRetriesUserEcho(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask("generate a list", "fallback-model", "general", mode="chat", workspace_path=".")
+        local_hub.phase_model = lambda _task, _role: "fallback-model"
+        calls = []
+
+        async def scripted_chat(_model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            calls.append([dict(message) for message in messages])
+            return ("generate a list", []) if len(calls) == 1 else ("- One\n- Two", [])
+
+        model = {"key": "fallback-model", "compatibility": {"status": "limited", "promptProfile": "minimal"}}
+        sections = [context_governor.section("task", "Task", task.objective, required=True, priority=0)]
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model), \
+             patch("backend.engine.agent._chat", scripted_chat):
+            result = asyncio.run(local_hub.governed_chat(task, "chat", "main", sections))
+        self.assertEqual(result, "- One\n- Two")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1], [{"role": "user", "content": model_compatibility.minimal_retry_prompt(task.objective)}])
+        self.assertTrue(any(item["kind"] == "user_echo_recovery" for item in task.trace))
+
+    def testGovernedMinimalInferenceFailsClearlyAfterRepeatedEcho(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask("generate a list", "fallback-model", "general", mode="chat", workspace_path=".")
+        local_hub.phase_model = lambda _task, _role: "fallback-model"
+        calls = {"count": 0}
+
+        async def scripted_chat(_model_key, _messages, tools=None, on_delta=None, reasoning="auto"):
+            calls["count"] += 1
+            return "generate a list", []
+
+        model = {"key": "fallback-model", "compatibility": {"status": "limited", "promptProfile": "minimal"}}
+        sections = [context_governor.section("task", "Task", task.objective, required=True, priority=0)]
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model), \
+             patch("backend.engine.agent._chat", scripted_chat):
+            with self.assertRaisesRegex(RuntimeError, "repeated your message instead of answering"):
+                asyncio.run(local_hub.governed_chat(task, "chat", "main", sections))
+        self.assertEqual(calls["count"], 2)
+        self.assertTrue(any(item["kind"] == "user_echo_failure" for item in task.trace))
 
     def testPromptEchoDetectionMatchesRasputinBundle(self):
         echoed = (
