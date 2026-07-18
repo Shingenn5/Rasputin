@@ -211,11 +211,7 @@ export function HomeView(props) {
   const privacyTitle = security.privacyLock ? "Local-only" : "Review mode";
   const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
   const selectedModelHealthLine = modelHealthLine(selectedModelObject, models);
-  const compatibilityBlocked = selectedModelObject?.compatibility?.status === "incompatible";
-  const compatibilityIssue = selectedModelObject?.compatibility?.issues?.[0];
-  const disabledReason = compatibilityBlocked
-    ? `${compatibilityIssue || "This model failed Rasputin's compatibility checks."} Choose another model or re-run Test after changing its deployment.`
-    : healthy ? "" : `${selectedModelHealthLine} Use Models to test or repair the local runtime, or enable Testing Mode.`;
+  const disabledReason = healthy ? "" : `${selectedModelHealthLine} Use Models to test or repair the local runtime, or enable Testing Mode.`;
   const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
   const activeReasoning = reasoningOptions.find((option) => option.value === reasoningMode) || reasoningOptions[0];
   const objectivePlaceholder = modePlaceholders[activeMode.value] || modePlaceholders.chat;
@@ -225,8 +221,6 @@ export function HomeView(props) {
   const modelRuntimeStatus = modelIsMock ? "reachable" : runtimeStatus(selectedModelObject);
   const modelStateLabel = !selectedModelObject
     ? "No model"
-    : compatibilityBlocked
-      ? "Incompatible"
     : composerBusy && healthy
       ? "Generating"
       : modelIsMock

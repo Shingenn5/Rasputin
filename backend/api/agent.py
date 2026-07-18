@@ -159,9 +159,6 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
     selected_model = model_registry.get_model(req.model)
     compatibility = (selected_model or {}).get("compatibility") or {}
     certified_modes = compatibility.get("supportedModes")
-    if compatibility.get("status") == "incompatible":
-        issue = next(iter(compatibility.get("issues") or []), "The model failed Rasputin's compatibility checks.")
-        raise AppError("model_incompatible", f"This model is reachable but incompatible: {issue}", 409)
     if requested_mode != "chat" and (
         (isinstance(certified_modes, list) and requested_mode not in certified_modes)
         or not model_providers.supports_agentic_tools(selected_model)

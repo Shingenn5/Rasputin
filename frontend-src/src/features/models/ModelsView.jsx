@@ -76,16 +76,18 @@ function CompatibilitySummary({ model }) {
       </div>
     );
   }
-  const status = profile.status || "unknown";
-  const modes = Array.isArray(profile.supportedModes) ? profile.supportedModes : [];
+  const legacyFallback = profile.status === "incompatible";
+  const status = legacyFallback ? "limited" : (profile.status || "unknown");
+  const tier = legacyFallback ? "basic-inference" : (profile.tier || "unknown");
+  const modes = legacyFallback ? ["chat"] : (Array.isArray(profile.supportedModes) ? profile.supportedModes : []);
   const issues = Array.isArray(profile.issues) ? profile.issues : [];
   const tone = status === "certified" ? "text-emerald-400" : status === "incompatible" ? "text-red-400" : "text-amber-400";
   return (
     <div data-testid="model-compatibility" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <strong className={tone}>{labelize(status)}</strong>
-        <span className="text-muted-foreground">Tier: {labelize(profile.tier || "unknown")}</span>
-        <span className="text-muted-foreground">Context profile: {labelize(profile.promptProfile || "standard")}</span>
+        <span className="text-muted-foreground">Tier: {labelize(tier)}</span>
+        <span className="text-muted-foreground">Context profile: {labelize(legacyFallback ? "minimal" : (profile.promptProfile || "standard"))}</span>
       </div>
       <div className="mt-1 text-muted-foreground">
         Modes: {modes.length ? modes.map(labelize).join(", ") : "None"}

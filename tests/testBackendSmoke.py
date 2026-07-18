@@ -411,7 +411,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(profile["reliableContextWindow"], 1024)
         self.assertEqual(profile["parameterBillions"], 1.0)
 
-    def testCompatibilityRejectsModelThatExposesUnclosedThinking(self):
+    def testCompatibilityFallsBackWhenModelExposesUnclosedThinking(self):
         responses = [
             ("RASPUTIN_READY_7319", []),
             ("RASPUTIN_RETAINED_4826", []),
@@ -419,9 +419,46 @@ class BackendSmokeTests(unittest.TestCase):
         ]
         with patch("backend.models.compatibility._chat", side_effect=responses):
             profile = model_compatibility.certify({"key": "broken-thinking", "model": "broken-thinking"})
-        self.assertEqual(profile["status"], "incompatible")
-        self.assertEqual(profile["supportedModes"], [])
+        self.assertEqual(profile["status"], "limited")
+        self.assertEqual(profile["tier"], "basic-inference")
+        self.assertEqual(profile["promptProfile"], "minimal")
+        self.assertEqual(profile["supportedModes"], ["chat"])
         self.assertFalse(profile["tests"]["ordinaryResponse"]["passed"])
+
+    def testMinimalResponseCleanupPrefersGeneratedList(self):
+        raw = (
+            "<think>The user wants a list.\nI should answer directly.\n"
+            "* Red\n* Blue\n* Yellow\nI will continue thinking."
+        )
+        self.assertEqual(model_compatibility.clean_minimal_response(raw), "* Red\n* Blue\n* Yellow")
+
+    def testGovernedMinimalInferenceSendsOnlyOperatorMessage(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask("generate a list", "fallback-model", "general", mode="chat", workspace_path=".")
+        local_hub.phase_model = lambda _task, _role: "fallback-model"
+        captured = {}
+
+        async def scripted_chat(_model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            captured.update({"messages": [dict(message) for message in messages], "tools": tools, "on_delta": on_delta})
+            return "<think>The user wants a list.\n* One\n* Two", []
+
+        model = {"key": "fallback-model", "compatibility": {"status": "limited", "promptProfile": "minimal"}}
+        sections = [context_governor.section("rules", "Rules", "large policy", required=True, priority=0)]
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model), \
+             patch("backend.engine.agent._chat", scripted_chat):
+            result = asyncio.run(local_hub.governed_chat(task, "chat", "main", sections, tools=[{"id": "unused"}]))
+        self.assertEqual(captured["messages"], [{
+            "role": "user",
+            "content": (
+                "Answer the question directly. Output only the final answer. "
+                "Do not show analysis, planning, brainstorming, or hidden reasoning.\n\n"
+                "Question: generate a list"
+            ),
+        }])
+        self.assertIsNone(captured["tools"])
+        self.assertIsNone(captured["on_delta"])
+        self.assertEqual(result, "* One\n* Two")
+        self.assertTrue(any(item["kind"] == "minimal_inference" for item in task.trace))
 
     def testPromptEchoDetectionMatchesRasputinBundle(self):
         echoed = (
@@ -3967,7 +4004,9 @@ class BackendSmokeTests(unittest.TestCase):
         task = agent.AgentTask("policy check", "dry-run", "general", mode="chat", workspace_path=".")
         hub._persist_session(task)
 
-        with patch("backend.engine.agent._chat", scripted_chat):
+        rich_model = {"key": "dry-run", "compatibility": {"status": "compatible", "promptProfile": "standard"}}
+        with patch("backend.engine.agent._chat", scripted_chat), \
+             patch("backend.engine.agent.model_registry.get_model", return_value=rich_model):
             asyncio.run(hub.governed_chat(task, "chat", "main", sections))
 
         self.assertEqual(len(seen_prompts), 1)

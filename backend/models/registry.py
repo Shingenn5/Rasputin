@@ -303,8 +303,8 @@ def record_prompt_echo(key):
             issues.append(issue)
         profile.update({
             "status": "limited",
-            "tier": "basic-chat",
-            "promptProfile": "light",
+            "tier": "basic-inference",
+            "promptProfile": "minimal",
             "supportedModes": ["chat"],
             "reliableContextWindow": min(
                 int(model.get("context_window") or model.get("context") or 4096),

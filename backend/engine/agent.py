@@ -1261,20 +1261,37 @@ class AgentHub:
 
     async def governed_chat(self, task, phase, role, sections, tools=None):
         model_key = self.phase_model(task, role)
-        # Prepended here (not by each phase's own section list) so the policy
-        # is present for every phase, including any added later, and can't be
-        # dropped by a call site forgetting it. required+priority=0 means
-        # compose_prompt never trims or omits it.
-        sections = [
-            context_governor.section(
-                "untrusted_content_policy",
-                "Data-handling policy",
-                prompt_security.UNTRUSTED_CONTEXT_POLICY,
-                required=True,
-                priority=0,
-            ),
-            *sections,
-        ]
+        model = model_registry.get_model(model_key) or {}
+        minimal_inference = phase == "chat" and model_compatibility.default_profile(model) == "minimal"
+        if minimal_inference:
+            # A reachable model that failed richer certification still gets a
+            # useful escape hatch. No retrieved/untrusted data is present in
+            # this profile, so wrap only the operator's text in a short direct-
+            # answer instruction. Buffer until exposed thinking is cleaned.
+            minimal_prompt = (
+                "Answer the question directly. Output only the final answer. "
+                "Do not show analysis, planning, brainstorming, or hidden reasoning.\n\n"
+                f"Question: {task.objective}"
+            )
+            sections = [context_governor.section(
+                "current_user_message", "", minimal_prompt, required=True, priority=0,
+            )]
+            task.seen("minimal_inference", {"model": model_key, "retrievalSkipped": True, "toolsAttached": False})
+            task.log("minimal inference fallback selected; sending a direct-answer prompt without injected context")
+            tools = None
+        else:
+            # Prepended here (not by each phase's own section list) so the
+            # policy is present whenever retrieved content may be included.
+            sections = [
+                context_governor.section(
+                    "untrusted_content_policy",
+                    "Data-handling policy",
+                    prompt_security.UNTRUSTED_CONTEXT_POLICY,
+                    required=True,
+                    priority=0,
+                ),
+                *sections,
+            ]
         bundle = context_governor.compose_prompt(model_key, phase, sections)
         trace = bundle["trace"]
         task.seen("context_budget", trace)
@@ -1290,7 +1307,7 @@ class AgentHub:
         max_seconds = budget["max_seconds"]
         started_at = time.time()
 
-        on_delta = self._stream_delta_handler(task)
+        on_delta = None if minimal_inference else self._stream_delta_handler(task)
         phase_step = self._add_step(task, "phase", phase)
 
         # Stage 6 test loop: after the model finishes editing in a code-mode
@@ -1316,6 +1333,9 @@ class AgentHub:
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
                 text, tool_calls = await _chat(model_key, messages, tools=tools, on_delta=on_delta, reasoning=getattr(task, "reasoning", "auto"))
+
+                if minimal_inference and not tool_calls:
+                    text = model_compatibility.clean_minimal_response(text)
 
                 if (
                     phase == "chat"
@@ -1430,7 +1450,7 @@ class AgentHub:
         model_key = self.phase_model(task, "main")
         model = model_registry.get_model(model_key) or {}
         prompt_profile = model_compatibility.default_profile(model)
-        light_context = prompt_profile == "light"
+        light_context = prompt_profile in {"light", "minimal"}
         previous_messages = self.recent_messages(task.session_id, 4 if light_context else 10)
         if light_context:
             recall = {"items": []}

@@ -220,7 +220,6 @@ export function App() {
     ? { active: true, id: activeWorkspaceEntry.id, name: activeWorkspaceEntry.displayName || activeWorkspaceEntry.name || activeWorkspaceName }
     : null;
   const healthy = isModelHealthy(selectedModelObject);
-  const modelReady = healthy && selectedModelObject?.compatibility?.status !== "incompatible";
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const queuedMessages = tasks
@@ -1914,7 +1913,7 @@ export function App() {
         objective={objective}
         setObjective={setObjective}
         sendTask={sendTask}
-        healthy={modelReady}
+        healthy={healthy}
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
@@ -1936,7 +1935,7 @@ export function App() {
         cancelTask={cancelTask}
         pauseTask={pauseTask}
         resumeTask={resumeTask}
-        healthy={modelReady}
+        healthy={healthy}
         composerStatus={composerStatus}
         approvalCount={approvalCount}
         taskMode={taskMode}

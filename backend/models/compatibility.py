@@ -37,6 +37,30 @@ def looks_like_prompt_echo(text, prompt=""):
     return False
 
 
+def clean_minimal_response(text):
+    """Clean exposed thinking from a raw/basic inference response."""
+    output = str(text or "").strip()
+    if not output:
+        return output
+    if "</think>" in output.lower():
+        return re.sub(r"<think>[\s\S]*?</think>", "", output, flags=re.IGNORECASE).strip()
+    if "<think>" not in output.lower():
+        return output
+    exposed = re.sub(r"<think>", "", output, count=1, flags=re.IGNORECASE).strip()
+    lines = [line.strip() for line in exposed.splitlines() if line.strip()]
+    bullets = [line for line in lines if re.match(r"^(?:[-*+] |\d+[.)] )", line)]
+    if bullets:
+        return "\n".join(dict.fromkeys(bullets))
+    meta = re.compile(
+        r"^(?:the user|the assistant|user(?:'s)? (?:message|request|instruction)|assistant(?:'s)? role|"
+        r"i (?:need|should|will|must|am going)|we (?:need|should|must)|given the prompt|"
+        r"based on the prompt|let(?:'s| us)|my task|instructions?:)",
+        re.IGNORECASE,
+    )
+    useful = [line for line in lines if not meta.match(line)]
+    return "\n".join(dict.fromkeys(useful or lines)).strip()
+
+
 def _chat(model, prompt, max_tokens=64, tools=None):
     text, tool_calls = model_providers.chat_sync(
         model,
@@ -182,7 +206,8 @@ def certify(model):
         tests["toolCalling"] = _test_record(False, f"Skipped because {reason}.")
 
     if not basic_ok or not ordinary_ok:
-        status, tier, profile, modes = "incompatible", "incompatible", "light", []
+        status, tier, profile, modes = "limited", "basic-inference", "minimal", ["chat"]
+        issues.append("Rasputin will use raw minimal inference so basic Chat remains available.")
     elif small_model:
         status, tier, profile, modes = "limited", "basic-chat", "light", ["chat"]
         issues.append(
@@ -217,6 +242,10 @@ def certify(model):
 
 def default_profile(model):
     compatibility = (model or {}).get("compatibility") or {}
+    # Certification v1 used "incompatible" for models that could still run
+    # raw inference. Upgrade those profiles immediately without a manual test.
+    if compatibility.get("status") == "incompatible":
+        return "minimal"
     return compatibility.get("promptProfile") or "standard"
 
 
