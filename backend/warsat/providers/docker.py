@@ -55,7 +55,7 @@ class DockerProvider(DeploymentProvider):
             }
 
         status = self.status(model)
-        if status == "running":
+        if status in {"running", "starting"}:
             return {"ok": True, "status": status, "message": "already running"}
 
         self.rm(model)
@@ -89,7 +89,11 @@ class DockerProvider(DeploymentProvider):
             
         try:
             proc = subprocess.run(
-                ["docker", "ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.Status}}"],
+                [
+                    "docker", "inspect", "--format",
+                    "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
+                    name,
+                ],
                 capture_output=True, text=True, timeout=10,
             )
         except Exception:
@@ -98,8 +102,12 @@ class DockerProvider(DeploymentProvider):
         text = proc.stdout.strip().lower()
         if not text:
             return "stopped"
-        if text.startswith("up"):
+        if text in {"healthy", "running"}:
             return "running"
+        if text == "starting":
+            return "starting"
+        if text == "unhealthy":
+            return "unhealthy"
         return text
 
     def logs(self, model: dict, limit: int = 120) -> dict:

@@ -24,7 +24,7 @@ DATA_DIR = data_dir() / "warsat"
 USER_PROTOCOL_DIR = DATA_DIR / "protocols"
 MODELS_DIR = ROOT / "models"
 DEPLOY_TIMEOUT_SECONDS = int(os.environ.get("WARSAT_DEPLOY_TIMEOUT", "1800"))
-HEALTH_PROBE_ATTEMPTS = max(1, min(int(os.environ.get("WARSAT_HEALTH_PROBE_ATTEMPTS", "6")), 30))
+HEALTH_PROBE_ATTEMPTS = max(1, min(int(os.environ.get("WARSAT_HEALTH_PROBE_ATTEMPTS", "6")), 120))
 HEALTH_PROBE_INTERVAL_SECONDS = max(0.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_INTERVAL", "5")), 30.0))
 HEALTH_PROBE_TIMEOUT_SECONDS = max(1.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_TIMEOUT", "5")), 30.0))
 LOG_LIMIT_MAX = 500
@@ -1101,7 +1101,7 @@ def _probe_model_endpoint(health_url, expected_model=None, attempts=None, interv
             "availableModels": [str(expected_model or "warsat-test-model")],
             "message": "Test-mode model endpoint passed the simulated health probe.",
         }
-    safe_attempts = max(1, min(int(attempts or HEALTH_PROBE_ATTEMPTS), 30))
+    safe_attempts = max(1, min(int(attempts or HEALTH_PROBE_ATTEMPTS), 120))
     safe_interval = max(0.0, min(float(interval if interval is not None else HEALTH_PROBE_INTERVAL_SECONDS), 30.0))
     last_error = ""
     started = time.time()
@@ -1358,9 +1358,9 @@ def make_plan(payload):
         # Startup downloads need a much longer probe window than a warm model --
         # a multi-GB GGUF pulled by llama.cpp's own --hf-repo/--hf-file flags, or
         # a multi-GB HF model vLLM downloads itself via --model, can take well
-        # past 5 minutes on an ordinary connection. 30 * 30s is the max
-        # _probe_model_endpoint's own clamps allow (15 minutes).
-        "healthProbe": {"attempts": 30, "intervalSeconds": 30}
+        # past 15 minutes on an ordinary connection. Allow 30 minutes for a
+        # first download plus CUDA fitting and multimodal warm-up.
+        "healthProbe": {"attempts": 60, "intervalSeconds": 30}
         if (hf_source or (protocol.get("modelFormat") == "huggingface" and model_ref))
         else None,
         "role": role,
@@ -1893,6 +1893,50 @@ def _container_status(container_name):
     return text
 
 
+def _running_container_start_result(plan, registry_entry, started, status, pull, health, logs_out):
+    """Register a still-running container as starting after probe timeout.
+
+    Large first-run model downloads can outlive an HTTP probe window. Losing
+    the registry entry and calling that a failed deployment leaves a healthy
+    late-starting container orphaned. A genuinely exited container still
+    follows the failure path below.
+    """
+    if not str(status or "").strip().lower().startswith("up"):
+        return None
+    pending_entry = dict(registry_entry)
+    pending_entry["runtime_status"] = "starting"
+    saved = model_registry.upsert(pending_entry)
+    result = {
+        "planId": plan.get("planId"),
+        "approvalRequired": False,
+        "status": "starting",
+        "phase": "probing",
+        "lifecycle": _lifecycle(active="probing", done={"planned", "approvalPending", "pulling", "starting"}),
+        "containerId": started["stdout"],
+        "containerName": plan.get("containerName"),
+        "modelKey": saved["key"],
+        "registryEntry": saved,
+        "endpoint": registry_entry["base_url"],
+        "healthUrl": plan.get("healthUrl"),
+        "health": health,
+        "containerStatus": "starting",
+        "pull": pull,
+        "run": started,
+        "logs": logs_out,
+        "message": "The container is still downloading or loading the model. It remains registered and will become available when its healthcheck passes.",
+        "nextSteps": [
+            "Leave the container running while the first model download and warm-up finish.",
+            "Models and Managed Runtimes will show its live starting/healthy state; do not redeploy it.",
+        ],
+    }
+    audit.log("warsat_deploy_still_starting", {
+        "planId": plan.get("planId"),
+        "container": plan.get("containerName"),
+        "modelKey": saved["key"],
+    })
+    return result
+
+
 def _safe_container_name(value):
     name = _slug(value)
     if not name or name != str(value or ""):
@@ -2390,6 +2434,9 @@ def deploy(plan, approval_id=None):
     })
 
     if not health.get("ok"):
+        pending = _running_container_start_result(plan, registry_entry, started, status, pull, health, logs_out)
+        if pending:
+            return pending
         last_error = health.get("lastError") or health.get("message")
         log_tail = _probe_failure_log_tail(container_name)
         if log_tail:
@@ -2577,6 +2624,10 @@ def deploy_stream(plan, approval_id):
     })
 
     if not health.get("ok"):
+        pending = _running_container_start_result(plan, registry_entry, started, status, pull, health, logs_out)
+        if pending:
+            yield {"ok": True, "final": True, "data": pending}
+            return
         last_error = health.get("lastError") or health.get("message")
         log_tail = _probe_failure_log_tail(container_name)
         if log_tail:

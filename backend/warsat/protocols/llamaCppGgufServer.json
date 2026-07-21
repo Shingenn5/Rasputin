@@ -33,6 +33,15 @@
     "required": true
   },
   "modelArgument": "-m",
+  "dataMounts": [
+    {
+      "name": "huggingfaceCache",
+      "hostPath": "rasputin-llama-cache",
+      "containerPath": "/root/.cache/huggingface",
+      "readOnly": false,
+      "note": "Persistent named volume so downloaded GGUF and multimodal projector files survive container replacement."
+    }
+  ],
   "defaultArguments": ["--port", "8080", "-c", "4096"],
   "healthPath": "/v1/models",
   "security": {

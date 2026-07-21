@@ -381,7 +381,14 @@ def all_models():
                     item["container_status"] = get_provider(item).status(item)
                 except Exception:
                     item["container_status"] = "unknown"
-                item["runtime_status"] = "reachable" if item["container_status"] == "running" else "stopped"
+                if item["container_status"] == "running":
+                    item["runtime_status"] = "reachable"
+                elif item["container_status"] == "starting":
+                    item["runtime_status"] = "starting"
+                elif item["container_status"] == "unhealthy":
+                    item["runtime_status"] = "unhealthy"
+                else:
+                    item["runtime_status"] = "stopped"
             else:
                 item["container_status"] = "docker control disabled"
                 item["runtime_status"] = item.get("runtime_status") or "unknown"

@@ -1825,10 +1825,14 @@ class BackendSmokeTests(unittest.TestCase):
         with (
             patch("backend.core.security.load", return_value={"allow_docker_control": False}),
             patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+            patch("backend.warsat._hf_repo_inventory", return_value={
+                "ggufFiles": ["catalog-model-Q4_K_M.gguf"],
+                "transformersOk": False,
+            }),
         ):
             automatic = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "llamaCppGgufServer",
-                "modelPath": "models/catalog-model.gguf",
+                "modelRef": "example/catalog-model-GGUF",
                 "strengthProfile": "balanced",
             }))
             cpu = self.assertOk(self.client.post("/api/warsat/plan", json={
@@ -1844,6 +1848,8 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("--fit", automatic["commandPreview"]["run"])
         self.assertNotIn("-ngl", automatic["commandPreview"]["run"])
         self.assertNotIn("--host", automatic["commandPreview"]["run"])
+        self.assertIn("rasputin-llama-cache:/root/.cache/huggingface:rw", automatic["commandPreview"]["run"])
+        self.assertEqual(automatic["healthProbe"], {"attempts": 60, "intervalSeconds": 30})
 
         self.assertEqual(cpu["image"], "ghcr.io/ggml-org/llama.cpp:server")
         self.assertNotIn("--gpus", cpu["commandPreview"]["run"])
@@ -2605,7 +2611,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(deployed["registryEntry"].get("baseUrl") or deployed["registryEntry"].get("base_url"), plan["expectedModelRegistryEntry"]["baseUrl"])
         self.assertTrue(any(call[:3] == ["docker", "run", "-d"] for call in docker_calls))
 
-    def testWarsatDeployDoesNotRegisterWhenHealthProbeFails(self):
+    def testWarsatDeployRegistersRunningContainerWhenHealthProbeTimesOut(self):
         cfg = {
             "allow_docker_control": True,
             "allow_model_registry_edit": True,
@@ -2637,7 +2643,7 @@ class BackendSmokeTests(unittest.TestCase):
                  "lastError": "connection refused",
                  "message": "Container started, but the model endpoint did not pass the health probe.",
              }), \
-             patch("backend.models.registry.upsert", side_effect=AssertionError("unhealthy model should not register")):
+             patch("backend.models.registry.upsert", side_effect=lambda entry: dict(entry)):
             plan = self.assertOk(self.client.post("/api/warsat/plan", json={
                 "protocolId": "vllmCudaOpenai",
                 "modelRef": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -2647,16 +2653,19 @@ class BackendSmokeTests(unittest.TestCase):
             }))
             pending = self.assertOk(self.client.post("/api/warsat/deploy", json={"plan": plan}))
             self.assertOk(self.client.post(f"/api/approvals/{pending['approval']['id']}/approve", json={}))
-            failed = self.assertOk(self.client.post("/api/warsat/deploy", json={
+            starting = self.assertOk(self.client.post("/api/warsat/deploy", json={
                 "plan": plan,
                 "approvalId": pending["approval"]["id"],
             }))
 
-        self.assertEqual(failed["status"], "failed")
-        self.assertEqual(failed["failedPhase"], "probing")
-        self.assertFalse(failed["health"]["ok"])
-        self.assertNotIn("registryEntry", failed)
-        self.assertTrue(any(item["id"] == "probing" and item["status"] == "error" for item in failed["lifecycle"]))
+        self.assertEqual(starting["status"], "starting")
+        self.assertEqual(starting["phase"], "probing")
+        self.assertFalse(starting["health"]["ok"])
+        self.assertEqual(
+            starting["registryEntry"].get("runtimeStatus") or starting["registryEntry"].get("runtime_status"),
+            "starting",
+        )
+        self.assertTrue(any(item["id"] == "probing" and item["status"] == "active" for item in starting["lifecycle"]))
 
     def testWarsatDiscoverProbesHostGatewayWhenWrapperIsContainerized(self):
         # Inside the containerized wrapper 127.0.0.1 is the wrapper itself, so
