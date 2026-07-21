@@ -1817,6 +1817,37 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("--tensor-parallel-size", vllm["commandPreview"]["run"])
         self.assertTrue(any("constrained by the smaller GPU" in item for item in vllm["warnings"]))
 
+    def testWarsatAutomaticallyUsesGpuForCatalogStyleGgufPlans(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            automatic = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/catalog-model.gguf",
+                "strengthProfile": "balanced",
+            }))
+            cpu = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/cpu-model.gguf",
+                "strengthProfile": "cpu",
+            }))
+
+        self.assertEqual(automatic["image"], "ghcr.io/ggml-org/llama.cpp:server-cuda")
+        self.assertEqual(automatic["containerLimits"]["gpuDevice"], "all")
+        self.assertTrue(automatic["multiGpu"]["enabled"])
+        self.assertIn("--gpus", automatic["commandPreview"]["run"])
+        self.assertIn("--fit", automatic["commandPreview"]["run"])
+        self.assertNotIn("-ngl", automatic["commandPreview"]["run"])
+        self.assertNotIn("--host", automatic["commandPreview"]["run"])
+
+        self.assertEqual(cpu["image"], "ghcr.io/ggml-org/llama.cpp:server")
+        self.assertNotIn("--gpus", cpu["commandPreview"]["run"])
+
     def testCodingModelsSuggestCoderRole(self):
         from backend.models import registry as model_registry
 

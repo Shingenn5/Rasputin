@@ -684,24 +684,49 @@ def _visible_gpus_for_plan():
 
 
 def _configure_multi_gpu(payload, protocol, tuning, limits):
-    """Apply an explicit, reviewable multi-GPU launch policy."""
-    enabled = bool(_payload_get(payload, "multiGpu", "multi_gpu", default=False))
-    if not enabled:
-        return [], []
+    """Prefer NVIDIA acceleration, and combine cards when not opted out.
 
+    Catalog plans intentionally omit ``multiGpu``.  On a GPU machine that
+    means "choose the best available acceleration", not "run on the CPU".
+    Manual plans can still select one GPU with ``multiGpu=false`` or opt out
+    completely with the CPU profile, GPU layers 0, or a CPU-only device.
+    """
+    multi_gpu_request = _payload_get(payload, "multiGpu", "multi_gpu", default=None)
     requested_device = str(limits.get("gpuDevice") or "").strip().lower()
-    if requested_device in {"none", "cpu", "off"}:
+    explicit_gpu_layers = _payload_get(payload, "gpuLayers", "gpu_layers", default=None)
+    strength = _safe_strength(_payload_get(payload, "strengthProfile", "strength_profile", default="balanced"))
+    cpu_only = (
+        strength == "cpu"
+        or requested_device in {"none", "cpu", "off"}
+        or explicit_gpu_layers == 0
+        or str(explicit_gpu_layers).strip() == "0"
+    )
+    if multi_gpu_request and cpu_only:
         raise AppError("warsat_multi_gpu_conflict", "Multi-GPU cannot be combined with a CPU-only GPU device setting.", 400)
 
+    gpu_modes = {str(mode).lower() for mode in (protocol.get("gpu") or {}).get("modes", [])}
+    gpu_capable = bool((protocol.get("gpu") or {}).get("required") or protocol.get("imageCuda") or "nvidia" in gpu_modes)
+    if cpu_only or not gpu_capable:
+        if cpu_only and protocol.get("modelFormat") == "gguf":
+            # Do not pass a GPU split flag to the CPU llama.cpp image.
+            tuning["splitMode"] = ""
+        return [], []
+
     gpus = _visible_gpus_for_plan()
-    if len(gpus) < 2:
-        return gpus, ["Multi-GPU was requested, but fewer than two GPUs are visible to Rasputin."]
+    if not gpus:
+        warning = "GPU acceleration was requested, but no NVIDIA GPU is visible to Rasputin."
+        return [], [warning] if multi_gpu_request else []
 
     gpu_count = len(gpus)
-    limits["gpuDevice"] = "all"
+    use_multi_gpu = gpu_count > 1 and multi_gpu_request is not False
+    if not limits.get("gpuDevice"):
+        # An explicit unchecked multi-GPU control means one GPU, not CPU.
+        limits["gpuDevice"] = "all" if use_multi_gpu or gpu_count == 1 else "0"
     total_mb = sum(int(gpu.get("memoryTotalMb") or 0) for gpu in gpus)
     warnings = []
     if protocol.get("runtime") == "vllm":
+        if not use_multi_gpu:
+            return [], warnings
         explicit_tp = _payload_get(payload, "tensorParallelSize", "tensor_parallel_size") is not None
         if explicit_tp and tuning["tensorParallelSize"] > gpu_count:
             raise AppError(
@@ -717,21 +742,25 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
             "use llama.cpp GGUF layer sharding when maximum combined-VRAM capacity matters."
         )
     elif protocol.get("modelFormat") == "gguf":
-        tuning["multiGpu"] = True
+        tuning["multiGpu"] = use_multi_gpu
         if _payload_get(payload, "gpuLayers", "gpu_layers") is None:
             # Leave the layer count unset so --fit can size it against the
             # actual free memory reported inside the CUDA container.
             tuning["gpuLayers"] = None
-        tuning["splitMode"] = tuning.get("splitMode") or "layer"
-        warnings.append(
-            f"llama.cpp layer sharding is enabled across {gpu_count} GPUs "
-            f"(~{total_mb / 1024:.1f} GiB installed VRAM) with in-container automatic fitting."
-        )
+        tuning["gpuFit"] = True
+        if use_multi_gpu:
+            tuning["splitMode"] = tuning.get("splitMode") or "layer"
+            warnings.append(
+                f"llama.cpp layer sharding is enabled across {gpu_count} GPUs "
+                f"(~{total_mb / 1024:.1f} GiB installed VRAM) with in-container automatic fitting."
+            )
+        else:
+            tuning["splitMode"] = "none"
+            warnings.append(f"llama.cpp GPU offload is enabled on {gpus[0].get('name') or 'the detected NVIDIA GPU'}.")
     else:
-        warnings.append(
-            f"All {gpu_count} GPUs are exposed to this runtime, but the selected protocol has no Rasputin-managed sharding flag."
-        )
-    return gpus, warnings
+        exposed = gpu_count if limits.get("gpuDevice") == "all" else 1
+        warnings.append(f"GPU passthrough is enabled for this runtime across {exposed} visible NVIDIA GPU(s).")
+    return gpus if use_multi_gpu else [], warnings
 
 
 def _uses_gpu(protocol, tuning, limits):
@@ -873,10 +902,10 @@ def _runtime_arguments(protocol, tuning):
             args.extend(["--split-mode", str(tuning["splitMode"])])
         if tuning.get("tensorSplit"):
             args.extend(["--tensor-split", str(tuning["tensorSplit"])])
-        if tuning.get("multiGpu") and tuning.get("splitMode") != "tensor":
+        if tuning.get("gpuFit") and tuning.get("splitMode") != "tensor":
             # CUDA device order can differ from host nvidia-smi order. Let
-            # llama.cpp measure the cards from inside its own container and
-            # auto-fit there instead of baking in a potentially reversed split.
+            # llama.cpp measure available memory inside its own container and
+            # auto-fit there instead of baking in a stale layer count.
             args.extend(["--fit", "on"])
     return args
 

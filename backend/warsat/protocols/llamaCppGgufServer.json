@@ -33,7 +33,7 @@
     "required": true
   },
   "modelArgument": "-m",
-  "defaultArguments": ["--host", "0.0.0.0", "--port", "8080", "-c", "4096"],
+  "defaultArguments": ["--port", "8080", "-c", "4096"],
   "healthPath": "/v1/models",
   "security": {
     "hostBinding": "127.0.0.1",
