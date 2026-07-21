@@ -141,6 +141,8 @@ export function ModelsView({
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState("");
   const [hfSort, setHfSort] = useState("downloads");
+  const [vramMinGb, setVramMinGb] = useState("");
+  const [vramMaxGb, setVramMaxGb] = useState("");
   const [activeDownloads, setActiveDownloads] = useState([]);
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
@@ -148,7 +150,7 @@ export function ModelsView({
   // Back to page 1 whenever the visible set changes shape.
   useEffect(() => {
     setPage(1);
-  }, [catalogSearch, catalogPurpose, catalogRuntime, catalogFit, searchMode, hfQuery, pageSize]);
+  }, [catalogSearch, catalogPurpose, catalogRuntime, catalogFit, searchMode, hfQuery, pageSize, vramMinGb, vramMaxGb]);
 
   useEffect(() => {
     if (view !== "models") return;
@@ -168,6 +170,10 @@ export function ModelsView({
   const activeModel = selectedModelObject || models?.[0] || null;
   const healthy = isModelHealthy(activeModel);
   const status = runtimeStatus(activeModel);
+  const totalVramGb = useMemo(() => {
+    const gpus = warsatHardware?.detectedHardware?.gpus || [];
+    return gpus.reduce((sum, g) => sum + (g.memoryTotalMb || g.memory_total_mb || 0), 0) / 1024;
+  }, [warsatHardware]);
 
   const apiProviders = modelProviders?.length ? modelProviders : [
     { id: "openai", name: "OpenAI", defaultKeyEnv: "OPENAI_API_KEY" },
@@ -213,8 +219,11 @@ export function ModelsView({
       setHfError("");
       try {
         // Fetch enough results to fill several pages at the chosen size.
-        const hfLimit = String(Math.min(500, Math.max(100, pageSize * 5)));
+        const hasVramRange = vramMinGb !== "" || vramMaxGb !== "";
+        const hfLimit = String(hasVramRange ? 500 : Math.min(500, Math.max(100, pageSize * 5)));
         const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: hfLimit, fit: "true" });
+        if (vramMinGb !== "") p.set("min_vram_gb", vramMinGb);
+        if (vramMaxGb !== "") p.set("max_vram_gb", vramMaxGb);
         if (catalogPurpose !== "all") {
           const pm = { chat: "text-generation", coding: "text-generation", vision: "image-to-text", embeddings: "feature-extraction", speech: "automatic-speech-recognition" };
           if (pm[catalogPurpose]) p.set("type", pm[catalogPurpose]);
@@ -242,22 +251,21 @@ export function ModelsView({
       clearTimeout(abortTimer);
       controller.abort("superseded");
     };
-  }, [hfQuery, hfSort, catalogPurpose, searchMode, pageSize]);
-
-  const totalVramGb = useMemo(() => {
-    const gpus = warsatHardware?.detectedHardware?.gpus || [];
-    return gpus.reduce((sum, g) => sum + (g.memoryTotalMb || g.memory_total_mb || 0), 0) / 1024;
-  }, [warsatHardware]);
+  }, [hfQuery, hfSort, catalogPurpose, searchMode, pageSize, vramMinGb, vramMaxGb]);
 
   const displayItems = useMemo(() => {
     const list = searchMode === "huggingface" ? hfResults : filteredCatalog;
-    if (catalogFit !== "fits") return list;
+    const hasMin = vramMinGb !== "" && Number.isFinite(Number(vramMinGb));
+    const hasMax = vramMaxGb !== "" && Number.isFinite(Number(vramMaxGb));
+    const minVram = hasMin ? Number(vramMinGb) : 0;
+    const maxVram = hasMax ? Number(vramMaxGb) : Infinity;
     const vramLimit = totalVramGb > 0 ? totalVramGb : 12; // Fallback to 12GB if no GPU detected
     return list.filter(item => {
-      if (!item.vramEstimateGb) return true;
-      return item.vramEstimateGb <= vramLimit + 1; // 1GB headroom
+      if (!item.vramEstimateGb) return !hasMin && !hasMax;
+      if (item.vramEstimateGb < minVram || item.vramEstimateGb > maxVram) return false;
+      return catalogFit !== "fits" || item.vramEstimateGb <= vramLimit;
     });
-  }, [searchMode, hfResults, filteredCatalog, catalogFit, totalVramGb]);
+  }, [searchMode, hfResults, filteredCatalog, catalogFit, totalVramGb, vramMinGb, vramMaxGb]);
 
   const pageCount = Math.max(1, Math.ceil(displayItems.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -362,6 +370,7 @@ export function ModelsView({
                 <Search size={16} color="var(--cc-muted)" />
                 <input
                   className="w2-input"
+                  aria-label="Search models"
                   value={searchMode === "huggingface" ? hfQuery : catalogSearch}
                   onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
                   placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter locally cached models by name..."}
@@ -376,6 +385,7 @@ export function ModelsView({
                     <option value="likes">Likes</option>
                     <option value="trending">Trending</option>
                     <option value="lastModified">Recent</option>
+                    <option value="vram_desc">VRAM: largest first</option>
                   </select>
                 )}
                 {searchMode === "catalog" && (
@@ -391,11 +401,60 @@ export function ModelsView({
                 </select>
               </div>
 
+              <div className="model-vram-filter" data-testid="model-vram-filter">
+                <span className="model-vram-filter__capacity">
+                  Detected sharded pool: <strong>{totalVramGb > 0 ? `${totalVramGb.toFixed(1)} GB` : "unknown"}</strong>
+                </span>
+                <label>
+                  <span>VRAM from</span>
+                  <input
+                    className="w2-input"
+                    aria-label="Minimum VRAM GB"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={vramMinGb}
+                    onChange={e => setVramMinGb(e.target.value)}
+                    placeholder="Any"
+                  />
+                </label>
+                <label>
+                  <span>to</span>
+                  <input
+                    className="w2-input"
+                    aria-label="Maximum VRAM GB"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={vramMaxGb}
+                    onChange={e => setVramMaxGb(e.target.value)}
+                    placeholder={totalVramGb > 0 ? String(Math.max(1, Math.floor(totalVramGb - 2))) : "Any"}
+                  />
+                </label>
+                <button
+                  className="w2-button"
+                  type="button"
+                  disabled={totalVramGb <= 0}
+                  onClick={() => {
+                    setVramMinGb(totalVramGb >= 24 ? "16" : "");
+                    setVramMaxGb(String(Math.max(1, Math.floor(totalVramGb - 2))));
+                    setHfSort("vram_desc");
+                  }}
+                >
+                  Use my GPU pool
+                </button>
+                {(vramMinGb !== "" || vramMaxGb !== "") && (
+                  <button className="w2-button" type="button" onClick={() => { setVramMinGb(""); setVramMaxGb(""); }}>
+                    Clear VRAM range
+                  </button>
+                )}
+              </div>
+
               {/* Status line */}
               <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
                 {searchMode === "catalog"
-                  ? `${filteredCatalog.length} complete cached model${filteredCatalog.length === 1 ? "" : "s"} available to deploy`
-                  : hfLoading ? "Searching Hugging Face..." : `${hfResults.length} results`}
+                  ? `${displayItems.length} matching cached model${displayItems.length === 1 ? "" : "s"} available to deploy`
+                  : hfLoading ? "Searching Hugging Face..." : `${displayItems.length} matching results`}
               </div>
 
               {searchMode === "huggingface" && hfError && (
@@ -641,11 +700,11 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {item.vramEstimateGb && <Badge variant="muted">{item.vramEstimateGb} GB VRAM</Badge>}
+        {item.vramEstimateGb && <Badge variant="muted">~{item.vramEstimateGb} GB VRAM</Badge>}
         {item.downloads > 0 && <Badge variant="muted">↓ {fmt(item.downloads)}</Badge>}
         {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
         {item.license && <Badge variant="muted">{item.license}</Badge>}
-        {item.fitLabel && searchMode === "catalog" && (
+        {item.fitLabel && (
           <Badge variant={item.fitLabel === "Strong fit" ? "up" : item.fitLabel === "Blocked" ? "down" : "muted"}>{item.fitLabel}</Badge>
         )}
       </div>

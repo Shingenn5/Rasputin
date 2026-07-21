@@ -999,6 +999,31 @@ class BackendSmokeTests(unittest.TestCase):
             routed = self.assertOk(self.client.get("/api/model-catalog?fit=true"))
         self.assertIn("fitScore", routed["items"][0])
 
+    def testModelCatalogUsesCombinedVramAndQuantizedWeightSize(self):
+        hardware = {"detectedHardware": {"gpus": [
+            {"memoryTotalMb": 12288},
+            {"memoryTotalMb": 16311},
+        ]}}
+        self.assertAlmostEqual(model_catalog._hardware_vram_gb(hardware), 28599 / 1024, places=3)
+
+        quantized = model_catalog._normalize_hf_model({
+            "id": "bartowski/Qwen2.5-Coder-32B-Instruct-GGUF",
+            "pipeline_tag": "text-generation",
+            "tags": ["gguf"],
+        })
+        self.assertGreaterEqual(quantized["vramEstimateGb"], 18)
+        self.assertLessEqual(quantized["vramEstimateGb"], 24)
+        fitted = model_catalog._fit_item(quantized, hardware)
+        self.assertNotEqual(fitted["fitLabel"], "Blocked")
+        self.assertTrue(any("27.9 GB" in reason for reason in fitted["fitReasons"]))
+
+        full_precision = model_catalog._normalize_hf_model({
+            "id": "Qwen/Qwen2.5-Coder-14B-Instruct",
+            "pipeline_tag": "text-generation",
+            "tags": ["transformers", "safetensors"],
+        })
+        self.assertGreater(full_precision["vramEstimateGb"], quantized["vramEstimateGb"])
+
     def testRagIngestAddsIncrementalDocumentIntel(self):
         from docx import Document
         from openpyxl import Workbook
@@ -2686,6 +2711,49 @@ class BackendSmokeTests(unittest.TestCase):
             promoted = catalog_module.search_hf(query="org/m120", limit=150)
         self.assertEqual(promoted["count"], 150)
         self.assertEqual(promoted["items"][0]["id"], "org/m120")
+
+    def testHfSearchFiltersAndSortsByEstimatedVram(self):
+        from backend.models import catalog as catalog_module
+
+        class FakeResponse:
+            links = {}
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return [
+                    {"id": "org/Small-7B-GGUF", "tags": ["gguf"]},
+                    {"id": "org/Pool-32B-GGUF", "tags": ["gguf"]},
+                    {"id": "org/Too-Large-70B-GGUF", "tags": ["gguf"]},
+                ]
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, params=None):
+                return FakeResponse()
+
+        with patch.object(catalog_module.httpx, "Client", FakeClient):
+            result = catalog_module.search_hf(
+                sort="vram_desc",
+                limit=100,
+                min_vram_gb=16,
+                max_vram_gb=26,
+            )
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["id"], "org/Pool-32B-GGUF")
+        self.assertGreaterEqual(result["items"][0]["vramEstimateGb"], 16)
+        self.assertLessEqual(result["items"][0]["vramEstimateGb"], 26)
 
     def testWarsatPlanAutoPicksFreeHostPort(self):
         # With no explicit port, the plan takes the first host port not held

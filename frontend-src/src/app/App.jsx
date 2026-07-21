@@ -490,6 +490,9 @@ export function App() {
     // The bootstrap catalog has no VRAM-based fit labels; swap in the
     // hardware-aware copy in the background.
     api("/api/model-catalog?fit=true").then(setModelCatalog).catch(() => {});
+    if (requestedView === "models") {
+      loadWarsatHardware().catch(() => {});
+    }
   }
 
   async function loadModels() {
@@ -741,6 +744,9 @@ export function App() {
     }
     if (nextView === "warsat") {
       loadWarsat().catch((error) => setGlobalStatus(error.message));
+    }
+    if (nextView === "models") {
+      loadWarsatHardware().catch((error) => setGlobalStatus(error.message));
     }
     setMobileSidebarOpen(false);
   }
@@ -1628,23 +1634,28 @@ export function App() {
     setGlobalStatus("Schedule saved.");
   }
 
+  async function loadWarsatHardware() {
+    const hardware = await api("/api/warsat/hardware").catch((error) => ({
+      ok: false,
+      status: "blocked",
+      checks: [],
+      warnings: [],
+      blockedReasons: [error.message],
+      recommendations: ["Check the Rasputin backend logs for Warsat hardware probe errors."],
+      detectedHardware: {},
+    }));
+    setWarsatHardware(hardware);
+    return hardware;
+  }
+
   async function loadWarsat() {
-    const [nextWarsat, runtimes, hardware] = await Promise.all([
+    const [nextWarsat, runtimes] = await Promise.all([
       api("/api/warsat/protocols"),
       api("/api/warsat/runtimes"),
-      api("/api/warsat/hardware").catch((error) => ({
-        ok: false,
-        status: "blocked",
-        checks: [],
-        warnings: [],
-        blockedReasons: [error.message],
-        recommendations: ["Check the Rasputin backend logs for Warsat hardware probe errors."],
-        detectedHardware: {},
-      })),
+      loadWarsatHardware(),
     ]);
     setWarsat(nextWarsat);
     setWarsatRuntimes(runtimes);
-    setWarsatHardware(hardware);
     return nextWarsat;
   }
 

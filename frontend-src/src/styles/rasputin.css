@@ -11296,6 +11296,40 @@ button.helper-row:hover {
   font-weight: 500;
 }
 
+.model-vram-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--cc-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cc-surface) 88%, var(--cc-accent) 12%);
+}
+
+.model-vram-filter__capacity {
+  align-self: center;
+  margin-right: 4px;
+  color: var(--cc-muted);
+  font-size: 0.75rem;
+}
+
+.model-vram-filter__capacity strong {
+  color: var(--cc-accent);
+}
+
+.model-vram-filter label {
+  display: grid;
+  gap: 3px;
+  color: var(--cc-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.model-vram-filter input {
+  width: 88px;
+}
+
 .ws-checkbox-row {
   min-height: 36px;
   display: flex;

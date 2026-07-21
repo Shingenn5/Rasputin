@@ -524,10 +524,21 @@ async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=
 
 async def model_catalog_search(
     q: str = "", type: str = "", sort: str = "downloads",
-    direction: int = -1, limit: int = 100, fit: bool = False, _user=Depends(current_user)
+    direction: int = -1, limit: int = 100, fit: bool = False,
+    min_vram_gb: float | None = None, max_vram_gb: float | None = None,
+    _user=Depends(current_user),
 ):
     hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
-    return ok(model_catalog.search_hf(query=q, model_type=type, sort=sort, direction=direction, limit=limit, hardware=hardware))
+    return ok(model_catalog.search_hf(
+        query=q,
+        model_type=type,
+        sort=sort,
+        direction=direction,
+        limit=limit,
+        hardware=hardware,
+        min_vram_gb=min_vram_gb,
+        max_vram_gb=max_vram_gb,
+    ))
 
 @models_router.get("/model-catalog/model/{model_id:path}")
 

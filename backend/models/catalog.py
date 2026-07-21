@@ -166,10 +166,36 @@ def _parameter_count(model_id, model):
         return None
 
 
-def _vram_estimate(parameter_count):
+def _quantization_bits(quantization="", model_id=""):
+    blob = _text_blob(quantization, model_id)
+    for token, bits in (
+        ("q2", 2.5), ("iq2", 2.5),
+        ("q3", 3.5), ("iq3", 3.5),
+        ("q4", 4.5), ("iq4", 4.5), ("int4", 4.5),
+        ("awq", 4.5), ("gptq", 4.5), ("bnb", 4.5), ("bitsandbytes", 4.5),
+        ("q5", 5.5), ("q6", 6.5),
+        ("q8", 8.5), ("int8", 8.5), ("fp8", 8.5),
+        ("fp16", 16.0), ("float16", 16.0), ("bf16", 16.0), ("bfloat16", 16.0),
+    ):
+        if token in blob:
+            return bits
+    # WarSat chooses a Q4-family file first from GGUF repositories, so a GGUF
+    # repo without a quant suffix should be estimated using the artifact it
+    # will actually select rather than as unquantized transformer weights.
+    if "gguf" in blob:
+        return 4.5
+    return 16.0
+
+
+def _vram_estimate(parameter_count, quantization="", model_id=""):
     if not parameter_count:
         return None
-    return max(4, round(parameter_count * 1.7 + 2))
+    bits = _quantization_bits(quantization, model_id)
+    # Weight bytes plus roughly 10% runtime overhead and a 2 GB floor for KV
+    # cache / CUDA allocations. It is intentionally conservative: context
+    # length and architecture can still move the real number.
+    weights_gb = float(parameter_count) * bits / 8.0
+    return max(4, round(weights_gb * 1.10 + 2))
 
 
 def _purpose(model_id, model, provider_id):
@@ -240,7 +266,7 @@ def _normalize_item(provider_id, provider, model_id, model, source="models.dev")
         "capabilities": _capabilities(model_id, model, purpose),
         "contextWindow": context,
         "parameterCountB": params,
-        "vramEstimateGb": _vram_estimate(params),
+        "vramEstimateGb": _vram_estimate(params, model.get("quantization"), model_id),
         "recommendedProfile": "small" if purpose == "fast" else "balanced",
         "recommendedProtocol": recommended_protocol,
         "toolCallParserHint": _tool_call_parser_hint(model_id, recommended_protocol),
@@ -288,7 +314,10 @@ def _hardware_vram_gb(hardware=None):
                 values.append(float(mb) / 1024)
         except Exception:
             continue
-    return max(values) if values else None
+    # Multi-GPU llama.cpp deployments shard layers across every visible card.
+    # Catalog fit must use that aggregate capacity or a 12+16 GB machine is
+    # incorrectly presented as a 16 GB machine.
+    return sum(values) if values else None
 
 
 def _fit_item(item, hardware=None):
@@ -760,7 +789,7 @@ def _normalize_hf_model(hf_model):
         "capabilities": _capabilities(model_id, {"name": model_id, "tags": " ".join(tags)}, purpose),
         "contextWindow": None,
         "parameterCountB": params,
-        "vramEstimateGb": _vram_estimate(params),
+        "vramEstimateGb": _vram_estimate(params, quant, model_id),
         "recommendedProfile": "small" if purpose == "fast" else "balanced",
         "recommendedProtocol": recommended_protocol,
         "toolCallParserHint": _tool_call_parser_hint(model_id, recommended_protocol),
@@ -780,10 +809,18 @@ def _normalize_hf_model(hf_model):
     }
 
 
-def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100, hardware=None):
+def search_hf(
+    query="", model_type="", sort="downloads", direction=-1, limit=100,
+    hardware=None, min_vram_gb=None, max_vram_gb=None,
+):
     """Search Hugging Face Hub API for models."""
+    requested_sort = sort
     if sort == "trending":
         sort = "trendingScore"
+    elif sort in {"vram_desc", "vram_asc"}:
+        # Hugging Face cannot sort by our derived VRAM estimate. Fetch popular
+        # candidates, then sort the normalized results locally.
+        sort = "downloads"
     limit = max(1, min(int(limit), 500))
     params = {
         # The Hub API serves at most 100 per page; follow Link headers for more.
@@ -818,6 +855,14 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
 
     items = [_normalize_hf_model(m) for m in raw_models[:limit]]
 
+    def in_vram_range(item):
+        estimate = item.get("vramEstimateGb")
+        if min_vram_gb is not None and (estimate is None or float(estimate) < float(min_vram_gb)):
+            return False
+        if max_vram_gb is not None and (estimate is None or float(estimate) > float(max_vram_gb)):
+            return False
+        return True
+
     # Exact-id lookup: searching a full org/name reference must surface that
     # model even when the Hub's fuzzy search misses it, so ANY model can be
     # pulled by pasting its id.
@@ -833,8 +878,17 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
         except Exception:
             pass
 
+    if min_vram_gb is not None or max_vram_gb is not None:
+        items = [item for item in items if in_vram_range(item)]
+
     if hardware:
         items = _apply_fit(items, hardware)
+
+    if requested_sort in {"vram_desc", "vram_asc"}:
+        items.sort(
+            key=lambda item: float(item.get("vramEstimateGb") or (-1 if requested_sort == "vram_desc" else 10**9)),
+            reverse=requested_sort == "vram_desc",
+        )
 
     # An exact-id match belongs at the top, above fuzzy derivatives and the
     # fit re-sort.
@@ -849,7 +903,7 @@ def search_hf(query="", model_type="", sort="downloads", direction=-1, limit=100
         "count": len(items),
         "query": query,
         "modelType": model_type,
-        "sort": sort,
+        "sort": requested_sort,
         "source": "huggingface",
     }
 
