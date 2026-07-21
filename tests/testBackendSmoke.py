@@ -1749,6 +1749,49 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(body["ok"])
         self.assertEqual(body["error"]["code"], "warsatProtocolMissing")
 
+    def testWarsatMultiGpuPlansShardAcrossAllVisibleCards(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            gguf = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/dual-gpu-model.gguf",
+                "hostPort": 8092,
+                "strengthProfile": "large",
+                "multiGpu": True,
+            }))
+            vllm = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-14B-Instruct",
+                "hostPort": 8022,
+                "strengthProfile": "large",
+                "multiGpu": True,
+            }))
+
+        self.assertEqual(gguf["image"], "ghcr.io/ggml-org/llama.cpp:server-cuda")
+        self.assertEqual(gguf["containerLimits"]["gpuDevice"], "all")
+        self.assertIsNone(gguf["tuning"]["gpuLayers"])
+        self.assertEqual(gguf["tuning"]["splitMode"], "layer")
+        self.assertEqual(gguf["tuning"]["tensorSplit"], "")
+        self.assertEqual(gguf["multiGpu"]["gpuCount"], 2)
+        self.assertEqual(gguf["multiGpu"]["installedVramMb"], 28599)
+        run = gguf["commandPreview"]["run"]
+        self.assertIn("--gpus", run)
+        self.assertIn("NVIDIA_VISIBLE_DEVICES=all", run)
+        self.assertIn("--split-mode", run)
+        self.assertIn("--fit", run)
+        self.assertNotIn("--tensor-split", run)
+
+        self.assertEqual(vllm["containerLimits"]["gpuDevice"], "all")
+        self.assertEqual(vllm["tuning"]["tensorParallelSize"], 2)
+        self.assertIn("--tensor-parallel-size", vllm["commandPreview"]["run"])
+        self.assertTrue(any("constrained by the smaller GPU" in item for item in vllm["warnings"]))
+
     def testCodingModelsSuggestCoderRole(self):
         from backend.models import registry as model_registry
 

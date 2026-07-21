@@ -11296,6 +11296,36 @@ button.helper-row:hover {
   font-weight: 500;
 }
 
+.ws-checkbox-row {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--cc-text);
+  background: var(--cc-bg);
+  border: 1px solid var(--cc-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ws-checkbox-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--cc-accent);
+}
+
+.ws-checkbox-row:focus-within {
+  outline: 2px solid var(--cc-accent);
+  outline-offset: 1px;
+}
+
+.ws-recipe-field small {
+  color: var(--cc-muted);
+  font-weight: 400;
+}
+
 .ws-recipe-actions {
   grid-column: 1 / -1;
   display: flex;

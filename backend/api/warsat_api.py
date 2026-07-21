@@ -30,6 +30,9 @@ class WarsatPlanIn(CamelModel):
     gpu_memory_utilization: float | None = None
     gpu_layers: int | None = None
     tensor_parallel_size: int | None = None
+    multi_gpu: bool | None = None
+    split_mode: str | None = None
+    tensor_split: str | None = None
     cpu_threads: int | None = None
     batch_size: int | None = None
     max_num_seqs: int | None = None

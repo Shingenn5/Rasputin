@@ -1754,6 +1754,7 @@ export function App() {
         gpuMemoryUtilization: Number(form.get("gpuMemoryUtilization") || 0) || undefined,
         gpuLayers: form.get("gpuLayers") === "" ? undefined : Number(form.get("gpuLayers") || 0),
         tensorParallelSize: Number(form.get("tensorParallelSize") || 0) || undefined,
+        multiGpu: form.get("multiGpu") === "on",
         cpuThreads: Number(form.get("cpuThreads") || 0) || undefined,
         batchSize: Number(form.get("batchSize") || 0) || undefined,
         maxNumSeqs: Number(form.get("maxNumSeqs") || 0) || undefined,

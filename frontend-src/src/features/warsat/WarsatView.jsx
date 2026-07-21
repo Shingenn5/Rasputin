@@ -343,6 +343,7 @@ export function WarsatView({
           {activeTab === "deploy" && (
             <DeployTab
               warsat={warsat}
+              hardware={hardware}
               protocols={protocols}
               strengthProfiles={strengthProfiles}
               protocolId={protocolId}
@@ -522,7 +523,7 @@ const PIPELINE_STEPS = [
 ];
 
 function DeployTab({
-  warsat, protocols, strengthProfiles, protocolId, setProtocolId,
+  warsat, hardware, protocols, strengthProfiles, protocolId, setProtocolId,
   strengthProfile, setStrengthProfile, selectedProtocol, selectedProfile,
   createPlan, plan, error, clearPlan, handleFormChange,
   deployPlan, deploying, deployment, deployLabel, deployDisabled, canDeployPlan,
@@ -643,6 +644,22 @@ function DeployTab({
               {Object.entries(strengthProfiles).map(([k, p]) => <option key={k} value={k}>{p.label || k}</option>)}
               {!Object.keys(strengthProfiles).length && <option value="balanced">Balanced</option>}
             </select>
+          </label>
+          <label className="ws-recipe-field" htmlFor="warsatMultiGpu">
+            <span>GPU allocation</span>
+            <span className="ws-checkbox-row">
+              <input
+                id="warsatMultiGpu"
+                key={(hardware?.detectedHardware?.gpus || []).length}
+                name="multiGpu"
+                type="checkbox"
+                defaultChecked={(hardware?.detectedHardware?.gpus || []).length > 1}
+              />
+              Use all detected GPUs
+            </span>
+            <small>
+              Auto-shards across {(hardware?.detectedHardware?.gpus || []).length || "the visible"} GPUs and fits to available VRAM.
+            </small>
           </label>
           <div className="ws-recipe-actions">
             <button className="w2-button primary" type="submit" style={{ flex: 1 }}>

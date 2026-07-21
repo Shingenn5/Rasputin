@@ -104,6 +104,7 @@ STRENGTH_PROFILES = {
 DTYPE_CHOICES = {"auto", "float16", "half", "bfloat16", "float32"}
 KV_CACHE_CHOICES = {"auto", "fp8", "fp8_e5m2", "fp8_e4m3"}
 QUANTIZATION_CHOICES = {"", "awq", "gptq", "fp8", "bitsandbytes"}
+SPLIT_MODE_CHOICES = {"none", "layer", "row", "tensor"}
 
 
 def _truthy_env(name):
@@ -606,6 +607,23 @@ def _tool_call_parser(payload):
     return re.sub(r"[^a-z0-9_-]", "", raw)
 
 
+def _tensor_split(payload):
+    """Validated llama.cpp per-GPU split proportions, or an empty string."""
+    raw = str(_payload_get(payload, "tensorSplit", "tensor_split", default="") or "").strip()
+    if not raw:
+        return ""
+    parts = [part.strip() for part in raw.split(",")]
+    if not 1 <= len(parts) <= 16:
+        return ""
+    try:
+        values = [float(part) for part in parts]
+    except ValueError:
+        return ""
+    if any(value <= 0 for value in values):
+        return ""
+    return ",".join(f"{value:g}" for value in values)
+
+
 def _build_tuning(payload, protocol, strength):
     profile = STRENGTH_PROFILES[_safe_strength(strength)]
     # llama.cpp's --parallel splits -c (total context) evenly across that
@@ -623,6 +641,9 @@ def _build_tuning(payload, protocol, strength):
         "gpuMemoryUtilization": _float_value(payload, ["gpuMemoryUtilization", "gpu_memory_utilization"], profile["gpuMemoryUtilization"], 0.0, 0.98),
         "gpuLayers": _int_value(payload, ["gpuLayers", "gpu_layers"], profile.get("gpuLayers"), 0, 999),
         "tensorParallelSize": _int_value(payload, ["tensorParallelSize", "tensor_parallel_size"], 1, 1, 16),
+        "splitMode": _choice_value(payload, ["splitMode", "split_mode"], SPLIT_MODE_CHOICES, "layer"),
+        "tensorSplit": _tensor_split(payload),
+        "multiGpu": False,
         "cpuThreads": _int_value(payload, ["cpuThreads", "cpu_threads"], 0, 0, 256),
         "batchSize": _int_value(payload, ["batchSize", "batch_size"], profile.get("batchSize", 512), 1, 65536),
         "maxNumSeqs": _int_value(payload, ["maxNumSeqs", "max_num_seqs"], default_max_num_seqs, 1, 4096),
@@ -642,6 +663,75 @@ def _build_limits(payload):
         "shmSizeGb": _int_value(payload, ["shmSizeGb", "shm_size_gb"], 2, 0, 1024),
         "gpuDevice": gpu_device,
     }
+
+
+def _visible_gpus_for_plan():
+    """Return GPUs visible to a prospective model container.
+
+    Native Rasputin can query the host directly. The packaged/container runtime
+    falls back to the same disposable Docker probe used by hardware readiness.
+    """
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi:
+        result = _probe_command([
+            "nvidia-smi",
+            "--query-gpu=name,memory.total",
+            "--format=csv,noheader,nounits",
+        ], timeout=10)
+        if result.get("ok"):
+            return _parse_gpu_csv(result.get("stdout", ""))
+    return _gpu_probe_via_docker()
+
+
+def _configure_multi_gpu(payload, protocol, tuning, limits):
+    """Apply an explicit, reviewable multi-GPU launch policy."""
+    enabled = bool(_payload_get(payload, "multiGpu", "multi_gpu", default=False))
+    if not enabled:
+        return [], []
+
+    requested_device = str(limits.get("gpuDevice") or "").strip().lower()
+    if requested_device in {"none", "cpu", "off"}:
+        raise AppError("warsat_multi_gpu_conflict", "Multi-GPU cannot be combined with a CPU-only GPU device setting.", 400)
+
+    gpus = _visible_gpus_for_plan()
+    if len(gpus) < 2:
+        return gpus, ["Multi-GPU was requested, but fewer than two GPUs are visible to Rasputin."]
+
+    gpu_count = len(gpus)
+    limits["gpuDevice"] = "all"
+    total_mb = sum(int(gpu.get("memoryTotalMb") or 0) for gpu in gpus)
+    warnings = []
+    if protocol.get("runtime") == "vllm":
+        explicit_tp = _payload_get(payload, "tensorParallelSize", "tensor_parallel_size") is not None
+        if explicit_tp and tuning["tensorParallelSize"] > gpu_count:
+            raise AppError(
+                "warsat_gpu_count",
+                f"Tensor parallel size {tuning['tensorParallelSize']} exceeds the {gpu_count} visible GPUs.",
+                400,
+            )
+        if not explicit_tp:
+            tuning["tensorParallelSize"] = gpu_count
+        warnings.append(
+            f"vLLM tensor parallelism is enabled across {tuning['tensorParallelSize']} GPUs. "
+            "It divides tensors evenly, so unequal cards are constrained by the smaller GPU; "
+            "use llama.cpp GGUF layer sharding when maximum combined-VRAM capacity matters."
+        )
+    elif protocol.get("modelFormat") == "gguf":
+        tuning["multiGpu"] = True
+        if _payload_get(payload, "gpuLayers", "gpu_layers") is None:
+            # Leave the layer count unset so --fit can size it against the
+            # actual free memory reported inside the CUDA container.
+            tuning["gpuLayers"] = None
+        tuning["splitMode"] = tuning.get("splitMode") or "layer"
+        warnings.append(
+            f"llama.cpp layer sharding is enabled across {gpu_count} GPUs "
+            f"(~{total_mb / 1024:.1f} GiB installed VRAM) with in-container automatic fitting."
+        )
+    else:
+        warnings.append(
+            f"All {gpu_count} GPUs are exposed to this runtime, but the selected protocol has no Rasputin-managed sharding flag."
+        )
+    return gpus, warnings
 
 
 def _uses_gpu(protocol, tuning, limits):
@@ -765,7 +855,11 @@ def _runtime_arguments(protocol, tuning):
         if parser:
             args.extend(["--enable-auto-tool-choice", "--tool-call-parser", parser])
     elif protocol.get("modelFormat") == "gguf":
-        args = _strip_option(args, ["-c", "--ctx-size", "--ctx_size", "-ngl", "--n-gpu-layers", "--threads", "-b", "--batch-size", "--parallel"])
+        args = _strip_option(args, [
+            "-c", "--ctx-size", "--ctx_size", "-ngl", "--n-gpu-layers", "--threads",
+            "-b", "--batch-size", "--parallel", "-sm", "--split-mode", "-ts", "--tensor-split",
+            "-fit", "--fit",
+        ])
         args.extend(["-c", str(tuning["contextWindow"])])
         if tuning.get("gpuLayers") is not None:
             args.extend(["-ngl", str(tuning["gpuLayers"])])
@@ -775,6 +869,15 @@ def _runtime_arguments(protocol, tuning):
             args.extend(["-b", str(tuning["batchSize"])])
         if tuning.get("maxNumSeqs"):
             args.extend(["--parallel", str(tuning["maxNumSeqs"])])
+        if tuning.get("splitMode"):
+            args.extend(["--split-mode", str(tuning["splitMode"])])
+        if tuning.get("tensorSplit"):
+            args.extend(["--tensor-split", str(tuning["tensorSplit"])])
+        if tuning.get("multiGpu") and tuning.get("splitMode") != "tensor":
+            # CUDA device order can differ from host nvidia-smi order. Let
+            # llama.cpp measure the cards from inside its own container and
+            # auto-fit there instead of baking in a potentially reversed split.
+            args.extend(["--fit", "on"])
     return args
 
 
@@ -1077,6 +1180,7 @@ def make_plan(payload):
     container_name = _slug(payload.get("containerName") or default_name)
     tuning = _build_tuning(payload, protocol, strength)
     limits = _build_limits(payload)
+    multi_gpu_inventory, multi_gpu_warnings = _configure_multi_gpu(payload, protocol, tuning, limits)
 
     if not model_ref and protocol["modelFormat"] != "gguf":
         raise AppError("warsat_model_required", "Enter a model id for this Warsat protocol.", 400)
@@ -1166,7 +1270,7 @@ def make_plan(payload):
     dockerfile_preview = _dockerfile_preview(protocol)
     execution = _docker_runtime_enabled()
     docker_control_enabled = execution["dockerControlEnabled"]
-    warnings = list(fleet_warnings)
+    warnings = list(fleet_warnings) + list(multi_gpu_warnings)
     if reroute_note:
         warnings.append(reroute_note)
     if hf_source:
@@ -1235,6 +1339,12 @@ def make_plan(payload):
         "resourceProfile": STRENGTH_PROFILES[strength],
         "tuning": tuning,
         "containerLimits": limits,
+        "multiGpu": {
+            "enabled": bool(multi_gpu_inventory),
+            "gpuCount": len(multi_gpu_inventory),
+            "gpus": multi_gpu_inventory,
+            "installedVramMb": sum(int(gpu.get("memoryTotalMb") or 0) for gpu in multi_gpu_inventory),
+        },
         "hostPort": host_port,
         "containerPort": protocol["containerPort"],
         "containerName": container_name,
