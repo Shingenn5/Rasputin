@@ -13,6 +13,7 @@ from pathlib import Path
 from backend.core import approvals
 from backend.core import audit
 from backend.core import runtime_store as store
+from backend.models import context_detection
 from backend.models import registry as model_registry
 from backend.core import security
 from backend.core.response import AppError
@@ -635,7 +636,30 @@ def _build_tuning(payload, protocol, strength):
     # overhead is included. Default to one sequence so the full context
     # window is actually usable; an explicit payload value still wins.
     default_max_num_seqs = 1 if protocol.get("modelFormat") == "gguf" else profile.get("maxNumSeqs", 32)
+    runtime = str(protocol.get("runtime") or "").lower()
+    context_fields = (
+        ("contextWindow", "context_window")
+        if protocol.get("modelFormat") == "gguf"
+        else ("maxModelLen", "max_model_len")
+    )
+    explicit_context = any(
+        name in payload and payload.get(name) not in (None, "")
+        for name in context_fields
+    )
+    raw_auto = payload.get("contextAuto", payload.get("context_auto"))
+    if raw_auto is None:
+        context_auto = not explicit_context
+    elif isinstance(raw_auto, str):
+        context_auto = raw_auto.strip().lower() in {"1", "true", "yes", "on", "auto"}
+    else:
+        context_auto = bool(raw_auto)
+    # Ollama chooses its allocated context from the loaded model and visible
+    # VRAM. There is no server CLI model-length flag equivalent to llama.cpp
+    # or vLLM, so an omitted override is always an auto deployment.
+    if runtime == "ollama" and not explicit_context:
+        context_auto = True
     return {
+        "contextAuto": context_auto,
         "contextWindow": _int_value(payload, ["contextWindow", "context_window"], profile["contextWindow"], 512, 262144),
         "maxModelLen": _int_value(payload, ["maxModelLen", "max_model_len"], profile["maxModelLen"], 512, 262144),
         "gpuMemoryUtilization": _float_value(payload, ["gpuMemoryUtilization", "gpu_memory_utilization"], profile["gpuMemoryUtilization"], 0.0, 0.98),
@@ -857,7 +881,7 @@ def _runtime_arguments(protocol, tuning):
         # -- filter it out directly instead.
         args = [item for item in args if item != "--enable-auto-tool-choice"]
         args.extend([
-            "--max-model-len", str(tuning["maxModelLen"]),
+            "--max-model-len", "auto" if tuning.get("contextAuto") else str(tuning["maxModelLen"]),
             "--gpu-memory-utilization", str(tuning["gpuMemoryUtilization"]),
         ])
         if tuning.get("tensorParallelSize", 1) > 1:
@@ -889,7 +913,7 @@ def _runtime_arguments(protocol, tuning):
             "-b", "--batch-size", "--parallel", "-sm", "--split-mode", "-ts", "--tensor-split",
             "-fit", "--fit",
         ])
-        args.extend(["-c", str(tuning["contextWindow"])])
+        args.extend(["-c", "0" if tuning.get("contextAuto") else str(tuning["contextWindow"])])
         if tuning.get("gpuLayers") is not None:
             args.extend(["-ngl", str(tuning["gpuLayers"])])
         if tuning.get("cpuThreads"):
@@ -902,7 +926,7 @@ def _runtime_arguments(protocol, tuning):
             args.extend(["--split-mode", str(tuning["splitMode"])])
         if tuning.get("tensorSplit"):
             args.extend(["--tensor-split", str(tuning["tensorSplit"])])
-        if tuning.get("gpuFit") and tuning.get("splitMode") != "tensor":
+        if (tuning.get("contextAuto") or tuning.get("gpuFit")) and tuning.get("splitMode") != "tensor":
             # CUDA device order can differ from host nvidia-smi order. Let
             # llama.cpp measure available memory inside its own container and
             # auto-fit there instead of baking in a stale layer count.
@@ -1418,7 +1442,12 @@ def make_plan(payload):
             "port": host_port,
             "image": protocol["image"],
             "contextWindow": tuning.get("contextWindow") or tuning.get("maxModelLen"),
-            "maxTokens": 512,
+            "contextAuto": bool(tuning.get("contextAuto")),
+            "contextSource": "runtime auto-detection" if tuning.get("contextAuto") else "explicit deployment setting",
+            "maxTokens": None if tuning.get("contextAuto") else min(
+                2048,
+                max(256, int(tuning.get("contextWindow") or tuning.get("maxModelLen") or 4096) // 4),
+            ),
             "toolCallParser": tuning.get("toolCallParser") or "",
             # Local runtimes only receive agentic modes after a model-specific
             # parser has been configured. Unknown models remain plain chat
@@ -1860,7 +1889,7 @@ def _registry_entry_from_plan(plan):
         raise AppError("warsat_registry_entry_missing", "Launch plan is missing the model registry entry.", 400)
     base_url = entry.get("baseUrl") or entry.get("base_url") or plan.get("endpoint") or ""
     security.require_local_url(base_url)
-    return {
+    registry_entry = {
         "key": entry.get("key"),
         "name": entry.get("name") or plan.get("protocolName") or entry.get("key"),
         "provider": entry.get("provider") or plan.get("runtime") or "openai-compatible",
@@ -1874,11 +1903,58 @@ def _registry_entry_from_plan(plan):
         "port": int(entry.get("port") or plan.get("hostPort")),
         "image": entry.get("image") or plan.get("image"),
         "context_window": int(entry.get("contextWindow") or plan.get("tuning", {}).get("contextWindow") or plan.get("tuning", {}).get("maxModelLen") or 4096),
-        "max_tokens": int(entry.get("maxTokens") or 512),
+        "context_auto": bool(entry.get("contextAuto", plan.get("tuning", {}).get("contextAuto", False))),
+        "context_source": entry.get("contextSource") or "deployment setting",
         "tool_call_parser": entry.get("toolCallParser") or entry.get("tool_call_parser") or "",
         "tool_support": entry.get("toolSupport") or entry.get("tool_support") or "chat",
         "notes": "Managed by Warsat. Review Docker control before changing this entry.",
     }
+    configured_max_tokens = entry.get("maxTokens")
+    if configured_max_tokens not in (None, ""):
+        registry_entry["max_tokens"] = int(configured_max_tokens)
+    return registry_entry
+
+
+def _sync_deployed_context(registry_entry, plan, container_name):
+    """Replace planning estimates with the context actually allocated by the runtime."""
+    runtime = str(plan.get("runtime") or registry_entry.get("provider") or "").lower()
+    logs_text = ""
+    try:
+        log_result = _run_command(
+            ["docker", "logs", "--tail", "300", container_name],
+            timeout=15,
+            check=False,
+        )
+        logs_text = (
+            str(log_result.get("stdout") or "")
+            + "\n"
+            + str(log_result.get("stderr") or "")
+        ).strip()
+    except Exception:
+        pass
+
+    probe_model = {
+        **registry_entry,
+        "runtime_family": runtime,
+        "tags": ["managed", runtime],
+    }
+    parsed = context_detection.detect_runtime_context(
+        probe_model,
+        logs_text=logs_text,
+        timeout=2.0,
+        # vLLM's standard model-list API does not guarantee a context field.
+        # Its startup log contains the post-fit max_seq_len, so avoid adding
+        # a second network dependency when that log is the source of truth.
+        allow_network=runtime != "vllm",
+    )
+    effective = parsed.get("context_window")
+    if effective:
+        registry_entry["context_window"] = int(effective)
+        registry_entry["context_source"] = parsed.get("context_source") or f"{runtime} runtime"
+    maximum = parsed.get("model_context_window")
+    if maximum:
+        registry_entry["model_context_window"] = int(maximum)
+    return registry_entry
 
 
 def _container_status(container_name):
@@ -2135,7 +2211,13 @@ def discover():
         base_url = None
         model_ids = None
         host_port = None
-        protocol_hint = "openai-compatible"
+        identity_hint = f"{name} {image}".lower()
+        if "vllm" in identity_hint:
+            protocol_hint = "vllmCudaOpenai"
+        elif "llama" in identity_hint or "gguf" in identity_hint:
+            protocol_hint = "llamaCppGgufServer"
+        else:
+            protocol_hint = "openai-compatible"
         is_ollama = False
         for candidate_port in host_ports:
             for host in _discovery_hosts():
@@ -2191,6 +2273,7 @@ def import_discovered(model_id: str, base_url: str, container_name: str, protoco
     One-click import: register a discovered container's model endpoint into the
     model registry as an enabled, external-local model ready for chat.
     """
+    security.require_local_url(base_url)
     slug = re.sub(r"[^a-z0-9]+", "-", model_id.lower()).strip("-")
     key = f"discovered-{slug}"
 
@@ -2209,9 +2292,23 @@ def import_discovered(model_id: str, base_url: str, container_name: str, protoco
         "enabled": True,
         "managed": False,
         "role": "main",
+        "contextAuto": True,
+        "contextSource": "runtime auto-detection pending",
         "tags": ["discovered", "docker", protocol_hint],
         "description": f"Auto-discovered from Docker container: {container_name}",
     }
+    detected_context = context_detection.detect_runtime_context(
+        {
+            **model_entry,
+            "runtime_family": protocol_hint,
+        },
+        timeout=2.0,
+    )
+    if detected_context.get("context_window"):
+        model_entry["contextWindow"] = int(detected_context["context_window"])
+        model_entry["contextSource"] = detected_context.get("context_source") or "runtime auto-detection"
+    if detected_context.get("model_context_window"):
+        model_entry["modelContextWindow"] = int(detected_context["model_context_window"])
 
     model_registry.upsert(model_entry)
     # A freshly-upserted entry has no runtime_status at all, which the Models
@@ -2477,6 +2574,7 @@ def deploy(plan, approval_id=None):
         })
         return result
 
+    registry_entry = _sync_deployed_context(registry_entry, plan, container_name)
     saved = model_registry.upsert(registry_entry)
 
     result = {
@@ -2669,6 +2767,7 @@ def deploy_stream(plan, approval_id):
         yield {"ok": True, "final": True, "data": result}
         return
 
+    registry_entry = _sync_deployed_context(registry_entry, plan, container_name)
     saved = model_registry.upsert(registry_entry)
 
     result = {

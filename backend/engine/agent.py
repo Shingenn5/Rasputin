@@ -24,7 +24,7 @@ async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"
         return reply, []
 
     cfg_for_limits = dict(cfg or {})
-    max_tokens = context_governor.normalize_limits(cfg_for_limits)["maxTokens"]
+    max_tokens = context_governor.output_budget(cfg_for_limits, messages)
 
     try:
         return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools, on_delta=on_delta, reasoning=reasoning)

@@ -788,6 +788,14 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
           <span>Profile</span>
           <strong>{plan.resourceProfile?.label || plan.strengthProfile}</strong>
         </div>
+        <div className="ws-brief-spec">
+          <span>Context</span>
+          <strong>
+            {plan.tuning?.contextAuto
+              ? "Auto-detect after load"
+              : `${plan.tuning?.contextWindow || plan.tuning?.maxModelLen || "Provider default"} tokens`}
+          </strong>
+        </div>
       </div>
 
       {/* Lifecycle progress rail */}

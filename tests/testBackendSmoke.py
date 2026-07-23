@@ -379,7 +379,31 @@ class BackendSmokeTests(unittest.TestCase):
     def testContextGovernorNormalizesUnsafeModelLimits(self):
         limits = context_governor.normalize_limits({"context_window": 512, "max_tokens": 0})
         self.assertEqual(limits["contextWindow"], 1024)
-        self.assertGreater(limits["maxTokens"], 0)
+        self.assertEqual(limits["maxTokens"], 256)
+        self.assertEqual(
+            context_governor.normalize_limits({"context_window": 4096})["maxTokens"],
+            1024,
+        )
+        self.assertEqual(
+            context_governor.normalize_limits({"context_window": 4096, "max_tokens": 2048})["maxTokens"],
+            2048,
+        )
+
+    def testContextGovernorUsesRemainingDetectedContextForLocalOutput(self):
+        messages = [{"role": "user", "content": "Explain the result clearly."}]
+        automatic = context_governor.output_budget(
+            {"context_window": 4096, "context_auto": True},
+            messages,
+        )
+        self.assertGreater(automatic, 1024)
+        self.assertLess(automatic, 4096)
+        self.assertEqual(
+            context_governor.output_budget(
+                {"context_window": 4096, "context_auto": True, "max_tokens": 512},
+                messages,
+            ),
+            512,
+        )
 
     def testContextGovernorTrimsLowPriorityContextForSmallModel(self):
         with patch("backend.engine.context.model_registry.get_model", return_value={"context_window": 1024, "max_tokens": 160}):
@@ -2923,11 +2947,15 @@ class BackendSmokeTests(unittest.TestCase):
         # and an explicit payload value always wins regardless of format.
         from backend import warsat as warsat_module
 
-        gguf_protocol = {"modelFormat": "gguf"}
-        hf_protocol = {"modelFormat": "huggingface"}
+        gguf_protocol = {"runtime": "llama.cpp", "modelFormat": "gguf"}
+        hf_protocol = {"runtime": "vllm", "modelFormat": "huggingface"}
 
         gguf_tuning = warsat_module._build_tuning({}, gguf_protocol, "balanced")
         self.assertEqual(gguf_tuning["maxNumSeqs"], 1)
+        self.assertTrue(gguf_tuning["contextAuto"])
+        gguf_args = warsat_module._runtime_arguments(gguf_protocol, gguf_tuning)
+        self.assertEqual(gguf_args[gguf_args.index("-c") + 1], "0")
+        self.assertIn("--fit", gguf_args)
 
         hf_tuning = warsat_module._build_tuning({}, hf_protocol, "balanced")
         self.assertEqual(
@@ -2935,9 +2963,82 @@ class BackendSmokeTests(unittest.TestCase):
             warsat_module.STRENGTH_PROFILES["balanced"]["maxNumSeqs"],
         )
         self.assertNotEqual(hf_tuning["maxNumSeqs"], 1)
+        self.assertTrue(hf_tuning["contextAuto"])
+        hf_args = warsat_module._runtime_arguments(hf_protocol, hf_tuning)
+        self.assertEqual(hf_args[hf_args.index("--max-model-len") + 1], "auto")
 
-        explicit_tuning = warsat_module._build_tuning({"maxNumSeqs": 4}, gguf_protocol, "balanced")
+        explicit_tuning = warsat_module._build_tuning(
+            {"maxNumSeqs": 4, "contextWindow": 16384},
+            gguf_protocol,
+            "balanced",
+        )
         self.assertEqual(explicit_tuning["maxNumSeqs"], 4)
+        self.assertFalse(explicit_tuning["contextAuto"])
+        explicit_args = warsat_module._runtime_arguments(gguf_protocol, explicit_tuning)
+        self.assertEqual(explicit_args[explicit_args.index("-c") + 1], "16384")
+
+    def testRuntimeContextDetectionCoversLlamaVllmOllamaAndGenericCards(self):
+        from backend.models import context_detection
+
+        llama = context_detection.parse_runtime_logs(
+            "print_info: n_ctx_train = 262144\nllama_context: n_ctx = 32768",
+            "llama.cpp",
+        )
+        self.assertEqual(llama["context_window"], 32768)
+        self.assertEqual(llama["model_context_window"], 262144)
+
+        vllm = context_detection.parse_runtime_logs(
+            "Initializing engine with config: max_seq_len=49152, dtype=torch.float16",
+            "vllm",
+        )
+        self.assertEqual(vllm["context_window"], 49152)
+
+        def fake_json(url, payload=None, timeout=2.0):
+            if url.endswith("/api/ps"):
+                return {"models": [{"name": "qwen:latest", "context_length": 32768}]}
+            if url.endswith("/api/show"):
+                return {"model_info": {"qwen.context_length": 131072}}
+            if url.endswith("/models"):
+                return {"data": [{"id": "custom", "max_model_len": 65536}]}
+            raise AssertionError(url)
+
+        with patch("backend.models.context_detection._request_json", side_effect=fake_json), \
+             patch("backend.models.context_detection._request_text", side_effect=OSError("no metrics")):
+            ollama = context_detection.detect_runtime_context({
+                "runtime": "ollama",
+                "base_url": "http://127.0.0.1:11434/v1",
+                "model": "qwen:latest",
+            })
+            generic = context_detection.detect_runtime_context({
+                "runtime": "external-local",
+                "base_url": "http://127.0.0.1:9000/v1",
+                "model": "custom",
+            })
+        self.assertEqual(ollama["context_window"], 32768)
+        self.assertEqual(ollama["model_context_window"], 131072)
+        self.assertEqual(generic["context_window"], 65536)
+
+    def testWarsatRegistryUsesPostFitRuntimeContext(self):
+        from backend import warsat as warsat_module
+
+        with patch("backend.warsat._run_command", return_value={
+            "returnCode": 0,
+            "stdout": "Initializing engine with config: max_seq_len=49152",
+            "stderr": "",
+        }):
+            synced = warsat_module._sync_deployed_context(
+                {
+                    "provider": "vllm",
+                    "base_url": "http://127.0.0.1:8000/v1",
+                    "model": "demo",
+                    "context_window": 4096,
+                    "context_auto": True,
+                },
+                {"runtime": "vllm"},
+                "rasputin-vllm-demo",
+            )
+        self.assertEqual(synced["context_window"], 49152)
+        self.assertEqual(synced["context_source"], "vLLM logs")
 
     def testWarsatPlanWarnsWhenBf16ModelWontFitCommonGpus(self):
         # A 7B bf16 model needs ~14GB VRAM for weights alone; planning one

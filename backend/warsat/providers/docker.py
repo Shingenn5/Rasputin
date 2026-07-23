@@ -23,6 +23,7 @@ class DockerProvider(DeploymentProvider):
             raise ValueError(f"Model file does not exist at: {file_path}")
 
         parent = str(file_path.parent)
+        context_auto = bool(model.get("context_auto", True))
         cmd = [
             "docker", "run", "-d",
             "--name", model.get("container") or f"ai-{model['key']}",
@@ -33,8 +34,10 @@ class DockerProvider(DeploymentProvider):
             "-m", f"/models/{file_path.name}",
             "--host", "0.0.0.0",
             "--port", "8080",
-            "-c", str(int(model.get("context", 4096))),
+            "-c", "0" if context_auto else str(int(model.get("context", 4096))),
         ]
+        if context_auto:
+            cmd.extend(["--fit", "on"])
 
         gpu_layers = int(model.get("n_gpu_layers", 0))
         if gpu_layers:

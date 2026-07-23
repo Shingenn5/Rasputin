@@ -10,6 +10,7 @@ from threading import Lock, Thread
 from urllib.parse import urlparse, urlunparse
 
 from backend.core import audit as audit
+from backend.models import context_detection
 from backend.models import providers as model_providers
 from backend.models import compatibility as model_compatibility
 from backend.models import secrets as model_secrets
@@ -268,6 +269,30 @@ def _store_health(key, status, latency_ms=None, error=None, models=None):
         break
     if changed:
         _save(data)
+
+
+def _store_detected_context(key, detected):
+    effective = detected.get("context_window")
+    maximum = detected.get("model_context_window")
+    if not effective and not maximum:
+        return None
+    data = _load()
+    saved = None
+    for model in data["models"]:
+        if model.get("key") != key:
+            continue
+        if effective:
+            model["context_window"] = int(effective)
+            model["context_source"] = detected.get("context_source") or "runtime auto-detection"
+            model["context_auto"] = True
+        if maximum:
+            model["model_context_window"] = int(maximum)
+        model["context_detected_at"] = time.time()
+        saved = dict(model)
+        break
+    if saved:
+        _save(data)
+    return saved
 
 
 def _store_compatibility(key, profile):
@@ -632,6 +657,10 @@ def discover_model(key, require_permission=True):
         status = "reachable" if ids else "unhealthy"
         error = "" if ids else "Endpoint responded but did not list any models."
         _store_health(key, status, latency_ms, error, ids)
+        detected_context = {}
+        if status == "reachable" and not model_providers.is_api_provider(model):
+            detected_context = context_detection.detect_runtime_context(model, timeout=2.0)
+            _store_detected_context(key, detected_context)
         audit.log("model_discover", {"key": key, "url": url, "models": ids, "status": status})
         return {
             "key": key,
@@ -641,6 +670,9 @@ def discover_model(key, require_permission=True):
             "models_url": url,
             "current_model": model.get("model"),
             "models": ids,
+            "context_window": detected_context.get("context_window"),
+            "model_context_window": detected_context.get("model_context_window"),
+            "context_source": detected_context.get("context_source"),
             "last_error": error,
         }
     except urllib.error.HTTPError as exc:
@@ -834,7 +866,11 @@ def import_gguf(req):
         "image": req.get("image") or "ghcr.io/ggml-org/llama.cpp:server",
         "port": port,
         "host_model_path": str(file_path),
-        "context": int(req.get("context") or 4096),
+        "context": int(req.get("context") or 0),
+        "context_auto": req.get("context") in (None, "", 0, "0"),
+        "context_source": "runtime auto-detection pending"
+        if req.get("context") in (None, "", 0, "0")
+        else "explicit import setting",
         "n_gpu_layers": int(req.get("n_gpu_layers") if req.get("n_gpu_layers") is not None else 0),
         "notes": req.get("notes") or "Imported GGUF for llama.cpp server.",
     }

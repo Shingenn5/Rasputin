@@ -4,8 +4,8 @@ from backend.models import registry as model_registry
 
 DEFAULT_CONTEXT_WINDOW = 4096
 MIN_CONTEXT_WINDOW = 1024
-DEFAULT_MAX_TOKENS = 160
-MAX_OUTPUT_TOKENS = 512
+DEFAULT_MAX_TOKENS = 1024
+MAX_OUTPUT_TOKENS = 8192
 SAFETY_TOKENS = 96
 CHARS_PER_TOKEN = 2
 
@@ -40,6 +40,33 @@ def limits_for_model(model_key):
 
 def estimate_tokens(text):
     return int(math.ceil(len(str(text or "")) / CHARS_PER_TOKEN))
+
+
+def output_budget(cfg, messages):
+    """Choose a per-request ceiling from the runtime's remaining context.
+
+    An explicitly configured max_tokens remains a hard operator preference.
+    Auto-detected local runtimes instead receive all context left after the
+    actual request, so a small planning reserve does not become an arbitrary
+    response cutoff.
+    """
+    cfg = cfg or {}
+    limits = normalize_limits(cfg)
+    estimated_input = 8
+    for message in messages or []:
+        estimated_input += 4
+        if isinstance(message, dict):
+            estimated_input += estimate_tokens(message.get("content"))
+            estimated_input += estimate_tokens(message.get("name"))
+        else:
+            estimated_input += estimate_tokens(message)
+    available = max(1, limits["contextWindow"] - estimated_input - SAFETY_TOKENS)
+    explicit = cfg.get("max_tokens") or cfg.get("maxTokens")
+    if explicit:
+        return min(limits["maxTokens"], available)
+    if cfg.get("context_auto") or cfg.get("contextAuto"):
+        return available
+    return min(limits["maxTokens"], available)
 
 
 def needs_compaction(model_key, current_tokens):

@@ -839,12 +839,12 @@ export function WarsatView({
                   <Col lg={3} md={6}>
                     <Form.Label htmlFor="warsatMaxModelLen">Max model length</Form.Label>
                     <Form.Control id="warsatMaxModelLen" name="maxModelLen" type="number" min="512" placeholder={selectedProfile.maxModelLen || 8192} />
-                    <Form.Text>vLLM context ceiling.</Form.Text>
+                    <Form.Text>Leave blank to let vLLM fit the model and VRAM automatically.</Form.Text>
                   </Col>
                   <Col lg={3} md={6}>
                     <Form.Label htmlFor="warsatContextWindow">GGUF context</Form.Label>
                     <Form.Control id="warsatContextWindow" name="contextWindow" type="number" min="512" placeholder={selectedProfile.contextWindow || 4096} />
-                    <Form.Text>llama.cpp context size.</Form.Text>
+                    <Form.Text>Leave blank to load the model limit and fit it to available VRAM.</Form.Text>
                   </Col>
                   <Col lg={3} md={6}>
                     <Form.Label htmlFor="warsatGpuMemoryUtilization">GPU utilization</Form.Label>
@@ -1123,8 +1123,9 @@ export function WarsatView({
                 <Col lg={6}>
                   <h3>Tuning And Limits</h3>
                   <dl className="detail-grid">
-                    <dt>Max model length</dt><dd>{plan.tuning?.maxModelLen || "profile default"}</dd>
-                    <dt>GGUF context</dt><dd>{plan.tuning?.contextWindow || "profile default"}</dd>
+                    <dt>Context selection</dt><dd>{plan.tuning?.contextAuto ? "automatic after runtime load" : "explicit override"}</dd>
+                    <dt>Max model length</dt><dd>{plan.tuning?.contextAuto ? "auto" : plan.tuning?.maxModelLen || "profile default"}</dd>
+                    <dt>GGUF context</dt><dd>{plan.tuning?.contextAuto ? "auto" : plan.tuning?.contextWindow || "profile default"}</dd>
                     <dt>GPU utilization</dt><dd>{plan.tuning?.gpuMemoryUtilization ?? "profile default"}</dd>
                     <dt>GPU layers</dt><dd>{plan.tuning?.gpuLayers ?? "auto"}</dd>
                     <dt>Memory cap</dt><dd>{plan.containerLimits?.memoryLimitGb ? `${plan.containerLimits.memoryLimitGb} GB` : "none"}</dd>
