@@ -198,7 +198,7 @@ export function ModelsView({
       const text = [item.name, item.id, item.modelId, item.provider, item.purpose, ...(item.capabilities || [])].join(" ").toLowerCase();
       if (q && !text.includes(q)) return false;
       if (catalogPurpose !== "all" && item.purpose !== catalogPurpose) return false;
-      if (catalogRuntime === "deployable" && !item.deployable) return false;
+      if (catalogRuntime === "deployable" && !item.deployable && !item.containerBacked) return false;
       if (catalogRuntime !== "all" && catalogRuntime !== "deployable" && !(item.runtimeOptions || []).some(o => o.protocolId === catalogRuntime)) return false;
       return true;
     });
@@ -453,7 +453,7 @@ export function ModelsView({
               {/* Status line */}
               <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
                 {searchMode === "catalog"
-                  ? `${displayItems.length} matching cached model${displayItems.length === 1 ? "" : "s"} available to deploy`
+                  ? `${displayItems.length} matching model${displayItems.length === 1 ? "" : "s"} available locally`
                   : hfLoading ? "Searching Hugging Face..." : `${displayItems.length} matching results`}
               </div>
 
@@ -695,6 +695,7 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {item.deployable && <Zap size={13} className="text-primary" />}
+          {item.containerBacked && <Badge variant="muted">Managed container</Badge>}
           <span className="text-[0.7rem] text-muted-foreground">{labelize(item.purpose || "chat")}</span>
         </div>
       </div>

@@ -481,12 +481,15 @@ def _local_model_roots():
     roots = []
     configured = os.environ.get("CONTAINER_MODELS_DIR")
     hf_cache = os.environ.get("RASPUTIN_HF_CACHE_DIR")
+    llama_cache = os.environ.get("RASPUTIN_LLAMA_CACHE_DIR")
     host_hf_home = os.environ.get("HF_HOME")
     host_hub_cache = os.environ.get("HUGGINGFACE_HUB_CACHE") or os.environ.get("HF_HUB_CACHE")
     for candidate in [
         Path(configured).expanduser() if configured else None,
         Path(hf_cache).expanduser() / "hub" if hf_cache else None,
         Path(hf_cache).expanduser() if hf_cache else None,
+        Path(llama_cache).expanduser() / "hub" if llama_cache else None,
+        Path(llama_cache).expanduser() if llama_cache else None,
         Path(host_hub_cache).expanduser() if host_hub_cache else None,
         Path(host_hf_home).expanduser() / "hub" if host_hf_home else None,
         Path.home() / ".cache" / "huggingface" / "hub",
@@ -538,7 +541,7 @@ def _local_item(model_id, name, path, protocol, source, size_bytes=0):
         "provider": "local storage", "providerId": "local",
         "purpose": _purpose(model_id, {"name": name}, "local"),
         "capabilities": ["local", "ready-to-deploy"], "contextWindow": None,
-        "parameterCountB": params, "vramEstimateGb": _vram_estimate(params),
+        "parameterCountB": params, "vramEstimateGb": _vram_estimate(params, model_id=f"{model_id} {name}"),
         "recommendedProfile": "balanced", "recommendedProtocol": protocol,
         "toolCallParserHint": _tool_call_parser_hint(model_id, protocol),
         "runtimeOptions": [{"protocolId": protocol, "label": f"Deploy with {protocol}"}],
@@ -652,6 +655,89 @@ def _native_docker_cache_items():
     return []
 
 
+def _command_value(command, option):
+    """Return a Docker command option value without assuming argument order."""
+    try:
+        index = command.index(option)
+    except (AttributeError, ValueError):
+        return ""
+    return str(command[index + 1]).strip() if index + 1 < len(command) else ""
+
+
+def _native_managed_container_items():
+    """Inventory complete GGUFs retained by pre-cache-volume containers.
+
+    Older llama.cpp deployments downloaded weights into the container writable
+    layer. Those weights remain local after the container stops, but neither
+    the host model folders nor the shared cache volumes can see them. Inspect
+    only Rasputin-managed llama.cpp containers and require Docker's filesystem
+    diff to prove the requested GGUF exists before exposing it in the catalog.
+    """
+    if os.environ.get("RASPUTIN_NATIVE_DOCKER_CACHE") != "1":
+        return []
+    try:
+        listed = subprocess.run(
+            [
+                "docker", "ps", "-a",
+                "--filter", "label=rasputin.managed=true",
+                "--filter", "label=rasputin.protocol=llamaCppGgufServer",
+                "--format", "{{.Names}}",
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if listed.returncode != 0:
+        return []
+
+    items = []
+    for container in (line.strip() for line in listed.stdout.splitlines()):
+        if not container:
+            continue
+        try:
+            inspected = subprocess.run(
+                ["docker", "inspect", container],
+                capture_output=True, text=True, timeout=10,
+            )
+            payload = json.loads(inspected.stdout) if inspected.returncode == 0 else []
+            details = payload[0] if isinstance(payload, list) and payload else {}
+            command = ((details.get("Config") or {}).get("Cmd") or [])
+            repo = _command_value(command, "--hf-repo")
+            filename = _command_value(command, "--hf-file")
+            if not repo or not filename:
+                continue
+            changed = subprocess.run(
+                ["docker", "diff", container],
+                capture_output=True, text=True, timeout=20,
+            )
+            cache_key = f"models--{repo.replace('/', '--')}".lower()
+            diff_text = changed.stdout.lower() if changed.returncode == 0 else ""
+            if cache_key not in diff_text or filename.lower() not in diff_text:
+                continue
+            state = details.get("State") or {}
+            item = _local_item(
+                repo,
+                Path(filename).stem,
+                f"Docker container: {container}",
+                "llamaCppGgufServer",
+                "local-managed-container",
+            )
+            item.update({
+                "id": f"container:{container}",
+                "deployable": False,
+                "containerBacked": True,
+                "containerName": container,
+                "containerStatus": str(state.get("Status") or "unknown"),
+                "cachedArtifact": filename,
+                "capabilities": ["local", "managed-container", "gguf"],
+                "summary": "Saved inside an existing Rasputin llama.cpp container. The model is local, but redeploy it into the shared cache before replacing that container.",
+            })
+            items.append(item)
+        except (json.JSONDecodeError, OSError, subprocess.TimeoutExpired):
+            continue
+    return items
+
+
 def _warsat_cache_items():
     """Return only Warsat models proven ready for immediate interaction.
 
@@ -699,7 +785,9 @@ def local_catalog(hardware=None):
     # A complete cache snapshot is safe to expose as locally deployable even
     # when it is not running. Running health-checked models replace the cache
     # entry for the same model and carry readyWithinThreeMinutes=True.
-    unfiltered = _local_items() + _native_docker_cache_items()
+    # Shared cache entries intentionally win over legacy container-backed
+    # entries with the same model id because they are safely redeployable.
+    unfiltered = _native_managed_container_items() + _local_items() + _native_docker_cache_items()
     deduped = {item["modelId"]: item for item in unfiltered}
     for item in _warsat_cache_items():
         deduped[item["modelId"]] = item

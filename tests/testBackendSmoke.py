@@ -268,6 +268,37 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(plan["modelRef"], deployable["modelId"])
         self.assertTrue(plan["requiresApproval"])
 
+    def testModelCatalogFindsLegacyContainerBackedGguf(self):
+        container = "rasputin-qwen3-6-35b-uncensored-8083"
+        repo = "HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive"
+        filename = "Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+        inspect_payload = json.dumps([{
+            "Config": {"Cmd": ["--hf-repo", repo, "--hf-file", filename, "--port", "8080"]},
+            "State": {"Status": "exited"},
+        }])
+
+        def fake_run(command, **_kwargs):
+            if command[:3] == ["docker", "ps", "-a"]:
+                return subprocess.CompletedProcess(command, 0, stdout=f"{container}\n", stderr="")
+            if command[:2] == ["docker", "inspect"]:
+                return subprocess.CompletedProcess(command, 0, stdout=inspect_payload, stderr="")
+            if command[:2] == ["docker", "diff"]:
+                cache_path = f"/root/.cache/huggingface/hub/models--HauhauCS--Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive/snapshots/rev/{filename}"
+                return subprocess.CompletedProcess(command, 0, stdout=f"A {cache_path}\n", stderr="")
+            raise AssertionError(command)
+
+        with patch.dict(os.environ, {"RASPUTIN_NATIVE_DOCKER_CACHE": "1"}), \
+             patch("backend.models.catalog.subprocess.run", side_effect=fake_run):
+            items = model_catalog._native_managed_container_items()
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["modelId"], repo)
+        self.assertEqual(items[0]["source"], "local-managed-container")
+        self.assertTrue(items[0]["containerBacked"])
+        self.assertFalse(items[0]["deployable"])
+        self.assertGreaterEqual(items[0]["vramEstimateGb"], 18)
+        self.assertLessEqual(items[0]["vramEstimateGb"], 24)
+
     def testLocalOpenAiCompatibleModelCanBeRegistered(self):
         with patch("backend.core.security.require", lambda flag: True):
             registered = self.assertOk(self.client.post("/api/model-registry/upsert", json={
