@@ -277,7 +277,10 @@ class BackendSmokeTests(unittest.TestCase):
             "State": {"Status": "exited"},
         }])
 
+        calls = []
+
         def fake_run(command, **_kwargs):
+            calls.append(command)
             if command[:3] == ["docker", "ps", "-a"]:
                 return subprocess.CompletedProcess(command, 0, stdout=f"{container}\n", stderr="")
             if command[:2] == ["docker", "inspect"]:
@@ -288,8 +291,10 @@ class BackendSmokeTests(unittest.TestCase):
             raise AssertionError(command)
 
         with patch.dict(os.environ, {"RASPUTIN_NATIVE_DOCKER_CACHE": "1"}), \
+             patch.object(model_catalog, "_MANAGED_CONTAINER_CACHE", {"updatedAt": 0.0, "items": []}), \
              patch("backend.models.catalog.subprocess.run", side_effect=fake_run):
             items = model_catalog._native_managed_container_items()
+            cached_items = model_catalog._native_managed_container_items()
 
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["modelId"], repo)
@@ -298,6 +303,8 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertFalse(items[0]["deployable"])
         self.assertGreaterEqual(items[0]["vramEstimateGb"], 18)
         self.assertLessEqual(items[0]["vramEstimateGb"], 24)
+        self.assertEqual(cached_items, items)
+        self.assertEqual(len(calls), 3)
 
     def testLocalOpenAiCompatibleModelCanBeRegistered(self):
         with patch("backend.core.security.require", lambda flag: True):

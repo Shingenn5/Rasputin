@@ -513,12 +513,12 @@ async def model_provider_list(_user=Depends(current_user)):
 
 async def model_catalog_get(fit: bool = False, _user=Depends(current_user)):
     hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
-    return ok(model_catalog.local_catalog(hardware=hardware))
+    return ok(await asyncio.to_thread(model_catalog.local_catalog, hardware))
 
 @models_router.post("/model-catalog/refresh")
 
 async def model_catalog_refresh(req: ModelCatalogRefreshIn | None = None, _user=Depends(require_admin)):
-    return ok(model_catalog.local_catalog())
+    return ok(await asyncio.to_thread(model_catalog.local_catalog))
 
 @models_router.get("/model-catalog/search")
 

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -21,6 +22,9 @@ CACHE_TTL_SECONDS = int(os.environ.get("MODELS_DEV_CACHE_TTL_SECONDS", "86400"))
 FETCH_TIMEOUT_SECONDS = float(os.environ.get("MODELS_DEV_FETCH_TIMEOUT_SECONDS", "8"))
 HF_FETCH_TIMEOUT = float(os.environ.get("HF_FETCH_TIMEOUT_SECONDS", "12"))
 MAX_REMOTE_ITEMS = int(os.environ.get("MODELS_DEV_MAX_ITEMS", "280"))
+MANAGED_CONTAINER_CACHE_TTL_SECONDS = int(os.environ.get("RASPUTIN_MANAGED_CONTAINER_CACHE_TTL_SECONDS", "30"))
+_MANAGED_CONTAINER_CACHE = {"updatedAt": 0.0, "items": []}
+_MANAGED_CONTAINER_CACHE_LOCK = threading.Lock()
 
 PURPOSES = [
     {"id": "chat", "label": "Chat"},
@@ -664,7 +668,7 @@ def _command_value(command, option):
     return str(command[index + 1]).strip() if index + 1 < len(command) else ""
 
 
-def _native_managed_container_items():
+def _scan_native_managed_container_items():
     """Inventory complete GGUFs retained by pre-cache-volume containers.
 
     Older llama.cpp deployments downloaded weights into the container writable
@@ -736,6 +740,25 @@ def _native_managed_container_items():
         except (json.JSONDecodeError, OSError, subprocess.TimeoutExpired):
             continue
     return items
+
+
+def _native_managed_container_items():
+    """Return the legacy-container inventory without rescanning per request."""
+    if os.environ.get("RASPUTIN_NATIVE_DOCKER_CACHE") != "1":
+        return []
+    now = time.monotonic()
+    cached = _MANAGED_CONTAINER_CACHE
+    if now - cached["updatedAt"] < MANAGED_CONTAINER_CACHE_TTL_SECONDS:
+        return [dict(item) for item in cached["items"]]
+    with _MANAGED_CONTAINER_CACHE_LOCK:
+        now = time.monotonic()
+        cached = _MANAGED_CONTAINER_CACHE
+        if now - cached["updatedAt"] < MANAGED_CONTAINER_CACHE_TTL_SECONDS:
+            return [dict(item) for item in cached["items"]]
+        items = _scan_native_managed_container_items()
+        _MANAGED_CONTAINER_CACHE["updatedAt"] = now
+        _MANAGED_CONTAINER_CACHE["items"] = [dict(item) for item in items]
+        return items
 
 
 def _warsat_cache_items():
