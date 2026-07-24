@@ -23,6 +23,7 @@ upstream contributions associated with Project Prometheus.
 | Default branch | `dev` |
 | License observed | AGPL-3.0-or-later |
 | Current use | Product and architecture research; source adoption candidates require file-level approval |
+| Pinned research commit | `d8a2059df8e53bc7275c45339849d14c8651e73c` (2026-07-23) |
 | Source copied into Rasputin | No |
 | Rasputin license | AGPL-3.0-or-later |
 
@@ -30,14 +31,18 @@ upstream contributions associated with Project Prometheus.
 
 | ID | Candidate | Class | Status | Intended Rasputin outcome | Source adoption approved? |
 |---|---|---|---|---|---|
-| ODY-001 | Cookbook and hardware-aware model guidance | Product lesson | Research | WarSat Advisor with reproducible fit and fitness evidence | No |
-| ODY-002 | Blind model Compare | Product lesson | Research | Trials with blind scoring and certificate promotion | No |
-| ODY-003 | Deep Research workflow | Product lesson | Research | Evidence graph and claim-level research receipts | No |
+| ODY-001 | Cookbook and hardware-aware model guidance | Product lesson | Proposed | WarSat Advisor with reproducible fit and fitness evidence | No |
+| ODY-002 | Blind model Compare | Product lesson | Proposed | Trials with blind scoring and certificate promotion | No |
+| ODY-003 | Deep Research workflow | Product lesson | Proposed | Evidence graph and claim-level research receipts | No |
 | ODY-004 | Document workspace | Product lesson | Research | Versioned artifact studio tied to tasks and evidence | No |
 | ODY-005 | Scheduled agents | Product lesson | Research | Governed automations with shadow mode and receipts | No |
 | ODY-006 | Email and calendar integrations | Protocol | Research | Least-privilege connector SDK and approval-gated outbound actions | No |
-| ODY-007 | TOTP and session security | Product lesson | Research | Multi-user authentication hardening | No |
-| ODY-008 | Backup and restore | Product lesson | Research | Encrypted portable operations bundles and restore validation | No |
+| ODY-007 | TOTP and session security | Product lesson | Proposed | Multi-user authentication hardening | No |
+| ODY-008 | Backup and restore | Product lesson | Proposed | Encrypted portable operations bundles and restore validation | No |
+
+Detailed source paths, decisions, and the bounded contract for the first
+implementation are in
+[`ODYSSEUS_MODULE_STUDY.md`](./ODYSSEUS_MODULE_STUDY.md).
 
 ## Rasputin-native work completed before source adoption
 
