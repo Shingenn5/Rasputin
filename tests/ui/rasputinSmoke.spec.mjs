@@ -202,6 +202,18 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='task-details-drawer']")).toBeVisible();
   await expect(page.locator("[data-testid='task-details-drawer']")).toContainText("Testing the Rasputin UI harness.");
   await expect(page.locator("[data-testid='task-details-overview']")).toBeVisible();
+  const overviewTab = page.getByRole("tab", { name: "Overview" });
+  await overviewTab.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("[data-testid='task-details-changes']")).toBeVisible();
+  await expect(page.locator("[data-testid='task-changes']")).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("[data-testid='task-details-terminal']")).toBeVisible();
+  await expect(page.locator("[data-testid='task-terminal']")).toBeVisible();
+  await page.keyboard.press("Home");
+  await expect(overviewTab).toHaveAttribute("aria-selected", "true");
   await page.getByRole("tab", { name: "What Rasputin Saw" }).click();
   await expect(page.locator("[data-testid='task-context-budget']")).toBeVisible();
   await expect(page.locator("[data-testid='task-context-budget']")).toContainText("Context Budget");
@@ -214,6 +226,33 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await expect(page.locator("[data-testid='task-details-tools']")).toContainText(/Rag Search|Graph Search|File Tree/);
   await page.locator("[data-testid='task-details-close']").click();
   await expect(page.locator("[data-testid='task-details-drawer']")).toBeHidden();
+});
+
+test("workspace validation commands persist through the operator UI", async ({ page, request }) => {
+  await page.goto("/");
+  await waitForAppReady(page);
+  await openShellView(page, "nav-workspaces");
+
+  await expect(page.locator("[data-testid='workspace-command-settings']")).toBeVisible();
+  await page.locator("[data-testid='workspace-test-command']").fill("pytest -q");
+  await page.locator("[data-testid='workspace-build-command']").fill("npm run build");
+  await page.locator("[data-testid='workspace-lint-command']").fill("npm run lint");
+  await page.locator("[data-testid='workspace-save-commands']").click();
+  await expect(
+    page.locator("[data-testid='workspace-command-settings']").getByRole("status"),
+  ).toContainText("Validation commands saved.");
+
+  const workspaceResponse = await request.get("/api/workspace");
+  const workspacePayload = await workspaceResponse.json();
+  expect(workspacePayload.ok).toBe(true);
+  const activeWorkspace = workspacePayload.data.workspaces.find(
+    (workspace) => workspace.id === workspacePayload.data.activeId,
+  );
+  expect(activeWorkspace.commands).toEqual({
+    test: "pytest -q",
+    build: "npm run build",
+    lint: "npm run lint",
+  });
 });
 
 test("sidebar collapse persists and themes switch", async ({ page }) => {

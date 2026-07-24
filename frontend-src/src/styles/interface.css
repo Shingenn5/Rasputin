@@ -1528,6 +1528,41 @@ html[data-theme="rasputin-dark"] .login-submit {
   box-shadow: inset 0 -2px 0 var(--dash-accent);
 }
 
+.repository-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 10px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--dash-border);
+  border-radius: 12px 4px 12px 4px;
+  background: var(--dash-border);
+}
+
+.repository-summary > div {
+  min-width: 0;
+  padding: 9px 11px;
+  background: var(--dash-bg-2);
+}
+
+.repository-summary dt {
+  color: var(--dash-faint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.repository-summary dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--dash-text);
+  font-family: var(--ras-font-mono);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .changes-workbench {
   display: grid;
   grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
@@ -1783,6 +1818,10 @@ button.workspace-add-folder:focus-visible {
 }
 
 @media (max-width: 639px) {
+  .repository-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .ras-sidebar.is-mobile-closed {
     visibility: hidden;
     pointer-events: none;

@@ -1234,6 +1234,23 @@ export function App() {
     }
   }
 
+  async function saveWorkspaceCommands(workspaceId, commands) {
+    try {
+      const result = await postJson("/api/workspace/commands", {
+        workspaceId,
+        test: commands.test,
+        build: commands.build,
+        lint: commands.lint,
+      });
+      setWorkspace(await api("/api/workspace"));
+      setGlobalStatus("Workspace validation commands saved.");
+      return result;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      throw error;
+    }
+  }
+
   async function previewMount(event) {
     event.preventDefault();
     // Callers pass either a real form submit event or a synthetic
@@ -1751,6 +1768,7 @@ export function App() {
   async function createWarsatPlan(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const gpuLayers = form.get("gpuLayers");
     setWarsatError("");
     try {
       const plan = await postJson("/api/warsat/plan", {
@@ -1761,7 +1779,7 @@ export function App() {
         contextWindow: Number(form.get("contextWindow") || 0) || undefined,
         maxModelLen: Number(form.get("maxModelLen") || 0) || undefined,
         gpuMemoryUtilization: Number(form.get("gpuMemoryUtilization") || 0) || undefined,
-        gpuLayers: form.get("gpuLayers") === "" ? undefined : Number(form.get("gpuLayers") || 0),
+        gpuLayers: gpuLayers == null || gpuLayers === "" ? undefined : Number(gpuLayers),
         tensorParallelSize: Number(form.get("tensorParallelSize") || 0) || undefined,
         multiGpu: form.get("multiGpu") === "on",
         cpuThreads: Number(form.get("cpuThreads") || 0) || undefined,
@@ -1778,6 +1796,7 @@ export function App() {
         hostPort: Number(form.get("hostPort") || 0) || undefined,
         role: form.get("role") || undefined,
         containerName: form.get("containerName") || undefined,
+        toolCallParser: form.get("toolCallParser") || undefined,
       });
       setWarsatPlan(plan);
       setWarsatDeployment(null);
@@ -1986,6 +2005,7 @@ export function App() {
         selectWorkspace={selectWorkspace}
         setWorkspaceTrust={setWorkspaceTrust}
         setWorkspaceHostShell={setWorkspaceHostShell}
+        saveWorkspaceCommands={saveWorkspaceCommands}
         models={models}
         modeModelOverrides={modeModelOverrides}
         setModeModelOverride={setModeModelOverride}

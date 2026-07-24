@@ -490,10 +490,19 @@ yet a polished public release channel:
 - No installer artifact or container image is automatically published.
 - Update-channel metadata and upgrade testing remain open.
 - Clean-machine installation must be verified before a release.
-- Licensing and public-distribution terms must be decided before making the repository public.
 
 Track those items in [docs/REMAINING_WORK.md](docs/REMAINING_WORK.md) and use
 [docs/RELEASE_SETUP.md](docs/RELEASE_SETUP.md) for release validation.
+
+## License
+
+Rasputin is free software licensed under the
+[GNU Affero General Public License v3.0 or later](LICENSE). If you modify
+Rasputin and make that modified version available to users over a network, the
+AGPL requires offering those users the corresponding source code.
+
+Contributions and upstream reuse must follow [CONTRIBUTING.md](CONTRIBUTING.md)
+and [docs/UPSTREAM_ADOPTION_POLICY.md](docs/UPSTREAM_ADOPTION_POLICY.md).
 
 ## How this project used Codex and GPT-5.6
 

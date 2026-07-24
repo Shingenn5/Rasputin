@@ -639,6 +639,25 @@ function DeployTab({
             </select>
           </label>
           <label className="ws-recipe-field">
+            <span>Tool-call parser</span>
+            <input
+              className="w2-input"
+              name="toolCallParser"
+              data-testid="warsat-tool-call-parser"
+              list="warsat-tool-call-parser-options"
+              placeholder="None / model default"
+              autoComplete="off"
+              spellCheck="false"
+            />
+            <datalist id="warsat-tool-call-parser-options">
+              <option value="hermes" />
+              <option value="mistral" />
+              <option value="llama3_json" />
+              <option value="deepseek_v3" />
+            </datalist>
+            <small>Set only for a model-specific parser supported by the selected runtime. A wrong parser can corrupt tool calls.</small>
+          </label>
+          <label className="ws-recipe-field">
             <span>Profile</span>
             <select className="w2-input" name="strengthProfile" value={strengthProfile} onChange={e => setStrengthProfile(e.target.value)}>
               {Object.entries(strengthProfiles).map(([k, p]) => <option key={k} value={k}>{p.label || k}</option>)}

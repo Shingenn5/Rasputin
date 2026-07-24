@@ -4515,6 +4515,31 @@ class BackendSmokeTests(unittest.TestCase):
 
     # ---- Stage 5: git review endpoints (touched files / diff / revert) ----
 
+    def testStage5GitRepositoryMetadataParsers(self):
+        from backend.mcp import layer as mcp_layer
+
+        branch = mcp_layer._parse_git_branch_header(
+            "## feature/github...origin/feature/github [ahead 2, behind 1]\n M note.txt\n"
+        )
+        self.assertEqual(branch["branch"], "feature/github")
+        self.assertEqual(branch["upstream"], "origin/feature/github")
+        self.assertEqual(branch["ahead"], 2)
+        self.assertEqual(branch["behind"], 1)
+        self.assertFalse(branch["detached"])
+
+        sanitized = mcp_layer._sanitize_git_remote_url(
+            "https://operator:secret-token@github.com/example/rasputin.git"
+        )
+        self.assertEqual(sanitized, "https://github.com/example/rasputin.git")
+        self.assertEqual(
+            mcp_layer._github_repository_from_remote(sanitized),
+            "example/rasputin",
+        )
+        self.assertEqual(
+            mcp_layer._github_repository_from_remote("git@github.com:example/rasputin.git"),
+            "example/rasputin",
+        )
+
     def testStage5GitReviewEndpoints(self):
         target = main.ROOT / "workspace" / f"stage5-git-{runtime_store.new_id('s5')[-6:]}"
         target.mkdir(parents=True, exist_ok=True)
@@ -4527,6 +4552,9 @@ class BackendSmokeTests(unittest.TestCase):
             "workspacePath": approved["root"]}))
         self.assertIn("entries", status)
         self.assertIsInstance(status["entries"], list)
+        self.assertIn("repository", status)
+        for key in ["isRepository", "branch", "upstream", "ahead", "behind", "remotes", "githubRepository"]:
+            self.assertIn(key, status["repository"])
         # Per-file diff: structured hunks.
         diff = self.assertOk(self.client.post("/api/workspace/git-diff", json={
             "workspacePath": approved["root"]}))

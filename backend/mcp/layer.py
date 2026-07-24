@@ -117,6 +117,62 @@ def _parse_git_status_porcelain(text):
     return entries
 
 
+def _parse_git_branch_header(text):
+    """Parse the branch/upstream counters from `git status -b`.
+
+    This is deliberately local-only repository metadata: it never fetches or
+    contacts a remote, so opening the Changes panel cannot trigger network I/O.
+    """
+    header = next((line[3:] for line in (text or "").splitlines() if line.startswith("## ")), "")
+    result = {"branch": "", "upstream": "", "ahead": 0, "behind": 0, "detached": False}
+    if not header:
+        return result
+    if header.startswith("HEAD (no branch)"):
+        result["branch"] = "HEAD"
+        result["detached"] = True
+        return result
+    if header.startswith("No commits yet on "):
+        result["branch"] = header[len("No commits yet on "):].strip()
+        return result
+    branch_part, separator, upstream_part = header.partition("...")
+    result["branch"] = branch_part.strip()
+    if not separator:
+        return result
+    upstream_name, _, tracking = upstream_part.partition(" [")
+    result["upstream"] = upstream_name.strip()
+    tracking = tracking.rstrip("]")
+    ahead = re.search(r"\bahead (\d+)", tracking)
+    behind = re.search(r"\bbehind (\d+)", tracking)
+    result["ahead"] = int(ahead.group(1)) if ahead else 0
+    result["behind"] = int(behind.group(1)) if behind else 0
+    return result
+
+
+def _sanitize_git_remote_url(value):
+    """Remove URL credentials before repository metadata reaches logs or UI."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urllib.parse.urlsplit(raw)
+    if parsed.scheme and parsed.hostname:
+        host = parsed.hostname
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        return urllib.parse.urlunsplit((parsed.scheme, host, parsed.path, parsed.query, parsed.fragment))
+    return raw
+
+
+def _github_repository_from_remote(value):
+    """Return owner/name for common GitHub HTTPS, SSH, and git remote forms."""
+    raw = _sanitize_git_remote_url(value)
+    match = re.match(
+        r"^(?:https?://|ssh://git@|git@|git://)?github\.com(?::|/)([^/\s]+)/([^/\s]+?)(?:\.git)?/?$",
+        raw,
+        re.IGNORECASE,
+    )
+    return f"{match.group(1)}/{match.group(2)}" if match else ""
+
+
 _LOG_FIELD_SEP = "\x1f"
 
 
@@ -708,8 +764,50 @@ class McpLayer:
         base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
         workspace.require_path_permission(base, "read")
         result = await self._run_git(base, ["status", "--porcelain=v1", "-b"])
+        repository = {
+            "isRepository": result.get("exit_code") == 0,
+            **_parse_git_branch_header(result.get("stdout", "")),
+            "root": "",
+            "headSha": "",
+            "remotes": [],
+            "githubRepository": "",
+        }
+        if repository["isRepository"]:
+            root_result, head_result, remote_names_result = await asyncio.gather(
+                self._run_git(base, ["rev-parse", "--show-toplevel"]),
+                self._run_git(base, ["rev-parse", "--verify", "HEAD"]),
+                self._run_git(base, ["remote"]),
+            )
+            repository["root"] = root_result.get("stdout", "").strip()
+            repository["headSha"] = head_result.get("stdout", "").strip()
+            remote_names = [
+                name.strip() for name in remote_names_result.get("stdout", "").splitlines() if name.strip()
+            ]
+            remote_results = await asyncio.gather(*[
+                self._run_git(base, ["remote", "get-url", name]) for name in remote_names
+            ])
+            for name, remote_result in zip(remote_names, remote_results):
+                url = _sanitize_git_remote_url(remote_result.get("stdout", ""))
+                github_repository = _github_repository_from_remote(url)
+                repository["remotes"].append({
+                    "name": name,
+                    "url": url,
+                    "githubRepository": github_repository,
+                })
+                if name == "origin" and github_repository:
+                    repository["githubRepository"] = github_repository
+            if not repository["githubRepository"]:
+                repository["githubRepository"] = next(
+                    (remote["githubRepository"] for remote in repository["remotes"] if remote["githubRepository"]),
+                    "",
+                )
         audit.log("git_status", {"cwd": str(base)})
-        return {"cwd": str(base), **result, "entries": _parse_git_status_porcelain(result.get("stdout", ""))}
+        return {
+            "cwd": str(base),
+            **result,
+            "entries": _parse_git_status_porcelain(result.get("stdout", "")),
+            "repository": repository,
+        }
 
     async def git_diff(self, workspace_path=None, path=None, staged=False, _task_id=None, _tool_call_id=None):
         security.require("allow_file_read")

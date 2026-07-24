@@ -43,6 +43,7 @@ export function WorkspacesView({
   selectWorkspace,
   setWorkspaceTrust,
   setWorkspaceHostShell,
+  saveWorkspaceCommands,
   loadWorkspaceRoots,
   previewMount,
   requestMount,
@@ -111,6 +112,9 @@ export function WorkspacesView({
   // Host Shell capability state (distinct opt-in from Trusted Dev Mode)
   const [showShellModal, setShowShellModal] = useState(false);
   const [shellBusy, setShellBusy] = useState(false);
+  const [commandDraft, setCommandDraft] = useState({ test: "", build: "", lint: "" });
+  const [commandsBusy, setCommandsBusy] = useState(false);
+  const [commandsStatus, setCommandsStatus] = useState("");
 
   const activeName = workspace.activeName || displayWorkspaceName(workspace.activePath);
   const activePath = workspace.absolutePath || workspace.activePath || ".";
@@ -120,6 +124,7 @@ export function WorkspacesView({
   const activeIndexed = activeWorkspaceInfo.indexed;
   const activeTrusted = Boolean(activeWorkspaceInfo.trusted);
   const activeHostShell = Boolean(activeWorkspaceInfo.allowHostShell ?? activeWorkspaceInfo.allow_host_shell);
+  const activeCommands = activeWorkspaceInfo.commands || {};
   // Native mode has no container: folders are registered directly, so the
   // mount/compose/restart affordances and the docker-control grant don't apply.
   const native = Boolean(security?.native);
@@ -150,6 +155,30 @@ export function WorkspacesView({
     setKnowledgeResults(null);
     setKnowledgeStatus("");
   }, [workspaceBrowse?.path, currentRoot?.id]);
+
+  useEffect(() => {
+    setCommandDraft({
+      test: activeCommands.test || "",
+      build: activeCommands.build || "",
+      lint: activeCommands.lint || "",
+    });
+    setCommandsStatus("");
+  }, [activeId, activeCommands.test, activeCommands.build, activeCommands.lint]);
+
+  async function submitWorkspaceCommands(event) {
+    event.preventDefault();
+    if (!activeId || !saveWorkspaceCommands) return;
+    setCommandsBusy(true);
+    setCommandsStatus("Saving validation commands...");
+    try {
+      await saveWorkspaceCommands(activeId, commandDraft);
+      setCommandsStatus("Validation commands saved. Code-mode edits can now run these checks.");
+    } catch (error) {
+      setCommandsStatus(error.message);
+    } finally {
+      setCommandsBusy(false);
+    }
+  }
 
   async function inspectEntry(entry) {
     setSelectedEntry(entry);
@@ -923,6 +952,55 @@ export function WorkspacesView({
                       ))}
                     </div>
                   </div>
+
+                  {adminAccess && (
+                    <form
+                      className="w2-card"
+                      data-testid="workspace-command-settings"
+                      onSubmit={submitWorkspaceCommands}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '12px', gridColumn: '1 / -1' }}
+                    >
+                      <div>
+                        <h2 className="w2-section-title">Validation Commands</h2>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', margin: '4px 0 0' }}>
+                          Rasputin runs the test command after code edits and can use build or lint checks when a mission requests them.
+                          Commands execute only when Host Shell and the workspace policy allow it.
+                        </p>
+                      </div>
+                      <div className="workspace-command-grid">
+                        {[
+                          { key: 'test', label: 'Test', placeholder: 'e.g. npm test or pytest -q' },
+                          { key: 'build', label: 'Build', placeholder: 'e.g. npm run build' },
+                          { key: 'lint', label: 'Lint', placeholder: 'e.g. npm run lint' },
+                        ].map((item) => (
+                          <label key={item.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <strong style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>{item.label} command</strong>
+                            <input
+                              className="w2-input"
+                              name={`${item.key}Command`}
+                              data-testid={`workspace-${item.key}-command`}
+                              value={commandDraft[item.key]}
+                              onChange={(event) => setCommandDraft((current) => ({ ...current, [item.key]: event.target.value }))}
+                              placeholder={item.placeholder}
+                              spellCheck="false"
+                              autoComplete="off"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <button
+                          className="w2-button primary"
+                          type="submit"
+                          data-testid="workspace-save-commands"
+                          disabled={commandsBusy || !activeId}
+                        >
+                          {commandsBusy ? "Saving..." : "Save validation commands"}
+                        </button>
+                        {commandsStatus && <span role="status" style={{ fontSize: '0.75rem', color: 'var(--cc-muted)' }}>{commandsStatus}</span>}
+                      </div>
+                    </form>
+                  )}
 
                 </div>
 

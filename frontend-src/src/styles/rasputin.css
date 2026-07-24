@@ -13145,3 +13145,14 @@ textarea.cc-input.ras-autogrow {
 .pending-mount-actions .tiny-action {
   padding: 3px 8px;
 }
+.workspace-command-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 800px) {
+  .workspace-command-grid {
+    grid-template-columns: 1fr;
+  }
+}

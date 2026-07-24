@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "Private local AI workstation and multi-user server",
   "author": "Shingenn5",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",

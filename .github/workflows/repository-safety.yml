@@ -1,0 +1,41 @@
+name: Repository safety
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-safety:
+    name: Repository safety and secret history
+    runs-on: windows-latest
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tracked repository paths
+        shell: pwsh
+        run: ./scripts/check-repo-safety.ps1
+
+      - name: Scan Git history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+
+      - name: Reject vulnerable dependency changes
+        uses: actions/dependency-review-action@v5

@@ -343,6 +343,7 @@ function ChangesPanel({ workspace, active }) {
   const [diff, setDiff] = useState("");
   const [diffLoading, setDiffLoading] = useState(false);
   const [notice, setNotice] = useState("");
+  const [repository, setRepository] = useState(null);
 
   const loadStatus = useCallback(async () => {
     if (!workspace) return;
@@ -352,10 +353,12 @@ function ChangesPanel({ workspace, active }) {
       const data = await postJson("/api/workspace/git-status", { workspacePath: workspace });
       const entries = (data?.entries || []).filter((entry) => entry.path);
       setFiles(entries);
+      setRepository(data?.repository || null);
       setSelected((prev) => (entries.some((entry) => entry.path === prev) ? prev : null));
     } catch (err) {
       setError(String(err.message || err));
       setFiles([]);
+      setRepository(null);
     } finally {
       setLoading(false);
     }
@@ -417,6 +420,31 @@ function ChangesPanel({ workspace, active }) {
           <RefreshCw size={13} /> Refresh
         </button>
       </div>
+      {repository?.isRepository && (
+        <dl className="repository-summary" data-testid="repository-summary" aria-label="Local repository state">
+          <div>
+            <dt>Branch</dt>
+            <dd>{repository.branch || "Unknown"}{repository.detached ? " (detached)" : ""}</dd>
+          </div>
+          <div>
+            <dt>Upstream</dt>
+            <dd>
+              {repository.upstream || "Not configured"}
+              {repository.ahead || repository.behind
+                ? ` · ${repository.ahead || 0} ahead / ${repository.behind || 0} behind`
+                : ""}
+            </dd>
+          </div>
+          <div>
+            <dt>GitHub</dt>
+            <dd>{repository.githubRepository || "No GitHub remote detected"}</dd>
+          </div>
+          <div>
+            <dt>Commit</dt>
+            <dd>{repository.headSha ? repository.headSha.slice(0, 12) : "No commits yet"}</dd>
+          </div>
+        </dl>
+      )}
       {error && <p className="drawer-error" role="alert">{error}</p>}
       {notice && <p className="empty-inline changes-notice" role="status">{notice}</p>}
       {!files.length && !error ? (
