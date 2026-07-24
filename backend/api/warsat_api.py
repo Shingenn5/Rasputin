@@ -3,6 +3,7 @@ from backend.api.core import CamelModel, current_user, require_admin, require_me
 from backend import archive
 from backend import trials
 from backend import warsat
+from backend.warsat import advisor as warsat_advisor
 from backend.core import workspace
 from backend.core import github_read
 from backend.core import host_fs
@@ -54,6 +55,15 @@ class WarsatDeployIn(CamelModel):
     plan: dict
     approval_id: str | None = None
 
+
+class WarsatAdvisorIn(CamelModel):
+    model: dict
+    hardware: dict | None = None
+    mission: str = "chat"
+    protocol_id: str | None = ""
+    context_window: int | None = None
+    tool_call_parser: str | None = ""
+
 class WarsatContainerIn(CamelModel):
     container_name: str
     approval_id: str | None = None
@@ -83,6 +93,19 @@ async def warsat_hardware(_user=Depends(current_user)):
 
 async def warsat_plan(req: WarsatPlanIn, _user=Depends(require_admin)):
     return ok(await asyncio.to_thread(warsat.make_plan, req.model_dump()))
+
+
+@warsat_router.post("/advisor")
+async def warsat_advisor_recommend(req: WarsatAdvisorIn, _user=Depends(current_user)):
+    hardware = req.hardware or await asyncio.to_thread(warsat.hardware_probe)
+    return ok(warsat_advisor.recommend(
+        req.model,
+        hardware,
+        mission=req.mission,
+        protocol_id=req.protocol_id or "",
+        context_window=req.context_window,
+        tool_call_parser=req.tool_call_parser or "",
+    ))
 
 @warsat_router.post("/deploy")
 

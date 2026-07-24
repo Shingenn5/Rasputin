@@ -31,7 +31,7 @@ upstream contributions associated with Project Prometheus.
 
 | ID | Candidate | Class | Status | Intended Rasputin outcome | Source adoption approved? |
 |---|---|---|---|---|---|
-| ODY-001 | Cookbook and hardware-aware model guidance | Product lesson | Proposed | WarSat Advisor with reproducible fit and fitness evidence | No |
+| ODY-001 | Cookbook and hardware-aware model guidance | Product lesson | Implementing | WarSat Advisor with reproducible fit and fitness evidence | No |
 | ODY-002 | Blind model Compare | Product lesson | Proposed | Trials with blind scoring and certificate promotion | No |
 | ODY-003 | Deep Research workflow | Product lesson | Proposed | Evidence graph and claim-level research receipts | No |
 | ODY-004 | Document workspace | Product lesson | Research | Versioned artifact studio tied to tasks and evidence | No |
@@ -52,6 +52,7 @@ implementation are in
 | Task Changes and Terminal inspection | Rasputin-native baseline | Uses existing task, git, and approval services |
 | WarSat tool-call parser selection | Rasputin-native baseline | Extends Rasputin's existing deployment planner |
 | WarSat absent-GPU-layer fix | Rasputin-native defect fix | Restores automatic combined-GPU planning |
+| WarSat Advisor recommendation service | Odysseus product lesson, Rasputin-native implementation | Deterministic observed/estimated/unproven evidence, hard blockers, and approval-preserving plan seeds |
 
 No item in this section contains Odysseus source code.
 
