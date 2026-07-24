@@ -37,6 +37,7 @@ def defaults():
         "allow_file_reorganize": False,
         "allow_shell_execution": False,
         "allow_web_search": True,
+        "allow_github_read": False,
         "allow_docker_control": False,
         "allow_model_tests": True,
         "allow_model_registry_edit": True,

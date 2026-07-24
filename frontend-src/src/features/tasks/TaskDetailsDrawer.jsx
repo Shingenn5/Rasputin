@@ -344,6 +344,8 @@ function ChangesPanel({ workspace, active }) {
   const [diffLoading, setDiffLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [repository, setRepository] = useState(null);
+  const [githubContext, setGithubContext] = useState(null);
+  const [githubLoading, setGithubLoading] = useState(false);
 
   const loadStatus = useCallback(async () => {
     if (!workspace) return;
@@ -363,6 +365,26 @@ function ChangesPanel({ workspace, active }) {
       setLoading(false);
     }
   }, [workspace]);
+
+  const loadGithubContext = async () => {
+    if (!repository?.githubRepository) return;
+    setGithubLoading(true);
+    setNotice("");
+    try {
+      const data = await postJson("/api/workspace/github-context", {
+        workspacePath: workspace,
+        repository: repository.githubRepository,
+        branch: repository.branch,
+        headSha: repository.headSha,
+      });
+      setGithubContext(data);
+    } catch (err) {
+      setGithubContext(null);
+      setNotice(`GitHub context unavailable: ${err.message || err}`);
+    } finally {
+      setGithubLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (active && files === null) loadStatus();
@@ -421,6 +443,7 @@ function ChangesPanel({ workspace, active }) {
         </button>
       </div>
       {repository?.isRepository && (
+        <>
         <dl className="repository-summary" data-testid="repository-summary" aria-label="Local repository state">
           <div>
             <dt>Branch</dt>
@@ -444,6 +467,25 @@ function ChangesPanel({ workspace, active }) {
             <dd>{repository.headSha ? repository.headSha.slice(0, 12) : "No commits yet"}</dd>
           </div>
         </dl>
+        {repository.githubRepository && (
+          <section className="github-context" data-testid="github-context">
+            <div className="section-row">
+              <p className="eyebrow">GitHub · read only</p>
+              <button type="button" className="tiny-action" onClick={loadGithubContext} disabled={githubLoading}>
+                <RefreshCw size={13} /> {githubLoading ? "Loading…" : githubContext ? "Refresh context" : "Load context"}
+              </button>
+            </div>
+            {githubContext && (
+              <div className="repository-summary" aria-label="GitHub repository context">
+                <div><dt>Pull requests</dt><dd>{githubContext.pullRequests?.length || 0} for this branch</dd></div>
+                <div><dt>Open issues</dt><dd>{githubContext.issues?.length || 0} shown</dd></div>
+                <div><dt>Checks</dt><dd>{githubContext.checks?.length || 0} on this commit</dd></div>
+                <div><dt>Access</dt><dd>Authenticated GET requests only</dd></div>
+              </div>
+            )}
+          </section>
+        )}
+        </>
       )}
       {error && <p className="drawer-error" role="alert">{error}</p>}
       {notice && <p className="empty-inline changes-notice" role="status">{notice}</p>}

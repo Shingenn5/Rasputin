@@ -94,6 +94,18 @@ export function SecuritySettings() {
                 <tbody className="border-top-0">
                   <tr>
                     <td className="ps-4">
+                      <div className="fw-medium"><Globe size={16} className="me-2 text-primary"/>GitHub Repository Context</div>
+                      <div className="text-muted small">Allow explicit read-only requests for pull requests, issues, and checks.</div>
+                    </td>
+                    <td>
+                      {security?.allow_github_read ? <Badge bg="success">Allowed</Badge> : <Badge bg="secondary">Blocked</Badge>}
+                    </td>
+                    <td className="text-end pe-4">
+                      <Form.Check type="switch" id="allow-github-read" checked={!!security?.allow_github_read} onChange={() => handleToggle("allow_github_read")} />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="ps-4">
                       <div className="fw-medium"><Globe size={16} className="me-2 text-primary"/>Web Search</div>
                       <div className="text-muted small">Allow agents to query search engines.</div>
                     </td>

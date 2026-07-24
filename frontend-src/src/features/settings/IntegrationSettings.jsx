@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, Mail, MessageSquare, Plug, RefreshCw, ShieldCheck, Trash2, Webhook } from "lucide-react";
+import { CheckCircle2, Github, Mail, MessageSquare, Plug, RefreshCw, ShieldCheck, Trash2, Webhook } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 
-const providerIcons = { gmail: Mail, outlook: Mail, teams: MessageSquare, webhook: Webhook };
+const providerIcons = { gmail: Mail, outlook: Mail, teams: MessageSquare, webhook: Webhook, github: Github };
 
 export function IntegrationSettings() {
   const [catalog, setCatalog] = useState([]);
   const [connectors, setConnectors] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ displayName: "", clientId: "", clientSecret: "", tenantId: "", url: "", secret: "" });
+  const [form, setForm] = useState({ displayName: "", clientId: "", clientSecret: "", tenantId: "", url: "", secret: "", token: "" });
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +39,7 @@ export function IntegrationSettings() {
       tenantId: existing?.config?.tenantId || "",
       url: existing?.config?.url || "",
       secret: "",
+      token: "",
     });
     setStatus("");
   }
@@ -50,12 +51,13 @@ export function IntegrationSettings() {
     try {
       const provider = selected.provider.id;
       const oauth = selected.provider.auth === "oauth2";
+      const github = provider === "github";
       const connector = await postJson("/api/connectors", {
         id: selected.existing?.id,
         provider,
         displayName: form.displayName || selected.provider.name,
-        config: oauth ? { clientId: form.clientId, tenantId: form.tenantId } : { url: form.url },
-        credentials: oauth ? { clientSecret: form.clientSecret } : { secret: form.secret },
+        config: oauth ? { clientId: form.clientId, tenantId: form.tenantId } : github ? {} : { url: form.url },
+        credentials: oauth ? { clientSecret: form.clientSecret } : github ? { token: form.token } : { secret: form.secret },
       });
       setStatus(`${connector.display_name} saved locally.`);
       await load();
@@ -122,6 +124,9 @@ export function IntegrationSettings() {
               <label className="text-sm"><span className="mb-1.5 block font-medium">OAuth client ID</span><input className="w2-input w-full" required value={form.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })} /></label>
               {selected.provider.id !== "gmail" && <label className="text-sm"><span className="mb-1.5 block font-medium">Tenant ID</span><input className="w2-input w-full" required value={form.tenantId} onChange={(event) => setForm({ ...form, tenantId: event.target.value })} /></label>}
               <label className="text-sm"><span className="mb-1.5 block font-medium">OAuth client secret</span><input className="w2-input w-full" type="password" required={!selected.existing?.hasCredentials} value={form.clientSecret} placeholder={selected.existing?.hasCredentials ? "Stored—leave blank to keep" : "Paste client secret"} onChange={(event) => setForm({ ...form, clientSecret: event.target.value })} /></label>
+            </> : selected.provider.id === "github" ? <>
+              <label className="text-sm md:col-span-2"><span className="mb-1.5 block font-medium">Fine-grained personal access token</span><input className="w2-input w-full" type="password" required={!selected.existing?.hasCredentials} value={form.token} placeholder={selected.existing?.hasCredentials ? "Stored—leave blank to keep" : "Paste read-only token"} onChange={(event) => setForm({ ...form, token: event.target.value })} /></label>
+              <div className="md:col-span-2 rounded-xl border border-primary/25 bg-primary/5 p-3 text-xs text-muted-foreground">Use repository Metadata read access, plus read access for pull requests, issues, and checks. Rasputin only calls GitHub GET endpoints.</div>
             </> : <>
               <label className="text-sm md:col-span-2"><span className="mb-1.5 block font-medium">HTTPS webhook URL</span><input className="w2-input w-full" type="url" required value={form.url} placeholder="https://example.com/hooks/rasputin" onChange={(event) => setForm({ ...form, url: event.target.value })} /></label>
               <label className="text-sm"><span className="mb-1.5 block font-medium">Signing secret (optional)</span><input className="w2-input w-full" type="password" value={form.secret} onChange={(event) => setForm({ ...form, secret: event.target.value })} /></label>

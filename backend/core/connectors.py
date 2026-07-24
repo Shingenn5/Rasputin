@@ -28,6 +28,12 @@ PROVIDERS = {
         "capabilities": ["send_event"],
         "required": ["url"],
     },
+    "github": {
+        "name": "GitHub",
+        "auth": "token",
+        "capabilities": ["read_repositories", "read_pull_requests", "read_issues", "read_checks"],
+        "required": ["token"],
+    },
 }
 
 SECRET_FIELDS = {"clientSecret", "secret", "token", "accessToken", "refreshToken"}
@@ -56,6 +62,16 @@ def list_connectors(owner_id):
             (str(owner_id or "admin"),),
         ).fetchall()
     return [_public(row) for row in rows]
+
+
+def connector_credentials(owner_id, provider):
+    """Return credentials to trusted backend integrations only."""
+    with store._lock, store.connect() as conn:
+        row = conn.execute(
+            "SELECT credentials FROM connectors WHERE owner_id=? AND provider=? ORDER BY updated_at DESC LIMIT 1",
+            (str(owner_id or "admin"), str(provider or "").lower()),
+        ).fetchone()
+    return store._loads(row["credentials"], {}) if row else {}
 
 
 def save_connector(owner_id, provider, display_name="", config=None, credentials=None, connector_id=None):
@@ -128,6 +144,8 @@ def test_connector(owner_id, connector_id):
             if missing
             else "OAuth application settings are valid. Authorize this account before data can sync."
             if status == "ready_for_authorization"
+            else "GitHub token is stored and masked. Repository access is tested when you explicitly load GitHub context."
+            if provider == "github"
             else "Webhook configuration is valid. No external payload was sent during this check."
         )
         stamp = store.now()

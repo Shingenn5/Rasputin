@@ -4,6 +4,7 @@ from backend import archive
 from backend import trials
 from backend import warsat
 from backend.core import workspace
+from backend.core import github_read
 from backend.core import host_fs
 from backend.core import sandbox_exec
 from backend.core import audit
@@ -488,6 +489,13 @@ class WorkspaceGitIn(CamelModel):
     path: str | None = None
     staged: bool = False
 
+
+class WorkspaceGitHubIn(CamelModel):
+    workspace_path: str = "."
+    repository: str
+    branch: str | None = ""
+    head_sha: str | None = ""
+
 class WorkspaceGitRestoreIn(CamelModel):
     workspace_path: str | None = None
     path: str
@@ -681,6 +689,18 @@ async def workspace_git_status(req: WorkspaceGitIn, _user=Depends(require_member
     workspace.require_user_access(req.workspace_path or ".", _user["username"], "developer", _user["role"] == "admin")
     # Touched-files list for the review UI (git status --porcelain, parsed).
     return ok(await hub.mcp.git_status(workspace_path=req.workspace_path))
+
+
+@workspace_router.post("/workspace/github-context")
+async def workspace_github_context(req: WorkspaceGitHubIn, _user=Depends(require_member)):
+    workspace.require_user_access(req.workspace_path or ".", _user["username"], "viewer", _user["role"] == "admin")
+    return ok(await asyncio.to_thread(
+        github_read.repository_context,
+        _user["username"],
+        req.repository,
+        req.branch or "",
+        req.head_sha or "",
+    ))
 
 @workspace_router.post("/workspace/git-diff")
 

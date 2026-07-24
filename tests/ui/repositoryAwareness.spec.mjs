@@ -6,7 +6,7 @@ async function waitForAppReady(page) {
 
 test("task Changes shows repository state and keeps Revert approval-gated", async ({ page, request }) => {
   const objective = `Repository awareness ${Date.now()}`;
-  const createdResponse = await request.post("/api/tasks", {
+  const createTask = () => request.post("/api/tasks", {
     data: {
       objective,
       model: "dry-run",
@@ -15,7 +15,18 @@ test("task Changes shows repository state and keeps Revert approval-gated", asyn
       workspacePath: ".",
     },
   });
-  const created = await createdResponse.json();
+  let createdResponse = await createTask();
+  let created = await createdResponse.json();
+  if (!created.ok && process.env.RASPUTIN_TEST_PASSWORD) {
+    const login = await request.post("/api/auth/login", {
+      data: { username: "admin", password: process.env.RASPUTIN_TEST_PASSWORD },
+    });
+    expect((await login.json()).ok).toBe(true);
+    const authState = await request.storageState();
+    await page.context().addCookies(authState.cookies);
+    createdResponse = await createTask();
+    created = await createdResponse.json();
+  }
   expect(created.ok).toBe(true);
 
   await expect.poll(async () => {
@@ -61,6 +72,26 @@ test("task Changes shows repository state and keeps Revert approval-gated", asyn
       }),
     });
   });
+  await page.route("**/api/workspace/github-context", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    const requestBody = route.request().postDataJSON();
+    expect(requestBody.repository).toBe("example/rasputin");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          repository: { fullName: "example/rasputin", visibility: "public" },
+          pullRequests: [{ number: 4, title: "Ship feature" }],
+          issues: [{ number: 8, title: "Follow-up" }],
+          checks: [{ name: "test", status: "completed", conclusion: "success" }],
+          readOnly: true,
+          authenticated: true,
+        },
+        error: null,
+      }),
+    });
+  });
 
   await page.goto("/");
   await waitForAppReady(page);
@@ -76,6 +107,12 @@ test("task Changes shows repository state and keeps Revert approval-gated", asyn
   await expect(summary).toContainText("2 ahead / 1 behind");
   await expect(summary).toContainText("example/rasputin");
   await expect(summary).toContainText("0123456789ab");
+
+  await page.getByRole("button", { name: "Load context" }).click();
+  const github = page.locator("[data-testid='github-context']");
+  await expect(github).toContainText("1 for this branch");
+  await expect(github).toContainText("1 shown");
+  await expect(github).toContainText("Authenticated GET requests only");
 
   await page.getByRole("button", { name: "Revert tracked.txt" }).click();
   await expect(page.locator("[data-testid='task-changes']").getByRole("status")).toContainText(
