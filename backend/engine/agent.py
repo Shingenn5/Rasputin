@@ -330,7 +330,7 @@ class AgentHub:
             )
             conn.commit()
 
-    def _add_message(self, session_id, task_id, role, content):
+    def _add_message(self, session_id, task_id, role, content, memory_job=None):
         msg_id = store.new_id("msg")
         stamp = store.now()
         with store._lock, store.connect() as conn:
@@ -345,8 +345,17 @@ class AgentHub:
                 )
             except Exception:
                 pass
+            if memory_job is not None:
+                memory.queue_turn(
+                    task_id=task_id,
+                    session_id=session_id,
+                    workspace_id=getattr(memory_job, "workspace", None),
+                    owner_id=getattr(memory_job, "owner_id", "admin"),
+                    connection=conn,
+                )
             conn.commit()
         self._schedule_master_context_export()
+        return msg_id
 
     def _schedule_master_context_export(self):
         try:
@@ -1099,7 +1108,7 @@ class AgentHub:
                 task.status = "done"
                 memory.remember("session", {"objective": task.objective, "result": reply, "model": task.model}, task.owner_id)
                 memory.suggest_from_task(task.id, task.objective, reply, task.workspace, task.owner_id)
-                self._add_message(task.session_id, task.id, "assistant", reply)
+                self._add_message(task.session_id, task.id, "assistant", reply, memory_job=task)
                 await self.compact_session(task)
                 task.log("done")
             else:
@@ -1128,7 +1137,7 @@ class AgentHub:
                 task.status = "done"
                 memory.remember("session", {"objective": task.objective, "result": reflection, "model": task.model}, task.owner_id)
                 memory.suggest_from_task(task.id, task.objective, reflection, task.workspace, task.owner_id)
-                self._add_message(task.session_id, task.id, "assistant", reflection)
+                self._add_message(task.session_id, task.id, "assistant", reflection, memory_job=task)
                 await self.compact_session(task)
                 task.log("done")
         except asyncio.CancelledError:
@@ -1472,8 +1481,9 @@ class AgentHub:
             task.stream_text = ""
 
     async def chat_reply(self, task):
+        owner_id = getattr(task, "owner_id", "admin")
         try:
-            session_data = self.session(task.session_id).get("session", {})
+            session_data = self.session(task.session_id, owner_id).get("session", {})
         except ValueError:
             session_data = {}
         session_summary = session_data.get("summary", "")
@@ -1482,21 +1492,35 @@ class AgentHub:
         prompt_profile = model_compatibility.default_profile(model)
         light_context = prompt_profile in {"light", "minimal"}
         previous_messages = self.recent_messages(task.session_id, 4 if light_context else 10)
+        memory_tokens = context_governor.memory_budget(model_key)
+        recall = memory.search(
+            task.objective,
+            3 if light_context else 5,
+            owner_id,
+            task.workspace,
+        )
         if light_context:
-            recall = {"items": []}
             context = {"hits": []}
             graph = {"edges": []}
             workspace_context = {"tree": None, "searches": [], "snippets": []}
-            task.seen("adaptive_context", {"model": model_key, "profile": "light", "retrievalSkipped": True})
+            task.seen("adaptive_context", {
+                "model": model_key,
+                "profile": "light",
+                "workspaceRetrievalSkipped": True,
+                "memoryTokenBudget": memory_tokens,
+            })
             task.log("lightweight Chat context selected from the model compatibility profile")
         else:
-            recall = memory.search(task.objective, 5)
             context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
             graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
             workspace_context = await self.workspace_context(task)
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = self.compact_graph_edges(graph)
-        task.seen("memory_recall", {"items": len(recall.get("items", []))})
+        task.seen("memory_recall", {
+            "items": len(recall.get("items", [])),
+            "tokenBudget": memory_tokens,
+            "workspace": task.workspace,
+        })
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
         if task.sources:
@@ -1515,7 +1539,13 @@ class AgentHub:
             context_governor.section("compacted_history", "Compacted earlier history", session_summary, priority=5, min_chars=180),
             context_governor.section("previous_conversation", "Previous conversation", self.format_conversation(previous_messages, task.id), priority=10, min_chars=220),
             context_governor.section("workspace", "Workspace", "" if light_context else task.workspace, required=not light_context, priority=0),
-            context_governor.section("memory_recall", "Relevant memory recall", "" if light_context else self.format_memory(recall), priority=20, min_chars=180),
+            context_governor.section(
+                "memory_recall",
+                "Relevant memory recall",
+                self.format_memory(recall, memory_tokens),
+                priority=20,
+                min_chars=120 if light_context else 180,
+            ),
             context_governor.section("rag_sources", "Actual local RAG context", "" if light_context else self.format_context(context), priority=25, min_chars=240),
             context_governor.section("graph_evidence", "Actual local graph context", "" if light_context else self.format_graph(graph), priority=30, min_chars=180),
             context_governor.section("file_snippets", "Approved workspace file snippets", "" if light_context else self.format_workspace_snippets(workspace_context), priority=35, min_chars=260),
@@ -1556,12 +1586,19 @@ class AgentHub:
         )
 
     async def plan(self, task):
-        recall = memory.search(task.objective, 5)
+        owner_id = getattr(task, "owner_id", "admin")
+        model_key = self.phase_model(task, "planner")
+        memory_tokens = context_governor.memory_budget(model_key)
+        recall = memory.search(task.objective, 5, owner_id, task.workspace)
         context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
         graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = self.compact_graph_edges(graph)
-        task.seen("memory_recall", {"items": len(recall.get("items", []))})
+        task.seen("memory_recall", {
+            "items": len(recall.get("items", [])),
+            "tokenBudget": memory_tokens,
+            "workspace": task.workspace,
+        })
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
         sections = [
@@ -1569,7 +1606,7 @@ class AgentHub:
             context_governor.section("mode", "Mode", task.mode, required=True, priority=0),
             context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
             context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
-            context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall), priority=20, min_chars=180),
+            context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall, memory_tokens), priority=20, min_chars=180),
             context_governor.section("rag_sources", "Local RAG context", self.format_context(context), priority=25, min_chars=240),
             context_governor.section("graph_evidence", "Local graph context", self.format_graph(graph), priority=30, min_chars=180),
             context_governor.section(
@@ -1676,39 +1713,60 @@ class AgentHub:
             
         older = messages[:-4]
         evicted_ids = [m["id"] for m in older]
-        
-        prompt_text = "Please summarize the following conversation history into a dense, informative checkpoint. Capture all key decisions, code snippets, tool outputs, and facts so the AI does not lose context.\n\n"
+
+        with store._lock, store.connect() as conn:
+            session = conn.execute(
+                "SELECT summary FROM sessions WHERE id=?",
+                (task.session_id,),
+            ).fetchone()
+        existing_summary = session["summary"] if session else ""
+
+        prompt_text = (
+            "Rewrite the existing checkpoint and older conversation turns into one dense, "
+            "bounded checkpoint. Preserve key decisions, corrections, code details, tool "
+            "outcomes, and unresolved work. Do not repeat facts or add chatty filler.\n\n"
+        )
+        if existing_summary:
+            prompt_text += f"EXISTING CHECKPOINT:\n{existing_summary}\n\n"
         for m in older:
             prompt_text += f"{m['role'].upper()}: {m['content']}\n\n"
             
         model_key = self.phase_model(task, "summarizer")
         try:
-            summary = await _chat(model_key, [{"role": "user", "content": prompt_text}])
+            summary, _ = await _chat(model_key, [{"role": "user", "content": prompt_text}])
         except Exception as e:
             task.log(f"compaction summary failed: {e}")
             return None
             
         with store._lock, store.connect() as conn:
-            session = conn.execute("SELECT summary FROM sessions WHERE id=?", (task.session_id,)).fetchone()
-            existing_summary = session["summary"] if session else ""
-            
-            archive_pointers = []
             for m in older:
                 conn.execute(
                     "INSERT INTO eviction_log(id, session_id, kind, content, created_at) VALUES(?, ?, ?, ?, ?)",
                     (m["id"], task.session_id, "message_archive", m["content"], store.now())
                 )
-                archive_pointers.append(f"{m['role']}: '{m['id']}'")
-                
-            pointers_str = ", ".join(archive_pointers)
-            new_summary = f"{existing_summary}\n\n[Checkpoint]: {summary}\n[Archived exact messages: {pointers_str}. Use 'archive_expand' with archive_id to retrieve full text.]".strip()
+
+            summary_chars = context_governor.session_summary_budget(task.model) * context_governor.CHARS_PER_TOKEN
+            pointer_ids = ", ".join(f"'{message_id}'" for message_id in evicted_ids[-4:])
+            archive_note = (
+                f"\n\n[Archived {len(evicted_ids)} exact message(s); recent archive IDs: "
+                f"{pointer_ids}. Use archive_expand when exact wording is required.]"
+            )
+            checkpoint_prefix = "[Checkpoint]: "
+            allowed_summary_chars = max(200, summary_chars - len(checkpoint_prefix) - len(archive_note))
+            summary_text = str(summary or "").strip()[:allowed_summary_chars]
+            new_summary = f"{checkpoint_prefix}{summary_text}{archive_note}".strip()
             
             conn.execute("UPDATE sessions SET summary=?, updated_at=? WHERE id=?", (new_summary, store.now(), task.session_id))
             placeholders = ",".join("?" * len(evicted_ids))
             conn.execute(f"UPDATE messages SET evicted=1 WHERE id IN ({placeholders})", evicted_ids)
             conn.commit()
             
-        asyncio.create_task(memory.consolidate_long_term_memory(task.session_id, older))
+        asyncio.create_task(memory.consolidate_long_term_memory(
+            task.session_id,
+            older,
+            getattr(task, "owner_id", "admin"),
+            task.workspace,
+        ))
             
         task.log(f"compacted {len(evicted_ids)} messages to save tokens")
         return new_summary
@@ -1920,15 +1978,27 @@ class AgentHub:
             lines.append(f"{edge['source']} --{edge['relation']}--> {edge['target']}{suffix}")
         return prompt_security.untrusted_context_message("workspace knowledge graph", "\n".join(lines))
 
-    def format_memory(self, recall):
+    def format_memory(self, recall, max_tokens=None):
         items = recall.get("items", [])
         if not items:
             return "No relevant saved memory."
+        max_chars = None
+        if max_tokens is not None:
+            max_chars = max(120, int(max_tokens) * context_governor.CHARS_PER_TOKEN)
         lines = []
         for item in items[:4]:
             content = str(item.get("content"))[:420]
-            lines.append(f"- {item.get('kind')}: {content}")
-        return prompt_security.untrusted_context_message("saved memory", "\n".join(lines))
+            line = f"- {item.get('kind')}: {content}"
+            if max_chars is not None and lines:
+                remaining = max_chars - len("\n".join(lines)) - 1
+                if remaining <= 40:
+                    break
+                line = line[:remaining]
+            lines.append(line)
+        body = "\n".join(lines)
+        if max_chars is not None:
+            body = body[:max_chars]
+        return prompt_security.untrusted_context_message("saved memory", body)
 
     def format_task_sources(self, sources):
         if not sources:

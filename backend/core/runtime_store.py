@@ -227,6 +227,25 @@ def init_db():
               updated_at REAL NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS memory_jobs (
+              id TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              task_id TEXT NOT NULL UNIQUE,
+              workspace_id TEXT,
+              source_message_ids TEXT NOT NULL DEFAULT '[]',
+              status TEXT NOT NULL DEFAULT 'pending',
+              attempts INTEGER NOT NULL DEFAULT 0,
+              max_attempts INTEGER NOT NULL DEFAULT 5,
+              last_error TEXT NOT NULL DEFAULT '',
+              next_attempt_at REAL,
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              completed_at REAL,
+              FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+              FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS skills (
               name TEXT PRIMARY KEY,
               description TEXT NOT NULL DEFAULT '',
@@ -303,6 +322,20 @@ def init_db():
         }
         if "owner_id" not in memory_columns:
             conn.execute("ALTER TABLE memory_items ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
+        memory_migrations = {
+            "canonical_key": "TEXT NOT NULL DEFAULT ''",
+            "confidence": "REAL NOT NULL DEFAULT 0.5",
+            "importance": "REAL NOT NULL DEFAULT 0.5",
+            "source_session_id": "TEXT",
+            "source_message_ids": "TEXT NOT NULL DEFAULT '[]'",
+            "supersedes_id": "TEXT",
+            "content_hash": "TEXT NOT NULL DEFAULT ''",
+            "last_used_at": "REAL",
+            "recall_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, definition in memory_migrations.items():
+            if name not in memory_columns:
+                conn.execute(f"ALTER TABLE memory_items ADD COLUMN {name} {definition}")
             
         messages_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()
@@ -378,6 +411,10 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_connectors_owner ON connectors(owner_id, provider, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token_hash)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(username)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_owner_status ON memory_items(owner_id, status, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_owner_key ON memory_items(owner_id, canonical_key)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_ready ON memory_jobs(status, next_attempt_at, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_owner ON memory_jobs(owner_id, status, updated_at DESC)")
         conn.commit()
 
 

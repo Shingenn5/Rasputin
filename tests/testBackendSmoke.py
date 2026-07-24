@@ -32,6 +32,7 @@ from backend.models import providers as model_providers
 from backend.models import compatibility as model_compatibility
 from backend.mcp import relay as mcp_relay
 from backend.rag import vector as rag
+from backend.rag import memory as memory_store
 from backend.core import runtime_store as runtime_store
 from backend.core import security as security
 from backend.core import telegram as telegram
@@ -1753,6 +1754,166 @@ class BackendSmokeTests(unittest.TestCase):
             "enabled": False,
         }))
         self.assertEqual(schedule["name"], "Smoke Schedule")
+
+    def testCompletedTurnQueuesDurableOwnerScopedMemoryExtraction(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask(
+            "Remember that dashboard summaries should be concise.",
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path="C:/workspace/alpha",
+        )
+        task.owner_id = "test"
+        local_hub._persist_task(task)
+        user_message_id = local_hub._add_message(
+            task.session_id,
+            task.id,
+            "user",
+            task.objective,
+        )
+        assistant_message_id = local_hub._add_message(
+            task.session_id,
+            task.id,
+            "assistant",
+            "I will keep dashboard summaries concise.",
+            memory_job=task,
+        )
+
+        with runtime_store._lock, runtime_store.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM memory_jobs WHERE task_id=?",
+                (task.id,),
+            ).fetchone()
+            columns = {
+                item["name"]
+                for item in conn.execute("PRAGMA table_info(memory_items)").fetchall()
+            }
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row["owner_id"], "test")
+        self.assertEqual(row["workspace_id"], "C:/workspace/alpha")
+        self.assertEqual(row["status"], "pending")
+        self.assertEqual(
+            json.loads(row["source_message_ids"]),
+            [user_message_id, assistant_message_id],
+        )
+        self.assertTrue({
+            "canonical_key",
+            "confidence",
+            "importance",
+            "source_session_id",
+            "source_message_ids",
+            "supersedes_id",
+            "content_hash",
+            "last_used_at",
+            "recall_count",
+        }.issubset(columns))
+
+        jobs = self.assertOk(self.client.get("/api/memory/jobs"))
+        queued = next(item for item in jobs["jobs"] if item["taskId"] == task.id)
+        self.assertEqual(queued["sourceMessageIds"], [user_message_id, assistant_message_id])
+
+    def testMemoryRecallIsOwnerScopedAndContextBudgeted(self):
+        unique_term = f"dashboardmemory{runtime_store.new_id('term')}"
+        memory_store.add_item(
+            "preference",
+            f"{unique_term} should use compact cards",
+            scope="global",
+            owner_id="test",
+            export=False,
+        )
+        memory_store.add_item(
+            "project_note",
+            f"{unique_term} uses blue status indicators",
+            scope="workspace",
+            workspace_id="C:/workspace/alpha",
+            owner_id="test",
+            export=False,
+        )
+        memory_store.add_item(
+            "fact",
+            f"{unique_term} belongs to a different user",
+            owner_id="someone-else",
+            export=False,
+        )
+
+        recalled = memory_store.search(
+            unique_term,
+            10,
+            owner_id="test",
+            workspace_id="C:/workspace/alpha",
+        )
+        contents = [str(item["content"]) for item in recalled["items"]]
+        self.assertEqual(len(contents), 2)
+        self.assertTrue(any("compact cards" in content for content in contents))
+        self.assertTrue(any("blue status indicators" in content for content in contents))
+        self.assertFalse(any("different user" in content for content in contents))
+
+        with patch("backend.engine.context.model_registry.get_model", return_value={"contextWindow": 4096, "maxTokens": 1024}):
+            self.assertEqual(context_governor.memory_budget("small"), 327)
+        with patch("backend.engine.context.model_registry.get_model", return_value={"contextWindow": 131072, "maxTokens": 4096}):
+            self.assertEqual(context_governor.memory_budget("large"), 800)
+
+    def testSessionCompactionRewritesOneBoundedCheckpoint(self):
+        local_hub = agent.AgentHub()
+        task = agent.AgentTask(
+            "Continue a long-running conversation.",
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path="C:/workspace/alpha",
+        )
+        task.owner_id = "test"
+        local_hub._persist_task(task)
+        with runtime_store._lock, runtime_store.connect() as conn:
+            conn.execute(
+                "UPDATE sessions SET summary=? WHERE id=?",
+                ("Existing decision that must survive.", task.session_id),
+            )
+            conn.commit()
+        for index in range(8):
+            local_hub._add_message(
+                task.session_id,
+                task.id,
+                "user" if index % 2 == 0 else "assistant",
+                f"turn {index} " + ("x" * 1000),
+            )
+
+        prompts = []
+
+        async def summarize(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            prompts.append(messages[-1]["content"])
+            return "S" * 5000, []
+
+        async def no_consolidation(*args, **kwargs):
+            return None
+
+        small_model = {"contextWindow": 4096, "maxTokens": 1024}
+        with patch("backend.engine.context.model_registry.get_model", return_value=small_model), \
+             patch("backend.engine.agent._chat", summarize), \
+             patch("backend.engine.agent.memory.consolidate_long_term_memory", no_consolidation):
+            checkpoint = asyncio.run(local_hub.compact_session(task))
+            summary_limit = (
+                context_governor.session_summary_budget("dry-run")
+                * context_governor.CHARS_PER_TOKEN
+            )
+
+        self.assertIn("Existing decision that must survive.", prompts[0])
+        self.assertTrue(checkpoint.startswith("[Checkpoint]:"))
+        self.assertLessEqual(len(checkpoint), summary_limit)
+        self.assertIn("archive IDs", checkpoint)
+        with runtime_store._lock, runtime_store.connect() as conn:
+            active = conn.execute(
+                "SELECT COUNT(*) AS count FROM messages WHERE session_id=? AND evicted=0",
+                (task.session_id,),
+            ).fetchone()["count"]
+            archived = conn.execute(
+                "SELECT COUNT(*) AS count FROM eviction_log WHERE session_id=? AND kind='message_archive'",
+                (task.session_id,),
+            ).fetchone()["count"]
+        self.assertEqual(active, 4)
+        self.assertEqual(archived, 4)
 
     def testWarsatProtocolsAndPlanAreSafeByDefault(self):
         with patch("backend.core.security.load", return_value={"allow_docker_control": False}):

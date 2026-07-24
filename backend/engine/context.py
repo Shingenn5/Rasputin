@@ -8,6 +8,12 @@ DEFAULT_MAX_TOKENS = 1024
 MAX_OUTPUT_TOKENS = 8192
 SAFETY_TOKENS = 96
 CHARS_PER_TOKEN = 2
+MAX_MEMORY_TOKENS = 800
+MIN_MEMORY_TOKENS = 128
+MEMORY_CONTEXT_FRACTION = 0.08
+MAX_SESSION_SUMMARY_TOKENS = 1200
+MIN_SESSION_SUMMARY_TOKENS = 256
+SESSION_SUMMARY_CONTEXT_FRACTION = 0.12
 
 
 def _as_int(value, fallback):
@@ -74,6 +80,20 @@ def needs_compaction(model_key, current_tokens):
     max_input_tokens = max(128, limits["contextWindow"] - limits["maxTokens"] - SAFETY_TOKENS)
     threshold = int(max_input_tokens * 0.70)
     return current_tokens > threshold
+
+
+def memory_budget(model_key):
+    """Bound saved-memory recall without starving the live conversation."""
+    context_window = limits_for_model(model_key)["contextWindow"]
+    proportional = int(context_window * MEMORY_CONTEXT_FRACTION)
+    return max(MIN_MEMORY_TOKENS, min(MAX_MEMORY_TOKENS, proportional))
+
+
+def session_summary_budget(model_key):
+    """Cap the rolling checkpoint so it cannot grow with every compaction."""
+    context_window = limits_for_model(model_key)["contextWindow"]
+    proportional = int(context_window * SESSION_SUMMARY_CONTEXT_FRACTION)
+    return max(MIN_SESSION_SUMMARY_TOKENS, min(MAX_SESSION_SUMMARY_TOKENS, proportional))
 
 
 def section(key, title, content, priority=50, required=False, min_chars=220):

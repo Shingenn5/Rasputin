@@ -20,7 +20,7 @@ async def _chat(model_key, messages, tools=None):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
     if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
         user_msg = messages[-1]["content"] if messages else ""
-        return f"This is a dry-run response to: {user_msg}", []
+        return f"This is a dry-run response to: {user_msg}"
         
     try:
         text, calls = await model_providers.chat(cfg, messages, 2048, 0.2, tools=tools)
@@ -66,6 +66,92 @@ def init_memory():
     store.init_db()
     store.set_kv("memory_json_imported", True)
     export_markdown()
+
+
+def queue_turn(task_id, session_id, workspace_id=None, owner_id="admin", connection=None):
+    """Durably queue one completed turn for background memory extraction.
+
+    When ``connection`` is supplied, the caller owns the transaction. AgentHub
+    uses that path so the assistant message and its extraction job commit
+    atomically: a stopped model or process can delay learning, but cannot lose
+    the turn that still needs to be processed.
+    """
+    task_id = str(task_id or "").strip()
+    session_id = str(session_id or "").strip()
+    owner_id = str(owner_id or "admin").strip() or "admin"
+    if not task_id or not session_id:
+        raise ValueError("task_id and session_id are required")
+
+    managed_connection = connection is None
+    if managed_connection:
+        store.init_db()
+        connection = store.connect()
+    try:
+        rows = connection.execute(
+            "SELECT id FROM messages WHERE session_id=? AND task_id=? ORDER BY created_at ASC",
+            (session_id, task_id),
+        ).fetchall()
+        source_message_ids = [row["id"] for row in rows]
+        stamp = store.now()
+        connection.execute(
+            """
+            INSERT INTO memory_jobs(
+              id,owner_id,session_id,task_id,workspace_id,source_message_ids,status,
+              attempts,max_attempts,last_error,next_attempt_at,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?, 'pending',0,5,'',NULL,?,?)
+            ON CONFLICT(task_id) DO UPDATE SET
+              owner_id=excluded.owner_id,
+              session_id=excluded.session_id,
+              workspace_id=excluded.workspace_id,
+              source_message_ids=excluded.source_message_ids,
+              updated_at=excluded.updated_at
+            """,
+            (
+                store.new_id("memjob"),
+                owner_id,
+                session_id,
+                task_id,
+                workspace_id,
+                json.dumps(source_message_ids),
+                stamp,
+                stamp,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM memory_jobs WHERE task_id=?",
+            (task_id,),
+        ).fetchone()
+        if managed_connection:
+            connection.commit()
+        return _public_job(row)
+    finally:
+        if managed_connection:
+            connection.close()
+
+
+def _public_job(row):
+    if not row:
+        return None
+    data = dict(row)
+    data["source_message_ids"] = _parse(data.get("source_message_ids") or "[]")
+    return data
+
+
+def list_jobs(status=None, limit=100, owner_id="admin"):
+    store.init_db()
+    owner_id = str(owner_id or "admin").strip() or "admin"
+    params = [owner_id]
+    where = "owner_id=?"
+    if status:
+        where += " AND status=?"
+        params.append(str(status))
+    params.append(max(1, min(int(limit), 500)))
+    with store._lock, store.connect() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM memory_jobs WHERE {where} ORDER BY updated_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+    return {"jobs": [_public_job(row) for row in rows]}
 
 
 def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, status="saved", source_task_id=None, export=True, owner_id="admin"):
@@ -172,11 +258,13 @@ def suggest_from_task(task_id, objective, result, workspace_id=None, owner_id="a
     return None
 
 
-def search(query, limit=10, owner_id="admin"):
+def search(query, limit=10, owner_id="admin", workspace_id=None):
     init_memory()
     query = str(query or "").strip()
     if not query:
         return {"query": query, "items": []}
+    owner_id = str(owner_id or "admin").strip() or "admin"
+    workspace_id = str(workspace_id or "").strip()
     with store._lock, store.connect() as conn:
         try:
             rows = conn.execute(
@@ -185,17 +273,38 @@ def search(query, limit=10, owner_id="admin"):
                 FROM memory_fts
                 JOIN memory_items m ON m.id = memory_fts.id
                 WHERE memory_fts MATCH ? AND m.status='saved' AND m.owner_id=?
-                ORDER BY score LIMIT ?
+                ORDER BY
+                  CASE
+                    WHEN m.scope='global' THEN 0
+                    WHEN ?!='' AND m.workspace_id=? THEN 0
+                    ELSE 1
+                  END,
+                  m.importance DESC,
+                  score
+                LIMIT ?
                 """,
-                (query, owner_id, max(1, min(int(limit), 50))),
+                (query, owner_id, workspace_id, workspace_id, max(1, min(int(limit), 50))),
             ).fetchall()
         except Exception:
             rows = conn.execute(
-                "SELECT *, 0 AS score FROM memory_items WHERE status='saved' AND owner_id=? AND content LIKE ? ORDER BY updated_at DESC LIMIT ?",
-                (owner_id, f"%{query}%", max(1, min(int(limit), 50))),
+                """
+                SELECT *, 0 AS score
+                FROM memory_items
+                WHERE status='saved' AND owner_id=? AND content LIKE ?
+                ORDER BY
+                  CASE
+                    WHEN scope='global' THEN 0
+                    WHEN ?!='' AND workspace_id=? THEN 0
+                    ELSE 1
+                  END,
+                  importance DESC,
+                  updated_at DESC
+                LIMIT ?
+                """,
+                (owner_id, f"%{query}%", workspace_id, workspace_id, max(1, min(int(limit), 50))),
             ).fetchall()
     items = [_public(row) for row in rows]
-    return {"query": query, "items": items}
+    return {"query": query, "items": items, "workspace_id": workspace_id}
 
 
 def load_memory(owner_id="admin"):
@@ -351,14 +460,11 @@ def export_master_context():
     (MASTER_CONTEXT_DIR / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
 
 
-async def consolidate_long_term_memory(session_id, messages):
+async def consolidate_long_term_memory(session_id, messages, owner_id="admin", workspace_id=None):
     if not messages:
         return
     
     try:
-        from backend.models.registry import key_for_role
-        from backend.rag import graph as graphify
-
         from backend.models.registry import key_for_role
         from backend.rag import graph as graphify
     except ImportError:
@@ -377,11 +483,21 @@ async def consolidate_long_term_memory(session_id, messages):
 
     try:
         model_key = key_for_role("memory", fallback=key_for_role("summarizer"))
-        text, _ = await _chat(model_key, [{"role": "user", "content": prompt}])
+        text = await _chat(model_key, [{"role": "user", "content": prompt}])
         if text:
-            add_item("session", f"Consolidated Memory for Session {session_id}:\n{text}")
+            add_item(
+                "session",
+                f"Consolidated Memory for Session {session_id}:\n{text}",
+                scope="workspace" if workspace_id else "global",
+                workspace_id=workspace_id,
+                owner_id=owner_id,
+            )
             graphify.build()
-            audit.log("memory_consolidation_success", {"session": session_id})
+            audit.log("memory_consolidation_success", {
+                "session": session_id,
+                "owner_id": owner_id,
+                "workspace_id": workspace_id,
+            })
     except Exception as exc:
         audit.log("memory_consolidation_failed", {"session": session_id, "error": str(exc)})
 

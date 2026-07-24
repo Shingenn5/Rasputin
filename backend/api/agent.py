@@ -426,6 +426,7 @@ class MemoryIn(CamelModel):
 class MemorySearchIn(CamelModel):
     query: str
     limit: int = 10
+    workspace_id: str | None = None
 
 class MemoryReviewIn(CamelModel):
     id: str
@@ -446,6 +447,11 @@ async def add_memory(req: MemoryIn, _user=Depends(current_user)):
 async def memory_review(_user=Depends(current_user)):
     return ok(memory_store.pending_review(_user["username"]))
 
+@memory_router.get("/jobs")
+
+async def memory_jobs(status: str | None = None, limit: int = 100, _user=Depends(current_user)):
+    return ok(memory_store.list_jobs(status, limit, _user["username"]))
+
 @memory_router.post("/review")
 
 async def memory_review_decide(req: MemoryReviewIn, _user=Depends(current_user)):
@@ -458,7 +464,7 @@ async def memory_review_decide(req: MemoryReviewIn, _user=Depends(current_user))
 @memory_router.post("/search")
 
 async def memory_search(req: MemorySearchIn, _user=Depends(current_user)):
-    return ok(memory_store.search(req.query, req.limit, _user["username"]))
+    return ok(memory_store.search(req.query, req.limit, _user["username"], req.workspace_id))
 
 rag_router = APIRouter(prefix="/api", tags=["rag", "graph"])
 
