@@ -297,6 +297,18 @@ class ScorecardIn(CamelModel):
     experiment_id: str
     name: str | None = None
 
+class BlindComparisonIn(CamelModel):
+    name: str = "Blind model comparison"
+    prompts: list[str]
+    model_keys: list[str]
+    repetitions: int = 3
+    seed: str = "rasputin"
+    mission: str = "chat"
+
+class FitnessCertificateIn(CamelModel):
+    model_key: str
+    mission: str = ""
+
 @trials_router.get("")
 
 async def trials_get(_user=Depends(current_user)):
@@ -337,35 +349,61 @@ async def trials_pin_role(run_id: str, req: TrialPinRoleIn, _user=Depends(curren
 @trials_router.get("/experiments")
 
 async def trials_experiments(type: str | None = None, status: str | None = None, _user=Depends(current_user)):
-    return ok(trials.list_experiments(type_filter=type, status_filter=status))
+    items = trials.list_experiments(type_filter=type, status_filter=status)
+    return ok([
+        trials.public_experiment(item) for item in items
+        if item.get("type") != "blind_compare" or item.get("owner") == _user["username"]
+    ])
 
 @trials_router.post("/experiments")
 
 async def trials_create_experiment(req: ExperimentIn, _user=Depends(current_user)):
+    if req.type == "blind_compare":
+        raise HTTPException(status_code=400, detail="Use the dedicated blind-comparisons endpoint.")
     exp = trials.create_experiment(
         name=req.name, exp_type=req.type, config=req.config,
         workspace=req.workspace, owner=_user.get("username", "admin"), tags=req.tags,
     )
     audit.log("trial_experiment_created", {"id": exp["id"], "type": req.type})
-    return ok(exp)
+    return ok(trials.public_experiment(exp))
+
+@trials_router.post("/blind-comparisons")
+async def trials_blind_comparison(req: BlindComparisonIn, _user=Depends(require_member)):
+    return ok(await trials.run_blind_comparison(
+        req.name, req.prompts, req.model_keys, req.repetitions, req.seed, req.mission, _user["username"],
+    ))
+
+@trials_router.post("/blind-comparisons/{experiment_id}/reveal")
+async def trials_blind_reveal(experiment_id: str, _user=Depends(require_member)):
+    return ok(trials.reveal_blind_comparison(experiment_id, _user["username"]))
+
+@trials_router.post("/blind-comparisons/{experiment_id}/certificate")
+async def trials_blind_certificate(experiment_id: str, req: FitnessCertificateIn, _user=Depends(require_member)):
+    return ok(trials.promote_certificate(experiment_id, req.model_key, _user["username"], req.mission))
 
 @trials_router.get("/experiments/{experiment_id}")
 
 async def trials_get_experiment(experiment_id: str, _user=Depends(current_user)):
     exp = trials.get_experiment(experiment_id)
-    if not exp:
+    if not exp or (exp.get("type") == "blind_compare" and exp.get("owner") != _user["username"]):
         raise HTTPException(status_code=404, detail="Experiment not found")
     return ok(exp)
 
 @trials_router.post("/experiments/{experiment_id}/run")
 
 async def trials_run_experiment(experiment_id: str, _user=Depends(current_user)):
+    exp = trials.get_experiment(experiment_id)
+    if exp and exp.get("type") == "blind_compare":
+        raise HTTPException(status_code=400, detail="Blind comparisons are immutable; create another seeded comparison.")
     result = await trials.run_experiment(experiment_id)
     return ok(result)
 
 @trials_router.post("/experiments/{experiment_id}/cancel")
 
 async def trials_cancel_experiment(experiment_id: str, _user=Depends(current_user)):
+    exp = trials.get_experiment(experiment_id)
+    if exp and exp.get("type") == "blind_compare":
+        raise HTTPException(status_code=400, detail="Blind comparisons run synchronously and cannot be cancelled through the generic endpoint.")
     result = trials.cancel_experiment(experiment_id)
     return ok(result)
 
@@ -452,7 +490,11 @@ async def trials_create_comparison(req: ComparisonIn, _user=Depends(current_user
 @trials_router.get("/scorecards")
 
 async def trials_scorecards(_user=Depends(current_user)):
-    return ok(trials.list_scorecards())
+    return ok([
+        item for item in trials.list_scorecards()
+        if item.get("subjectType") != "fitness_certificate"
+        or (item.get("scores") or {}).get("owner") == _user["username"]
+    ])
 
 @trials_router.post("/scorecards")
 

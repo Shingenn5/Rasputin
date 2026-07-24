@@ -10,6 +10,7 @@ import {
   Database,
   FileText,
   FlaskConical,
+  Eye,
   GitCompare,
   Layers,
   Loader2,
@@ -297,6 +298,7 @@ export function TrialsView({
    ═══════════════════════════════════════════ */
 function ExperimentsTab({ experiments, models, datasets, selected, setSelected, refresh, setError, legacyTrials, legacyStatus, runTrialCompare, revealTrial, saveTrialRoute, modeModelOverrides }) {
   const [showCreate, setShowCreate] = useState(false);
+  const [showBlind, setShowBlind] = useState(false);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("all");
   const selectable = (models || []).filter(m => m.key !== "local-embeddings").slice(0, 8);
@@ -344,6 +346,39 @@ function ExperimentsTab({ experiments, models, datasets, selected, setSelected, 
     }
   }
 
+  async function handleBlindCreate(e) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    setCreating(true);
+    setError("");
+    try {
+      await postJson("/api/trials/blind-comparisons", {
+        name: form.get("name"),
+        prompts: String(form.get("prompts") || "").split(/\n+/).map(value => value.trim()).filter(Boolean),
+        modelKeys: form.getAll("modelKeys"),
+        repetitions: Number(form.get("repetitions") || 3),
+        seed: form.get("seed") || "rasputin",
+        mission: form.get("mission") || "chat",
+      });
+      setShowBlind(false);
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleBlindReveal(expId) {
+    try {
+      const revealed = await postJson(`/api/trials/blind-comparisons/${expId}/reveal`, {});
+      setSelected(revealed);
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleDelete(expId) {
     if (!window.confirm("Delete this experiment?")) return;
     try {
@@ -369,7 +404,36 @@ function ExperimentsTab({ experiments, models, datasets, selected, setSelected, 
         <button className="w2-button primary" type="button" onClick={() => setShowCreate(!showCreate)}>
           <Plus size={14} /> New Experiment
         </button>
+        <button className="w2-button" type="button" onClick={() => setShowBlind(!showBlind)}>
+          <Eye size={14} /> New Blind Compare
+        </button>
       </div>
+
+      {showBlind && (
+        <div className="w2-card" data-testid="blind-compare-form" style={{ border: "1px solid var(--cc-accent)" }}>
+          <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Repeatable Blind Comparison</h3>
+          <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>Model identities stay hidden until reveal. Every candidate receives the same prompts and generation settings.</p>
+          <form onSubmit={handleBlindCreate} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <label>Name<input className="w2-input" name="name" required placeholder="Coding mission comparison" /></label>
+            <label>Mission<input className="w2-input" name="mission" defaultValue="coding" /></label>
+            <label style={{ gridColumn: "1 / -1" }}>Prompts, one per line<textarea className="w2-input" name="prompts" required rows={4} /></label>
+            <label>Repetitions<input className="w2-input" name="repetitions" type="number" min="2" max="10" defaultValue="3" /></label>
+            <label>Saved seed<input className="w2-input" name="seed" defaultValue="rasputin" /></label>
+            <fieldset style={{ gridColumn: "1 / -1", border: "1px solid var(--cc-border)", padding: "8px" }}>
+              <legend>Models</legend>
+              {selectable.map(model => (
+                <label key={model.key} style={{ marginRight: "12px" }}>
+                  <input type="checkbox" name="modelKeys" value={model.key} /> {model.name || model.model || model.key}
+                </label>
+              ))}
+            </fieldset>
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: "8px" }}>
+              <button className="w2-button primary" type="submit" disabled={creating}>{creating ? "Running…" : "Run blind comparison"}</button>
+              <button className="w2-button" type="button" onClick={() => setShowBlind(false)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Create Form */}
       {showCreate && (
@@ -456,9 +520,15 @@ function ExperimentsTab({ experiments, models, datasets, selected, setSelected, 
               </button>
             )}
             {exp.status === "completed" && (
+              exp.type === "blind_compare" && !exp.config?.revealed ? (
+                <button className="w2-button primary" type="button" onClick={(e) => { e.stopPropagation(); handleBlindReveal(exp.id); }} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
+                  <Eye size={12} /> Reveal identities
+                </button>
+              ) : exp.type !== "blind_compare" && (
               <button className="w2-button" type="button" onClick={(e) => { e.stopPropagation(); handleRun(exp.id); }} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
                 <RefreshCw size={12} /> Re-run
               </button>
+              )
             )}
             <button className="w2-button" type="button" onClick={(e) => { e.stopPropagation(); handleDelete(exp.id); }} style={{ fontSize: "0.75rem", padding: "4px 10px", color: "var(--ras-danger)" }}>
               <Trash2 size={12} />
@@ -1111,12 +1181,28 @@ function ReportsTab({ reports, experiments, selected, setSelected, refresh, setE
    ═══════════════════════════════════════════ */
 function InspectorPanel({ selected, scorecards, experiments, refresh, setError }) {
   const [generatingScorecard, setGeneratingScorecard] = useState(false);
+  const revealedModels = [...new Set((selected?.runs || []).flatMap(run => (run.outputs || []).map(output => output.modelKey)).filter(Boolean))];
 
   async function handleGenerateScorecard() {
     if (!selected?.id) return;
     setGeneratingScorecard(true);
     try {
       await postJson("/api/trials/scorecards", { experimentId: selected.id });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGeneratingScorecard(false);
+    }
+  }
+
+  async function handlePromoteCertificate(modelKey) {
+    setGeneratingScorecard(true);
+    try {
+      await postJson(`/api/trials/blind-comparisons/${selected.id}/certificate`, {
+        modelKey,
+        mission: selected.config?.mission || "",
+      });
       await refresh();
     } catch (err) {
       setError(err.message);
@@ -1195,9 +1281,17 @@ function InspectorPanel({ selected, scorecards, experiments, refresh, setError }
             {/* Actions */}
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "auto" }}>
               {selected.status === "completed" && (
+                selected.type === "blind_compare" && selected.config?.revealed ? (
+                  revealedModels.map(modelKey => (
+                    <button key={modelKey} className="w2-button primary" type="button" onClick={() => handlePromoteCertificate(modelKey)} disabled={generatingScorecard}>
+                      <Star size={14} /> Certify {modelKey}
+                    </button>
+                  ))
+                ) : selected.type !== "blind_compare" && (
                 <button className="w2-button primary" type="button" onClick={handleGenerateScorecard} disabled={generatingScorecard}>
                   <Star size={14} /> {generatingScorecard ? "Generating..." : "Generate Scorecard"}
                 </button>
+                )
               )}
             </div>
           </div>
@@ -1212,6 +1306,13 @@ function InspectorPanel({ selected, scorecards, experiments, refresh, setError }
       {relatedScorecard && (
         <div className="w2-card">
           <h3 style={{ margin: "0 0 8px 0", fontSize: "0.875rem" }}><Trophy size={14} style={{ verticalAlign: "-2px", marginRight: "4px" }} />Scorecard</h3>
+          {relatedScorecard.subjectType === "fitness_certificate" ? (
+            <div style={{ fontSize: "0.75rem" }}>
+              <strong>{relatedScorecard.scores?.modelKey}</strong> · {relatedScorecard.scores?.mission}
+              <p>{relatedScorecard.scores?.measured?.sampleCount} measured samples · {Math.round((relatedScorecard.scores?.measured?.successRate || 0) * 100)}% successful · {relatedScorecard.scores?.measured?.avgLatencyMs} ms average latency</p>
+              <p style={{ color: "var(--cc-muted)" }}>{relatedScorecard.scores?.limitations?.[0]}</p>
+            </div>
+          ) : <>
           <div style={{ display: "flex", justifyContent: "center" }}>
             <RadarChart scores={relatedScorecard.scores} size={200} />
           </div>
@@ -1223,6 +1324,7 @@ function InspectorPanel({ selected, scorecards, experiments, refresh, setError }
               </div>
             ))}
           </div>
+          </>}
         </div>
       )}
     </>

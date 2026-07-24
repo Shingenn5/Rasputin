@@ -43,6 +43,7 @@ from .legacy import runs, compare, reveal, save_routing
 
 # Coding-subtask trials (blind compare with objective scoring + role pinning)
 from .coding import coding_compare, pin_role
+from .blind import public_experiment, run as run_blind_comparison, reveal as reveal_blind_comparison, promote_certificate
 
 # Initialize database on import
 init_db()
