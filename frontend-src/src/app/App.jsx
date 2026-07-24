@@ -2117,6 +2117,11 @@ export function App() {
         pauseTask={pauseTask}
         resumeTask={resumeTask}
         enableDockerControl={enableDockerControl}
+        modelCatalog={modelCatalog}
+        modelCatalogLoading={modelCatalogLoading}
+        modelCatalogError={modelCatalogError}
+        loadModelCatalog={loadModelCatalog}
+        prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
         go={go}
       />
       <ArchiveView

@@ -164,6 +164,12 @@ export function WarsatView({
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
 
   useEffect(() => {
+    if (view === "warsat" && !catalogItems.length && !modelCatalogLoading) {
+      loadModelCatalog?.();
+    }
+  }, [view, catalogItems.length, modelCatalogLoading, loadModelCatalog]);
+
+  useEffect(() => {
     if (protocolId) return;
     // Start the recipe on the protocol matching the Default Inference Engine
     // setting so the choice made in Settings carries through to deploys.
@@ -244,7 +250,7 @@ export function WarsatView({
   function handleFormChange() { if (plan || error) clearPlan?.(); }
 
   return (
-    <section className={`w2-layout app-view warsat-view tw ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat">
+    <section className={`w2-layout app-view warsat-view tw ${view === "warsat" ? "active" : ""}`} id="warsatView" data-app-view="warsat" data-testid="warsat-view">
       <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Commander Dashboard ── */}
@@ -525,6 +531,8 @@ const PIPELINE_STEPS = [
 function DeployTab({
   warsat, hardware, protocols, strengthProfiles, protocolId, setProtocolId,
   strengthProfile, setStrengthProfile, selectedProtocol, selectedProfile,
+  warsatCatalogItems, selectedCatalogModel, setSelectedCatalogId,
+  prepareCatalogModelForWarsat,
   createPlan, plan, error, clearPlan, handleFormChange,
   deployPlan, deploying, deployment, deployLabel, deployDisabled, canDeployPlan,
   approvalPending, approvalClosed, approvalStatus, currentApproval,
@@ -533,7 +541,39 @@ function DeployTab({
 }) {
   const formRef = React.useRef(null);
   const briefRef = React.useRef(null);
+  const [advisor, setAdvisor] = React.useState(null);
+  const [advisorBusy, setAdvisorBusy] = React.useState(false);
+  const [advisorError, setAdvisorError] = React.useState("");
   const activePhase = deployment?.phase || plan?.phase || "";
+
+  async function analyzeSelectedModel() {
+    if (!selectedCatalogModel) return;
+    setAdvisorBusy(true);
+    setAdvisorError("");
+    try {
+      setAdvisor(await postJson("/api/warsat/advisor", {
+        model: selectedCatalogModel,
+        hardware,
+        mission: selectedCatalogModel.purpose || "chat",
+        protocolId: selectedCatalogModel.recommendedProtocol,
+        contextWindow: selectedCatalogModel.contextWindow,
+        toolCallParser: selectedCatalogModel.toolCallParserHint,
+      }));
+    } catch (err) {
+      setAdvisor(null);
+      setAdvisorError(err.message || String(err));
+    } finally {
+      setAdvisorBusy(false);
+    }
+  }
+
+  async function createAdvisorPlan() {
+    if (!selectedCatalogModel || !advisor || advisor.blockers?.length) return;
+    await prepareCatalogModelForWarsat?.(selectedCatalogModel, {
+      protocolId: advisor.planSeed?.protocolId,
+      toolCallParser: advisor.planSeed?.toolCallParser,
+    });
+  }
 
   // Bring the Mission Brief into view whenever a plan lands — it renders
   // below the recipe form, and without the scroll a generate click looks
@@ -595,6 +635,74 @@ function DeployTab({
           })}
         </div>
       )}
+
+      <div className="ws-mission-recipe" data-testid="warsat-advisor">
+        <div className="ws-recipe-header">
+          <Gauge size={14} />
+          <span>WarSat Advisor</span>
+          <span className="ws-protocol-hint">Observed hardware · deterministic fit · no deployment</span>
+        </div>
+        <div className="ws-recipe-form">
+          <label className="ws-recipe-field" style={{ gridColumn: "1 / -1" }}>
+            <span>Catalog model</span>
+            <select
+              className="w2-input"
+              value={selectedCatalogModel?.id || ""}
+              onChange={(event) => {
+                setSelectedCatalogId(event.target.value);
+                setAdvisor(null);
+                setAdvisorError("");
+              }}
+            >
+              {(warsatCatalogItems || []).map((item) => (
+                <option key={item.id} value={item.id}>{item.name} · {item.fitLabel || "unscored"}</option>
+              ))}
+            </select>
+          </label>
+          <div className="ws-recipe-actions" style={{ gridColumn: "1 / -1" }}>
+            <button className="w2-button" type="button" onClick={analyzeSelectedModel} disabled={!selectedCatalogModel || advisorBusy}>
+              <Gauge size={14} /> {advisorBusy ? "Analyzing…" : "Analyze fit"}
+            </button>
+            {advisor && !advisor.blockers?.length && (
+              <button className="w2-button primary" type="button" onClick={createAdvisorPlan}>
+                <Zap size={14} /> Create approval-gated plan
+              </button>
+            )}
+          </div>
+        </div>
+        {advisorError && <div className="ws-recipe-error"><AlertTriangle size={13} /> {advisorError}</div>}
+        {advisor && (
+          <div className="mt-3 grid gap-3 md:grid-cols-3" data-testid="warsat-advisor-result">
+            <div className="glow-card rounded-xl border border-border bg-card p-3">
+              <div className="eyebrow">Verdict</div>
+              <strong>{labelize(advisor.status)}</strong>
+              <div className="text-xs text-muted-foreground">{advisor.evidence?.confidence || "low"} confidence</div>
+            </div>
+            <div className="glow-card rounded-xl border border-border bg-card p-3">
+              <div className="eyebrow">Observed</div>
+              <strong>{advisor.evidence?.observed?.aggregateVramGb ?? "Unknown"} GB VRAM</strong>
+              <div className="text-xs text-muted-foreground">{advisor.evidence?.observed?.gpus?.length || 0} visible GPU(s)</div>
+            </div>
+            <div className="glow-card rounded-xl border border-border bg-card p-3">
+              <div className="eyebrow">Estimated</div>
+              <strong>{advisor.evidence?.estimated?.modelVramGb ?? "Unknown"} GB demand</strong>
+              <div className="text-xs text-muted-foreground">{advisor.evidence?.estimated?.vramMarginGb ?? "Unknown"} GB margin</div>
+            </div>
+            {!!advisor.blockers?.length && (
+              <div className="md:col-span-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm" role="alert">
+                <strong>Blocked</strong>
+                <ul className="mb-0 mt-2">{advisor.blockers.map((item) => <li key={item}>{item}</li>)}</ul>
+              </div>
+            )}
+            {!![...(advisor.warnings || []), ...(advisor.assumptions || [])].length && (
+              <div className="md:col-span-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                <strong>What remains uncertain</strong>
+                <ul className="mb-0 mt-2">{[...(advisor.warnings || []), ...(advisor.assumptions || [])].map((item) => <li key={item}>{item}</li>)}</ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Launch Recipe Form ── */}
       <div className="ws-mission-recipe">
