@@ -325,8 +325,7 @@ export function HomeView(props) {
         run: () => setModePanelOpen(true),
       });
     } else if (cmd?.path === "model") {
-      const list = visibleModels.length ? visibleModels : models;
-      items = list.map((model) => ({
+      items = visibleModels.map((model) => ({
         id: `model-${model.key}`,
         name: displayModelName(model, models),
         hint: displayModelSecondary(model, models) || model.key,
@@ -1046,7 +1045,7 @@ export function HomeView(props) {
 }
 
 function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close }) {
-  const items = visibleModels.length ? visibleModels : models;
+  const items = visibleModels;
   return (
     <aside
       ref={panelRef}
@@ -1066,6 +1065,11 @@ function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSel
         </button>
       </header>
       <div className="model-panel-list">
+        {!items.length && (
+          <p className="model-panel-empty" role="status">
+            No healthy chat model is currently available. Start or test a model from Models settings.
+          </p>
+        )}
         {items.map((model) => {
           const selected = model.key === selectedModel;
           const status = runtimeStatus(model);
@@ -1089,7 +1093,7 @@ function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSel
         })}
       </div>
       <footer className="model-panel-footer">
-        <p>Only user-facing chat models appear here. Embeddings and raw registry entries stay in Models settings.</p>
+        <p>Only available chat models appear here. Stopped, unhealthy, embedding, and raw registry entries stay in Models settings.</p>
       </footer>
     </aside>
   );
@@ -1111,7 +1115,9 @@ function ModeSidePanel({
 }) {
   function modelForMode(mode) {
     const key = modelKeyForMode?.(mode.value, modeModelOverrides);
-    return models.find((model) => model.key === key) || models.find((model) => model.role === mode.role) || null;
+    return visibleModels.find((model) => model.key === key)
+      || visibleModels.find((model) => model.role === mode.role)
+      || null;
   }
 
   return (
@@ -1150,7 +1156,7 @@ function ModeSidePanel({
                 <dt>Role</dt>
                 <dd>{labelize(mode.role)}</dd>
                 <dt>Model</dt>
-                <dd>{routed ? displayModelName(routed, models) : "No routed model"}</dd>
+                <dd>{routed ? displayModelName(routed, models) : "No available model"}</dd>
                 {routed && displayModelSecondary(routed, models) && (
                   <>
                     <dt>Registry</dt>

@@ -44,6 +44,15 @@ export function isModelHealthy(model) {
   return runtimeStatus(model) === "reachable";
 }
 
+export function isModelRouteable(model) {
+  if (!model) return false;
+  if (isModelHealthy(model)) return true;
+  // Remote APIs are not background-probed because doing so can spend quota.
+  // Keep an untested configured API available, but hide it after a known
+  // failure just like a stopped local runtime.
+  return model.runtime === "remote-api" && runtimeStatus(model) === "unknown";
+}
+
 export function modelHealthLine(model, models) {
   if (!model) return "No model selected.";
   if (model.key === "dry-run") return "Testing Mode is ready.";

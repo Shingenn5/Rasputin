@@ -34,6 +34,7 @@ import {
   displayModelName,
   displayWorkspaceName,
   isModelHealthy,
+  isModelRouteable,
   isUserFacingModel,
   runtimeStatus,
 } from "../lib/display.js";
@@ -166,15 +167,10 @@ export function App() {
   }, [authenticated, ready, onboarded, models.length, setOnboarded]);
 
   const visibleModels = useMemo(() => {
-    const shown = models.filter((model) => isUserFacingModel(model, testingMode));
-    const selected = models.find((model) => model.key === selectedModel);
-    if (selected && selected.key !== "local-embeddings" && !shown.some((model) => model.key === selected.key)) {
-      return [selected, ...shown];
-    }
-    return shown.length ? shown : models.filter(
-      (model) => model.key !== "local-embeddings" && (testingMode || model.key !== "dry-run"),
+    return models.filter(
+      (model) => isUserFacingModel(model, testingMode) && isModelRouteable(model),
     );
-  }, [models, selectedModel, testingMode]);
+  }, [models, testingMode]);
 
   // No implicit fallback here: a null/unmatched selectedModel means "no
   // model selected" and should render that way, not silently show some
@@ -206,8 +202,10 @@ export function App() {
   useEffect(() => {
     if (!models.length || selectedModel === null) return;
     const current = models.find((model) => model.key === selectedModel);
-    if (current && isUserFacingModel(current, testingMode)) return;
-    const isActive = (model) => isUserFacingModel(model, testingMode) && runtimeStatus(model) === "reachable";
+    const isActive = (model) => (
+      isUserFacingModel(model, testingMode) && isModelRouteable(model)
+    );
+    if (current && isActive(current)) return;
     const fallback = models.find((model) => model.role === "main" && isActive(model)) || models.find(isActive);
     setSelectedModel(fallback ? fallback.key : null);
   }, [testingMode, selectedModel, models]);
