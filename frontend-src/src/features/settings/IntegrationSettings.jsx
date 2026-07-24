@@ -29,6 +29,15 @@ export function IntegrationSettings() {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (!selected) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selected]);
+
   function begin(provider) {
     const existing = connectors.find((item) => item.provider === provider.id);
     setSelected({ provider, existing });
@@ -116,10 +125,24 @@ export function IntegrationSettings() {
       </div>
 
       {selected && (
-        <form className="rounded-2xl border border-primary/30 bg-card p-5 shadow-lg" onSubmit={save}>
-          <div className="mb-4 flex items-center justify-between"><div><h3 className="font-semibold">Configure {selected.provider.name}</h3><p className="text-xs text-muted-foreground">Secrets are never returned to the browser after saving.</p></div><Button type="button" variant="ghost" onClick={() => setSelected(null)}>Cancel</Button></div>
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelected(null);
+          }}
+        >
+        <form
+          className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-primary/30 bg-card p-5 shadow-2xl"
+          onSubmit={save}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="connector-dialog-title"
+          data-testid="connector-setup-dialog"
+        >
+          <div className="mb-4 flex items-center justify-between"><div><h3 id="connector-dialog-title" className="font-semibold">Configure {selected.provider.name}</h3><p className="text-xs text-muted-foreground">Secrets are never returned to the browser after saving.</p></div><Button type="button" variant="ghost" onClick={() => setSelected(null)}>Cancel</Button></div>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="text-sm"><span className="mb-1.5 block font-medium">Connection name</span><input className="w2-input w-full" value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label>
+            <label className="text-sm"><span className="mb-1.5 block font-medium">Connection name</span><input className="w2-input w-full" autoFocus value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label>
             {selected.provider.auth === "oauth2" ? <>
               <label className="text-sm"><span className="mb-1.5 block font-medium">OAuth client ID</span><input className="w2-input w-full" required value={form.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })} /></label>
               {selected.provider.id !== "gmail" && <label className="text-sm"><span className="mb-1.5 block font-medium">Tenant ID</span><input className="w2-input w-full" required value={form.tenantId} onChange={(event) => setForm({ ...form, tenantId: event.target.value })} /></label>}
@@ -135,6 +158,7 @@ export function IntegrationSettings() {
           {selected.provider.auth === "oauth2" && <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">This stores and validates your OAuth application configuration. Account authorization and mail/message synchronization remain disabled until the OAuth handoff is completed.</div>}
           <div className="mt-5 flex justify-end"><Button type="submit" disabled={loading}><CheckCircle2 size={15} /> Save locally</Button></div>
         </form>
+        </div>
       )}
     </section>
   );
