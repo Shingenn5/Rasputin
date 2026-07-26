@@ -921,12 +921,16 @@ def _normalize_hf_model(hf_model):
 
 
 def search_hf(
-    query="", model_type="", sort="downloads", direction=-1, limit=100,
+    query="", model_type="", sort="popular", direction=-1, limit=100,
     hardware=None, min_vram_gb=None, max_vram_gb=None,
 ):
     """Search Hugging Face Hub API for models."""
-    requested_sort = sort
-    if sort == "trending":
+    requested_sort = sort or "popular"
+    if requested_sort == "popular":
+        # The Hub can order by one field only. Fetch the most-downloaded
+        # candidates, then make likes the deterministic tie-breaker locally.
+        sort = "downloads"
+    elif sort == "trending":
         sort = "trendingScore"
     elif sort in {"vram_desc", "vram_asc"}:
         # Hugging Face cannot sort by our derived VRAM estimate. Fetch popular
@@ -1000,6 +1004,21 @@ def search_hf(
             key=lambda item: float(item.get("vramEstimateGb") or (-1 if requested_sort == "vram_desc" else 10**9)),
             reverse=requested_sort == "vram_desc",
         )
+    elif requested_sort in {"popular", "downloads"}:
+        # Fit scoring intentionally ranks suitability, but browsing results
+        # should make real-world adoption clear. Downloads are primary and
+        # likes resolve ties, so the order is stable and explainable.
+        items.sort(key=lambda item: (
+            -int(item.get("downloads") or 0),
+            -int(item.get("likes") or 0),
+            str(item.get("name") or item.get("id") or "").lower(),
+        ))
+    elif requested_sort == "likes":
+        items.sort(key=lambda item: (
+            -int(item.get("likes") or 0),
+            -int(item.get("downloads") or 0),
+            str(item.get("name") or item.get("id") or "").lower(),
+        ))
 
     # An exact-id match belongs at the top, above fuzzy derivatives and the
     # fit re-sort.

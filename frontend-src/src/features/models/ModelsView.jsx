@@ -140,7 +140,7 @@ export function ModelsView({
   const [hfResults, setHfResults] = useState([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState("");
-  const [hfSort, setHfSort] = useState("downloads");
+  const [hfSort, setHfSort] = useState("popular");
   const [vramMinGb, setVramMinGb] = useState("");
   const [vramMaxGb, setVramMaxGb] = useState("");
   const [activeDownloads, setActiveDownloads] = useState([]);
@@ -306,7 +306,7 @@ export function ModelsView({
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Reachable now", c: "text-primary" },
             { v: runningModels.length, l: "Running containers", c: "text-amber-400" },
-            { v: catalogItems.length, l: "Available locally", c: "text-sky-400" },
+            { v: catalogItems.length, l: "Cached locally", c: "text-sky-400" },
           ].map((s) => (
             <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
@@ -317,11 +317,21 @@ export function ModelsView({
       </div>
 
       {/* ── Tab Bar ── */}
-      <div className="flex items-center gap-2 overflow-x-auto">
+      <div className="flex items-center gap-2 overflow-x-auto" role="tablist" aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
           return (
-            <UIButton key={t.id} variant={activeTab === t.id ? "default" : "outline"} size="sm" type="button" onClick={() => setActiveTab(t.id)}>
+            <UIButton
+              key={t.id}
+              id={`models-tab-${t.id}`}
+              role="tab"
+              aria-selected={activeTab === t.id}
+              aria-controls={`models-panel-${t.id}`}
+              variant={activeTab === t.id ? "default" : "outline"}
+              size="sm"
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+            >
               <Icon size={15} /> {t.label}
             </UIButton>
           );
@@ -343,11 +353,11 @@ export function ModelsView({
 
           {/* ═══ LIBRARY TAB ═══ */}
           {activeTab === "library" && (
-            <div className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-library" role="tabpanel" aria-labelledby="models-tab-library" className="w2-section" style={{ flex: 1 }}>
               {/* Source toggle */}
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
-                  <HardDrive size={14} /> Available locally
+                  <HardDrive size={14} /> Local cache
                 </button>
                 <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("huggingface")}>
                   <Cloud size={14} /> Hugging Face
@@ -356,10 +366,10 @@ export function ModelsView({
                 {searchMode === "catalog" && (
                   <>
                     <button className="w2-button" type="button" onClick={() => handleLoadCatalog(false)}>
-                      <RefreshCw size={14} /> Scan local storage
+                      <RefreshCw size={14} /> Refresh cache
                     </button>
                     <Button primary onClick={() => handleLoadCatalog(true)} loading={modelCatalogLoading} loadingLabel="Refreshing…" icon={<Cloud size={14} />}>
-                      Scan local storage
+                      Refresh catalog
                     </Button>
                   </>
                 )}
@@ -381,8 +391,9 @@ export function ModelsView({
                 </select>
                 {searchMode === "huggingface" && (
                   <select className="w2-input" style={{ width: "130px", flex: "none" }} value={hfSort} onChange={e => setHfSort(e.target.value)}>
-                    <option value="downloads">Downloads</option>
-                    <option value="likes">Likes</option>
+                    <option value="popular">Most popular</option>
+                    <option value="downloads">Most downloaded</option>
+                    <option value="likes">Most liked</option>
                     <option value="trending">Trending</option>
                     <option value="lastModified">Recent</option>
                     <option value="vram_desc">VRAM: largest first</option>
@@ -453,7 +464,7 @@ export function ModelsView({
               {/* Status line */}
               <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
                 {searchMode === "catalog"
-                  ? `${displayItems.length} matching model${displayItems.length === 1 ? "" : "s"} available locally`
+                  ? `${displayItems.length} locally cached model${displayItems.length === 1 ? "" : "s"}`
                   : hfLoading ? "Searching Hugging Face..." : `${displayItems.length} matching results`}
               </div>
 
@@ -522,7 +533,7 @@ export function ModelsView({
 
           {/* ═══ INSTALLED TAB ═══ */}
           {activeTab === "installed" && (
-            <div className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section" style={{ flex: 1 }}>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <h2 style={{ margin: 0, fontSize: "1rem" }}>Local Registry</h2>
                 <div style={{ flex: 1 }} />
@@ -544,7 +555,7 @@ export function ModelsView({
 
           {/* ═══ RUNNING TAB ═══ */}
           {activeTab === "running" && (
-            <div className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-running" role="tabpanel" aria-labelledby="models-tab-running" className="w2-section" style={{ flex: 1 }}>
               <ActiveModelCard
                 model={activeModel}
                 models={models}
@@ -580,7 +591,7 @@ export function ModelsView({
 
           {/* ═══ SETTINGS TAB ═══ */}
           {activeTab === "settings" && (
-            <div className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section" style={{ flex: 1 }}>
               {/* Testing Mode */}
               <div className="w2-card">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -685,6 +696,9 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
   const modelId = item.modelId || item.id;
   const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
   const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
+  const blockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
+  const fitReasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
+  const blocked = blockedReasons.length > 0;
   const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n;
   return (
     <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
@@ -712,9 +726,16 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
 
       {item.summary && <p className="text-xs text-muted-foreground">{item.summary.slice(0, 120)}</p>}
 
+      {(blocked || fitReasons.length > 0) && (
+        <div className={`rounded-lg border px-3 py-2 text-xs ${blocked ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-border bg-muted/30 text-muted-foreground"}`}>
+          <strong className="mr-1">{blocked ? "Deployment blocked:" : "Why it fits:"}</strong>
+          {(blocked ? blockedReasons : fitReasons).join(" ")}
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         {item.deployable && (
-          <UIButton size="sm" type="button" onClick={() => prepareCatalogModelForWarsat?.(item)}>
+          <UIButton size="sm" type="button" disabled={blocked} title={blocked ? blockedReasons.join(" ") : undefined} onClick={() => prepareCatalogModelForWarsat?.(item)}>
             <Play size={12} /> Deploy via Warsat
           </UIButton>
         )}

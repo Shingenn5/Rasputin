@@ -3018,6 +3018,43 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertGreaterEqual(result["items"][0]["vramEstimateGb"], 16)
         self.assertLessEqual(result["items"][0]["vramEstimateGb"], 26)
 
+    def testHfSearchRanksPopularityByDownloadsThenLikes(self):
+        from backend.models import catalog as catalog_module
+
+        class FakeResponse:
+            links = {}
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return [
+                    {"id": "org/tied-fewer-likes", "tags": [], "downloads": 1000, "likes": 10},
+                    {"id": "org/most-downloaded", "tags": [], "downloads": 5000, "likes": 1},
+                    {"id": "org/tied-more-likes", "tags": [], "downloads": 1000, "likes": 25},
+                ]
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def get(self, url, params=None):
+                return FakeResponse()
+
+        with patch.object(catalog_module.httpx, "Client", FakeClient):
+            result = catalog_module.search_hf(sort="popular", limit=100)
+
+        self.assertEqual(
+            [item["id"] for item in result["items"]],
+            ["org/most-downloaded", "org/tied-more-likes", "org/tied-fewer-likes"],
+        )
+
     def testWarsatPlanAutoPicksFreeHostPort(self):
         # With no explicit port, the plan takes the first host port not held
         # by another running container — unless the occupant is the very
