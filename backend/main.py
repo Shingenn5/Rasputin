@@ -1,6 +1,7 @@
 import asyncio
 import os
 import uuid
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -15,6 +16,7 @@ from backend.rag import memory as memory_store
 from backend.mcp import skills as skill_store
 from backend.core import telegram
 from backend.core import audit
+from backend.core import performance
 from backend.api.core import router as core_router, hub
 from backend.core import settings_api
 from backend.api.agent import router as agent_router
@@ -145,9 +147,12 @@ def _origin_host_reject(request: Request):
 @app.middleware("http")
 async def production_headers(request: Request, call_next):
     request_id = str(uuid.uuid4())[:12]
+    started = time.perf_counter()
     reject = _origin_host_reject(request)
     if reject:
-        return _security_headers(fail("forbidden_request", f"request blocked: {reject}", 403), request_id)
+        response = _security_headers(fail("forbidden_request", f"request blocked: {reject}", 403), request_id)
+        performance.record(request.url.path, request.method, response.status_code, (time.perf_counter() - started) * 1000)
+        return response
     timeout = float(os.environ.get("RASPUTIN_REQUEST_TIMEOUT", "90"))
     try:
         if request.url.path == "/api/events":
@@ -159,10 +164,16 @@ async def production_headers(request: Request, call_next):
         else:
             response = await asyncio.wait_for(call_next(request), timeout=timeout)
     except asyncio.TimeoutError:
-        return _security_headers(fail("request_timeout", "request timed out", 504), request_id)
+        response = _security_headers(fail("request_timeout", "request timed out", 504), request_id)
     except Exception as exc:
-        return _security_headers(_error_response(exc), request_id)
-    return _security_headers(response, request_id)
+        response = _security_headers(_error_response(exc), request_id)
+    else:
+        response = _security_headers(response, request_id)
+    duration_ms = (time.perf_counter() - started) * 1000
+    response.headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
+    if request.url.path != "/api/events":
+        performance.record(request.url.path, request.method, response.status_code, duration_ms)
+    return response
 
 
 

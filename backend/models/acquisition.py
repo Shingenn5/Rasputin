@@ -11,6 +11,7 @@ MODELS_DIR = ROOT / "models"
 
 # In-memory store of active downloads
 _ACTIVE_DOWNLOADS = {}
+_DOWNLOADS_LOCK = threading.RLock()
 
 def _get_directory_size(path):
     total = 0
@@ -23,7 +24,8 @@ def _get_directory_size(path):
     return total
 
 def _download_thread(dl_id: str, model_id: str):
-    state = _ACTIVE_DOWNLOADS.get(dl_id)
+    with _DOWNLOADS_LOCK:
+        state = _ACTIVE_DOWNLOADS.get(dl_id)
     if not state:
         return
         
@@ -106,26 +108,32 @@ def _download_thread(dl_id: str, model_id: str):
         state["error"] = str(e)
 
 def start_download(model_id: str):
-    # Check if already downloading
-    for dl in _ACTIVE_DOWNLOADS.values():
-        if dl["modelId"] == model_id and dl["status"] in ["starting", "fetching_metadata", "downloading"]:
-            return dl
-            
-    dl_id = str(uuid.uuid4())
-    state = {
-        "id": dl_id,
-        "modelId": model_id,
-        "status": "starting",
-        "progress": 0.0,
-        "downloadedBytes": 0,
-        "totalBytes": 0,
-        "error": None
-    }
-    _ACTIVE_DOWNLOADS[dl_id] = state
+    # This endpoint can receive rapid parallel clicks for different models.
+    # Hold a short lock only while de-duplicating and registering the state;
+    # each actual Hugging Face download runs in its own background thread.
+    with _DOWNLOADS_LOCK:
+        for dl in _ACTIVE_DOWNLOADS.values():
+            if dl["modelId"] == model_id and dl["status"] in ["starting", "fetching_metadata", "downloading"]:
+                return dict(dl)
+
+        dl_id = str(uuid.uuid4())
+        state = {
+            "id": dl_id,
+            "modelId": model_id,
+            "status": "starting",
+            "progress": 0.0,
+            "downloadedBytes": 0,
+            "totalBytes": 0,
+            "error": None
+        }
+        _ACTIVE_DOWNLOADS[dl_id] = state
     
     t = threading.Thread(target=_download_thread, args=(dl_id, model_id), daemon=True)
     t.start()
-    return state
+    return dict(state)
 
 def get_active_downloads():
-    return list(_ACTIVE_DOWNLOADS.values())
+    # Return snapshots so API serialization never observes a dictionary while
+    # a downloader's progress poller is updating it.
+    with _DOWNLOADS_LOCK:
+        return [dict(item) for item in _ACTIVE_DOWNLOADS.values()]

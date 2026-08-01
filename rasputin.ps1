@@ -9,7 +9,9 @@ param(
     [string[]]$TlsName = @(),
     [string[]]$AllowedHost = @(),
     [ValidateRange(0, 65535)]
-    [int]$Port = 0
+    [int]$Port = 0,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CodeArguments = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -440,6 +442,33 @@ switch ($Command.ToLower()) {
     "native-host-status" { Invoke-NativeHost -Action "status" }
     "native-host-install" { Invoke-NativeHost -Action "install" }
     "native-host-uninstall" { Invoke-NativeHost -Action "uninstall" }
+    "code" {
+        $vpy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+        if (-not (Test-Path -LiteralPath $vpy)) {
+            Write-Host "The native environment has not been created yet." -ForegroundColor Yellow
+            Write-Host "Run '.\rasputin.ps1 native' to set it up and start it." -ForegroundColor Cyan
+            exit 1
+        }
+        $statusJson = & $vpy -m backend.tools.native_host status --json 2>$null
+        $status = $null
+        try { $status = $statusJson | ConvertFrom-Json } catch { }
+        if (-not $status -or -not $status.healthy) {
+            Write-Host "Starting the native Rasputin host for this coding task..." -ForegroundColor Cyan
+            $nativeArgs = @("-m", "backend.tools.native_host", "start")
+            if ($Port -gt 0) { $nativeArgs += @("--port", "$Port") }
+            & $vpy @nativeArgs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $statusJson = & $vpy -m backend.tools.native_host status --json 2>$null
+            try { $status = $statusJson | ConvertFrom-Json } catch { }
+        }
+        $codeArgs = @()
+        if ($status -and $status.state -and $status.state.url) {
+            $codeArgs += @("--url", [string]$status.state.url)
+        }
+        $codeArgs += $CodeArguments
+        & $vpy -m backend.tools.code @codeArgs
+        exit $LASTEXITCODE
+    }
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin (Docker) in the background"
@@ -454,6 +483,7 @@ switch ($Command.ToLower()) {
         Write-Host "  .\rasputin.ps1 install-cli       - Makes 'rasputin' available in every PowerShell window"
         Write-Host "  .\rasputin.ps1 uninstall-cli     - Removes the global 'rasputin' command"
         Write-Host "  .\rasputin.ps1 native [-NoOpen]  - Sets up, starts, and opens the native server"
+        Write-Host "  .\rasputin.ps1 code <objective>  - Runs a governed coding task from this terminal"
         Write-Host "  .\rasputin.ps1 native-rebuild    - Rebuilds dependencies/frontend, restarts, and opens it"
         Write-Host "  .\rasputin.ps1 native-stop|native-restart|native-status - Short native server controls"
         Write-Host "  .\rasputin.ps1 native-host-start [-Port 8788] [-Lan] [-AllowedHost name] - Starts the persistent native host"

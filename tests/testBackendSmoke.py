@@ -674,6 +674,22 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("steps", data["setup"])
         self.assertGreaterEqual(data["setup"]["totalSteps"], 5)
 
+    def testUiBootstrapDefersDockerRuntimeListingUntilWarsatIsOpened(self):
+        with patch("backend.api.core.warsat.containers") as containers:
+            data = self.assertOk(self.client.get("/api/ui/bootstrap"))
+
+        containers.assert_not_called()
+        self.assertTrue(data["warsat"]["runtimes"]["deferred"])
+
+    def testPerformanceTelemetryAddsResponseTimingAndRecentRouteFeed(self):
+        health = self.client.get("/api/health")
+        self.assertEqual(health.status_code, 200)
+        self.assertIn("app;dur=", health.headers.get("server-timing", ""))
+
+        performance = self.assertOk(self.client.get("/api/performance"))
+        self.assertGreaterEqual(performance["sampleCount"], 1)
+        self.assertTrue(any(item["path"] == "/api/health" for item in performance["recent"]))
+
     def testSetupStatusDoesNotExposeSecrets(self):
         data = self.assertOk(self.client.get("/api/setup/status"))
         self.assertIn("steps", data)

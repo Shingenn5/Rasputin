@@ -10,6 +10,7 @@ from backend.core import preferences
 from backend.core import schedules
 from backend.core import security
 from backend.core import telegram
+from backend.core import performance
 from backend.core.response import ok, AppError
 from backend.engine import output
 from backend.engine.agent import AgentHub
@@ -285,10 +286,16 @@ async def ui_config():
 async def ui_bootstrap(_user=Depends(current_user)):
     username = _user.get("username", "admin")
     is_admin = _user.get("role") == "admin"
-    try:
-        warsat_runtime_state = await asyncio.to_thread(warsat.containers)
-    except AppError:
-        warsat_runtime_state = {"containers": [], "enabled": False, "message": "Docker unreachable."}
+    # Runtime listing executes Docker commands (and labels each container).
+    # Keep initial app paint independent of Docker/WSL responsiveness; the
+    # Warsat screen fetches this live data after it has rendered.
+    warsat_runtime_state = {
+        "containers": [],
+        "count": 0,
+        "deferred": True,
+        "enabled": bool(security.load().get("allow_docker_control", False)),
+        "message": "Load Warsat to refresh managed runtime status.",
+    }
     return ok({
         "models": model_registry.all_models(),
         "model_providers": model_providers.public_provider_options(),
@@ -350,6 +357,12 @@ async def preferences_post(req: dict, _user=Depends(current_user)):
 
 async def audit_get(limit: int = 100, _user=Depends(require_admin)):
     return ok({"events": audit.recent(limit)})
+
+@system_router.get("/performance")
+
+async def performance_get(limit: int = 80, _user=Depends(require_admin)):
+    """Recent API timings for diagnosing local UI waits; never persisted."""
+    return ok(performance.snapshot(limit))
 
 @system_router.get("/approvals")
 
@@ -548,7 +561,9 @@ async def model_catalog_detail(model_id: str, _user=Depends(current_user)):
 @models_router.post("/model-registry/upsert")
 
 async def model_registry_upsert(req: ModelIn, _user=Depends(require_admin)):
-    return ok(model_registry.upsert(req.model_dump()))
+    saved = model_registry.upsert(req.model_dump())
+    model_registry.clear_runtime_status_cache(saved.get("key"))
+    return ok(saved)
 
 @models_router.post("/model-registry/import-gguf")
 
@@ -563,12 +578,16 @@ async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(
 @models_router.post("/model-registry/start")
 
 async def model_registry_start(req: ModelKeyIn, _user=Depends(require_admin)):
-    return ok(model_registry.start_model(req.key))
+    result = model_registry.start_model(req.key)
+    model_registry.clear_runtime_status_cache(req.key)
+    return ok(result)
 
 @models_router.post("/model-registry/stop")
 
 async def model_registry_stop(req: ModelKeyIn, _user=Depends(require_admin)):
-    return ok(model_registry.stop_model(req.key))
+    result = model_registry.stop_model(req.key)
+    model_registry.clear_runtime_status_cache(req.key)
+    return ok(result)
 
 @models_router.post("/model-registry/test")
 

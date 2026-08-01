@@ -49,6 +49,40 @@ def suggest_role(*name_parts):
     return "helper"
 
 _lock = Lock()
+_runtime_status_lock = Lock()
+# Docker inspection is comparatively expensive on Windows/WSL and used to run
+# once for every managed model on every registry read.  The UI refreshes often
+# enough that a short cache keeps the status useful without making ordinary
+# navigation wait on repeated subprocesses.
+_RUNTIME_STATUS_CACHE_SECONDS = 8.0
+_runtime_status_cache = {}
+
+
+def clear_runtime_status_cache(key=None):
+    """Forget a managed runtime status after an explicit lifecycle action."""
+    with _runtime_status_lock:
+        if key is None:
+            _runtime_status_cache.clear()
+        else:
+            _runtime_status_cache.pop(str(key), None)
+
+
+def _managed_runtime_status(model):
+    # Registry keys are stable lifecycle identifiers and are what the API
+    # receives for start/stop/upsert invalidation.
+    cache_key = str(model.get("key") or model.get("container") or "")
+    now = time.monotonic()
+    with _runtime_status_lock:
+        cached = _runtime_status_cache.get(cache_key)
+        if cached and now - cached[0] < _RUNTIME_STATUS_CACHE_SECONDS:
+            return cached[1]
+    try:
+        status = get_provider(model).status(model)
+    except Exception:
+        status = "unknown"
+    with _runtime_status_lock:
+        _runtime_status_cache[cache_key] = (now, status)
+    return status
 
 
 def _is_relative_to(child, parent):
@@ -402,10 +436,7 @@ def all_models():
         item["url"] = chat_url(item)
         if item.get("managed"):
             if docker_allowed:
-                try:
-                    item["container_status"] = get_provider(item).status(item)
-                except Exception:
-                    item["container_status"] = "unknown"
+                item["container_status"] = _managed_runtime_status(item)
                 if item["container_status"] == "running":
                     item["runtime_status"] = "reachable"
                 elif item["container_status"] == "starting":

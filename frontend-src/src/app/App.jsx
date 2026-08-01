@@ -727,24 +727,30 @@ export function App() {
   function applyView(nextView, section) {
     setView(nextView);
     if (section) setSettingsSection(section);
+    // Let React paint the selected screen before starting its background
+    // reads. This makes navigation responsive even if a workspace, Docker,
+    // or model endpoint is temporarily slow.
+    const loadAfterPaint = (loader) => window.requestAnimationFrame(() => {
+      loader().catch((error) => setGlobalStatus(error.message));
+    });
     if (nextView === "workspaces") {
-      loadWorkspaceRoots().catch((error) => setGlobalStatus(error.message));
-      loadPendingMounts().catch((error) => setGlobalStatus(error.message));
+      loadAfterPaint(loadWorkspaceRoots);
+      loadAfterPaint(loadPendingMounts);
     }
     if (["activity", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"].includes(nextView)) {
-      loadRuntimeData().catch((error) => setGlobalStatus(error.message));
+      loadAfterPaint(loadRuntimeData);
     }
     if (nextView === "archive") {
-      loadArchive().catch((error) => setGlobalStatus(error.message));
+      loadAfterPaint(loadArchive);
     }
     if (nextView === "trials") {
-      loadTrials().catch((error) => setGlobalStatus(error.message));
+      loadAfterPaint(loadTrials);
     }
     if (nextView === "warsat") {
-      loadWarsat().catch((error) => setGlobalStatus(error.message));
+      loadAfterPaint(loadWarsat);
     }
     if (nextView === "models") {
-      loadWarsatHardware().catch((error) => setGlobalStatus(error.message));
+      loadAfterPaint(loadWarsatHardware);
     }
     setMobileSidebarOpen(false);
   }
@@ -844,8 +850,9 @@ export function App() {
     const message = customMessage || objective.trim();
     const mode = options.mode || taskMode;
     const reasoning = options.reasoning || reasoningMode;
-    const modelKey = options.model || selectedModel;
-    if (!healthy) {
+    const modelKey = options.model || modelKeyForMode(mode) || selectedModel;
+    const routedModel = models.find((model) => model.key === modelKey);
+    if (!isModelHealthy(routedModel)) {
       setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
       return false;
     }
@@ -943,36 +950,55 @@ export function App() {
   }
 
   async function cancelTask(taskId) {
+    const rollback = patchLocalTask(taskId, { status: "cancelling", optimisticAction: "cancel" });
     try {
       await postJson(`/api/tasks/${taskId}/cancel`, {});
       setGlobalStatus("Task stop requested.");
-      await loadTasks();
-      if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
     } catch (error) {
+      rollback();
       setGlobalStatus(error.message);
     }
   }
 
   async function pauseTask(taskId) {
+    const rollback = patchLocalTask(taskId, { status: "paused", optimisticAction: "pause" });
     try {
       await postJson(`/api/tasks/${taskId}/pause`, {});
       setGlobalStatus("Task paused.");
-      await loadTasks();
-      if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
     } catch (error) {
+      rollback();
       setGlobalStatus(error.message);
     }
   }
 
   async function resumeTask(taskId) {
+    const rollback = patchLocalTask(taskId, { status: "queued", optimisticAction: "resume" });
     try {
       await postJson(`/api/tasks/${taskId}/resume`, {});
       setGlobalStatus("Task resumed.");
-      await loadTasks();
-      if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
     } catch (error) {
+      rollback();
       setGlobalStatus(error.message);
     }
+  }
+
+  function patchLocalTask(taskId, patch) {
+    let previous = null;
+    const apply = (current = []) => current.map((item) => {
+      if (item.id !== taskId) return item;
+      previous = item;
+      return { ...item, ...patch };
+    });
+    setTasks(apply);
+    queryClient.setQueryData(["tasks"], apply);
+    return () => {
+      if (!previous) return;
+      const rollback = (current = []) => current.map((item) => (
+        item.id === taskId && item.optimisticAction === patch.optimisticAction ? previous : item
+      ));
+      setTasks(rollback);
+      queryClient.setQueryData(["tasks"], rollback);
+    };
   }
 
   async function retryTask(taskId) {
@@ -999,10 +1025,12 @@ export function App() {
   }
 
   async function updateInboxEvent(eventId, action) {
+    const previous = queryClient.getQueryData(["inbox"]);
+    queryClient.setQueryData(["inbox"], (current = []) => current.filter((item) => item.id !== eventId));
     try {
       await postJson(`/api/inbox/${eventId}/${action}`, {});
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
     } catch (error) {
+      queryClient.setQueryData(["inbox"], previous);
       setGlobalStatus(error.message);
     }
   }
