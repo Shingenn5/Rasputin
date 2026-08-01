@@ -2065,8 +2065,8 @@ class BackendSmokeTests(unittest.TestCase):
             }))
 
         self.assertEqual(automatic["image"], "ghcr.io/ggml-org/llama.cpp:server-cuda")
-        self.assertEqual(automatic["containerLimits"]["gpuDevice"], "all")
-        self.assertTrue(automatic["multiGpu"]["enabled"])
+        self.assertEqual(automatic["containerLimits"]["gpuDevice"], "1")
+        self.assertFalse(automatic["multiGpu"]["enabled"])
         self.assertIn("--gpus", automatic["commandPreview"]["run"])
         self.assertIn("--fit", automatic["commandPreview"]["run"])
         self.assertNotIn("-ngl", automatic["commandPreview"]["run"])
@@ -2076,6 +2076,73 @@ class BackendSmokeTests(unittest.TestCase):
 
         self.assertEqual(cpu["image"], "ghcr.io/ggml-org/llama.cpp:server")
         self.assertNotIn("--gpus", cpu["commandPreview"]["run"])
+
+    def testWarsatAutomaticallyKeepsSmallVllmModelOnLargestSingleGpu(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-3B-Instruct",
+                "strengthProfile": "balanced",
+            }))
+
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "1")
+        self.assertFalse(plan["multiGpu"]["enabled"])
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 1)
+        self.assertNotIn("--tensor-parallel-size", plan["commandPreview"]["run"])
+        self.assertTrue(any("concurrent models" in item for item in plan["warnings"]))
+
+    def testWarsatAutomaticallyUsesOtherGpuForConcurrentSmallModel(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311},
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+        ]
+        fleet = {
+            "runningModels": [{"container": "existing-model", "name": "Existing", "role": "main", "port": 8000}],
+            "gpus": [
+                {"index": 0, "totalMb": 16311, "usedMb": 13000, "freeMb": 3311},
+                {"index": 1, "totalMb": 12288, "usedMb": 500, "freeMb": 11788},
+            ],
+        }
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+            patch("backend.warsat._fleet_state", return_value=fleet),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-3B-Instruct",
+                "strengthProfile": "balanced",
+            }))
+
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "1")
+        self.assertFalse(plan["multiGpu"]["enabled"])
+
+    def testWarsatAutomaticallyShardsLargeQuantizedGgufOnlyWhenNeeded(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "llamaCppGgufServer",
+                "modelPath": "models/Qwen-27B-Q4_K_M.gguf",
+                "strengthProfile": "balanced",
+            }))
+
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "all")
+        self.assertTrue(plan["multiGpu"]["enabled"])
+        self.assertIn("--split-mode", plan["commandPreview"]["run"])
+        self.assertIn("--fit", plan["commandPreview"]["run"])
 
     def testCodingModelsSuggestCoderRole(self):
         from backend.models import registry as model_registry

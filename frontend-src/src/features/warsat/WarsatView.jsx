@@ -772,22 +772,12 @@ function DeployTab({
               {!Object.keys(strengthProfiles).length && <option value="balanced">Balanced</option>}
             </select>
           </label>
-          <label className="ws-recipe-field" htmlFor="warsatMultiGpu">
+          <div className="ws-recipe-field">
             <span>GPU allocation</span>
-            <span className="ws-checkbox-row">
-              <input
-                id="warsatMultiGpu"
-                key={(hardware?.detectedHardware?.gpus || []).length}
-                name="multiGpu"
-                type="checkbox"
-                defaultChecked={(hardware?.detectedHardware?.gpus || []).length > 1}
-              />
-              Use all detected GPUs
-            </span>
             <small>
-              Auto-shards across {(hardware?.detectedHardware?.gpus || []).length || "the visible"} GPUs and fits to available VRAM.
+              Automatic: keeps models that fit on one GPU independent, and only layer-shards GGUF models when one card is not enough.
             </small>
-          </label>
+          </div>
           <div className="ws-recipe-actions">
             <button className="w2-button primary" type="submit" style={{ flex: 1 }}>
               <Zap size={14} /> {plan ? "Regenerate Plan" : "Generate Plan"}

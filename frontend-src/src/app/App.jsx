@@ -1781,7 +1781,10 @@ export function App() {
         gpuMemoryUtilization: Number(form.get("gpuMemoryUtilization") || 0) || undefined,
         gpuLayers: gpuLayers == null || gpuLayers === "" ? undefined : Number(gpuLayers),
         tensorParallelSize: Number(form.get("tensorParallelSize") || 0) || undefined,
-        multiGpu: form.get("multiGpu") === "on",
+        // Omit this for the normal WarSat recipe so the backend can make a
+        // capacity-aware placement decision.  Older advanced forms that still
+        // expose the field keep their explicit true/false override.
+        multiGpu: form.has("multiGpu") ? form.get("multiGpu") === "on" : undefined,
         cpuThreads: Number(form.get("cpuThreads") || 0) || undefined,
         batchSize: Number(form.get("batchSize") || 0) || undefined,
         maxNumSeqs: Number(form.get("maxNumSeqs") || 0) || undefined,

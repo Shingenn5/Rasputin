@@ -695,6 +695,13 @@ def _visible_gpus_for_plan():
     Native Rasputin can query the host directly. The packaged/container runtime
     falls back to the same disposable Docker probe used by hardware readiness.
     """
+    # Docker's CUDA device numbering is not guaranteed to match the host's
+    # nvidia-smi order (this is especially common on mixed-generation cards).
+    # A plan ultimately launches a Docker container, so prefer the ordering it
+    # will actually receive whenever that inexpensive probe is available.
+    docker_gpus = _gpu_probe_via_docker()
+    if docker_gpus:
+        return docker_gpus
     nvidia_smi = shutil.which("nvidia-smi")
     if nvidia_smi:
         result = _probe_command([
@@ -707,13 +714,46 @@ def _visible_gpus_for_plan():
     return _gpu_probe_via_docker()
 
 
-def _configure_multi_gpu(payload, protocol, tuning, limits):
-    """Prefer NVIDIA acceleration, and combine cards when not opted out.
+def _estimated_model_vram_mb(payload, protocol):
+    """Conservative weight-plus-working-set estimate when a model name says X B.
 
-    Catalog plans intentionally omit ``multiGpu``.  On a GPU machine that
-    means "choose the best available acceleration", not "run on the CPU".
-    Manual plans can still select one GPU with ``multiGpu=false`` or opt out
-    completely with the CPU profile, GPU layers 0, or a CPU-only device.
+    This is deliberately only a placement hint, never an admission guarantee:
+    the runtime remains responsible for its real allocation.  It lets the
+    normal catalog path keep small models on one card instead of treating every
+    multi-GPU machine as a tensor-parallel machine.
+    """
+    reference = " ".join([
+        str(payload.get("modelRef") or payload.get("model_ref") or ""),
+        str(payload.get("modelPath") or payload.get("model_path") or ""),
+    ]).lower()
+    match = re.search(r"(?:^|[^a-z0-9])(\d+(?:\.\d+)?)\s*b(?:[^a-z0-9]|$)", reference)
+    if not match:
+        return None
+    params_b = float(match.group(1))
+    bytes_per_param = 2.05  # bf16 weights plus normal runtime overhead
+    if protocol.get("modelFormat") == "gguf":
+        if "q4" in reference or "iq4" in reference:
+            bytes_per_param = 0.70
+        elif "q5" in reference or "iq5" in reference:
+            bytes_per_param = 0.85
+        elif "q6" in reference or "iq6" in reference:
+            bytes_per_param = 1.00
+        elif "q8" in reference:
+            bytes_per_param = 1.25
+    # Include a modest cache/allocator reserve; large explicit contexts still
+    # get the existing warning and the runtime's own --fit protection.
+    return int(params_b * bytes_per_param * 1024 * 1.15 + 1024)
+
+
+def _configure_multi_gpu(payload, protocol, tuning, limits, fleet_gpus=None):
+    """Prefer NVIDIA acceleration and choose the smallest viable placement.
+
+    Catalog plans intentionally omit ``multiGpu``.  That means automatic
+    placement: a model that fits on one card gets one card, preserving the
+    other for another model.  A GGUF that exceeds every individual card is
+    layer-sharded automatically.  vLLM sharding remains an explicit override
+    because it requires peer-access features that mixed GPU machines often
+    lack.
     """
     multi_gpu_request = _payload_get(payload, "multiGpu", "multi_gpu", default=None)
     requested_device = str(limits.get("gpuDevice") or "").strip().lower()
@@ -742,14 +782,55 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
         return [], [warning] if multi_gpu_request else []
 
     gpu_count = len(gpus)
-    use_multi_gpu = gpu_count > 1 and multi_gpu_request is not False
+    estimated_mb = _estimated_model_vram_mb(payload, protocol)
+    # Prefer a card with enough *currently free* VRAM.  The metrics use the
+    # same Docker-visible indices as ``gpus``; if telemetry is unavailable,
+    # fall back to the largest card for a first deployment.
+    live_by_index = {
+        int(item.get("index")): item
+        for item in (fleet_gpus or [])
+        if item.get("index") is not None
+    }
+    viable = [
+        (index, gpu)
+        for index, gpu in enumerate(gpus)
+        if not estimated_mb or float(live_by_index.get(index, {}).get("freeMb") or gpu.get("memoryTotalMb") or 0) >= estimated_mb
+    ]
+    candidates = viable or list(enumerate(gpus))
+    selected_index, biggest_gpu = max(
+        candidates,
+        key=lambda pair: (
+            float(live_by_index.get(pair[0], {}).get("freeMb") or 0),
+            int(pair[1].get("memoryTotalMb") or 0),
+        ),
+    )
+    needs_combined_vram = bool(
+        estimated_mb and estimated_mb > int(biggest_gpu.get("memoryTotalMb") or 0)
+    )
+    explicit_multi_gpu = multi_gpu_request is True
+    use_multi_gpu = gpu_count > 1 and (
+        explicit_multi_gpu
+        or (protocol.get("modelFormat") == "gguf" and multi_gpu_request is not False and needs_combined_vram)
+    )
     if not limits.get("gpuDevice"):
-        # An explicit unchecked multi-GPU control means one GPU, not CPU.
-        limits["gpuDevice"] = "all" if use_multi_gpu or gpu_count == 1 else "0"
+        # Select the largest card by the device order visible inside Docker.
+        # That keeps ordinary models independent and leaves the other card
+        # free for a concurrent deployment.
+        limits["gpuDevice"] = "all" if use_multi_gpu else str(selected_index)
     total_mb = sum(int(gpu.get("memoryTotalMb") or 0) for gpu in gpus)
     warnings = []
     if protocol.get("runtime") == "vllm":
         if not use_multi_gpu:
+            if needs_combined_vram:
+                warnings.append(
+                    "This model is estimated to exceed every individual GPU. Automatic vLLM tensor parallelism "
+                    "is disabled because mixed GPUs may not support the required peer memory access; use a GGUF "
+                    "variant for automatic layer sharding or choose a quantized model."
+                )
+            else:
+                warnings.append(
+                    f"Automatic placement selected {biggest_gpu.get('name') or 'the largest GPU'} so other GPUs remain available for concurrent models."
+                )
             return [], warnings
         explicit_tp = _payload_get(payload, "tensorParallelSize", "tensor_parallel_size") is not None
         if explicit_tp and tuning["tensorParallelSize"] > gpu_count:
@@ -983,6 +1064,11 @@ def _docker_run_preview(protocol, model_ref, model_path, host_port, container_na
         command.extend(["--gpus", "all"])
     if limits.get("gpuDevice"):
         command.extend(["-e", f"NVIDIA_VISIBLE_DEVICES={limits['gpuDevice']}"])
+    if protocol.get("runtime") == "vllm":
+        # vLLM 0.26+ conservatively disables pinned memory on WSL2. Its V1
+        # CUDA worker now requires that memory for its staging buffers; without
+        # this documented opt-in even a single-GPU model fails at startup.
+        command.extend(["-e", "VLLM_WSL2_ENABLE_PIN_MEMORY=1"])
     if limits.get("memoryLimitGb"):
         command.extend(["--memory", f"{limits['memoryLimitGb']}g"])
     if limits.get("cpuLimit"):
@@ -1030,11 +1116,14 @@ def _compose_preview(protocol, model_ref, model_path, host_port, container_name,
         lines.append(f"    cpus: {_yaml_scalar(limits['cpuLimit'])}")
     if limits.get("shmSizeGb"):
         lines.append(f"    shm_size: {_yaml_scalar(str(limits['shmSizeGb']) + 'g')}")
-    if limits.get("gpuDevice"):
+    if limits.get("gpuDevice") or protocol.get("runtime") == "vllm":
         lines.extend([
             "    environment:",
-            f"      NVIDIA_VISIBLE_DEVICES: {_yaml_scalar(limits['gpuDevice'])}",
         ])
+        if limits.get("gpuDevice"):
+            lines.append(f"      NVIDIA_VISIBLE_DEVICES: {_yaml_scalar(limits['gpuDevice'])}")
+        if protocol.get("runtime") == "vllm":
+            lines.append("      VLLM_WSL2_ENABLE_PIN_MEMORY: \"1\"")
     volumes = []
     for mount in protocol.get("dataMounts") or []:
         mode = "ro" if mount.get("readOnly") else "rw"
@@ -1233,7 +1322,9 @@ def make_plan(payload):
     container_name = _slug(payload.get("containerName") or default_name)
     tuning = _build_tuning(payload, protocol, strength)
     limits = _build_limits(payload)
-    multi_gpu_inventory, multi_gpu_warnings = _configure_multi_gpu(payload, protocol, tuning, limits)
+    fleet = _fleet_state()
+    fleet_gpus = fleet.get("gpus") or []
+    multi_gpu_inventory, multi_gpu_warnings = _configure_multi_gpu(payload, protocol, tuning, limits, fleet_gpus)
 
     if not model_ref and protocol["modelFormat"] != "gguf":
         raise AppError("warsat_model_required", "Enter a model id for this Warsat protocol.", 400)
@@ -1273,14 +1364,18 @@ def make_plan(payload):
     # OTHER running model -- a redeploy of the sole running model (same
     # container name as this plan) must not count itself as occupying the
     # GPU -- and is a no-op on CPU-only machines / when probing fails.
-    fleet = _fleet_state()
-    fleet_gpus = fleet.get("gpus") or []
     fleet_running = [
         item for item in fleet.get("runningModels") or []
         if item.get("container") and item.get("container") != container_name
     ]
-    gpu_total_mb = fleet_gpus[0].get("totalMb") if fleet_gpus else None
-    gpu_free_mb = fleet_gpus[0].get("freeMb") if fleet_gpus else None
+    planned_gpu_index = None
+    try:
+        planned_gpu_index = int(limits.get("gpuDevice"))
+    except (TypeError, ValueError):
+        pass
+    planned_gpu = next((item for item in fleet_gpus if item.get("index") == planned_gpu_index), None)
+    gpu_total_mb = planned_gpu.get("totalMb") if planned_gpu else None
+    gpu_free_mb = planned_gpu.get("freeMb") if planned_gpu else None
     fleet_warnings = []
     if fleet_gpus and fleet_running and gpu_total_mb:
         running_names = ", ".join(
