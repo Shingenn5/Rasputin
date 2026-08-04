@@ -189,7 +189,7 @@ def expire_old():
         conn.commit()
 
 
-def require_approved(approval_id, action_type=None):
+def require_approved(approval_id, action_type=None, task_id=None):
     approval = get(approval_id)
     if not approval:
         raise PermissionError("approval missing")
@@ -197,6 +197,8 @@ def require_approved(approval_id, action_type=None):
         raise PermissionError(f"approval is {approval['status']}")
     if action_type and approval["action_type"] != action_type:
         raise PermissionError("approval action mismatch")
+    if task_id is not None and approval.get("task_id") != task_id:
+        raise PermissionError("approval task mismatch")
     with store._lock, store.connect() as conn:
         row = conn.execute("SELECT status, executed_at FROM approvals WHERE id=?", (approval_id,)).fetchone()
         if row["executed_at"]:

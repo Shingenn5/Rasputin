@@ -529,13 +529,13 @@ TOOL_DEFINITIONS = [
     {
         "id": "git_commit",
         "display_name": "Git Commit",
-        "description": "Creates a local commit in the resolved workspace's git repo. Bypasses per-call approval only when the workspace has Trusted Dev Mode enabled. git push and other remote-touching operations are never exposed as a tool.",
+        "description": "Creates a local commit in the resolved workspace's git repo. Always requires a fresh one-time operator approval, including in Trusted Dev Mode. git push and other remote-touching operations are never exposed as a tool.",
         "category": "Git",
         "risk": "approval_required",
         "permission_flag": "allow_file_write",
         "enabled": True,
         "implemented": True,
-        "approval_behavior": "one_time_approval_or_trusted_workspace",
+        "approval_behavior": "one_time_approval_always",
         "timeout_seconds": 20,
         "output_summary_policy": "message_length_and_exit_code_only",
         "input_schema": {

@@ -115,6 +115,7 @@ class TaskIn(CamelModel):
     scheduled_for: float | None = None
     max_attempts: int = 1
     attachment_ids: list[str] = Field(default_factory=list)
+    isolate_workspace: bool = False
 
 class IntakeCreateIn(CamelModel):
     name: str
@@ -169,6 +170,13 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
             "requested_mode": requested_mode,
             "resolved_mode": resolved_mode,
         }, actor=_user["username"])
+    if req.isolate_workspace:
+        if resolved_mode != "code":
+            raise AppError("task_isolation_requires_code", "Workspace isolation is available only for a tool-capable Code task.")
+        if str(req.skill or "general") != "general":
+            raise AppError("task_isolation_requires_general_skill", "Workspace isolation does not support skill-based execution yet.")
+        if req.subagents:
+            raise AppError("task_isolation_disallows_subagents", "Workspace isolation does not support sub-agents yet.")
     task = hub.start(
         objective,
         req.model,
@@ -182,6 +190,7 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
         priority=req.priority,
         scheduled_for=req.scheduled_for,
         max_attempts=req.max_attempts,
+        isolate_workspace=req.isolate_workspace,
     )
     intake.bind_to_task(_user["username"], attachment_records, task.id)
     if attachment_records:

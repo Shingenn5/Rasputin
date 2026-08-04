@@ -117,12 +117,12 @@ Branch: `codex/git-tools-v1` · Commit: `ba85940`
 - [x] `git_diff` tool (structured hunks, not just raw text)
 - [x] `git_log` tool
 - [x] `git_add` tool
-- [x] `git_commit` tool — runs without approval in trusted workspace
+- [x] `git_commit` tool — always requires a fresh one-time approval, including in a trusted workspace
 - [x] `git push` (and any remote-touching command) stays approval-required regardless of trust
 - [x] Docker runtime image: add `git` binary
 - [x] Docker runtime image: `safe.directory '*'` config
 - [x] Test: `git_diff`/`git_status` return structured, parseable results
-- [x] Test: `git_commit` executes without approval in trusted workspace; `git push` still requires approval
+- [x] Test: `git_commit` requires one-time approval even in trusted workspace; `git push` stays unavailable as an agent tool
 - [x] Test: non-git directory returns clean structured error, not a crash
 - [x] Validation: backend smoke 50/50 (native + Docker), repo safety check
 

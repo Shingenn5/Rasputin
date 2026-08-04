@@ -117,6 +117,10 @@ def init_db():
               result TEXT NOT NULL DEFAULT '',
               workspace TEXT NOT NULL DEFAULT '.',
               permission_snapshot TEXT NOT NULL DEFAULT '{}',
+              isolation_requested INTEGER NOT NULL DEFAULT 0,
+              isolation_state TEXT NOT NULL DEFAULT 'none',
+              execution_workspace TEXT NOT NULL DEFAULT '',
+              isolation_metadata TEXT NOT NULL DEFAULT '{}',
               paused INTEGER NOT NULL DEFAULT 0,
               created_at REAL NOT NULL,
               updated_at REAL NOT NULL,
@@ -293,6 +297,10 @@ def init_db():
             "attempt_count": "INTEGER NOT NULL DEFAULT 0",
             "max_attempts": "INTEGER NOT NULL DEFAULT 1",
             "source_task_id": "TEXT",
+            "isolation_requested": "INTEGER NOT NULL DEFAULT 0",
+            "isolation_state": "TEXT NOT NULL DEFAULT 'none'",
+            "execution_workspace": "TEXT NOT NULL DEFAULT ''",
+            "isolation_metadata": "TEXT NOT NULL DEFAULT '{}'",
         }
         for name, definition in task_migrations.items():
             if name not in task_columns:

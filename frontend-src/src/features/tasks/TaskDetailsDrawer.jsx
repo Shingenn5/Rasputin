@@ -148,6 +148,7 @@ export function TaskDetailsDrawer({
                     <Metric label="Status" value={task.status || "queued"} tone={task.status} />
                     <Metric label="Progress" value={`${Number(task.progress || 0)}%`} />
                     <Metric label="Workspace" value={displayWorkspaceName(task.workspace)} />
+                    {task.isolateWorkspace && <Metric label="Isolation" value={["ready", "retained"].includes(task.isolationState) ? "Git worktree" : task.isolationState || "requested"} />}
                     <Metric label="Model" value={displayModelName(task.model, models)} />
                     <Metric label="Mode" value={task.mode || "chat"} />
                     <Metric label="Session" value={task.sessionId || detail?.session?.id || "Unknown"} />
@@ -196,6 +197,19 @@ export function TaskDetailsDrawer({
                       ) : null}
                     </article>
                   )}
+                  {task.isolateWorkspace && (
+                    <article className="drawer-result-block" data-testid="task-isolation-status">
+                      <h2>Isolated workspace</h2>
+                      <p>
+                        {["ready", "retained"].includes(task.isolationState)
+                          ? `File and Git tools run on ${task.isolation?.branch || "a dedicated task branch"}; your source working tree and checked-out branch are not changed.`
+                          : `Isolation status: ${task.isolationState || "requested"}.`}
+                      </p>
+                      {task.isolation?.baseSha && <p>Base commit: <code>{String(task.isolation.baseSha).slice(0, 12)}</code></p>}
+                      {task.isolation?.error && <p className="drawer-error" role="alert">{task.isolation.error}</p>}
+                      <p className="empty-inline">Host Shell and automatic test commands are intentionally unavailable in this safety mode.</p>
+                    </article>
+                  )}
                   <article className="drawer-result-block">
                     <h2>Result</h2>
                     <div className="markdown-body">
@@ -207,7 +221,9 @@ export function TaskDetailsDrawer({
 
               {section === "changes" && (
                 <section id="task-detail-panel-changes" role="tabpanel" aria-labelledby="task-detail-tab-changes" data-testid="task-details-changes">
-                  <ChangesPanel workspace={task.workspace} active={section === "changes"} />
+                  {task.isolateWorkspace && !task.executionWorkspace
+                    ? <EmptyInline text="No isolated worktree was created, so Rasputin did not inspect or change the source workspace." />
+                    : <ChangesPanel workspace={task.executionWorkspace || task.workspace} active={section === "changes"} />}
                 </section>
               )}
 

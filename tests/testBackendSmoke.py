@@ -4159,16 +4159,216 @@ class BackendSmokeTests(unittest.TestCase):
                         "workspace_path": tmp,
                     }))
                     self.assertEqual(add_result["exit_code"], 0)
+                    # Trusted Dev keeps edits/staging fast, but a commit is a
+                    # durable history change and now always needs a one-time
+                    # operator grant.
+                    commit_preview = asyncio.run(McpLayer().call_tool("git_commit", {
+                        "message": "update readme",
+                        "workspace_path": tmp,
+                    }))
+                    self.assertTrue(commit_preview["preview"])
+                    self.assertIn("approval_id", commit_preview)
+                    self.assertEqual(
+                        subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=tmp, check=True, capture_output=True, text=True).stdout.strip(),
+                        "1",
+                    )
+                    approvals.approve(commit_preview["approval_id"])
                     commit_result = asyncio.run(McpLayer().call_tool("git_commit", {
                         "message": "update readme",
                         "workspace_path": tmp,
+                        "approval_id": commit_preview["approval_id"],
                     }))
                     self.assertEqual(commit_result["exit_code"], 0)
 
                 log_after = asyncio.run(McpLayer().call_tool("git_log", {"workspace_path": tmp, "limit": 5}))
                 self.assertEqual([c["subject"] for c in log_after["commits"]], ["update readme", "initial commit"])
+
+                # Tool schemas are declarative, so raw model arguments must
+                # not be able to smuggle an old approved=True bypass back in.
+                with open(Path(tmp) / "README.md", "a", encoding="utf-8") as handle:
+                    handle.write("second change\n")
+                subprocess.run(["git", "add", "README.md"], cwd=tmp, check=True)
+                with self.assertRaises(TypeError):
+                    asyncio.run(McpLayer().call_tool("git_commit", {
+                        "message": "must not bypass approval",
+                        "workspace_path": tmp,
+                        "approved": True,
+                    }))
+                self.assertEqual(
+                    subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=tmp, check=True, capture_output=True, text=True).stdout.strip(),
+                    "2",
+                )
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
+
+    def testTaskWorktreeIsolatesCleanGitWorkspaceAndFailsClosed(self):
+        from backend.core import task_worktree
+        from backend.core import workspace as workspace_mod
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=source, check=True)
+            subprocess.run(["git", "config", "user.email", "smoke@example.com"], cwd=source, check=True)
+            subprocess.run(["git", "config", "user.name", "Smoke Test"], cwd=source, check=True)
+            (source / "sample.py").write_text("value = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=source, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "initial commit"], cwd=source, check=True)
+            approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+                "path": str(source), "name": "Isolated Git Smoke", "readOnly": False,
+            }))
+            task_id = "worktree-smoke"
+            metadata = None
+            try:
+                # Worktree management must ignore inherited Git routing state.
+                # Without this guard, a service-level GIT_DIR could redirect
+                # the preflight away from the approved source checkout.
+                with patch.dict(os.environ, {
+                    "GIT_DIR": str(source / "not-a-git-dir"),
+                    "GIT_WORK_TREE": str(source / "not-the-worktree"),
+                    "GIT_INDEX_FILE": str(source / "foreign-index"),
+                }, clear=False):
+                    metadata = task_worktree.plan(task_id, str(source))
+                self.assertEqual(
+                    subprocess.run(["git", "status", "--porcelain"], cwd=source, check=True, capture_output=True, text=True).stdout,
+                    "",
+                )
+                self.assertEqual(
+                    task_worktree._git(source, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout,
+                    "",
+                )
+                metadata = task_worktree.create(metadata)
+                isolated = Path(metadata["executionWorkspace"])
+                self.assertTrue(isolated.is_dir())
+                self.assertNotEqual(isolated, source)
+                self.assertEqual(metadata["branch"], f"rasputin/task-{task_id}")
+                self.assertTrue(metadata["baseSha"])
+                self.assertTrue(workspace_mod.task_root_for_path(isolated / "sample.py"))
+
+                (isolated / "sample.py").write_text("value = 2\n", encoding="utf-8")
+                self.assertEqual((source / "sample.py").read_text(encoding="utf-8"), "value = 1\n")
+                self.assertEqual(
+                    subprocess.run(["git", "status", "--porcelain"], cwd=source, check=True, capture_output=True, text=True).stdout,
+                    "",
+                )
+                self.assertEqual(
+                    task_worktree.verify(metadata)["state"], "ready",
+                )
+
+                # The linked worktree's `.git` file points into the source
+                # repository's metadata. No mutation/Git path may replace,
+                # move, stage, or restore it.
+                protected_calls = [
+                    ("fs_write", {"path": ".git", "content": "gitdir: redirected"}),
+                    ("fs_patch", {"path": ".git", "old_string": "gitdir", "new_string": "broken"}),
+                    ("fs_mkdir", {"path": ".git/nested"}),
+                    ("fs_move", {"source": ".git", "target": "moved-git"}),
+                    ("git_add", {"paths": [".git"]}),
+                ]
+                with patch("backend.core.security.load", return_value={
+                    "allow_file_write": True,
+                    "allow_file_reorganize": True,
+                }):
+                    for tool_name, payload in protected_calls:
+                        with self.assertRaisesRegex(PermissionError, "git metadata"):
+                            asyncio.run(McpLayer().call_tool(tool_name, {
+                                **payload,
+                                "workspace_path": str(isolated),
+                            }))
+                    with self.assertRaisesRegex(PermissionError, "git metadata"):
+                        asyncio.run(McpLayer().git_restore(
+                            [".git"], workspace_path=str(isolated),
+                        ))
+                self.assertEqual(
+                    subprocess.run(["git", "status", "--porcelain"], cwd=source, check=True, capture_output=True, text=True).stdout,
+                    "",
+                )
+
+                (source / "dirty.txt").write_text("not isolated\n", encoding="utf-8")
+                dirty = task_worktree.plan("worktree-dirty", str(source))
+                with self.assertRaises(task_worktree.TaskWorktreeError):
+                    task_worktree.create(dirty)
+                self.assertFalse(Path(dirty["executionWorkspace"]).exists())
+
+                # The isolation request itself must never create Rasputin
+                # runtime folders inside the checkout. A data directory under
+                # the source repo is rejected before any Git probe or mkdir.
+                overlapping_data = source / "rasputin-runtime"
+                with patch.dict(os.environ, {"RASPUTIN_DATA_DIR": str(overlapping_data)}, clear=False):
+                    with self.assertRaisesRegex(task_worktree.TaskWorktreeError, "data directory overlaps"):
+                        task_worktree.plan("worktree-overlap", str(source))
+                self.assertFalse(overlapping_data.exists())
+            finally:
+                if metadata:
+                    workspace_mod.remove_task_root(task_id)
+                    subprocess.run(["git", "worktree", "remove", "--force", metadata["executionWorkspace"]], cwd=source, check=False, capture_output=True)
+                    subprocess.run(["git", "branch", "-D", metadata["branch"]], cwd=source, check=False, capture_output=True)
+                self.client.post("/api/workspace/remove", json={"workspaceId": approved["id"]})
+
+    def testIsolatedTaskRejectsToolCallsOutsideItsPhaseCapabilities(self):
+        task = agent.AgentTask(
+            "fixture isolated task",
+            "dry-run",
+            "general",
+            workspace_path=".",
+            mode="code",
+            task_id="isolated-tool-gate",
+            isolate_workspace=True,
+            execution_workspace="C:/rasputin-fixture-worktree",
+        )
+        planning_tools = {item["id"] for item in hub._agent_tools(task, "planning")}
+        execution_tools = {item["id"] for item in hub._agent_tools(task, "execution")}
+        self.assertNotIn("fs_write", planning_tools)
+        self.assertNotIn("shell_exec", planning_tools)
+        self.assertNotIn("git_add", execution_tools)
+        self.assertNotIn("git_commit", execution_tools)
+        self.assertNotIn("shell_exec", execution_tools)
+        self.assertEqual(
+            hub._pin_execution_workspace(task, "execution", "fs_write", {
+                "workspace_path": "C:/source-checkout", "path": "sample.py",
+            })["workspace_path"],
+            "C:/rasputin-fixture-worktree",
+        )
+
+        chat_calls = []
+
+        async def fake_chat(*_args, **_kwargs):
+            chat_calls.append(True)
+            if len(chat_calls) == 1:
+                # A model can still fabricate a tool name even when it was
+                # absent from the supplied schema. The runtime gate must reject
+                # it before McpLayer can invoke Host Shell.
+                return "", [{
+                    "id": "blocked-shell-call",
+                    "name": "shell_exec",
+                    "args": {"command": "echo should-not-run"},
+                }]
+            return "safe completion after refusal", []
+
+        sections = [context_governor.section("fixture", "Fixture", "fixture", required=True, priority=0)]
+        with patch("backend.engine.agent._chat", new=fake_chat):
+            result = asyncio.run(hub.governed_chat(
+                task,
+                "execution",
+                "coder",
+                sections,
+                tools=hub._agent_tools(task, "execution"),
+            ))
+        self.assertEqual(result, "safe completion after refusal")
+        self.assertTrue(any(
+            entry["kind"] == "tool_call_blocked" and entry["detail"]["tool"] == "shell_exec"
+            for entry in task.trace
+        ))
+
+    def testAgentHubRejectsInvalidIsolatedTaskConfigurations(self):
+        with self.assertRaisesRegex(ValueError, "only for a Code task"):
+            hub.start("fixture", mode="chat", isolate_workspace=True)
+        with self.assertRaisesRegex(ValueError, "skill-based"):
+            hub.start("fixture", mode="code", skill="review", isolate_workspace=True)
+        with self.assertRaisesRegex(ValueError, "sub-agents"):
+            hub.start("fixture", mode="code", subagents=1, isolate_workspace=True)
+        with patch("backend.engine.agent.model_providers.supports_agentic_tools", return_value=False):
+            with self.assertRaisesRegex(ValueError, "tool-capable Code model"):
+                hub.start("fixture", model="dry-run", mode="code", isolate_workspace=True)
 
     def testFsPatchRequiresUniqueMatchAndRespectsTrust(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -4649,7 +4849,12 @@ class BackendSmokeTests(unittest.TestCase):
         task = agent.AgentTask("web search please", "dry-run", "general", mode="chat", workspace_path=".")
         hub._persist_session(task)
 
-        with patch("backend.engine.agent._chat", recording_chat):
+        # This test exercises the normal tool-capable path. Pin the profile so
+        # state left by compatibility tests cannot select the intentionally
+        # tool-free minimal-inference fallback.
+        rich_model = {"key": "dry-run", "compatibility": {"status": "compatible", "promptProfile": "standard"}}
+        with patch("backend.engine.agent._chat", recording_chat), \
+             patch("backend.engine.agent.model_registry.get_model", return_value=rich_model):
             result = asyncio.run(hub.governed_chat(task, "chat", "main", sections, tools=[{"id": "web_search"}, {"id": "broken_tool"}]))
 
         self.assertEqual(result, "final answer")

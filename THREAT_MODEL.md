@@ -103,10 +103,12 @@ Covered by tests in `tests/testBackendSmoke.py` —
 
 An explicit, per-workspace opt-in (`workspace.py`'s `trusted` flag on a
 workspace record). Trusted:
-- `fs_write` / `fs_patch` / `fs_mkdir` / `fs_move` / `git_add` /
-  `git_commit` skip the per-action approval queue (untrusted workspaces
-  still hit `approvals.mutation_preview(...)` and need a human click every
-  time).
+- `fs_write` / `fs_patch` / `fs_mkdir` / `fs_move` / `git_add` skip the
+  per-action approval queue (untrusted workspaces still hit
+  `approvals.mutation_preview(...)` and need a human click every time).
+- `git_commit` always requires a fresh one-time approval, even in a Trusted
+  Dev workspace. A commit changes durable repository history and is therefore
+  deliberately separate from the edit/test-loop trust grant.
 - Every call is still audit-logged (`audit.log(..., trusted=True/False)`).
 
 Trusted Dev Mode does **not** grant shell execution. Host Shell is a second,
@@ -157,6 +159,31 @@ host tools with the backend's privileges (see §6.2).
 workspace containment/trust/approval checks, but they are not automatically
 routed through `Rasputin_sbx`. Do not describe every agent execution surface
 as having the same isolation level.
+
+### 5.1 Opt-in isolated Code tasks
+
+Code mode offers an explicit **Isolate repo** option for a single general
+agent. Rasputin first requires a clean, approved, top-level Git checkout and
+a data directory that does not overlap that checkout. It then creates a
+dedicated task branch and worktree under its data directory. If any preflight
+check fails, the task is visibly blocked; it never falls back to editing the
+source working tree.
+
+During planning, source-repository access is read-only. During execution,
+available file and Git tools are pinned server-side to the task worktree; the
+agent cannot override the workspace path. The phase capability set is also
+enforced server-side, so a fabricated tool call cannot invoke a withheld tool.
+Host Shell, automatic test commands, `git add`, and `git commit` are excluded
+because the current shell boundary is not worktree-confined. Linked-worktree
+`.git` metadata is protected from mutation; task-worktree Git calls suppress
+hooks, external diffs, and fsmonitor, and worktree provisioning strips
+inherited `GIT_*` routing/config overrides.
+
+The worktree is retained for review after the task. This protects the source
+working tree and its checked-out branch (Git necessarily records the linked
+worktree and task branch in repository metadata); it is not a sandbox for
+arbitrary code, and v1 intentionally
+does not auto-apply, merge, or delete the retained changes.
 
 ## 6. Known gaps
 

@@ -46,6 +46,7 @@ from backend.core import security as security
 from backend.core import audit as audit
 from backend.mcp import tools as tool_relay
 from backend.core import workspace
+from backend.core import task_worktree
 
 TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
@@ -54,6 +55,10 @@ TEXT_FILE_EXTENSIONS = {
 # File-mutating tools whose successful execution means the workspace actually
 # changed, so the Stage 6 test loop should re-run the configured test command.
 FILE_MUTATING_TOOLS = {"fs_write", "fs_patch", "fs_move"}
+ISOLATED_PLANNING_BLOCKED_TOOLS = {
+    "fs_write", "fs_patch", "fs_mkdir", "fs_move", "git_add", "git_commit", "shell_exec",
+}
+ISOLATED_EXECUTION_BLOCKED_TOOLS = {"git_add", "git_commit", "shell_exec"}
 WORKSPACE_CONTEXT_TERMS = (
     "file", "files", "folder", "folders", "directory", "directories", "workspace",
     "codebase", "repo", "repository", "project", "read my", "inspect", "scan",
@@ -66,7 +71,7 @@ FILE_SNIPPET_TERMS = (
 
 
 class AgentTask:
-    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None):
+    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None, isolate_workspace=False, isolation_state="none", execution_workspace="", isolation_metadata=None):
         self.id = task_id or str(uuid.uuid4())[:8]
         self.session_id = session_id or store.new_id("sess")
         self.objective = objective
@@ -100,6 +105,10 @@ class AgentTask:
         self.cancel_requested = False
         self.paused_requested = False
         self.workspace = workspace_path or workspace.get_active()["active_path"]
+        self.isolate_workspace = bool(isolate_workspace and self.mode == "code")
+        self.isolation_state = str(isolation_state or ("none" if not self.isolate_workspace else "requested"))
+        self.execution_workspace = str(execution_workspace or "")
+        self.isolation_metadata = dict(isolation_metadata or {})
         self.permission_snapshot = security.load()
         self.created_at = time.time()
         self.event_sink = None
@@ -213,6 +222,10 @@ class AgentHub:
             subagents=row["subagents"],
             max_attempts=row["max_attempts"],
             source_task_id=row["source_task_id"],
+            isolate_workspace=bool(row["isolation_requested"]),
+            isolation_state=row["isolation_state"] or "none",
+            execution_workspace=row["execution_workspace"] or "",
+            isolation_metadata=store._loads(row["isolation_metadata"], {}),
         )
         task.owner_id = row["owner_id"] or "admin"
         task.created_at = row["created_at"]
@@ -386,14 +399,19 @@ class AgentHub:
                 """
                 INSERT INTO tasks(
                   id,session_id,parent_id,objective,model,skill,mode,status,progress,result,
-                  workspace,permission_snapshot,paused,created_at,updated_at,owner_id,reasoning,
+                  workspace,permission_snapshot,isolation_requested,isolation_state,execution_workspace,isolation_metadata,
+                  paused,created_at,updated_at,owner_id,reasoning,
                   subagents,priority,queue_order,scheduled_for,started_at,completed_at,attempt_count,
                   max_attempts,source_task_id
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                   status=excluded.status,
                   progress=excluded.progress,
                   result=excluded.result,
+                  isolation_requested=excluded.isolation_requested,
+                  isolation_state=excluded.isolation_state,
+                  execution_workspace=excluded.execution_workspace,
+                  isolation_metadata=excluded.isolation_metadata,
                   paused=excluded.paused,
                   priority=excluded.priority,
                   queue_order=excluded.queue_order,
@@ -416,6 +434,10 @@ class AgentHub:
                     task.result,
                     task.workspace,
                     json.dumps(task.permission_snapshot),
+                    1 if task.isolate_workspace else 0,
+                    task.isolation_state,
+                    task.execution_workspace,
+                    json.dumps(task.isolation_metadata),
                     1 if task.paused_requested or task.status == "paused" else 0,
                     task.created_at,
                     store.now(),
@@ -496,6 +518,10 @@ class AgentHub:
             "steps": task.steps[-40:],
             "permissionSnapshot": task.permission_snapshot,
             "workspace": task.workspace,
+            "isolateWorkspace": task.isolate_workspace,
+            "isolationState": task.isolation_state,
+            "executionWorkspace": task.execution_workspace or None,
+            "isolation": dict(task.isolation_metadata),
             "parentId": task.parent_id,
             "paused": task.paused_requested or task.status == "paused",
             "createdAt": task.created_at,
@@ -523,6 +549,10 @@ class AgentHub:
             "steps": [],
             "permissionSnapshot": store._loads(task["permission_snapshot"], {}),
             "workspace": task["workspace"],
+            "isolateWorkspace": bool(task.get("isolation_requested")),
+            "isolationState": task.get("isolation_state") or "none",
+            "executionWorkspace": task.get("execution_workspace") or None,
+            "isolation": store._loads(task.get("isolation_metadata"), {}),
             "parentId": task["parent_id"],
             "paused": bool(task["paused"]),
             "createdAt": task["created_at"],
@@ -886,6 +916,7 @@ class AgentHub:
         scheduled_for=None,
         max_attempts=1,
         source_task_id=None,
+        isolate_workspace=False,
     ):
         if session_id:
             self.session(session_id, owner_id)
@@ -893,6 +924,26 @@ class AgentHub:
         selected = model_registry.get_model(model)
         if mode != "chat" and selected and not model_providers.supports_agentic_tools(selected):
             mode = "chat"
+        if isolate_workspace:
+            # Keep the invariant at the execution boundary as well as the API
+            # boundary. Future/internal callers must not accidentally launch
+            # child or skill work outside the narrow worktree-safe path, and a
+            # tool-mode compatibility fallback must never quietly drop the
+            # requested isolation guarantee.
+            if mode != "code":
+                if requested_mode == "code":
+                    raise ValueError(
+                        "workspace isolation requires a tool-capable Code model; task was not started"
+                    )
+                raise ValueError("workspace isolation is available only for a Code task")
+            if str(skill or "general") != "general":
+                raise ValueError("workspace isolation does not support skill-based execution yet")
+            try:
+                requested_subagents = max(0, int(subagents or 0))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("subagent count must be a whole number") from exc
+            if requested_subagents:
+                raise ValueError("workspace isolation does not support sub-agents yet")
         task = AgentTask(
             objective,
             model,
@@ -906,6 +957,7 @@ class AgentHub:
             subagents=subagents,
             max_attempts=max_attempts,
             source_task_id=source_task_id,
+            isolate_workspace=isolate_workspace,
         )
         if mode != requested_mode:
             task.log("Selected model does not support tool execution; switched to Chat mode before starting.")
@@ -1051,6 +1103,7 @@ class AgentHub:
             priority=original.get("priority", 0),
             max_attempts=original.get("maxAttempts", 1),
             source_task_id=task_id,
+            isolate_workspace=original.get("isolateWorkspace", False),
         )
 
     async def set_priority(self, task_id, priority, owner_id="admin"):
@@ -1089,6 +1142,72 @@ class AgentHub:
             task.status = "running"
             await self.emit(task)
 
+    async def _prepare_isolated_workspace(self, task):
+        """Provision or verify the task's retained Git worktree before tools run."""
+        if not task.isolate_workspace:
+            return
+        try:
+            state = task.isolation_state or "none"
+            if state in {"ready", "retained", "provisioning"}:
+                metadata = await asyncio.to_thread(task_worktree.verify, task.isolation_metadata)
+            elif state == "none":
+                metadata = await asyncio.to_thread(task_worktree.plan, task.id, task.workspace)
+                task.isolation_metadata = metadata
+                task.execution_workspace = metadata["executionWorkspace"]
+                task.isolation_state = "provisioning"
+                task.seen("workspace_isolation", {
+                    "state": "provisioning",
+                    "branch": metadata["branch"],
+                    "sourceWorkspace": metadata["sourceWorkspace"],
+                })
+                task.log("preparing isolated Git worktree before planning")
+                await self.emit(task)
+                metadata = await asyncio.to_thread(task_worktree.create, metadata)
+            else:
+                raise task_worktree.TaskWorktreeError(
+                    "isolated workspace is blocked; create a new task after resolving the recorded problem"
+                )
+            task.isolation_metadata = metadata
+            task.execution_workspace = metadata["executionWorkspace"]
+            task.isolation_state = "ready"
+            task.seen("workspace_isolation", {
+                "state": "ready",
+                "branch": metadata["branch"],
+                "baseSha": metadata["baseSha"],
+                "executionWorkspace": metadata["executionWorkspace"],
+            })
+            task.log(f"isolated Git worktree ready on {metadata['branch']}")
+            await self.emit(task)
+        except Exception as exc:
+            message = str(exc)
+            task.isolation_state = "blocked"
+            task.execution_workspace = ""
+            task.isolation_metadata = {
+                **dict(task.isolation_metadata or {}),
+                "state": "blocked",
+                "error": message,
+            }
+            task.seen("workspace_isolation", {"state": "blocked", "error": message})
+            task.log(f"isolated Git worktree blocked: {message}")
+            await self.emit(task)
+            raise RuntimeError(f"Isolated coding workspace unavailable: {message}") from None
+
+    def _agent_tools(self, task, phase):
+        if not task.isolate_workspace:
+            return tool_relay.TOOL_DEFINITIONS
+        blocked = ISOLATED_PLANNING_BLOCKED_TOOLS if phase == "planning" else ISOLATED_EXECUTION_BLOCKED_TOOLS
+        return [item for item in tool_relay.TOOL_DEFINITIONS if item.get("id") not in blocked]
+
+    def _pin_execution_workspace(self, task, phase, tool_name, args):
+        """Ignore model-supplied workspace roots during isolated execution."""
+        if phase != "execution" or not task.execution_workspace:
+            return args
+        definition = tool_relay.require_definition(tool_name)
+        properties = (definition.get("input_schema") or {}).get("properties") or {}
+        if "workspace_path" in properties:
+            args["workspace_path"] = task.execution_workspace
+        return args
+
     async def run_task(self, task, subagents=0):
         task.started_at = task.started_at or store.now()
         task.attempt_count += 1
@@ -1096,6 +1215,8 @@ class AgentHub:
         task.log("started")
         await self.emit(task)
         try:
+            if task.isolate_workspace:
+                await self._prepare_isolated_workspace(task)
             direct_chat = task.mode == "chat" and (not task.skill or task.skill == "general") and not subagents
             if direct_chat:
                 task.progress = 18
@@ -1148,6 +1269,14 @@ class AgentHub:
             task.status = "error"
             task.result = str(exc)
             task.log(f"error: {exc}")
+        if task.isolate_workspace and task.execution_workspace and task.isolation_state == "ready":
+            task.isolation_state = "retained"
+            task.isolation_metadata = {
+                **dict(task.isolation_metadata or {}),
+                "state": "retained",
+            }
+            task.seen("workspace_isolation", {"state": "retained", "executionWorkspace": task.execution_workspace})
+            task.log("isolated Git worktree retained for review; source working tree and checked-out branch were not changed")
         task.completed_at = store.now()
         await self.emit(task)
 
@@ -1180,6 +1309,14 @@ class AgentHub:
         # trust / allow_shell_execution gating as any shell tool). Returns
         # (passed, summary), or None when it couldn't run -- logged + traced so
         # "why didn't my tests run" is inspectable, never silent.
+        if task.isolate_workspace:
+            # A worktree constrains file and Git tools, but the current Host
+            # Shell boundary can still reach the source workspace (and Docker
+            # / POSIX shells are direct backend children). Do not claim the
+            # worktree isolates shell commands until that boundary is rebuilt.
+            task.log("test command skipped: Host Shell is disabled for isolated worktree tasks")
+            task.seen("test_skipped", {"reason": "isolation_shell_not_supported"})
+            return None
         try:
             result = await self.mcp.call_tool(
                 "shell_exec",
@@ -1310,6 +1447,23 @@ class AgentHub:
             task.log(f"context omitted: {', '.join(trace['omitted'])}")
 
         messages = [{"role": "user", "content": bundle["prompt"]}]
+        # Tool schemas are a capability boundary, not merely model guidance.
+        # A malformed or malicious tool-call payload must not be able to name a
+        # tool we deliberately withheld (notably shell_exec in a worktree task).
+        # Keep this server-side check even though compatible model runtimes only
+        # expose the supplied schemas to the model.
+        phase_tools = tools
+        # A few direct/internal callers invoke governed_chat without passing
+        # schemas. Preserve their established execution capability set while
+        # still applying the exact same server-side gate. Chat has no implicit
+        # tool set.
+        if phase_tools is None and phase in {"planning", "execution"}:
+            phase_tools = self._agent_tools(task, phase)
+        allowed_tool_ids = {
+            str(item.get("id"))
+            for item in (phase_tools or [])
+            if isinstance(item, dict) and item.get("id")
+        }
 
         budget = self._tool_loop_budget(task)
         max_attempts = max(2, budget["max_attempts"]) if minimal_inference else budget["max_attempts"]
@@ -1445,11 +1599,30 @@ class AgentHub:
                     return text
 
                 for tc in tool_calls:
+                    tool_name = str(tc.get("name") or "")
+                    if tool_name not in allowed_tool_ids:
+                        message = f"Tool '{tool_name or 'unknown'}' is not available in this task phase."
+                        task.log(f"blocked tool call: {tool_name or 'unknown'}")
+                        task.seen("tool_call_blocked", {
+                            "tool": tool_name or "unknown",
+                            "phase": phase,
+                            "reason": "not_in_phase_capability_set",
+                        })
+                        step = self._add_step(task, "tool", tool_name or "unknown")
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id") or store.new_id("tool"),
+                            "name": tool_name or "unknown",
+                            "content": message,
+                        })
+                        self._finish_step(task, step, "error")
+                        continue
                     task.log(f"tool: {tc['name']}")
                     step = self._add_step(task, "tool", tc["name"])
                     try:
-                        args = tc.get("args", {})
+                        args = dict(tc.get("args", {}) or {})
                         args["_task_id"] = task.id
+                        args = self._pin_execution_workspace(task, phase, tc["name"], args)
                         result = await self.mcp.call_tool(tc["name"], args, on_log=task.log)
                         messages.append({
                             "role": "tool",
@@ -1619,7 +1792,17 @@ class AgentHub:
                 priority=0,
             ),
         ]
-        return await self.governed_chat(task, "planning", "planner", sections, tools=tool_relay.TOOL_DEFINITIONS)
+        if task.isolate_workspace:
+            sections.append(context_governor.section(
+                "isolation_policy",
+                "Isolated-worktree policy",
+                "This task will use a dedicated Git worktree for file and Git operations. "
+                "Planning is read-only in the source checkout: do not request mutations or shell commands. "
+                "The retained worktree will be reviewed separately; do not claim validation ran.",
+                required=True,
+                priority=0,
+            ))
+        return await self.governed_chat(task, "planning", "planner", sections, tools=self._agent_tools(task, "planning"))
 
     async def execute(self, task, plan):
         if task.skill and task.skill != "general":
@@ -1651,7 +1834,17 @@ class AgentHub:
                 priority=0,
             ),
         ]
-        return await self.governed_chat(task, "execution", self.execution_role(task), sections, tools=tool_relay.TOOL_DEFINITIONS)
+        if task.isolate_workspace:
+            sections.append(context_governor.section(
+                "isolation_policy",
+                "Isolated-worktree policy",
+                "Use the dedicated isolated worktree for all available workspace tools. Host Shell, automatic test runs, "
+                "git add, and git commit are intentionally unavailable in this mode because the current shell boundary "
+                "could escape a worktree. Do not claim tests ran or that changes were applied to the source workspace.",
+                required=True,
+                priority=0,
+            ))
+        return await self.governed_chat(task, "execution", self.execution_role(task), sections, tools=self._agent_tools(task, "execution"))
 
     async def reflect(self, task, plan, work):
         work_str = str(work)

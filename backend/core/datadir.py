@@ -16,7 +16,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def data_dir() -> Path:
+def data_dir(create=True) -> Path:
     override = os.environ.get("RASPUTIN_DATA_DIR")
     if override:
         path = Path(override)
@@ -25,12 +25,13 @@ def data_dir() -> Path:
     else:
         local_app_data = os.environ.get("LOCALAPPDATA")
         path = (Path(local_app_data) / "Rasputin" / "data") if local_app_data else (_REPO_ROOT / "data")
-    # The native default (%LOCALAPPDATA%\Rasputin\data) is nested, so its parent
-    # may not exist on a fresh machine. Ensure the full path -- callers rely on
-    # data_dir() returning a directory they can immediately write to. parents=True
-    # is the fix for the old single-level `mkdir(exist_ok=True)` assumption.
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
+    if create:
+        # The native default (%LOCALAPPDATA%\Rasputin\data) is nested, so its parent
+        # may not exist on a fresh machine. Ensure the full path -- callers rely on
+        # data_dir() returning a directory they can immediately write to. parents=True
+        # is the fix for the old single-level `mkdir(exist_ok=True)` assumption.
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
     return path

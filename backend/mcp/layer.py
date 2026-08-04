@@ -12,6 +12,7 @@ import shutil
 from backend.rag import vector as rag
 from backend.rag import graph as graphify
 from backend.core import workspace
+from backend.core import task_worktree
 from backend.core import sandbox_exec
 from backend.core import audit as audit
 from backend.core import security as security
@@ -256,6 +257,28 @@ class McpLayer:
             raise ValueError("path outside safe root")
         return target
 
+    def _protect_task_git_metadata(self, target, prohibit_root=False):
+        """Keep a linked worktree's .git pointer out of mutation tools.
+
+        A Git worktree stores `.git` as a file pointing into the source
+        checkout's Git directory.  Replacing or moving that file would let a
+        later Git invocation escape the task's recorded repository metadata.
+        This restriction applies only to hidden task roots; ordinary approved
+        workspaces retain their existing Git-tool behavior.
+        """
+        task_root = workspace.task_root_for_path(target)
+        if not task_root:
+            return
+        root = workspace.resolve_path(task_root.get("root"))
+        try:
+            relative = Path(target).resolve().relative_to(root)
+        except ValueError:
+            raise PermissionError("path is outside the isolated task worktree") from None
+        if relative.parts and relative.parts[0].casefold() == ".git":
+            raise PermissionError("the isolated task worktree's .git metadata is protected")
+        if prohibit_root and not relative.parts:
+            raise PermissionError("the isolated task worktree root cannot be moved")
+
     async def call_tool(self, name, args, on_log=None):
         definition = tool_relay.require_definition(name)
         external = mcp_relay.is_external_tool(name)
@@ -317,7 +340,7 @@ class McpLayer:
             if not approval:
                 raise PermissionError("approval missing")
             if approval["status"] == "approved":
-                approvals.require_approved(approval_id, action_type)
+                approvals.require_approved(approval_id, action_type, task_id)
                 return True
             if approval["status"] in {"denied", "expired", "executed"}:
                 raise PermissionError(f"approval {approval['status']}")
@@ -344,6 +367,7 @@ class McpLayer:
     async def fs_write(self, path, content, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_write")
         target = self._safe(path, workspace_path)
+        self._protect_task_git_metadata(target)
         item = workspace.require_path_permission(target, "write")
         trusted = bool(item.get("trusted"))
         cfg = security.load()
@@ -367,6 +391,7 @@ class McpLayer:
     async def fs_patch(self, path, old_string, new_string, workspace_path=None, replace_all=False, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_write")
         target = self._safe(path, workspace_path)
+        self._protect_task_git_metadata(target)
         item = workspace.require_path_permission(target, "write")
         trusted = bool(item.get("trusted"))
         if not target.exists() or not target.is_file():
@@ -488,6 +513,7 @@ class McpLayer:
     async def fs_mkdir(self, path, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_reorganize")
         target = self._safe(path, workspace_path)
+        self._protect_task_git_metadata(target)
         item = workspace.require_path_permission(target, "reorganize")
         trusted = bool(item.get("trusted"))
         cfg = security.load()
@@ -510,6 +536,8 @@ class McpLayer:
         security.require("allow_file_reorganize")
         src = self._safe(source, workspace_path)
         dst = self._safe(target, workspace_path)
+        self._protect_task_git_metadata(src, prohibit_root=True)
+        self._protect_task_git_metadata(dst, prohibit_root=True)
         src_item = workspace.require_path_permission(src, "reorganize")
         dst_item = workspace.require_path_permission(dst, "reorganize")
         trusted = bool(src_item.get("trusted")) and bool(dst_item.get("trusted"))
@@ -739,8 +767,22 @@ class McpLayer:
         }
 
     async def _run_git(self, base, args, timeout=20):
+        git_args = list(args)
+        if workspace.task_root_for_path(base):
+            # Task worktrees are created from a user repo. Suppress repository
+            # hooks and external diff helpers whenever Git is invoked there.
+            # This does not make arbitrary Host Shell safe, which is why that
+            # tool is removed from isolated tasks entirely.
+            if git_args and git_args[0] == "diff":
+                git_args.insert(1, "--no-ext-diff")
+            git_args = [
+                "-c", f"core.hooksPath={task_worktree.hooks_root()}",
+                "-c", "core.fsmonitor=false",
+                "-c", "diff.external=",
+                *git_args,
+            ]
         proc = await asyncio.create_subprocess_exec(
-            "git", *args,
+            "git", *git_args,
             cwd=str(base),
             env=_safe_shell_env(),
             stdout=asyncio.subprocess.PIPE,
@@ -854,6 +896,7 @@ class McpLayer:
         rel_paths = []
         for p in raw_paths:
             target = self._safe(p, workspace_path)
+            self._protect_task_git_metadata(target)
             rel_paths.append(str(target.relative_to(base)) if target != base else ".")
         cfg = security.load()
         if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
@@ -871,7 +914,7 @@ class McpLayer:
         audit.log("git_add", {"cwd": str(base), "paths": rel_paths, "trusted": trusted})
         return {"cwd": str(base), "paths": rel_paths, **result}
 
-    async def git_commit(self, message, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
+    async def git_commit(self, message, workspace_path=None, approval_id=None, _task_id=None, _tool_call_id=None):
         security.require("allow_file_write")
         message = str(message or "").strip()
         if not message:
@@ -879,20 +922,31 @@ class McpLayer:
         base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
         item = workspace.require_path_permission(base, "write")
         trusted = bool(item.get("trusted"))
-        cfg = security.load()
-        if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
-            approvals.require_approved(approval_id, "git_commit")
-            approved = True
-        if cfg.get("approval_required_file_write", True) and not trusted and not approved:
+        # A commit establishes a durable repository history boundary.  Unlike
+        # ordinary file edits and staging, it must always have a fresh,
+        # explicit operator grant -- including in a Trusted Dev workspace.
+        # Trusted Dev remains useful for the edit/test loop, but cannot turn an
+        # agent's proposed commit into an unattended side effect.
+        explicit_commit_granted = False
+        if approval_id:
+            approvals.require_approved(approval_id, "git_commit", _task_id)
+            explicit_commit_granted = True
+        if not explicit_commit_granted:
             preview = approvals.mutation_preview("git_commit", {
                 "message": message,
                 "workspace": workspace_path or workspace.get_active()["active_path"],
+                "explicit_commit_grant": True,
             }, task_id=_task_id, tool_call_id=_tool_call_id)
-            approved = await self._wait_for_approval(preview, "git_commit", _task_id)
-            if not approved:
+            explicit_commit_granted = await self._wait_for_approval(preview, "git_commit", _task_id)
+            if not explicit_commit_granted:
                 return preview
         result = await self._run_git(base, ["commit", "-m", message])
-        audit.log("git_commit", {"cwd": str(base), "message_length": len(message), "trusted": trusted})
+        audit.log("git_commit", {
+            "cwd": str(base),
+            "message_length": len(message),
+            "trusted": trusted,
+            "explicit_commit_grant": True,
+        })
         return {"cwd": str(base), "message": message, **result}
 
     async def git_restore(self, paths, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
@@ -910,6 +964,7 @@ class McpLayer:
         rel_paths = []
         for p in raw_paths:
             target = self._safe(p, workspace_path)
+            self._protect_task_git_metadata(target)
             rel_paths.append(str(target.relative_to(base)) if target != base else ".")
         cfg = security.load()
         if cfg.get("approval_required_file_write", True) and not trusted and approval_id:

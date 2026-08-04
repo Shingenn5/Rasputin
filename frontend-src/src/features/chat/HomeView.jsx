@@ -153,6 +153,8 @@ export function HomeView(props) {
     modelKeyForMode,
     subagentCount,
     setSubagentCount,
+    isolateWorkspace,
+    setIsolateWorkspace,
     runningTasks,
     openTaskDetails,
   } = props;
@@ -933,6 +935,25 @@ export function HomeView(props) {
                       <span>{activeReasoning.label}</span>
                       <ChevronDown size={12} />
                     </button>
+                    {taskMode === "code" && (
+                      <label
+                        className="composer-chip"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", cursor: subagentCount ? "not-allowed" : "pointer", opacity: subagentCount ? 0.6 : 1 }}
+                        title={subagentCount
+                          ? "Isolation currently supports one coding agent only. Set sub-agents to 0 to enable it."
+                          : "Create a dedicated Git worktree and task branch. File and Git tools do not change your source working tree or checked-out branch; Host Shell and automatic test runs are disabled in this safety mode."}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(isolateWorkspace)}
+                          disabled={Boolean(subagentCount)}
+                          onChange={(event) => setIsolateWorkspace(event.target.checked)}
+                          aria-label="Isolate this coding task in a Git worktree"
+                        />
+                        <ShieldCheck size={14} aria-hidden="true" />
+                        <span>Isolate repo</span>
+                      </label>
+                    )}
                   </div>
                   <div className="composer-actions">
                     {latestActiveTask && (

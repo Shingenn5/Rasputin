@@ -35,6 +35,7 @@ def _slug(text):
 def _blank():
     return {
         "active_id": "project-root",
+        "task_roots": [],
         "workspaces": [
             {
                 "id": "project-root",
@@ -134,7 +135,107 @@ def _public_item(item):
         "allow_host_shell": bool(item.get("allow_host_shell", False)),
         "commands": dict(item.get("commands") or {}),
         "members": dict(item.get("members") or {}),
+        "task_root": bool(item.get("task_root", False)),
+        "task_id": item.get("task_id") if item.get("task_root") else None,
+        "source_workspace_id": item.get("source_workspace_id") if item.get("task_root") else None,
     }
+
+
+def _task_roots(data):
+    roots = data.setdefault("task_roots", [])
+    if not isinstance(roots, list):
+        roots = []
+        data["task_roots"] = roots
+    return roots
+
+
+def _task_root_proxy(data, record):
+    source_id = record.get("source_workspace_id")
+    source = next((item for item in data.get("workspaces", []) if item.get("id") == source_id), None)
+    if not source:
+        return None
+    root = str(record.get("root") or "").strip()
+    if not root:
+        return None
+    return {
+        **source,
+        "id": record.get("id") or f"task-root-{record.get('task_id')}",
+        "name": record.get("name") or f"Isolated task {record.get('task_id')}",
+        "root": root,
+        "task_root": True,
+        "task_id": record.get("task_id"),
+        "source_workspace_id": source_id,
+    }
+
+
+def register_task_root(task_id, root, source_workspace_ref):
+    """Register a hidden, task-bound execution root.
+
+    These roots intentionally live outside the ordinary workspace list: they
+    are only created by the worktree manager, inherit live policy from their
+    approved source workspace, and never become selectable in the UI.
+    """
+    task_id = str(task_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", task_id):
+        raise ValueError("invalid task root id")
+    target = Path(root).expanduser().resolve()
+    if not target.exists() or not target.is_dir():
+        raise ValueError("task root must be an existing folder")
+    data, source = _find(source_workspace_ref)
+    records = _task_roots(data)
+    existing = next((record for record in records if record.get("task_id") == task_id), None)
+    stored_root = _stored_root(target)
+    if existing:
+        if _root_from_value(existing.get("root")) != target:
+            raise ValueError("task root id already points to a different folder")
+        if existing.get("source_workspace_id") != source.get("id"):
+            raise ValueError("task root source workspace mismatch")
+        proxy = _task_root_proxy(data, existing)
+        if not proxy:
+            raise ValueError("task root source workspace is missing")
+        return _public_item(proxy)
+    for record in records:
+        if _root_from_value(record.get("root")) == target:
+            raise ValueError("task root folder is already registered")
+    record = {
+        "id": f"task-root-{task_id}",
+        "task_id": task_id,
+        "name": f"Isolated task {task_id}",
+        "root": stored_root,
+        "source_workspace_id": source.get("id"),
+        "created_at": time.time(),
+    }
+    records.append(record)
+    _save(data)
+    proxy = _task_root_proxy(data, record)
+    return _public_item(proxy)
+
+
+def remove_task_root(task_id):
+    """Forget a hidden task execution root after an explicit discard flow."""
+    data = _load()
+    records = _task_roots(data)
+    wanted = str(task_id or "")
+    kept = [record for record in records if record.get("task_id") != wanted]
+    removed = len(kept) != len(records)
+    data["task_roots"] = kept
+    if removed:
+        _save(data)
+    return {"removed": removed}
+
+
+def task_root_for_path(path):
+    target = _root_from_value(path)
+    data = _load()
+    matches = []
+    for record in _task_roots(data):
+        proxy = _task_root_proxy(data, record)
+        if not proxy:
+            continue
+        root = _abs(proxy)
+        if target == root or root in target.parents:
+            matches.append((len(str(root)), proxy))
+    return sorted(matches, key=lambda item: item[0], reverse=True)[0][1] if matches else None
 
 
 def claim_legacy_membership(username):
@@ -831,6 +932,13 @@ def workspace_for_path(path):
         root = _abs(item)
         if target == root or root in target.parents:
             matches.append((len(str(root)), item))
+    for record in _task_roots(data):
+        proxy = _task_root_proxy(data, record)
+        if not proxy:
+            continue
+        root = _abs(proxy)
+        if target == root or root in target.parents:
+            matches.append((len(str(root)), proxy))
     if not matches:
         return None
     return sorted(matches, key=lambda x: x[0], reverse=True)[0][1]

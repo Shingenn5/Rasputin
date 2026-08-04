@@ -102,6 +102,7 @@ export function App() {
   const [reasoningMode, setReasoningMode] = useState("auto");
   const [modeModelOverrides, setModeModelOverrides] = useState({});
   const [subagentCount, setSubagentCount] = useState(0);
+  const [isolateWorkspace, setIsolateWorkspace] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [taskDetails, setTaskDetails] = useState(null);
@@ -862,6 +863,7 @@ export function App() {
       skill: "general",
       mode,
       reasoning,
+      isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
       status: "queued",
       progress: 0,
       logs: ["queued"],
@@ -892,6 +894,7 @@ export function App() {
         scheduledFor: options.scheduledFor || undefined,
         maxAttempts: options.maxAttempts || 1,
         attachmentIds: options.attachmentIds || [],
+        isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
       });
       setTasks((current) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
       queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
@@ -1985,6 +1988,8 @@ export function App() {
         modelKeyForMode={modelKeyForMode}
         subagentCount={subagentCount}
         setSubagentCount={setSubagentCount}
+        isolateWorkspace={isolateWorkspace}
+        setIsolateWorkspace={setIsolateWorkspace}
         runningTasks={runningTasks}
         openTaskDetails={openTaskDetails}
         setPrompt={(prompt, mode) => {
