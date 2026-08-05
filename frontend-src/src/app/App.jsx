@@ -8,6 +8,7 @@ import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
 import { DashboardView } from "../features/dashboard/DashboardView.jsx";
 import { ModelsView } from "../features/models/ModelsView.jsx";
+import { AssistantView } from "../features/assistant/AssistantView.jsx";
 import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
 import { TaskDetailsDrawer } from "../features/tasks/TaskDetailsDrawer.jsx";
@@ -50,6 +51,7 @@ const routedViews = new Set([
   "workspaces",
   "activity",
   "models",
+  "assistant",
   "warsat",
   "archive",
   "trials",
@@ -150,6 +152,13 @@ export function App() {
   const [trialsRuns, setTrialsRuns] = useState({ runs: [] });
   const [trialsStatus, setTrialsStatus] = useState("");
   const [setup, setSetup] = useState(null);
+  const [assistantProfile, setAssistantProfile] = useState(null);
+  const [assistantCapabilities, setAssistantCapabilities] = useState(null);
+  const [assistantPlans, setAssistantPlans] = useState({ plans: [] });
+  const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
+  const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
   const toast = useToast();
   const eventSourceRef = useRef(null);
@@ -734,6 +743,9 @@ export function App() {
     }
     if (["activity", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"].includes(nextView)) {
       loadRuntimeData().catch((error) => setGlobalStatus(error.message));
+    }
+    if (nextView === "assistant") {
+      loadAssistantData().catch((error) => setGlobalStatus(error.message));
     }
     if (nextView === "archive") {
       loadArchive().catch((error) => setGlobalStatus(error.message));
@@ -1385,6 +1397,97 @@ export function App() {
     setSchedulesList(nextSchedules);
   }
 
+  async function loadAssistantData() {
+    setAssistantLoading(true);
+    setAssistantError("");
+    try {
+      const [nextProfile, nextCapabilities, nextPlans, nextPacks, nextHandoffs] = await Promise.all([
+        api("/api/assistant/profile"),
+        api("/api/assistant/capabilities"),
+        api("/api/assistant/plans"),
+        api("/api/assistant/model-packs"),
+        api("/api/assistant/handoffs"),
+      ]);
+      setAssistantProfile(nextProfile);
+      setAssistantCapabilities(nextCapabilities);
+      setAssistantPlans(nextPlans || { plans: [] });
+      setAssistantModelPacks(nextPacks || { packs: [] });
+      setAssistantHandoffs(nextHandoffs || { handoffs: [] });
+      return { profile: nextProfile, capabilities: nextCapabilities, plans: nextPlans, modelPacks: nextPacks, handoffs: nextHandoffs };
+    } catch (error) {
+      setAssistantError(error.message);
+      throw error;
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  async function createAssistantPlan(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const operations = form.getAll("requestedOperations").map(String);
+    try {
+      await postJson("/api/assistant/plans", {
+        objective: String(form.get("objective") || "").trim(),
+        modelPackId: String(form.get("modelPackId") || "").trim() || undefined,
+        requestedOperations: operations,
+      });
+      await loadAssistantData();
+      setGlobalStatus("Assistant plan created for review.");
+      event.currentTarget.reset();
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function saveAssistantModelPack(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const roles = form.getAll("packRoles").map(String);
+    const entries = (roles.length ? roles : ["main"]).map((role) => ({
+      id: role.replace(/_/g, "-"),
+      role,
+      required: role === "main",
+      capabilities: role === "speech_to_text" ? ["audio.transcribe"] : role === "text_to_speech" ? ["audio.synthesize"] : [role],
+    }));
+    try {
+      await postJson("/api/assistant/model-packs", {
+        packId: String(form.get("packId") || "").trim(),
+        version: "0.1",
+        entries,
+      });
+      await loadAssistantData();
+      setGlobalStatus("Model pack saved without launching any models.");
+      event.currentTarget.reset();
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function reviewAssistantPlan(planId, status) {
+    try {
+      await postJson(`/api/assistant/plans/${encodeURIComponent(planId)}/${status === "approved" ? "approve" : "reject"}`, {});
+      await loadAssistantData();
+      setGlobalStatus(status === "approved" ? "Assistant plan approved for broker review." : "Assistant plan rejected.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function requestAssistantHandoff(planId, operation) {
+    try {
+      await postJson(`/api/assistant/plans/${encodeURIComponent(planId)}/handoffs`, { operation });
+      await Promise.allSettled([loadAssistantData(), refreshApprovals()]);
+      setGlobalStatus("Broker handoff recorded. No host action has started.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
   async function loadArchive() {
     const nextArchive = await api("/api/archive/sessions");
     setArchiveSessions(nextArchive);
@@ -1897,6 +2000,7 @@ export function App() {
           { label: "Open workspaces", hint: "Manage mounted folders and access.", action: () => go("workspaces") },
           { label: "Open activity inbox", hint: "Review queue, approvals, failures, and completions.", keywords: "notifications queue", action: () => go("activity") },
           { label: "Open models", hint: "Inspect and manage model runtimes.", action: () => go("models") },
+          { label: "Open Rasputin assistant", hint: "Review identity, model packs, plans, and broker handoffs.", keywords: "jarvis friday voice orchestration", action: () => go("assistant") },
           { label: "Open artifacts", hint: "Browse generated files and evidence.", keywords: "archive output", action: () => go("archive") },
           { label: "Open settings", hint: "Configure accounts, security, and integrations.", action: () => go("settings", "general") },
         ],
@@ -2173,6 +2277,21 @@ export function App() {
         warsatPlan={warsatPlan}
         security={security}
         openWarsat={() => go("warsat")}
+      />
+      <AssistantView
+        view={view}
+        profile={assistantProfile}
+        capabilities={assistantCapabilities}
+        plans={assistantPlans}
+        modelPacks={assistantModelPacks}
+        handoffs={assistantHandoffs}
+        loading={assistantLoading}
+        error={assistantError}
+        refresh={loadAssistantData}
+        createPlan={createAssistantPlan}
+        saveModelPack={saveAssistantModelPack}
+        reviewPlan={reviewAssistantPlan}
+        requestHandoff={requestAssistantHandoff}
       />
       <ActivityView
         view={view}

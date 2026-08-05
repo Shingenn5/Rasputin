@@ -38,7 +38,7 @@ def _code():
     return secrets.token_hex(3).upper()
 
 
-def create(action_type, detail=None, risk_level="approval_required", task_id=None, tool_call_id=None, workspace=".", ttl=DEFAULT_TTL_SECONDS):
+def create(action_type, detail=None, risk_level="approval_required", task_id=None, tool_call_id=None, workspace=".", ttl=DEFAULT_TTL_SECONDS, owner_id=None):
     store.init_db()
     approval_id = store.new_id("appr")
     code = _code()
@@ -48,7 +48,7 @@ def create(action_type, detail=None, risk_level="approval_required", task_id=Non
     expires = stamp + max(60, int(ttl or DEFAULT_TTL_SECONDS))
     with store._lock, store.connect() as conn:
         task = conn.execute("SELECT owner_id FROM tasks WHERE id=?", (task_id,)).fetchone() if task_id else None
-        owner_id = (task["owner_id"] if task else None) or "admin"
+        owner_id = (task["owner_id"] if task else None) or str(owner_id or "admin").strip() or "admin"
         while conn.execute("SELECT id FROM approvals WHERE code=?", (code,)).fetchone():
             code = _code()
         conn.execute(

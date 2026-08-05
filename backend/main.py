@@ -20,6 +20,7 @@ from backend.core import settings_api
 from backend.api.agent import router as agent_router
 from backend.api.warsat_api import router as warsat_router
 from backend.api.mcp_routes import router as mcp_api_router
+from backend.api.assistant import router as assistant_router
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -32,7 +33,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
@@ -171,6 +172,7 @@ app.include_router(agent_router)
 app.include_router(warsat_router)
 app.include_router(mcp_api_router)
 app.include_router(settings_api.router)
+app.include_router(assistant_router)
 
 # index.html must never be cached by the browser: it points at content-hashed
 # JS/CSS, so caching it means the browser keeps loading stale bundles after a

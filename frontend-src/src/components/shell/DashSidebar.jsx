@@ -29,6 +29,7 @@ const NAV_GROUPS = [
     items: [
       { view: "home", label: "Dashboard", icon: LayoutDashboard, testId: "nav-home" },
       { view: "chat", label: "Chat", icon: MessageSquare, testId: "nav-chat" },
+      { view: "assistant", label: "Rasputin", icon: Brain, testId: "nav-assistant" },
       { view: "workspaces", label: "Workspaces", icon: FolderGit2, testId: "nav-workspaces" },
       { view: "activity", label: "Activity", icon: Activity, testId: "nav-activity" },
     ],

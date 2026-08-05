@@ -271,6 +271,40 @@ def init_db():
               created_at REAL NOT NULL,
               updated_at REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS assistant_plans (
+              id TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'preview',
+              plan_json TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              approved_at REAL,
+              approved_by TEXT,
+              review_note TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS assistant_model_packs (
+              owner_id TEXT NOT NULL,
+              pack_id TEXT NOT NULL,
+              version TEXT NOT NULL DEFAULT '0.1',
+              pack_json TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              PRIMARY KEY(owner_id, pack_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS assistant_handoffs (
+              id TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL,
+              plan_id TEXT NOT NULL,
+              operation TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending_approval',
+              approval_id TEXT,
+              request_json TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL
+            );
             """
         )
         session_columns = {
@@ -423,6 +457,10 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_owner_key ON memory_items(owner_id, canonical_key)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_ready ON memory_jobs(status, next_attempt_at, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_owner ON memory_jobs(owner_id, status, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_plans_owner_updated ON assistant_plans(owner_id, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_model_packs_owner_updated ON assistant_model_packs(owner_id, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_handoffs_owner_updated ON assistant_handoffs(owner_id, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_handoffs_plan_operation ON assistant_handoffs(plan_id, operation)")
         conn.commit()
 
 
@@ -687,3 +725,241 @@ def set_artifact_pinned(owner_id, artifact_id, pinned):
         )
         conn.commit()
     return cursor.rowcount > 0
+
+
+_ASSISTANT_PLAN_STATUSES = {"preview", "approved", "rejected"}
+
+
+def _public_assistant_plan(row):
+    if not row:
+        return None
+    item = dict(row)
+    item["plan"] = _loads(item.pop("plan_json", "{}"), {})
+    return item
+
+
+def create_assistant_plan(owner_id, plan, plan_id=None):
+    """Persist a preview without starting a task, model, or host operation."""
+
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    identifier = str(plan_id or new_id("aplan"))
+    stamp = now()
+    with _lock, connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO assistant_plans(
+              id,owner_id,status,plan_json,created_at,updated_at,approved_at,approved_by,review_note
+            ) VALUES(?,?, 'preview', ?, ?, ?, NULL, NULL, '')
+            """,
+            (identifier, owner, _json(plan or {}), stamp, stamp),
+        )
+        row = conn.execute("SELECT * FROM assistant_plans WHERE id=? AND owner_id=?", (identifier, owner)).fetchone()
+        conn.commit()
+    return _public_assistant_plan(row)
+
+
+def get_assistant_plan(owner_id, plan_id):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    with _lock, connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM assistant_plans WHERE id=? AND owner_id=?",
+            (str(plan_id), owner),
+        ).fetchone()
+    return _public_assistant_plan(row)
+
+
+def list_assistant_plans(owner_id, limit=50):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    cap = max(1, min(int(limit or 50), 200))
+    with _lock, connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM assistant_plans WHERE owner_id=? ORDER BY updated_at DESC LIMIT ?",
+            (owner, cap),
+        ).fetchall()
+    return [_public_assistant_plan(row) for row in rows]
+
+
+def transition_assistant_plan(owner_id, plan_id, status, actor=None, review_note=""):
+    """Move a plan through the review ledger; execution is intentionally absent."""
+
+    if status not in _ASSISTANT_PLAN_STATUSES:
+        raise ValueError("invalid assistant plan status")
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    identifier = str(plan_id)
+    stamp = now()
+    approved_at = stamp if status == "approved" else None
+    approved_by = str(actor or owner) if status == "approved" else None
+    note = str(review_note or "").strip()[:500]
+    with _lock, connect() as conn:
+        current = conn.execute(
+            "SELECT * FROM assistant_plans WHERE id=? AND owner_id=?",
+            (identifier, owner),
+        ).fetchone()
+        if not current:
+            return None
+        if current["status"] != "preview":
+            raise ValueError("assistant plan has already been reviewed")
+        conn.execute(
+            """
+            UPDATE assistant_plans
+            SET status=?, updated_at=?, approved_at=?, approved_by=?, review_note=?
+            WHERE id=? AND owner_id=? AND status='preview'
+            """,
+            (status, stamp, approved_at, approved_by, note, identifier, owner),
+        )
+        row = conn.execute("SELECT * FROM assistant_plans WHERE id=? AND owner_id=?", (identifier, owner)).fetchone()
+        conn.commit()
+    return _public_assistant_plan(row)
+
+
+def _public_assistant_model_pack(row):
+    if not row:
+        return None
+    item = dict(row)
+    item["pack"] = _loads(item.pop("pack_json", "{}"), {})
+    return item
+
+
+def upsert_assistant_model_pack(owner_id, pack_id, version, pack):
+    """Store a declarative model fleet; this never mutates the live registry."""
+
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    identifier = str(pack_id or "").strip()
+    if not identifier:
+        raise ValueError("model pack id is required")
+    clean_version = str(version or "0.1").strip()[:40] or "0.1"
+    stamp = now()
+    with _lock, connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO assistant_model_packs(owner_id,pack_id,version,pack_json,created_at,updated_at)
+            VALUES(?,?,?,?,?,?)
+            ON CONFLICT(owner_id,pack_id) DO UPDATE SET
+              version=excluded.version,
+              pack_json=excluded.pack_json,
+              updated_at=excluded.updated_at
+            """,
+            (owner, identifier, clean_version, _json(pack or {}), stamp, stamp),
+        )
+        row = conn.execute(
+            "SELECT * FROM assistant_model_packs WHERE owner_id=? AND pack_id=?",
+            (owner, identifier),
+        ).fetchone()
+        conn.commit()
+    return _public_assistant_model_pack(row)
+
+
+def get_assistant_model_pack(owner_id, pack_id):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    with _lock, connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM assistant_model_packs WHERE owner_id=? AND pack_id=?",
+            (owner, str(pack_id)),
+        ).fetchone()
+    return _public_assistant_model_pack(row)
+
+
+def list_assistant_model_packs(owner_id, limit=50):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    cap = max(1, min(int(limit or 50), 200))
+    with _lock, connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM assistant_model_packs WHERE owner_id=? ORDER BY updated_at DESC LIMIT ?",
+            (owner, cap),
+        ).fetchall()
+    return [_public_assistant_model_pack(row) for row in rows]
+
+
+def delete_assistant_model_pack(owner_id, pack_id):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    with _lock, connect() as conn:
+        cursor = conn.execute(
+            "DELETE FROM assistant_model_packs WHERE owner_id=? AND pack_id=?",
+            (owner, str(pack_id)),
+        )
+        conn.commit()
+    return cursor.rowcount > 0
+
+
+def _public_assistant_handoff(row):
+    if not row:
+        return None
+    item = dict(row)
+    item["request"] = _loads(item.pop("request_json", "{}"), {})
+    return item
+
+
+def find_assistant_handoff(owner_id, plan_id, operation):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    with _lock, connect() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM assistant_handoffs
+            WHERE owner_id=? AND plan_id=? AND operation=?
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (owner, str(plan_id), str(operation)),
+        ).fetchone()
+    return _public_assistant_handoff(row)
+
+
+def create_assistant_handoff(owner_id, plan_id, operation, approval_id, request, status="pending_approval"):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    handoff_id = new_id("handoff")
+    stamp = now()
+    with _lock, connect() as conn:
+        existing = conn.execute(
+            """
+            SELECT * FROM assistant_handoffs
+            WHERE owner_id=? AND plan_id=? AND operation=?
+              AND status NOT IN ('denied', 'expired')
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (owner, str(plan_id), str(operation)),
+        ).fetchone()
+        if existing:
+            return _public_assistant_handoff(existing)
+        conn.execute(
+            """
+            INSERT INTO assistant_handoffs(
+              id,owner_id,plan_id,operation,status,approval_id,request_json,created_at,updated_at
+            ) VALUES(?,?,?,?, ?, ?, ?, ?, ?)
+            """,
+            (handoff_id, owner, str(plan_id), str(operation), str(status or "pending_approval"), approval_id, _json(request or {}), stamp, stamp),
+        )
+        row = conn.execute("SELECT * FROM assistant_handoffs WHERE id=? AND owner_id=?", (handoff_id, owner)).fetchone()
+        conn.commit()
+    return _public_assistant_handoff(row)
+
+
+def get_assistant_handoff(owner_id, handoff_id):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    with _lock, connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM assistant_handoffs WHERE id=? AND owner_id=?",
+            (str(handoff_id), owner),
+        ).fetchone()
+    return _public_assistant_handoff(row)
+
+
+def list_assistant_handoffs(owner_id, limit=50):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    cap = max(1, min(int(limit or 50), 200))
+    with _lock, connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM assistant_handoffs WHERE owner_id=? ORDER BY updated_at DESC LIMIT ?",
+            (owner, cap),
+        ).fetchall()
+    return [_public_assistant_handoff(row) for row in rows]

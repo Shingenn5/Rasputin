@@ -23,7 +23,20 @@ from backend.core.datadir import data_dir
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
 REGISTRY_FILE = DATA_DIR / "models.json"
-MODEL_ROLES = ["main", "planner", "executor", "coder", "researcher", "summarizer", "memory", "embeddings", "helper", "test"]
+MODEL_ROLES = [
+    "main",
+    "planner",
+    "executor",
+    "coder",
+    "researcher",
+    "summarizer",
+    "memory",
+    "embeddings",
+    "helper",
+    "test",
+    "speech_to_text",
+    "text_to_speech",
+]
 
 # Compound coding-model family names matched with separators stripped, so
 # "CodeLlama-13B", "code_llama", and "codellama" all hit the same hint.

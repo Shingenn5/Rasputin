@@ -1,0 +1,625 @@
+"""Read-only Rasputin orchestration preview runtime.
+
+The preview is deliberately a contract boundary: it can inspect owner-scoped
+context and the registered model fleet, but it never starts a task, container,
+process, microphone, or speaker.  A future local-control broker can consume
+the returned plan after approvals are implemented.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from backend.assistant.contracts import (
+    CONTROL_OPERATIONS,
+    DEFAULT_PROFILE,
+    MODEL_PACK_ROLES,
+    VOICE_ROLES,
+    merge_profile,
+    normalize_agents,
+    normalize_model_pack,
+    normalize_operations,
+    sanitize_profile,
+)
+from backend.core import audit
+from backend.core import approvals
+from backend.core import runtime_store as store
+from backend.core.response import AppError
+from backend.core import security
+from backend.models import registry as model_registry
+from backend.rag import memory as memory_store
+
+
+PROFILE_KEY_PREFIX = "assistant_profile:"
+
+
+def _owner(owner_id: str | None) -> str:
+    return str(owner_id or "admin").strip() or "admin"
+
+
+def get_profile(owner_id: str = "admin") -> dict[str, Any]:
+    owner = _owner(owner_id)
+    saved = store.get_kv(f"{PROFILE_KEY_PREFIX}{owner}")
+    return sanitize_profile(saved, owner)
+
+
+def update_profile(owner_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    owner = _owner(owner_id)
+    profile = merge_profile(get_profile(owner), updates, owner)
+    store.set_kv(f"{PROFILE_KEY_PREFIX}{owner}", profile)
+    audit.log(
+        "assistant_profile_updated",
+        {"owner_id": owner, "fields": sorted(str(key) for key in (updates or {}) if str(key) in {"display_name", "persona", "mission", "voice_policy"})},
+        actor=owner,
+    )
+    return profile
+
+
+def capabilities() -> dict[str, Any]:
+    cfg = security.load()
+    return {
+        "contract_version": DEFAULT_PROFILE["contract_version"],
+        "identity": {"assistant_id": "rasputin", "display_name": "Rasputin"},
+        "model_roles": sorted(MODEL_PACK_ROLES),
+        "voice_roles": sorted(VOICE_ROLES),
+        "model_pack_storage": "owner_scoped",
+        "control_operations": {
+            name: {
+                "label": definition["label"],
+                "category": definition["category"],
+                "risk": definition["risk"],
+                "requires_approval": definition["requires_approval"],
+                "security_flag": definition["security_flag"],
+            }
+            for name, definition in CONTROL_OPERATIONS.items()
+        },
+        "security": {
+            "privacy_lock": bool(cfg.get("privacy_lock", True)),
+            "allow_shell_execution": bool(cfg.get("allow_shell_execution", False)),
+            "allow_docker_control": bool(cfg.get("allow_docker_control", False)),
+            "model_containers_have_host_access": False,
+            "broker_only": True,
+        },
+    }
+
+
+def _session_reference(owner_id: str, session_id: str | None) -> dict[str, Any] | None:
+    if not session_id:
+        return None
+    store.init_db()
+    with store._lock, store.connect() as conn:
+        row = conn.execute(
+            "SELECT id,title,status,workspace,model,mode,updated_at FROM sessions WHERE id=? AND owner_id=?",
+            (str(session_id), owner_id),
+        ).fetchone()
+    if not row:
+        raise ValueError("session missing")
+    return dict(row)
+
+
+def _safe_context_item(item: dict[str, Any], include_sensitive: bool) -> dict[str, Any] | None:
+    if bool(item.get("sensitive")) and not include_sensitive:
+        return None
+    content = item.get("content")
+    if isinstance(content, str):
+        content = content[:1200]
+    elif isinstance(content, (dict, list)):
+        try:
+            content = json.loads(json.dumps(content))
+        except Exception:
+            content = str(content)[:1200]
+    else:
+        content = str(content or "")[:1200]
+    return {
+        "id": item.get("id"),
+        "kind": item.get("kind"),
+        "scope": item.get("scope"),
+        "workspace_id": item.get("workspace_id"),
+        "content": content,
+        "sensitive": bool(item.get("sensitive")),
+        "updated_at": item.get("updated_at"),
+    }
+
+
+def build_context_preview(
+    owner_id: str,
+    objective: str,
+    workspace_ref: str,
+    session_id: str | None = None,
+    context_query: str | None = None,
+    include_sensitive: bool = False,
+) -> dict[str, Any]:
+    owner = _owner(owner_id)
+    query = str(context_query or objective or "").strip()[:500]
+    session = _session_reference(owner, session_id)
+    memory_result = memory_store.search(query, limit=12, owner_id=owner, workspace_id=workspace_ref) if query else {"items": []}
+    memory_items = []
+    excluded_sensitive = 0
+    for item in memory_result.get("items", []):
+        safe_item = _safe_context_item(item, include_sensitive)
+        if safe_item is None:
+            excluded_sensitive += 1
+        else:
+            memory_items.append(safe_item)
+    history = store.universal_search(owner, query, limit=18) if query else {"query": "", "results": [], "count": 0}
+    return {
+        "query": query,
+        "workspace_ref": workspace_ref,
+        "selected_session": session,
+        "memory": {
+            "items": memory_items,
+            "matched": len(memory_result.get("items", [])),
+            "sensitive_excluded": excluded_sensitive,
+        },
+        "owner_history": {
+            "results": history.get("results", []),
+            "matched": history.get("count", 0),
+        },
+        "policy": {
+            "owner_scoped": True,
+            "cross_workspace": True,
+            "sensitive_included": bool(include_sensitive),
+            "no_unscoped_database_reads": True,
+        },
+    }
+
+
+def _model_lookup() -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    models = [dict(model) for model in model_registry.all_models()]
+    return models, {str(model.get("key")): model for model in models if model.get("key")}
+
+
+def _model_for_entry(entry: dict[str, Any], models: list[dict[str, Any]], by_key: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    requested_key = entry.get("model_key")
+    if requested_key and requested_key in by_key:
+        return by_key[requested_key]
+    role = entry.get("role")
+    candidates = [model for model in models if model.get("role") == role and model.get("enabled", True)]
+    return candidates[0] if candidates else None
+
+
+def _model_status(entry: dict[str, Any], model: dict[str, Any] | None, security_cfg: dict[str, Any]) -> dict[str, Any]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if not model:
+        blockers.append("model_not_registered")
+        return {
+            "entry_id": entry["id"],
+            "model_key": entry.get("model_key") or None,
+            "role": entry["role"],
+            "required": entry["required"],
+            "status": "missing",
+            "next_action": "register_model",
+            "blocked_reasons": blockers,
+            "warnings": warnings,
+            "runtime_status": "missing",
+            "host_control_required": False,
+        }
+    runtime_status = str(model.get("runtime_status") or "unknown")
+    if not model.get("enabled", True):
+        blockers.append("model_disabled")
+    if runtime_status in {"unhealthy", "stopped", "unreachable", "error"}:
+        blockers.append(f"runtime_{runtime_status}")
+    if runtime_status == "unknown":
+        warnings.append("runtime_health_unknown")
+    managed = bool(model.get("managed"))
+    if managed and not security_cfg.get("allow_docker_control", False):
+        blockers.append("docker_control_disabled")
+    status = "blocked" if blockers else ("needs_health_check" if warnings else "ready")
+    return {
+        "entry_id": entry["id"],
+        "model_key": model.get("key"),
+        "role": entry["role"],
+        "required": entry["required"],
+        "status": status,
+        "next_action": "start_or_health_check" if managed else "health_check" if warnings else "use_registered_model",
+        "blocked_reasons": blockers,
+        "warnings": warnings,
+        "runtime_status": runtime_status,
+        "provider": model.get("provider"),
+        "managed": managed,
+        "host_control_required": managed,
+        "capabilities": entry.get("capabilities", []),
+    }
+
+
+def build_model_pack_preview(pack: Any) -> dict[str, Any]:
+    normalized = normalize_model_pack(pack)
+    models, by_key = _model_lookup()
+    cfg = security.load()
+    entries = [_model_status(entry, _model_for_entry(entry, models, by_key), cfg) for entry in normalized["entries"]]
+    return {
+        **normalized,
+        "entries": entries,
+        "placement_policy": {
+            "default": "largest_fitting_single_gpu_first",
+            "combined_vram": "explicit_backend_only",
+            "vllm_tensor_parallel": "not_assumed",
+            "capacity_status": "not_evaluated_without_runtime_inventory",
+        },
+        "launch_policy": {
+            "mode": "broker_only",
+            "started": False,
+            "side_effects": False,
+            "model_containers_receive_scoped_requests_only": True,
+        },
+    }
+
+
+def save_model_pack(owner_id: str, pack: Any) -> dict[str, Any]:
+    normalized = normalize_model_pack(pack)
+    record = store.upsert_assistant_model_pack(
+        _owner(owner_id),
+        normalized["pack_id"],
+        normalized["version"],
+        normalized,
+    )
+    audit.log(
+        "assistant_model_pack_saved",
+        {"pack_id": normalized["pack_id"], "entry_count": len(normalized["entries"])},
+        actor=_owner(owner_id),
+    )
+    return {
+        **record,
+        "preview": build_model_pack_preview(normalized),
+        "launch_policy": {"started": False, "side_effects": False, "broker_only": True},
+    }
+
+
+def get_model_pack(owner_id: str, pack_id: str, include_preview: bool = True) -> dict[str, Any] | None:
+    record = store.get_assistant_model_pack(_owner(owner_id), pack_id)
+    if not record:
+        return None
+    if include_preview:
+        record = {
+            **record,
+            "preview": build_model_pack_preview(record.get("pack") or {}),
+            "launch_policy": {"started": False, "side_effects": False, "broker_only": True},
+        }
+    return record
+
+
+def list_model_packs(owner_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    return [
+        {
+            **record,
+            "launch_policy": {"started": False, "side_effects": False, "broker_only": True},
+        }
+        for record in store.list_assistant_model_packs(_owner(owner_id), limit)
+    ]
+
+
+def delete_model_pack(owner_id: str, pack_id: str) -> dict[str, Any]:
+    deleted = store.delete_assistant_model_pack(_owner(owner_id), pack_id)
+    if not deleted:
+        raise ValueError("model pack missing")
+    audit.log("assistant_model_pack_deleted", {"pack_id": pack_id}, actor=_owner(owner_id))
+    return {"deleted": True, "pack_id": pack_id}
+
+
+def _resolve_agent_model(agent: dict[str, Any], model_pack: dict[str, Any], models: list[dict[str, Any]]) -> str | None:
+    if agent.get("model_key"):
+        return agent["model_key"]
+    for entry in model_pack.get("entries", []):
+        if entry.get("role") == agent.get("role") and entry.get("model_key"):
+            return entry.get("model_key")
+    for model in models:
+        if model.get("role") == agent.get("role") and model.get("enabled", True):
+            return model.get("key")
+    return None
+
+
+def build_agent_preview(objective: str, raw_agents: Any, model_pack: dict[str, Any]) -> dict[str, Any]:
+    agents = normalize_agents(raw_agents, objective)
+    models, _ = _model_lookup()
+    steps = []
+    for agent in agents:
+        steps.append(
+            {
+                **agent,
+                "resolved_model_key": _resolve_agent_model(agent, model_pack, models),
+                "owner": "rasputin",
+                "execution_state": "preview_only",
+                "side_effects": False,
+                "host_access": "none",
+            }
+        )
+    return {
+        "strategy": "rasputin_plans_then_delegates",
+        "agents": steps,
+        "dependency_edges": [
+            {"from": dependency, "to": agent["id"]}
+            for agent in agents
+            for dependency in agent["depends_on"]
+        ],
+        "execution": {"started": False, "side_effects": False, "requires_broker": True},
+    }
+
+
+def build_control_preview(requested_operations: Any) -> dict[str, Any]:
+    operations = normalize_operations(requested_operations)
+    cfg = security.load()
+    planned = []
+    for operation in operations:
+        definition = CONTROL_OPERATIONS.get(operation)
+        if not definition:
+            planned.append(
+                {
+                    "operation": operation,
+                    "status": "blocked",
+                    "blocked_reasons": ["operation_not_supported_by_broker"],
+                    "execution_state": "not_started",
+                    "broker_only": True,
+                }
+            )
+            continue
+        required_flag = definition.get("security_flag")
+        enabled = required_flag is None or bool(cfg.get(required_flag, False))
+        blocked_reasons = [] if enabled else [f"security_flag_disabled:{required_flag}"]
+        planned.append(
+            {
+                "operation": operation,
+                "label": definition["label"],
+                "category": definition["category"],
+                "risk": definition["risk"],
+                "requires_approval": definition["requires_approval"],
+                "security_flag": required_flag,
+                "status": "planned" if enabled else "blocked",
+                "blocked_reasons": blocked_reasons,
+                "execution_state": "not_started",
+                "broker_only": True,
+                "direct_model_host_access": False,
+            }
+        )
+    return {
+        "operations": planned,
+        "policy": {
+            "broker_only": True,
+            "approval_before_execution": True,
+            "direct_model_host_access": False,
+            "started": False,
+            "side_effects": False,
+        },
+    }
+
+
+def build_plan_preview(
+    owner_id: str,
+    objective: str,
+    workspace_ref: str,
+    session_id: str | None = None,
+    context_query: str | None = None,
+    model_pack: Any = None,
+    model_pack_id: str | None = None,
+    agents: Any = None,
+    requested_operations: Any = None,
+    include_sensitive: bool = False,
+) -> dict[str, Any]:
+    clean_objective = str(objective or "").strip()[:1200]
+    if not clean_objective:
+        raise ValueError("objective is required")
+    pack_source = "inline"
+    if model_pack_id:
+        saved_pack = get_model_pack(owner_id, model_pack_id, include_preview=False)
+        if not saved_pack:
+            raise ValueError("model pack missing")
+        if model_pack is not None:
+            raise ValueError("choose either model_pack or model_pack_id")
+        model_pack = saved_pack.get("pack")
+        pack_source = "saved"
+    normalized_pack = normalize_model_pack(model_pack)
+    context = build_context_preview(owner_id, clean_objective, workspace_ref, session_id, context_query, include_sensitive)
+    model_preview = build_model_pack_preview(normalized_pack)
+    agent_preview = build_agent_preview(clean_objective, agents, normalized_pack)
+    control_preview = build_control_preview(requested_operations)
+    blockers = []
+    for entry in model_preview["entries"]:
+        if entry.get("status") == "blocked" or (entry.get("required") and entry.get("status") == "missing"):
+            blockers.extend(f"model:{entry['entry_id']}:{reason}" for reason in entry.get("blocked_reasons", []))
+    blockers.extend(
+        f"control:{item['operation']}:{reason}"
+        for item in control_preview["operations"]
+        for reason in item.get("blocked_reasons", [])
+    )
+    next_actions = [
+        "Review this preview and approve the model pack before launching workers.",
+        "Keep host actions behind the local-control broker and existing approval gates.",
+    ]
+    if blockers:
+        next_actions.insert(0, "Resolve the listed blockers before execution.")
+    return {
+        "assistant": get_profile(owner_id),
+        "objective": clean_objective,
+        "workspace_ref": workspace_ref,
+        "model_pack_source": pack_source,
+        "context": context,
+        "model_pack": model_preview,
+        "delegation": agent_preview,
+        "local_control": control_preview,
+        "execution": {
+            "mode": "preview_only",
+            "started": False,
+            "side_effects": False,
+            "host_actions_started": False,
+            "models_started": False,
+        },
+        "blockers": sorted(set(blockers)),
+        "next_actions": next_actions,
+    }
+
+
+def _public_plan(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not record:
+        return None
+    item = dict(record)
+    status = str(item.get("status") or "preview")
+    item["handoff"] = {
+        "status": "awaiting_broker" if status == "approved" else "reviewed_rejected" if status == "rejected" else "review_required",
+        "broker_request_created": False,
+        "execution_started": False,
+        "side_effects": False,
+    }
+    return item
+
+
+def create_persisted_plan(
+    owner_id: str,
+    objective: str,
+    workspace_ref: str,
+    session_id: str | None = None,
+    context_query: str | None = None,
+    model_pack: Any = None,
+    model_pack_id: str | None = None,
+    agents: Any = None,
+    requested_operations: Any = None,
+    include_sensitive: bool = False,
+) -> dict[str, Any]:
+    plan = build_plan_preview(
+        owner_id=owner_id,
+        objective=objective,
+        workspace_ref=workspace_ref,
+        session_id=session_id,
+        context_query=context_query,
+        model_pack=model_pack,
+        model_pack_id=model_pack_id,
+        agents=agents,
+        requested_operations=requested_operations,
+        include_sensitive=include_sensitive,
+    )
+    record = store.create_assistant_plan(owner_id, plan)
+    audit.log(
+        "assistant_plan_created",
+        {"plan_id": record["id"], "blocker_count": len(plan.get("blockers", []))},
+        actor=_owner(owner_id),
+    )
+    return _public_plan(record)
+
+
+def get_persisted_plan(owner_id: str, plan_id: str) -> dict[str, Any] | None:
+    return _public_plan(store.get_assistant_plan(_owner(owner_id), plan_id))
+
+
+def list_persisted_plans(owner_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    return [_public_plan(item) for item in store.list_assistant_plans(_owner(owner_id), limit)]
+
+
+def review_persisted_plan(owner_id: str, plan_id: str, status: str, note: str = "") -> dict[str, Any]:
+    owner = _owner(owner_id)
+    current = store.get_assistant_plan(owner, plan_id)
+    if not current:
+        raise ValueError("assistant plan missing")
+    if status == "approved" and current.get("plan", {}).get("blockers"):
+        blockers = ", ".join(current["plan"].get("blockers", [])[:5])
+        raise AppError(
+            "assistant_plan_blocked",
+            f"Resolve plan blockers before approval: {blockers}",
+            409,
+        )
+    updated = store.transition_assistant_plan(owner, plan_id, status, actor=owner, review_note=note)
+    if not updated:
+        raise ValueError("assistant plan missing")
+    audit.log(
+        "assistant_plan_reviewed",
+        {"plan_id": plan_id, "status": status},
+        actor=owner,
+    )
+    return _public_plan(updated)
+
+
+def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not record:
+        return None
+    item = dict(record)
+    approval = approvals.get(item.get("approval_id")) if item.get("approval_id") else None
+    if approval:
+        approval_status = str(approval.get("status") or "pending")
+        broker_status = {
+            "pending": "awaiting_approval",
+            "approved": "approved_for_broker",
+            "denied": "denied",
+            "expired": "expired",
+            "executed": "execution_recorded",
+        }.get(approval_status, approval_status)
+    else:
+        broker_status = "ready_for_broker" if item.get("status") == "ready_for_broker" else item.get("status")
+    item["approval"] = approval
+    item["broker_status"] = broker_status
+    item["policy"] = {
+        "broker_only": True,
+        "direct_model_host_access": False,
+        "execution_started": False,
+        "side_effects": False,
+    }
+    return item
+
+
+def request_handoff(owner_id: str, plan_id: str, operation: str) -> dict[str, Any]:
+    owner = _owner(owner_id)
+    plan_record = store.get_assistant_plan(owner, plan_id)
+    if not plan_record:
+        raise ValueError("assistant plan missing")
+    if plan_record.get("status") != "approved":
+        raise AppError("assistant_plan_not_approved", "Approve the assistant plan before requesting a broker handoff.", 409)
+    normalized = normalize_operations([operation])
+    if not normalized:
+        raise ValueError("operation is required")
+    clean_operation = normalized[0]
+    plan = plan_record.get("plan") or {}
+    planned = next(
+        (item for item in (plan.get("local_control", {}).get("operations", []) or []) if item.get("operation") == clean_operation),
+        None,
+    )
+    if not planned:
+        raise AppError("assistant_operation_not_planned", "That operation was not included in the approved plan.", 409)
+    if planned.get("status") == "blocked":
+        reasons = ", ".join(planned.get("blocked_reasons", [])[:4])
+        raise AppError("assistant_operation_blocked", f"Resolve the operation blocker before handoff: {reasons}", 409)
+    existing = store.find_assistant_handoff(owner, plan_id, clean_operation)
+    if existing:
+        return _public_handoff(owner, existing)
+    requires_approval = bool(planned.get("requires_approval", True))
+    approval = None
+    if requires_approval:
+        approval = approvals.create(
+            "assistant_broker_operation",
+            {
+                "plan_id": plan_id,
+                "operation": clean_operation,
+                "workspace": plan.get("workspace_ref") or ".",
+                "broker_only": True,
+                "direct_model_host_access": False,
+            },
+            risk_level=planned.get("risk") or "approval_required",
+            workspace=plan.get("workspace_ref") or ".",
+            owner_id=owner,
+        )
+    handoff = store.create_assistant_handoff(
+        owner,
+        plan_id,
+        clean_operation,
+        approval["id"] if approval else None,
+        {
+            "plan_id": plan_id,
+            "operation": clean_operation,
+            "requires_approval": requires_approval,
+            "broker_only": True,
+            "direct_model_host_access": False,
+        },
+        status="pending_approval" if approval else "ready_for_broker",
+    )
+    audit.log(
+        "assistant_broker_handoff_requested",
+        {"handoff_id": handoff["id"], "plan_id": plan_id, "operation": clean_operation, "approval_id": approval["id"] if approval else None},
+        actor=owner,
+    )
+    return _public_handoff(owner, handoff)
+
+
+def get_handoff(owner_id: str, handoff_id: str) -> dict[str, Any] | None:
+    return _public_handoff(_owner(owner_id), store.get_assistant_handoff(_owner(owner_id), handoff_id))
+
+
+def list_handoffs(owner_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    owner = _owner(owner_id)
+    return [_public_handoff(owner, item) for item in store.list_assistant_handoffs(owner, limit)]

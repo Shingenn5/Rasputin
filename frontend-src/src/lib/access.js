@@ -1,7 +1,7 @@
 const ROLE_VIEWS = {
-  admin: new Set(["home", "chat", "workspaces", "activity", "models", "warsat", "archive", "trials", "settings", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"]),
-  member: new Set(["home", "chat", "workspaces", "activity", "archive", "settings", "sessions"]),
-  viewer: new Set(["home", "workspaces", "archive", "settings"]),
+  admin: new Set(["home", "chat", "workspaces", "activity", "models", "assistant", "warsat", "archive", "trials", "settings", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"]),
+  member: new Set(["home", "chat", "workspaces", "activity", "assistant", "archive", "settings", "sessions"]),
+  viewer: new Set(["home", "workspaces", "assistant", "archive", "settings"]),
 };
 
 const MEMBER_SETTINGS = new Set(["accounts", "about"]);
