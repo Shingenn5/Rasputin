@@ -7,7 +7,7 @@ function titleize(value) {
 }
 
 function statusVariant(status) {
-  if (["approved", "ready_for_broker", "approved_for_broker", "ready", "completed"].includes(status)) return "success";
+  if (["approved", "prepared", "ready_for_broker", "approved_for_broker", "ready", "completed"].includes(status)) return "success";
   if (["rejected", "denied", "blocked", "expired", "missing", "failed"].includes(status)) return "danger";
   if (["pending_approval", "awaiting_approval", "review_required", "needs_health_check"].includes(status)) return "warning";
   return "secondary";
@@ -46,7 +46,17 @@ export function AssistantView({
   previewVoice,
 }) {
   const controlOperations = capabilities?.controlOperations || {};
-  const operationEntries = useMemo(() => Object.entries(controlOperations), [controlOperations]);
+  const brokerOperationMetadata = useMemo(() => {
+    const raw = capabilities?.broker?.dispatchOperationMetadata || [];
+    return Array.isArray(raw) ? Object.fromEntries(raw.map((item) => [item.operation, item])) : raw;
+  }, [capabilities]);
+  const operationEntries = useMemo(() => {
+    if (Array.isArray(controlOperations)) return controlOperations.map((item) => [item.operation, item]);
+    return Object.entries(controlOperations).map(([key, definition]) => {
+      const operation = definition.operation || key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      return [operation, { ...definition, operation }];
+    });
+  }, [controlOperations]);
   const planItems = plans?.plans || [];
   const packItems = modelPacks?.packs || [];
   const handoffItems = handoffs?.handoffs || [];
@@ -251,17 +261,21 @@ export function AssistantView({
 
         <Card className="settings-card shadow-sm mt-3" data-testid="assistant-handoffs">
           <Card.Body>
-            <SectionHeader title="Broker handoffs" text="Approval state is visible here; execution is intentionally not available in this slice." />
+            <SectionHeader title="Broker handoffs" text="Track the action state before Rasputin invokes an allowlisted local adapter." />
             {handoffItems.length ? handoffItems.map((handoff) => (
-              <div key={handoff.id} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom py-2">
+              <div key={handoff.id} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom py-2" data-testid={`assistant-handoff-${handoff.id}`}>
                 <div className="d-flex align-items-center gap-2">
-                  {["approved_for_broker", "ready_for_broker", "completed"].includes(handoff.brokerStatus) ? <CheckCircle2 size={16} className="text-success" aria-hidden="true" /> : <Clock3 size={16} className="text-warning" aria-hidden="true" />}
-                  <span><strong>{titleize(handoff.operation)}</strong> <span className="small text-body-secondary">· {handoff.id}</span></span>
+                  {handoff.actionState === "failed" ? <XCircle size={16} className="text-danger" aria-hidden="true" /> : ["approved", "prepared", "completed"].includes(handoff.actionState) ? <CheckCircle2 size={16} className="text-success" aria-hidden="true" /> : <Clock3 size={16} className="text-warning" aria-hidden="true" />}
+                  <span>
+                    <strong>{titleize(handoff.operation)}</strong> <span className="small text-body-secondary">· {handoff.id}</span>
+                    {brokerOperationMetadata[handoff.operation]?.sideEffects && <Badge bg="warning" text="dark" className="ms-2">Host action</Badge>}
+                  </span>
                 </div>
                 <div className="d-flex align-items-center gap-2">
-                  <Badge bg={statusVariant(handoff.brokerStatus)}>{titleize(handoff.brokerStatus)}</Badge>
+                  <Badge bg={statusVariant(handoff.actionState || handoff.brokerStatus)}>{titleize(handoff.actionState || handoff.brokerStatus)}</Badge>
                   {handoff.brokerStatus === "approved_for_broker" && <Button size="sm" variant="outline-primary" onClick={() => prepareHandoff(handoff.id)}>Prepare broker</Button>}
-                  {handoff.brokerStatus === "ready_for_broker" && handoff.operation === "docker_status" && <Button size="sm" variant="outline-success" onClick={() => dispatchHandoff(handoff.id)}>Inspect Docker</Button>}
+                  {handoff.brokerStatus === "ready_for_broker" && handoff.operation === "docker_status" && <Button size="sm" variant="outline-success" onClick={() => dispatchHandoff(handoff.id, handoff.operation)}>Inspect Docker</Button>}
+                  {handoff.brokerStatus === "ready_for_broker" && handoff.operation === "open_vscode" && <Button size="sm" variant="outline-warning" onClick={() => dispatchHandoff(handoff.id, handoff.operation)}>Open VS Code</Button>}
                 </div>
               </div>
             )) : <p className="small text-body-secondary mb-0"><Volume2 size={14} className="me-1" />No broker handoffs requested.</p>}

@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -14,6 +15,7 @@ from backend import main
 from backend.api.core import current_user
 from backend.assistant import contracts
 from backend.core import security
+from backend.core import workspace
 
 
 class AssistantContractTests(unittest.TestCase):
@@ -81,6 +83,15 @@ class AssistantContractTests(unittest.TestCase):
         self.assertIn("speech_to_text", capability_data["voiceRoles"])
         self.assertTrue(capability_data["security"]["brokerOnly"])
         self.assertIn("docker_status", capability_data["broker"]["dispatchSupportedOperations"])
+        self.assertIn("open_vscode", capability_data["broker"]["dispatchSupportedOperations"])
+        metadata = next(item for item in capability_data["broker"]["dispatchOperationMetadata"] if item["operation"] == "open_vscode")
+        self.assertTrue(metadata["hostMutation"])
+        control_operations = capability_data["controlOperations"]
+        open_definition = next(
+            item for item in (control_operations.values() if isinstance(control_operations, dict) else control_operations)
+            if item["operation"] == "open_vscode"
+        )
+        self.assertEqual(open_definition["label"], "Open VS Code")
 
         patched = self.client.patch("/api/assistant/profile", json={"displayName": "Rasputin Prime"})
         self.assertEqual(patched.status_code, 200, patched.text)
@@ -386,6 +397,99 @@ class AssistantContractTests(unittest.TestCase):
             approval_record = next(item for item in approval_state.json()["data"]["approvals"] if item["id"] == handoff["approvalId"])
             self.assertEqual(approval_record["status"], "executed")
         finally:
+            security.save(original_security)
+
+    def test_open_vscode_dispatch_is_scoped_to_approved_workspace_and_fixed_argv(self):
+        original_security = security.load()
+        original_host_shell = workspace.is_host_shell_allowed(".")
+        security.save({**original_security, "allow_shell_execution": True})
+        try:
+            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
+                workspace.set_host_shell("project-root", True)
+            created = self.client.post(
+                "/api/assistant/plans",
+                json={"objective": "Open the approved project in VS Code", "requestedOperations": ["open_vscode"]},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            plan = created.json()["data"]
+            self.assertEqual(plan["plan"]["blockers"], [])
+            operation = plan["plan"]["localControl"]["operations"][0]
+            self.assertEqual(operation["status"], "planned")
+            self.assertTrue(operation["dispatch"]["hostMutation"])
+            self.assertEqual(self.client.post(f"/api/assistant/plans/{plan['id']}/approve", json={}).status_code, 200)
+            handoff = self.client.post(
+                f"/api/assistant/plans/{plan['id']}/handoffs",
+                json={"operation": "open_vscode"},
+            ).json()["data"]
+            self.assertEqual(self.client.post(f"/api/approvals/{handoff['approvalId']}/approve", json={}).status_code, 200)
+            prepared = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare")
+            self.assertEqual(prepared.status_code, 200, prepared.text)
+            self.assertEqual(prepared.json()["data"]["actionState"], "prepared")
+            self.assertTrue(prepared.json()["data"]["request"]["plannedHostMutation"])
+
+            with patch("backend.assistant.broker.shutil.which", return_value="C:\\fake\\code.cmd"), patch(
+                "backend.assistant.broker.subprocess.Popen", return_value=SimpleNamespace(pid=31415)
+            ) as launcher:
+                dispatched = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+                self.assertEqual(dispatched.status_code, 200, dispatched.text)
+                data = dispatched.json()["data"]
+                self.assertEqual(data["status"], "completed")
+                self.assertEqual(data["actionState"], "completed")
+                self.assertTrue(data["request"]["result"]["launched"])
+                self.assertEqual(data["request"]["result"]["pid"], 31415)
+                self.assertTrue(data["request"]["sideEffects"])
+                self.assertTrue(data["request"]["hostMutation"])
+                self.assertTrue(data["request"]["executionStarted"])
+                self.assertTrue(data["policy"]["sideEffects"])
+                self.assertTrue(data["policy"]["hostMutation"])
+                args, kwargs = launcher.call_args
+                self.assertEqual(args[0][1], "--reuse-window")
+                self.assertEqual(args[0][2], data["request"]["result"]["workspace"])
+                self.assertIs(kwargs["shell"], False)
+                self.assertNotIn("command", data["request"])
+
+                repeated = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+                self.assertEqual(repeated.status_code, 200, repeated.text)
+                self.assertEqual(launcher.call_count, 1)
+        finally:
+            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
+                workspace.set_host_shell("project-root", original_host_shell)
+            security.save(original_security)
+
+    def test_open_vscode_dispatch_fails_closed_when_cli_is_missing(self):
+        original_security = security.load()
+        original_host_shell = workspace.is_host_shell_allowed(".")
+        security.save({**original_security, "allow_shell_execution": True})
+        try:
+            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
+                workspace.set_host_shell("project-root", True)
+            created = self.client.post(
+                "/api/assistant/plans",
+                json={"objective": "Open the project in VS Code", "requestedOperations": ["open_vscode"]},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            plan_id = created.json()["data"]["id"]
+            self.assertEqual(self.client.post(f"/api/assistant/plans/{plan_id}/approve", json={}).status_code, 200)
+            handoff = self.client.post(
+                f"/api/assistant/plans/{plan_id}/handoffs",
+                json={"operation": "open_vscode"},
+            ).json()["data"]
+            self.assertEqual(self.client.post(f"/api/approvals/{handoff['approvalId']}/approve", json={}).status_code, 200)
+            self.assertEqual(self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare").status_code, 200)
+            with patch("backend.assistant.broker.shutil.which", return_value=None), patch(
+                "backend.assistant.broker.subprocess.Popen"
+            ) as launcher:
+                failed = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+                self.assertEqual(failed.status_code, 503, failed.text)
+                self.assertEqual(failed.json()["error"]["code"], "assistantBrokerDependencyMissing")
+                launcher.assert_not_called()
+            state = self.client.get(f"/api/assistant/handoffs/{handoff['id']}")
+            self.assertEqual(state.status_code, 200, state.text)
+            self.assertEqual(state.json()["data"]["actionState"], "failed")
+            self.assertFalse(state.json()["data"]["policy"]["sideEffects"])
+        finally:
+            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
+                workspace.set_host_shell("project-root", original_host_shell)
             security.save(original_security)
 
 

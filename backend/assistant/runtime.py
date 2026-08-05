@@ -31,6 +31,7 @@ from backend.core import approvals
 from backend.core import runtime_store as store
 from backend.core.response import AppError
 from backend.core import security
+from backend.core import workspace
 from backend.models import registry as model_registry
 from backend.rag import memory as memory_store
 
@@ -71,6 +72,7 @@ def capabilities() -> dict[str, Any]:
         "model_pack_storage": "owner_scoped",
         "control_operations": {
             name: {
+                "operation": name,
                 "label": definition["label"],
                 "category": definition["category"],
                 "risk": definition["risk"],
@@ -91,6 +93,10 @@ def capabilities() -> dict[str, Any]:
             "preparation_supported": True,
             "execution_enabled": False,
             "dispatch_supported_operations": broker.supported_operations(),
+            "dispatch_operation_metadata": [
+                {"operation": name, **metadata}
+                for name, metadata in broker.operation_metadata().items()
+            ],
         },
     }
 
@@ -443,9 +449,10 @@ def build_agent_preview(objective: str, raw_agents: Any, model_pack: dict[str, A
     }
 
 
-def build_control_preview(requested_operations: Any) -> dict[str, Any]:
+def build_control_preview(requested_operations: Any, workspace_ref: str | None = None) -> dict[str, Any]:
     operations = normalize_operations(requested_operations)
     cfg = security.load()
+    adapter_metadata = broker.operation_metadata()
     planned = []
     for operation in operations:
         definition = CONTROL_OPERATIONS.get(operation)
@@ -463,6 +470,19 @@ def build_control_preview(requested_operations: Any) -> dict[str, Any]:
         required_flag = definition.get("security_flag")
         enabled = required_flag is None or bool(cfg.get(required_flag, False))
         blocked_reasons = [] if enabled else [f"security_flag_disabled:{required_flag}"]
+        adapter = adapter_metadata.get(operation, {})
+        if adapter.get("requires_workspace"):
+            if not workspace_ref:
+                blocked_reasons.append("workspace_required")
+            else:
+                try:
+                    target = workspace.resolve_path(workspace_ref)
+                    if not target.exists() or not target.is_dir():
+                        blocked_reasons.append("workspace_missing")
+                    elif not workspace.is_host_shell_allowed(target):
+                        blocked_reasons.append("workspace_host_shell_disabled")
+                except (OSError, ValueError):
+                    blocked_reasons.append("workspace_not_approved")
         planned.append(
             {
                 "operation": operation,
@@ -471,11 +491,19 @@ def build_control_preview(requested_operations: Any) -> dict[str, Any]:
                 "risk": definition["risk"],
                 "requires_approval": definition["requires_approval"],
                 "security_flag": required_flag,
-                "status": "planned" if enabled else "blocked",
+                "status": "planned" if not blocked_reasons else "blocked",
                 "blocked_reasons": blocked_reasons,
                 "execution_state": "not_started",
                 "broker_only": True,
                 "direct_model_host_access": False,
+                "dispatch": {
+                    "supported": operation in adapter_metadata,
+                    "adapter": adapter.get("adapter"),
+                    "action_kind": adapter.get("action_kind"),
+                    "requires_workspace": bool(adapter.get("requires_workspace")),
+                    "side_effects": bool(adapter.get("side_effects")),
+                    "host_mutation": bool(adapter.get("host_mutation")),
+                },
             }
         )
     return {
@@ -518,7 +546,7 @@ def build_plan_preview(
     context = build_context_preview(owner_id, clean_objective, workspace_ref, session_id, context_query, include_sensitive)
     model_preview = build_model_pack_preview(normalized_pack)
     agent_preview = build_agent_preview(clean_objective, agents, normalized_pack)
-    control_preview = build_control_preview(requested_operations)
+    control_preview = build_control_preview(requested_operations, workspace_ref=workspace_ref)
     blockers = []
     for entry in model_preview["entries"]:
         if entry.get("status") == "blocked" or (entry.get("required") and entry.get("status") == "missing"):
@@ -655,13 +683,28 @@ def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, A
         }.get(approval_status, approval_status)
     else:
         broker_status = "ready_for_broker" if item.get("status") == "ready_for_broker" else item.get("status")
+    request = item.get("request") or {}
+    if item.get("status") == "completed":
+        action_state = "completed"
+    elif item.get("status") == "failed":
+        action_state = "failed"
+    elif item.get("status") == "ready_for_broker":
+        action_state = "prepared"
+    elif approval and str(approval.get("status") or "pending") == "approved":
+        action_state = "approved"
+    else:
+        action_state = str(request.get("action_state") or "available")
     item["approval"] = approval
     item["broker_status"] = broker_status
+    item["action_state"] = action_state
     item["policy"] = {
         "broker_only": True,
         "direct_model_host_access": False,
-        "execution_started": False,
-        "side_effects": False,
+        "execution_started": bool(request.get("execution_started", False)),
+        "side_effects": bool(request.get("side_effects", False)),
+        "host_mutation": bool(request.get("host_mutation", False)),
+        "planned_side_effects": bool(request.get("planned_side_effects", False)),
+        "planned_host_mutation": bool(request.get("planned_host_mutation", False)),
     }
     return item
 
@@ -682,10 +725,12 @@ def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
     if not plan_record or plan_record.get("status") != "approved":
         raise AppError("assistant_plan_not_approved", "The assistant plan is no longer approved.", 409)
     operation = normalize_operations([handoff.get("operation")])
-    if not operation or operation[0] not in broker.READ_ONLY_OPERATIONS:
+    if not operation or operation[0] not in broker.supported_operations():
         raise AppError("assistant_broker_adapter_unavailable", "No executable adapter is registered for that operation.", 409)
     operation = operation[0]
-    current = build_control_preview([operation])["operations"]
+    plan = plan_record.get("plan") or {}
+    workspace_ref = plan.get("workspace_ref") or "."
+    current = build_control_preview([operation], workspace_ref=workspace_ref)["operations"]
     planned = current[0] if current else None
     if not planned or planned.get("status") == "blocked":
         reasons = ", ".join((planned or {}).get("blocked_reasons", ["operation_not_supported_by_broker"])[:4])
@@ -701,12 +746,16 @@ def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
             raise AppError("assistant_approval_unavailable", str(exc), 409) from exc
 
     try:
-        adapter_result = broker.dispatch(operation)
+        adapter_result = broker.dispatch(
+            operation,
+            workspace_path=workspace.resolve_path(workspace_ref) if broker.operation_metadata().get(operation, {}).get("requires_workspace") else None,
+        )
     except Exception as exc:
         request = dict(handoff.get("request") or {})
         request.update(
             {
                 "dispatch_status": "failed",
+                "action_state": "failed",
                 "dispatch_error": str(exc)[:300],
                 "side_effects": False,
                 "host_mutation": False,
@@ -724,9 +773,10 @@ def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
             "dispatch_contract_version": adapter_result.get("contract_version"),
             "adapter": adapter_result.get("adapter"),
             "result": adapter_result.get("result"),
-            "side_effects": False,
-            "host_mutation": False,
-            "execution_started": False,
+            "action_state": adapter_result.get("action_state") or "completed",
+            "side_effects": bool(adapter_result.get("side_effects", False)),
+            "host_mutation": bool(adapter_result.get("host_mutation", False)),
+            "execution_started": bool(adapter_result.get("execution_started", False)),
             "completed_at": store.now(),
         }
     )
@@ -735,7 +785,12 @@ def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
         raise ValueError("assistant handoff missing")
     audit.log(
         "assistant_broker_handoff_completed",
-        {"handoff_id": handoff_id, "operation": operation, "adapter": adapter_result.get("adapter"), "side_effects": False},
+        {
+            "handoff_id": handoff_id,
+            "operation": operation,
+            "adapter": adapter_result.get("adapter"),
+            "side_effects": bool(adapter_result.get("side_effects", False)),
+        },
         actor=owner,
     )
     return _public_handoff(owner, completed)
@@ -768,7 +823,9 @@ def prepare_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
     if not operation:
         raise ValueError("assistant handoff operation is invalid")
     operation = operation[0]
-    current = build_control_preview([operation])["operations"]
+    plan = plan_record.get("plan") or {}
+    workspace_ref = plan.get("workspace_ref") or "."
+    current = build_control_preview([operation], workspace_ref=workspace_ref)["operations"]
     planned = current[0] if current else None
     if not planned or planned.get("status") == "blocked":
         reasons = ", ".join((planned or {}).get("blocked_reasons", ["operation_not_supported_by_broker"])[:4])
@@ -783,17 +840,22 @@ def prepare_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
         message = "Approve the broker operation before preparation." if status == "pending" else f"The broker approval is {status}."
         raise AppError(code, message, 409)
 
+    adapter = broker.operation_metadata().get(operation, {})
     request = dict(handoff.get("request") or {})
     request.update(
         {
             "contract_version": BROKER_CONTRACT_VERSION,
             "operation": operation,
             "plan_id": plan_record["id"],
-            "workspace": (plan_record.get("plan") or {}).get("workspace_ref") or ".",
+            "workspace": workspace_ref,
             "approval_id": approval.get("id") if approval else None,
             "execution_mode": "broker_only",
             "execution_started": False,
             "side_effects": False,
+            "host_mutation": False,
+            "planned_side_effects": bool(adapter.get("side_effects", False)),
+            "planned_host_mutation": bool(adapter.get("host_mutation", False)),
+            "action_state": "prepared",
             "direct_model_host_access": False,
             "prepared_at": store.now(),
         }
@@ -866,6 +928,9 @@ def request_handoff(owner_id: str, plan_id: str, operation: str) -> dict[str, An
             "requires_approval": requires_approval,
             "broker_only": True,
             "direct_model_host_access": False,
+            "action_state": "available",
+            "planned_side_effects": bool((planned.get("dispatch") or {}).get("side_effects", False)),
+            "planned_host_mutation": bool((planned.get("dispatch") or {}).get("host_mutation", False)),
         },
         status="pending_approval" if approval else "ready_for_broker",
     )

@@ -1501,11 +1501,13 @@ export function App() {
     }
   }
 
-  async function dispatchAssistantHandoff(handoffId) {
+  async function dispatchAssistantHandoff(handoffId, operation) {
     try {
       await postJson(`/api/assistant/handoffs/${encodeURIComponent(handoffId)}/dispatch`, {});
       await Promise.allSettled([loadAssistantData(), refreshApprovals()]);
-      setGlobalStatus("Read-only Docker status collected. No container mutation was requested.");
+      setGlobalStatus(operation === "open_vscode"
+        ? "VS Code launch dispatched for the approved workspace."
+        : "Read-only Docker status collected. No container mutation was requested.");
     } catch (error) {
       setAssistantError(error.message);
       setGlobalStatus(error.message);
