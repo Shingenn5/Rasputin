@@ -140,6 +140,31 @@ class AssistantContractTests(unittest.TestCase):
         self.assertFalse(data["execution"]["modelsStarted"])
         self.assertFalse(data["execution"]["audioIoStarted"])
 
+    def test_context_preview_exposes_owner_scoped_cross_workspace_contract(self):
+        response = self.client.post(
+            "/api/assistant/context-preview",
+            json={
+                "objective": "Recall the current project direction",
+                "contextQuery": "project direction",
+                "workspacePath": ".",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["workspaceRef"], ".")
+        self.assertTrue(data["policy"]["ownerScoped"])
+        self.assertTrue(data["policy"]["crossWorkspace"])
+        self.assertTrue(data["policy"]["noUnscopedDatabaseReads"])
+        self.assertFalse(data["policy"]["sensitiveIncluded"])
+
+        main.app.dependency_overrides[current_user] = lambda: {"username": "member-test", "role": "member"}
+        sensitive = self.client.post(
+            "/api/assistant/context-preview",
+            json={"objective": "Review private context", "includeSensitive": True},
+        )
+        self.assertEqual(sensitive.status_code, 403, sensitive.text)
+        self.assertEqual(sensitive.json()["error"]["code"], "permissionDenied")
+
     def test_sensitive_context_preview_requires_admin(self):
         main.app.dependency_overrides[current_user] = lambda: {"username": "member-test", "role": "member"}
         response = self.client.post(

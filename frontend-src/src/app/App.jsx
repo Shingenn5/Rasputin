@@ -158,6 +158,7 @@ export function App() {
   const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
   const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
   const [assistantVoicePreview, setAssistantVoicePreview] = useState(null);
+  const [assistantContextPreview, setAssistantContextPreview] = useState(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
@@ -1513,6 +1514,23 @@ export function App() {
     }
   }
 
+  async function previewAssistantContext(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const preview = await postJson("/api/assistant/context-preview", {
+        objective: String(form.get("contextObjective") || "").trim(),
+        contextQuery: String(form.get("contextQuery") || "").trim() || undefined,
+        workspacePath: workspace.activePath || ".",
+      });
+      setAssistantContextPreview(preview);
+      setGlobalStatus("Context preview refreshed; sensitive items remain excluded by default.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
   async function loadArchive() {
     const nextArchive = await api("/api/archive/sessions");
     setArchiveSessions(nextArchive);
@@ -2311,6 +2329,7 @@ export function App() {
         modelPacks={assistantModelPacks}
         handoffs={assistantHandoffs}
         voicePreview={assistantVoicePreview}
+        contextPreview={assistantContextPreview}
         loading={assistantLoading}
         error={assistantError}
         refresh={loadAssistantData}
@@ -2320,6 +2339,7 @@ export function App() {
         requestHandoff={requestAssistantHandoff}
         prepareHandoff={prepareAssistantHandoff}
         previewVoice={previewAssistantVoice}
+        previewContext={previewAssistantContext}
       />
       <ActivityView
         view={view}

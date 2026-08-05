@@ -33,6 +33,7 @@ export function AssistantView({
   modelPacks,
   handoffs,
   voicePreview,
+  contextPreview,
   loading = false,
   error = "",
   refresh,
@@ -95,6 +96,26 @@ export function AssistantView({
                 <div className="border-top mt-3 pt-3 small text-body-secondary">
                   <ShieldCheck size={14} className="me-1 text-success" aria-hidden="true" />
                   Model containers have no direct host access.
+                </div>
+                <div className="border-top mt-3 pt-3" data-testid="assistant-context-preview">
+                  <SectionHeader title="Context surface" text="Inspect owner-scoped memory and history before Rasputin builds a plan." />
+                  <Form onSubmit={previewContext}>
+                    <Row className="g-2">
+                      <Col md={6}><Form.Control name="contextObjective" required placeholder="What should Rasputin recall?" aria-label="Context objective" /></Col>
+                      <Col md={6}><Form.Control name="contextQuery" placeholder="Search across chats and workspaces" aria-label="Context query" /></Col>
+                    </Row>
+                    <div className="d-flex justify-content-end mt-2"><Button type="submit" size="sm" variant="outline-primary">Inspect context</Button></div>
+                  </Form>
+                  {contextPreview && (
+                    <div className="small mt-2">
+                      <div className="d-flex flex-wrap gap-2">
+                        <Badge bg="secondary">Memory {contextPreview.memory?.items?.length || 0}</Badge>
+                        <Badge bg="secondary">History {contextPreview.ownerHistory?.results?.length || 0}</Badge>
+                        <Badge bg="light" text="dark">Sensitive excluded {contextPreview.memory?.sensitiveExcluded || 0}</Badge>
+                      </div>
+                      <div className="text-body-secondary mt-2">Owner scoped: {contextPreview.policy?.ownerScoped ? "yes" : "no"} · Cross workspace: {contextPreview.policy?.crossWorkspace ? "yes" : "no"}</div>
+                    </div>
+                  )}
                 </div>
               </Card.Body>
             </Card>

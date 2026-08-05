@@ -55,6 +55,14 @@ class VoicePreviewIn(CamelModel):
     conversation_id: str | None = None
 
 
+class ContextPreviewIn(CamelModel):
+    objective: str = ""
+    workspace_path: str | None = None
+    session_id: str | None = None
+    context_query: str | None = None
+    include_sensitive: bool = False
+
+
 def _workspace_for_request(req: PlanPreviewIn, user: dict) -> str:
     workspace_ref = req.workspace_path or workspace.get_active(
         user["username"], user.get("role") == "admin"
@@ -84,6 +92,22 @@ async def assistant_voice_preview(req: VoicePreviewIn, _user=Depends(require_mem
             main_model_key=req.main_model_key,
             output_model_key=req.output_model_key,
             conversation_id=req.conversation_id,
+        )
+    )
+
+
+@router.post("/context-preview")
+async def assistant_context_preview(req: ContextPreviewIn, _user=Depends(require_member)):
+    _assert_sensitive_allowed(req, _user)
+    workspace_ref = _workspace_for_request(req, _user)
+    return ok(
+        runtime.build_context_preview(
+            owner_id=_user["username"],
+            objective=req.objective,
+            workspace_ref=workspace_ref,
+            session_id=req.session_id,
+            context_query=req.context_query,
+            include_sensitive=req.include_sensitive,
         )
     )
 
