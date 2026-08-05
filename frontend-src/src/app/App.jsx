@@ -1501,6 +1501,17 @@ export function App() {
     }
   }
 
+  async function dispatchAssistantHandoff(handoffId) {
+    try {
+      await postJson(`/api/assistant/handoffs/${encodeURIComponent(handoffId)}/dispatch`, {});
+      await Promise.allSettled([loadAssistantData(), refreshApprovals()]);
+      setGlobalStatus("Read-only Docker status collected. No container mutation was requested.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
   async function previewAssistantVoice(modelPackId = "") {
     try {
       const preview = await postJson("/api/assistant/voice-preview", modelPackId ? { modelPackId } : {});
@@ -2338,6 +2349,7 @@ export function App() {
         reviewPlan={reviewAssistantPlan}
         requestHandoff={requestAssistantHandoff}
         prepareHandoff={prepareAssistantHandoff}
+        dispatchHandoff={dispatchAssistantHandoff}
         previewVoice={previewAssistantVoice}
         previewContext={previewAssistantContext}
       />

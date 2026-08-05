@@ -80,6 +80,7 @@ class AssistantContractTests(unittest.TestCase):
         capability_data = capabilities.json()["data"]
         self.assertIn("speech_to_text", capability_data["voiceRoles"])
         self.assertTrue(capability_data["security"]["brokerOnly"])
+        self.assertIn("docker_status", capability_data["broker"]["dispatchSupportedOperations"])
 
         patched = self.client.patch("/api/assistant/profile", json={"displayName": "Rasputin Prime"})
         self.assertEqual(patched.status_code, 200, patched.text)
@@ -331,6 +332,59 @@ class AssistantContractTests(unittest.TestCase):
             self.assertEqual(blocked.status_code, 409, blocked.text)
             self.assertEqual(blocked.json()["error"]["code"], "assistantOperationBlocked")
             self.assertFalse(self.client.get(f"/api/assistant/handoffs/{handoff['id']}").json()["data"]["policy"]["executionStarted"])
+        finally:
+            security.save(original_security)
+
+    def test_read_only_broker_dispatch_requires_approval_and_is_idempotent(self):
+        original_security = security.load()
+        security.save({**original_security, "allow_docker_control": True})
+        try:
+            created = self.client.post(
+                "/api/assistant/plans",
+                json={"objective": "Inspect local model containers", "requestedOperations": ["docker_status"]},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            plan_id = created.json()["data"]["id"]
+            self.assertEqual(created.json()["data"]["plan"]["blockers"], [])
+            self.assertEqual(self.client.post(f"/api/assistant/plans/{plan_id}/approve", json={}).status_code, 200)
+            handoff = self.client.post(
+                f"/api/assistant/plans/{plan_id}/handoffs",
+                json={"operation": "docker_status"},
+            ).json()["data"]
+
+            not_ready = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+            self.assertEqual(not_ready.status_code, 409, not_ready.text)
+            self.assertEqual(not_ready.json()["error"]["code"], "assistantHandoffNotReady")
+
+            approved = self.client.post(f"/api/approvals/{handoff['approvalId']}/approve", json={})
+            self.assertEqual(approved.status_code, 200, approved.text)
+            prepared = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare")
+            self.assertEqual(prepared.status_code, 200, prepared.text)
+
+            observed = {"enabled": True, "containers": [{"name": "voice-model", "state": "running"}], "count": 1}
+            with patch("backend.assistant.broker.warsat.containers", return_value=observed) as adapter:
+                dispatched = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+                self.assertEqual(dispatched.status_code, 200, dispatched.text)
+                dispatched_data = dispatched.json()["data"]
+                self.assertEqual(dispatched_data["status"], "completed")
+                self.assertEqual(dispatched_data["brokerStatus"], "completed")
+                self.assertEqual(dispatched_data["request"]["dispatchStatus"], "completed")
+                self.assertEqual(dispatched_data["request"]["dispatchContractVersion"], "0.1")
+                self.assertEqual(dispatched_data["request"]["result"]["count"], 1)
+                self.assertFalse(dispatched_data["request"]["sideEffects"])
+                self.assertFalse(dispatched_data["request"]["hostMutation"])
+                self.assertFalse(dispatched_data["policy"]["executionStarted"])
+                self.assertEqual(adapter.call_count, 1)
+
+                repeated = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+                self.assertEqual(repeated.status_code, 200, repeated.text)
+                self.assertEqual(repeated.json()["data"]["status"], "completed")
+                self.assertEqual(adapter.call_count, 1)
+
+            approval_state = self.client.get("/api/approvals")
+            self.assertEqual(approval_state.status_code, 200, approval_state.text)
+            approval_record = next(item for item in approval_state.json()["data"]["approvals"] if item["id"] == handoff["approvalId"])
+            self.assertEqual(approval_record["status"], "executed")
         finally:
             security.save(original_security)
 

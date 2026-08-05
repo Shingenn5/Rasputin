@@ -25,6 +25,7 @@ from backend.assistant.contracts import (
     normalize_operations,
     sanitize_profile,
 )
+from backend.assistant import broker
 from backend.core import audit
 from backend.core import approvals
 from backend.core import runtime_store as store
@@ -89,6 +90,7 @@ def capabilities() -> dict[str, Any]:
             "contract_version": BROKER_CONTRACT_VERSION,
             "preparation_supported": True,
             "execution_enabled": False,
+            "dispatch_supported_operations": broker.supported_operations(),
         },
     }
 
@@ -636,7 +638,11 @@ def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, A
         return None
     item = dict(record)
     approval = approvals.get(item.get("approval_id")) if item.get("approval_id") else None
-    if item.get("status") == "ready_for_broker":
+    if item.get("status") == "completed":
+        broker_status = "completed"
+    elif item.get("status") == "failed":
+        broker_status = "failed"
+    elif item.get("status") == "ready_for_broker":
         broker_status = "ready_for_broker"
     elif approval:
         approval_status = str(approval.get("status") or "pending")
@@ -658,6 +664,81 @@ def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, A
         "side_effects": False,
     }
     return item
+
+
+def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
+    """Consume an approved handoff through one allowlisted broker adapter."""
+
+    owner = _owner(owner_id)
+    handoff = store.get_assistant_handoff(owner, handoff_id)
+    if not handoff:
+        raise ValueError("assistant handoff missing")
+    if handoff.get("status") == "completed":
+        return _public_handoff(owner, handoff)
+    if handoff.get("status") != "ready_for_broker":
+        raise AppError("assistant_handoff_not_ready", "Prepare the broker handoff before dispatching it.", 409)
+
+    plan_record = store.get_assistant_plan(owner, handoff.get("plan_id"))
+    if not plan_record or plan_record.get("status") != "approved":
+        raise AppError("assistant_plan_not_approved", "The assistant plan is no longer approved.", 409)
+    operation = normalize_operations([handoff.get("operation")])
+    if not operation or operation[0] not in broker.READ_ONLY_OPERATIONS:
+        raise AppError("assistant_broker_adapter_unavailable", "No executable adapter is registered for that operation.", 409)
+    operation = operation[0]
+    current = build_control_preview([operation])["operations"]
+    planned = current[0] if current else None
+    if not planned or planned.get("status") == "blocked":
+        reasons = ", ".join((planned or {}).get("blocked_reasons", ["operation_not_supported_by_broker"])[:4])
+        raise AppError("assistant_operation_blocked", f"Resolve the operation blocker before dispatch: {reasons}", 409)
+
+    approval = approvals.get(handoff.get("approval_id")) if handoff.get("approval_id") else None
+    if planned.get("requires_approval") and not approval:
+        raise AppError("assistant_approval_required", "This broker operation requires an approval record.", 409)
+    if approval:
+        try:
+            approvals.require_approved(handoff.get("approval_id"), "assistant_broker_operation")
+        except PermissionError as exc:
+            raise AppError("assistant_approval_unavailable", str(exc), 409) from exc
+
+    try:
+        adapter_result = broker.dispatch(operation)
+    except Exception as exc:
+        request = dict(handoff.get("request") or {})
+        request.update(
+            {
+                "dispatch_status": "failed",
+                "dispatch_error": str(exc)[:300],
+                "side_effects": False,
+                "host_mutation": False,
+                "execution_started": False,
+            }
+        )
+        store.transition_assistant_handoff(owner, handoff_id, "failed", request)
+        audit.log("assistant_broker_handoff_failed", {"handoff_id": handoff_id, "operation": operation}, actor=owner)
+        raise
+
+    request = dict(handoff.get("request") or {})
+    request.update(
+        {
+            "dispatch_status": "completed",
+            "dispatch_contract_version": adapter_result.get("contract_version"),
+            "adapter": adapter_result.get("adapter"),
+            "result": adapter_result.get("result"),
+            "side_effects": False,
+            "host_mutation": False,
+            "execution_started": False,
+            "completed_at": store.now(),
+        }
+    )
+    completed = store.transition_assistant_handoff(owner, handoff_id, "completed", request)
+    if not completed:
+        raise ValueError("assistant handoff missing")
+    audit.log(
+        "assistant_broker_handoff_completed",
+        {"handoff_id": handoff_id, "operation": operation, "adapter": adapter_result.get("adapter"), "side_effects": False},
+        actor=owner,
+    )
+    return _public_handoff(owner, completed)
 
 
 def prepare_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:

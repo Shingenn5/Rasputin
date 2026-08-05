@@ -1,5 +1,7 @@
 """HTTP surface for Rasputin identity and preview-only orchestration."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 from pydantic import Field
 
@@ -218,6 +220,11 @@ async def assistant_plan_handoff(plan_id: str, req: HandoffIn, _user=Depends(req
 @router.post("/handoffs/{handoff_id}/prepare")
 async def assistant_handoff_prepare(handoff_id: str, _user=Depends(require_member)):
     return ok(runtime.prepare_handoff(_user["username"], handoff_id))
+
+
+@router.post("/handoffs/{handoff_id}/dispatch")
+async def assistant_handoff_dispatch(handoff_id: str, _user=Depends(require_member)):
+    return ok(await asyncio.to_thread(runtime.dispatch_handoff, _user["username"], handoff_id))
 
 
 @router.get("/handoffs")

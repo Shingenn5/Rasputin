@@ -965,7 +965,7 @@ def list_assistant_handoffs(owner_id, limit=50):
     return [_public_assistant_handoff(row) for row in rows]
 
 
-_ASSISTANT_HANDOFF_STATUSES = {"pending_approval", "ready_for_broker", "denied", "expired"}
+_ASSISTANT_HANDOFF_STATUSES = {"pending_approval", "ready_for_broker", "completed", "failed", "denied", "expired"}
 
 
 def transition_assistant_handoff(owner_id, handoff_id, status, request=None):
@@ -984,7 +984,7 @@ def transition_assistant_handoff(owner_id, handoff_id, status, request=None):
         ).fetchone()
         if not current:
             return None
-        if current["status"] in {"denied", "expired"} and status == "ready_for_broker":
+        if current["status"] in {"denied", "expired", "completed"} and status == "ready_for_broker":
             raise ValueError("assistant handoff is no longer active")
         request_json = _json(request) if request is not None else current["request_json"]
         conn.execute(
