@@ -157,6 +157,7 @@ export function App() {
   const [assistantPlans, setAssistantPlans] = useState({ plans: [] });
   const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
   const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
+  const [assistantVoicePreview, setAssistantVoicePreview] = useState(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
@@ -1499,6 +1500,19 @@ export function App() {
     }
   }
 
+  async function previewAssistantVoice(modelPackId = "") {
+    try {
+      const preview = await postJson("/api/assistant/voice-preview", modelPackId ? { modelPackId } : {});
+      setAssistantVoicePreview(preview);
+      setGlobalStatus(preview.ready ? "Voice loop is ready for an approved local audio adapter." : "Voice loop readiness checked; resolve the listed model blockers first.");
+      return preview;
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
   async function loadArchive() {
     const nextArchive = await api("/api/archive/sessions");
     setArchiveSessions(nextArchive);
@@ -2296,6 +2310,7 @@ export function App() {
         plans={assistantPlans}
         modelPacks={assistantModelPacks}
         handoffs={assistantHandoffs}
+        voicePreview={assistantVoicePreview}
         loading={assistantLoading}
         error={assistantError}
         refresh={loadAssistantData}
@@ -2304,6 +2319,7 @@ export function App() {
         reviewPlan={reviewAssistantPlan}
         requestHandoff={requestAssistantHandoff}
         prepareHandoff={prepareAssistantHandoff}
+        previewVoice={previewAssistantVoice}
       />
       <ActivityView
         view={view}

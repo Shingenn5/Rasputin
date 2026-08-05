@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 # Keep this contract suite away from the developer database.  The runtime
@@ -83,6 +84,61 @@ class AssistantContractTests(unittest.TestCase):
         patched = self.client.patch("/api/assistant/profile", json={"displayName": "Rasputin Prime"})
         self.assertEqual(patched.status_code, 200, patched.text)
         self.assertEqual(patched.json()["data"]["displayName"], "Rasputin Prime")
+
+    def test_voice_preview_reports_missing_audio_models_without_starting_io(self):
+        response = self.client.post(
+            "/api/assistant/voice-preview",
+            json={
+                "modelPack": {
+                    "packId": "voice-core",
+                    "entries": [
+                        {"id": "conversation", "role": "main", "modelKey": "main-vllm"},
+                    ],
+                },
+                "conversationId": "session-voice-1",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["loop"], ["transcribe", "reason", "synthesize"])
+        self.assertFalse(data["ready"])
+        self.assertIn("voice:transcribe:model_not_registered", data["blockers"])
+        self.assertIn("voice:synthesize:model_not_registered", data["blockers"])
+        self.assertEqual(data["conversationId"], "session-voice-1")
+        self.assertFalse(data["execution"]["audioIoStarted"])
+        self.assertFalse(data["execution"]["transcriptionStarted"])
+        self.assertFalse(data["execution"]["synthesisStarted"])
+        self.assertEqual(data["policy"]["microphoneAccess"], "not_started")
+        self.assertEqual(data["policy"]["speakerAccess"], "not_started")
+
+    def test_voice_preview_resolves_role_compatible_models(self):
+        models = [
+            {"key": "stt-local", "role": "speech_to_text", "provider": "whisper", "runtime_status": "reachable", "enabled": True, "managed": False},
+            {"key": "main-local", "role": "main", "provider": "llama.cpp", "runtime_status": "reachable", "enabled": True, "managed": False},
+            {"key": "tts-local", "role": "text_to_speech", "provider": "piper", "runtime_status": "reachable", "enabled": True, "managed": False},
+        ]
+        with patch("backend.assistant.runtime.model_registry.all_models", return_value=models):
+            response = self.client.post(
+                "/api/assistant/voice-preview",
+                json={
+                    "modelPack": {
+                        "packId": "voice-core",
+                        "entries": [
+                            {"id": "input", "role": "speech_to_text", "modelKey": "stt-local"},
+                            {"id": "conversation", "role": "main", "modelKey": "main-local"},
+                            {"id": "output", "role": "text_to_speech", "modelKey": "tts-local"},
+                        ],
+                    },
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertTrue(data["ready"])
+        self.assertEqual(data["blockers"], [])
+        self.assertTrue(all(stage["status"] == "ready" for stage in data["stages"]))
+        self.assertFalse(data["execution"]["started"])
+        self.assertFalse(data["execution"]["modelsStarted"])
+        self.assertFalse(data["execution"]["audioIoStarted"])
 
     def test_sensitive_context_preview_requires_admin(self):
         main.app.dependency_overrides[current_user] = lambda: {"username": "member-test", "role": "member"}

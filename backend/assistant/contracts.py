@@ -32,6 +32,27 @@ AGENT_MODES = {"chat", "plan", "research", "code", "test"}
 
 VOICE_ROLES = {"speech_to_text", "text_to_speech"}
 
+VOICE_LOOP_STAGES = (
+    {
+        "id": "transcribe",
+        "role": "speech_to_text",
+        "capability": "audio.transcribe",
+        "label": "Speech to text",
+    },
+    {
+        "id": "reason",
+        "role": "main",
+        "capability": "chat.reason",
+        "label": "Rasputin reasoning",
+    },
+    {
+        "id": "synthesize",
+        "role": "text_to_speech",
+        "capability": "audio.synthesize",
+        "label": "Text to speech",
+    },
+)
+
 DEFAULT_PROFILE = {
     "assistant_id": "rasputin",
     "display_name": "Rasputin",

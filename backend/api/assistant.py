@@ -46,6 +46,15 @@ class HandoffIn(CamelModel):
     operation: str
 
 
+class VoicePreviewIn(CamelModel):
+    model_pack: dict | None = None
+    model_pack_id: str | None = None
+    input_model_key: str | None = None
+    main_model_key: str | None = None
+    output_model_key: str | None = None
+    conversation_id: str | None = None
+
+
 def _workspace_for_request(req: PlanPreviewIn, user: dict) -> str:
     workspace_ref = req.workspace_path or workspace.get_active(
         user["username"], user.get("role") == "admin"
@@ -62,6 +71,21 @@ def _assert_sensitive_allowed(req: PlanPreviewIn, user: dict) -> None:
 @router.get("/capabilities")
 async def assistant_capabilities(_user=Depends(current_user)):
     return ok(runtime.capabilities())
+
+
+@router.post("/voice-preview")
+async def assistant_voice_preview(req: VoicePreviewIn, _user=Depends(require_member)):
+    return ok(
+        runtime.build_voice_loop_preview(
+            owner_id=_user["username"],
+            model_pack=req.model_pack,
+            model_pack_id=req.model_pack_id,
+            input_model_key=req.input_model_key,
+            main_model_key=req.main_model_key,
+            output_model_key=req.output_model_key,
+            conversation_id=req.conversation_id,
+        )
+    )
 
 
 @router.get("/profile")

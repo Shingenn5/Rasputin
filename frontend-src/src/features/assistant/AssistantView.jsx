@@ -32,6 +32,7 @@ export function AssistantView({
   plans,
   modelPacks,
   handoffs,
+  voicePreview,
   loading = false,
   error = "",
   refresh,
@@ -40,6 +41,7 @@ export function AssistantView({
   reviewPlan,
   requestHandoff,
   prepareHandoff,
+  previewVoice,
 }) {
   const controlOperations = capabilities?.controlOperations || {};
   const operationEntries = useMemo(() => Object.entries(controlOperations), [controlOperations]);
@@ -169,6 +171,24 @@ export function AssistantView({
                 {voiceRoles.length > 0 && (
                   <div className="mt-3 small text-body-secondary"><Mic size={14} className="me-1" />Voice roles: {voiceRoles.map(titleize).join(", ")}</div>
                 )}
+                <div className="border-top mt-3 pt-3" data-testid="assistant-voice-loop">
+                  <SectionHeader title="Voice loop readiness" text="Preview transcribe → reason → synthesize routing without opening a microphone or speaker." />
+                  <div className="d-flex align-items-center justify-content-between gap-2">
+                    <Badge bg={voicePreview ? (voicePreview.ready ? "success" : "warning") : "secondary"}>
+                      {voicePreview ? (voicePreview.ready ? "Ready for adapter" : "Models needed") : "Not checked"}
+                    </Badge>
+                    <Button size="sm" variant="outline-primary" onClick={() => previewVoice(packItems[0]?.packId || "")}>Check readiness</Button>
+                  </div>
+                  {voicePreview && (
+                    <div className="mt-2 small">
+                      <div className="d-flex flex-wrap gap-2">
+                        {(voicePreview.stages || []).map((stage) => <Badge key={stage.stage} bg={statusVariant(stage.status)}>{titleize(stage.stage)}: {titleize(stage.status)}</Badge>)}
+                      </div>
+                      {(voicePreview.blockers || []).length > 0 && <div className="text-danger mt-2">Blocked: {voicePreview.blockers.join(", ")}</div>}
+                      <div className="text-body-secondary mt-2"><ShieldCheck size={13} className="me-1" />Audio I/O started: {voicePreview.execution?.audioIoStarted ? "yes" : "no"}</div>
+                    </div>
+                  )}
+                </div>
               </Card.Body>
             </Card>
           </Col>

@@ -17,6 +17,7 @@ from backend.assistant.contracts import (
     CONTROL_OPERATIONS,
     DEFAULT_PROFILE,
     MODEL_PACK_ROLES,
+    VOICE_LOOP_STAGES,
     VOICE_ROLES,
     merge_profile,
     normalize_agents,
@@ -304,6 +305,101 @@ def delete_model_pack(owner_id: str, pack_id: str) -> dict[str, Any]:
         raise ValueError("model pack missing")
     audit.log("assistant_model_pack_deleted", {"pack_id": pack_id}, actor=_owner(owner_id))
     return {"deleted": True, "pack_id": pack_id}
+
+
+def build_voice_loop_preview(
+    owner_id: str,
+    model_pack: Any = None,
+    model_pack_id: str | None = None,
+    input_model_key: str | None = None,
+    main_model_key: str | None = None,
+    output_model_key: str | None = None,
+    conversation_id: str | None = None,
+) -> dict[str, Any]:
+    """Resolve the local voice turn contract without touching audio devices."""
+
+    pack_source = "inline"
+    if model_pack_id:
+        saved_pack = get_model_pack(owner_id, model_pack_id, include_preview=False)
+        if not saved_pack:
+            raise ValueError("model pack missing")
+        if model_pack is not None:
+            raise ValueError("choose either model_pack or model_pack_id")
+        model_pack = saved_pack.get("pack")
+        pack_source = "saved"
+    normalized_pack = normalize_model_pack(model_pack)
+    models, by_key = _model_lookup()
+    overrides = {
+        "speech_to_text": str(input_model_key or "").strip(),
+        "main": str(main_model_key or "").strip(),
+        "text_to_speech": str(output_model_key or "").strip(),
+    }
+    stages = []
+    blockers = []
+    for stage in VOICE_LOOP_STAGES:
+        role = stage["role"]
+        pack_entry = next((entry for entry in normalized_pack["entries"] if entry.get("role") == role), None)
+        selected_key = overrides.get(role) or (pack_entry or {}).get("model_key")
+        entry = {
+            "id": (pack_entry or {}).get("id") or stage["id"],
+            "role": role,
+            "model_key": selected_key,
+            "required": True,
+            "capabilities": [stage["capability"]],
+        }
+        model = None if selected_key and selected_key not in by_key else _model_for_entry(entry, models, by_key)
+        status = _model_status(entry, model, security.load())
+        if model and str(model.get("role") or "") != role:
+            status.update(
+                {
+                    "status": "blocked",
+                    "next_action": "select_role_compatible_model",
+                    "blocked_reasons": ["model_role_mismatch"],
+                }
+            )
+        status.update(
+            {
+                "stage": stage["id"],
+                "label": stage["label"],
+                "capability": stage["capability"],
+                "selected_from": "override" if overrides.get(role) else "model_pack" if pack_entry else "registry_role",
+            }
+        )
+        stages.append(status)
+        if status.get("status") in {"blocked", "missing"}:
+            blockers.extend(f"voice:{stage['id']}:{reason}" for reason in status.get("blocked_reasons", []))
+
+    ready = not blockers
+    return {
+        "model_pack_source": pack_source,
+        "model_pack_id": normalized_pack["pack_id"],
+        "conversation_id": str(conversation_id or "").strip()[:120] or None,
+        "loop": [stage["id"] for stage in VOICE_LOOP_STAGES],
+        "stages": stages,
+        "ready": ready,
+        "blockers": sorted(set(blockers)),
+        "next_actions": [
+            "Register reachable speech-to-text, main, and text-to-speech models before starting a voice turn." if not ready else "Review the voice loop and explicitly start an approved audio adapter when one is available.",
+            "Keep microphone and speaker access behind a local adapter; this preview starts no audio I/O.",
+        ],
+        "execution": {
+            "mode": "preview_only",
+            "started": False,
+            "models_started": False,
+            "transcription_started": False,
+            "synthesis_started": False,
+            "audio_io_started": False,
+            "side_effects": False,
+        },
+        "policy": {
+            "owner_scoped": True,
+            "local_only": True,
+            "broker_only": True,
+            "direct_model_host_access": False,
+            "microphone_access": "not_started",
+            "speaker_access": "not_started",
+        },
+    }
 
 
 def _resolve_agent_model(agent: dict[str, Any], model_pack: dict[str, Any], models: list[dict[str, Any]]) -> str | None:
