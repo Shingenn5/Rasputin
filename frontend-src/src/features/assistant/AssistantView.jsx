@@ -39,6 +39,7 @@ export function AssistantView({
   saveModelPack,
   reviewPlan,
   requestHandoff,
+  prepareHandoff,
 }) {
   const controlOperations = capabilities?.controlOperations || {};
   const operationEntries = useMemo(() => Object.entries(controlOperations), [controlOperations]);
@@ -212,10 +213,13 @@ export function AssistantView({
             {handoffItems.length ? handoffItems.map((handoff) => (
               <div key={handoff.id} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom py-2">
                 <div className="d-flex align-items-center gap-2">
-                  {handoff.brokerStatus === "approved_for_broker" ? <CheckCircle2 size={16} className="text-success" aria-hidden="true" /> : <Clock3 size={16} className="text-warning" aria-hidden="true" />}
+                  {["approved_for_broker", "ready_for_broker"].includes(handoff.brokerStatus) ? <CheckCircle2 size={16} className="text-success" aria-hidden="true" /> : <Clock3 size={16} className="text-warning" aria-hidden="true" />}
                   <span><strong>{titleize(handoff.operation)}</strong> <span className="small text-body-secondary">· {handoff.id}</span></span>
                 </div>
-                <Badge bg={statusVariant(handoff.brokerStatus)}>{titleize(handoff.brokerStatus)}</Badge>
+                <div className="d-flex align-items-center gap-2">
+                  <Badge bg={statusVariant(handoff.brokerStatus)}>{titleize(handoff.brokerStatus)}</Badge>
+                  {handoff.brokerStatus === "approved_for_broker" && <Button size="sm" variant="outline-primary" onClick={() => prepareHandoff(handoff.id)}>Prepare broker</Button>}
+                </div>
               </div>
             )) : <p className="small text-body-secondary mb-0"><Volume2 size={14} className="me-1" />No broker handoffs requested.</p>}
           </Card.Body>
@@ -224,4 +228,3 @@ export function AssistantView({
     </section>
   );
 }
-

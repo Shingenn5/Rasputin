@@ -199,6 +199,10 @@ class AssistantContractTests(unittest.TestCase):
             self.assertEqual(handoff["approval"]["actionType"], "assistant_broker_operation")
             self.assertFalse(handoff["policy"]["executionStarted"])
 
+            pending_prepare = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare")
+            self.assertEqual(pending_prepare.status_code, 409, pending_prepare.text)
+            self.assertEqual(pending_prepare.json()["error"]["code"], "assistantApprovalRequired")
+
             approved = self.client.post(f"/api/approvals/{handoff['approvalId']}/approve", json={})
             self.assertEqual(approved.status_code, 200, approved.text)
             refreshed = self.client.get(f"/api/assistant/handoffs/{handoff['id']}")
@@ -207,6 +211,45 @@ class AssistantContractTests(unittest.TestCase):
             self.assertEqual(refreshed_data["brokerStatus"], "approved_for_broker")
             self.assertFalse(refreshed_data["policy"]["executionStarted"])
             self.assertFalse(refreshed_data["policy"]["sideEffects"])
+
+            prepared = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare")
+            self.assertEqual(prepared.status_code, 200, prepared.text)
+            prepared_data = prepared.json()["data"]
+            self.assertEqual(prepared_data["status"], "ready_for_broker")
+            self.assertEqual(prepared_data["brokerStatus"], "ready_for_broker")
+            self.assertEqual(prepared_data["request"]["contractVersion"], "0.1")
+            self.assertFalse(prepared_data["request"]["executionStarted"])
+            self.assertFalse(prepared_data["request"]["sideEffects"])
+            self.assertFalse(prepared_data["policy"]["executionStarted"])
+
+            repeated_prepare = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare")
+            self.assertEqual(repeated_prepare.status_code, 200, repeated_prepare.text)
+            self.assertEqual(repeated_prepare.json()["data"]["status"], "ready_for_broker")
+        finally:
+            security.save(original_security)
+
+    def test_broker_preparation_rechecks_current_security(self):
+        original_security = security.load()
+        security.save({**original_security, "allow_shell_execution": True})
+        try:
+            created = self.client.post(
+                "/api/assistant/plans",
+                json={"objective": "Run the local test", "requestedOperations": ["run_test"]},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            plan_id = created.json()["data"]["id"]
+            self.assertEqual(self.client.post(f"/api/assistant/plans/{plan_id}/approve", json={}).status_code, 200)
+            handoff = self.client.post(
+                f"/api/assistant/plans/{plan_id}/handoffs",
+                json={"operation": "run_test"},
+            ).json()["data"]
+            self.assertEqual(self.client.post(f"/api/approvals/{handoff['approvalId']}/approve", json={}).status_code, 200)
+
+            security.save({**original_security, "allow_shell_execution": False})
+            blocked = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare")
+            self.assertEqual(blocked.status_code, 409, blocked.text)
+            self.assertEqual(blocked.json()["error"]["code"], "assistantOperationBlocked")
+            self.assertFalse(self.client.get(f"/api/assistant/handoffs/{handoff['id']}").json()["data"]["policy"]["executionStarted"])
         finally:
             security.save(original_security)
 

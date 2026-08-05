@@ -1488,6 +1488,17 @@ export function App() {
     }
   }
 
+  async function prepareAssistantHandoff(handoffId) {
+    try {
+      await postJson(`/api/assistant/handoffs/${encodeURIComponent(handoffId)}/prepare`, {});
+      await loadAssistantData();
+      setGlobalStatus("Broker handoff prepared. No host action has started.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
   async function loadArchive() {
     const nextArchive = await api("/api/archive/sessions");
     setArchiveSessions(nextArchive);
@@ -2292,6 +2303,7 @@ export function App() {
         saveModelPack={saveAssistantModelPack}
         reviewPlan={reviewAssistantPlan}
         requestHandoff={requestAssistantHandoff}
+        prepareHandoff={prepareAssistantHandoff}
       />
       <ActivityView
         view={view}

@@ -963,3 +963,41 @@ def list_assistant_handoffs(owner_id, limit=50):
             (owner, cap),
         ).fetchall()
     return [_public_assistant_handoff(row) for row in rows]
+
+
+_ASSISTANT_HANDOFF_STATUSES = {"pending_approval", "ready_for_broker", "denied", "expired"}
+
+
+def transition_assistant_handoff(owner_id, handoff_id, status, request=None):
+    """Advance a handoff ledger record without executing the requested operation."""
+
+    if status not in _ASSISTANT_HANDOFF_STATUSES:
+        raise ValueError("invalid assistant handoff status")
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    identifier = str(handoff_id)
+    stamp = now()
+    with _lock, connect() as conn:
+        current = conn.execute(
+            "SELECT * FROM assistant_handoffs WHERE id=? AND owner_id=?",
+            (identifier, owner),
+        ).fetchone()
+        if not current:
+            return None
+        if current["status"] in {"denied", "expired"} and status == "ready_for_broker":
+            raise ValueError("assistant handoff is no longer active")
+        request_json = _json(request) if request is not None else current["request_json"]
+        conn.execute(
+            """
+            UPDATE assistant_handoffs
+            SET status=?, request_json=?, updated_at=?
+            WHERE id=? AND owner_id=?
+            """,
+            (status, request_json, stamp, identifier, owner),
+        )
+        row = conn.execute(
+            "SELECT * FROM assistant_handoffs WHERE id=? AND owner_id=?",
+            (identifier, owner),
+        ).fetchone()
+        conn.commit()
+    return _public_assistant_handoff(row)

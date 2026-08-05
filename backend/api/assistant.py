@@ -167,6 +167,11 @@ async def assistant_plan_handoff(plan_id: str, req: HandoffIn, _user=Depends(req
     return ok(runtime.request_handoff(_user["username"], plan_id, req.operation))
 
 
+@router.post("/handoffs/{handoff_id}/prepare")
+async def assistant_handoff_prepare(handoff_id: str, _user=Depends(require_member)):
+    return ok(runtime.prepare_handoff(_user["username"], handoff_id))
+
+
 @router.get("/handoffs")
 async def assistant_handoff_list(limit: int = 50, _user=Depends(current_user)):
     return ok({"handoffs": runtime.list_handoffs(_user["username"], limit)})

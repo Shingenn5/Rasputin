@@ -1,9 +1,11 @@
-"""Read-only Rasputin orchestration preview runtime.
+"""Rasputin orchestration preview and approval-aware broker boundary.
 
 The preview is deliberately a contract boundary: it can inspect owner-scoped
 context and the registered model fleet, but it never starts a task, container,
 process, microphone, or speaker.  A future local-control broker can consume
-the returned plan after approvals are implemented.
+the returned plan after approvals are implemented.  Broker preparation only
+validates the approved request and records a durable, side-effect-free
+envelope; it does not execute the operation.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from backend.rag import memory as memory_store
 
 
 PROFILE_KEY_PREFIX = "assistant_profile:"
+BROKER_CONTRACT_VERSION = "0.1"
 
 
 def _owner(owner_id: str | None) -> str:
@@ -80,6 +83,11 @@ def capabilities() -> dict[str, Any]:
             "allow_docker_control": bool(cfg.get("allow_docker_control", False)),
             "model_containers_have_host_access": False,
             "broker_only": True,
+        },
+        "broker": {
+            "contract_version": BROKER_CONTRACT_VERSION,
+            "preparation_supported": True,
+            "execution_enabled": False,
         },
     }
 
@@ -532,7 +540,9 @@ def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, A
         return None
     item = dict(record)
     approval = approvals.get(item.get("approval_id")) if item.get("approval_id") else None
-    if approval:
+    if item.get("status") == "ready_for_broker":
+        broker_status = "ready_for_broker"
+    elif approval:
         approval_status = str(approval.get("status") or "pending")
         broker_status = {
             "pending": "awaiting_approval",
@@ -552,6 +562,80 @@ def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, A
         "side_effects": False,
     }
     return item
+
+
+def prepare_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
+    """Validate an approved handoff and mark it ready for a future broker.
+
+    This is intentionally the last safe step before host execution.  It
+    rechecks the current security policy, plan approval, and approval record so
+    a stale approval cannot bypass a newly disabled capability.  No approval
+    is consumed and no process, container, file, microphone, or speaker is
+    started here.
+    """
+
+    owner = _owner(owner_id)
+    handoff = store.get_assistant_handoff(owner, handoff_id)
+    if not handoff:
+        raise ValueError("assistant handoff missing")
+    if handoff.get("status") == "ready_for_broker":
+        return _public_handoff(owner, handoff)
+    if handoff.get("status") in {"denied", "expired"}:
+        raise AppError("assistant_handoff_closed", "That broker handoff is no longer active.", 409)
+
+    plan_record = store.get_assistant_plan(owner, handoff.get("plan_id"))
+    if not plan_record or plan_record.get("status") != "approved":
+        raise AppError("assistant_plan_not_approved", "Approve the assistant plan before preparing a broker handoff.", 409)
+
+    operation = normalize_operations([handoff.get("operation")])
+    if not operation:
+        raise ValueError("assistant handoff operation is invalid")
+    operation = operation[0]
+    current = build_control_preview([operation])["operations"]
+    planned = current[0] if current else None
+    if not planned or planned.get("status") == "blocked":
+        reasons = ", ".join((planned or {}).get("blocked_reasons", ["operation_not_supported_by_broker"])[:4])
+        raise AppError("assistant_operation_blocked", f"Resolve the operation blocker before broker preparation: {reasons}", 409)
+
+    approval = approvals.get(handoff.get("approval_id")) if handoff.get("approval_id") else None
+    if planned.get("requires_approval") and not approval:
+        raise AppError("assistant_approval_required", "This broker operation requires an approval record.", 409)
+    if approval and approval.get("status") != "approved":
+        status = str(approval.get("status") or "pending")
+        code = "assistant_approval_required" if status == "pending" else "assistant_approval_unavailable"
+        message = "Approve the broker operation before preparation." if status == "pending" else f"The broker approval is {status}."
+        raise AppError(code, message, 409)
+
+    request = dict(handoff.get("request") or {})
+    request.update(
+        {
+            "contract_version": BROKER_CONTRACT_VERSION,
+            "operation": operation,
+            "plan_id": plan_record["id"],
+            "workspace": (plan_record.get("plan") or {}).get("workspace_ref") or ".",
+            "approval_id": approval.get("id") if approval else None,
+            "execution_mode": "broker_only",
+            "execution_started": False,
+            "side_effects": False,
+            "direct_model_host_access": False,
+            "prepared_at": store.now(),
+        }
+    )
+    prepared = store.transition_assistant_handoff(owner, handoff_id, "ready_for_broker", request)
+    if not prepared:
+        raise ValueError("assistant handoff missing")
+    audit.log(
+        "assistant_broker_handoff_prepared",
+        {
+            "handoff_id": handoff_id,
+            "plan_id": plan_record["id"],
+            "operation": operation,
+            "approval_id": approval.get("id") if approval else None,
+            "execution_started": False,
+        },
+        actor=owner,
+    )
+    return _public_handoff(owner, prepared)
 
 
 def request_handoff(owner_id: str, plan_id: str, operation: str) -> dict[str, Any]:
