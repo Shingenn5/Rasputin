@@ -1,6 +1,4 @@
-"""HTTP surface for Rasputin identity and preview-only orchestration."""
-
-import asyncio
+"""HTTP surface for Rasputin identity and approval-aware orchestration."""
 
 from fastapi import APIRouter, Depends
 from pydantic import Field
@@ -268,7 +266,10 @@ async def assistant_handoff_prepare(handoff_id: str, _user=Depends(require_membe
 
 @router.post("/handoffs/{handoff_id}/dispatch")
 async def assistant_handoff_dispatch(handoff_id: str, _user=Depends(require_member)):
-    return ok(await asyncio.to_thread(runtime.dispatch_handoff, _user["username"], handoff_id))
+    # The governed Code adapter schedules through the request's running event
+    # loop; dispatch_handoff still contains only bounded broker work and fixed
+    # host adapters, so it is intentionally invoked directly here.
+    return ok(runtime.dispatch_handoff(_user["username"], handoff_id, is_admin=_user.get("role") == "admin"))
 
 
 @router.get("/handoffs")

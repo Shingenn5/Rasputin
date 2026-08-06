@@ -1575,7 +1575,9 @@ export function App() {
       await Promise.allSettled([loadAssistantData(), refreshApprovals()]);
       setGlobalStatus(operation === "open_vscode"
         ? "VS Code launch dispatched for the approved workspace."
-        : "Read-only Docker status collected. No container mutation was requested.");
+        : operation === "start_coding_task"
+          ? "Governed Code task started from the approved Assistant handoff."
+          : "Read-only Docker status collected. No container mutation was requested.");
     } catch (error) {
       setAssistantError(error.message);
       setGlobalStatus(error.message);

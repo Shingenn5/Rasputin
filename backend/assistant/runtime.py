@@ -2,10 +2,9 @@
 
 The preview is deliberately a contract boundary: it can inspect owner-scoped
 context and the registered model fleet, but it never starts a task, container,
-process, microphone, or speaker.  A future local-control broker can consume
-the returned plan after approvals are implemented.  Broker preparation only
-validates the approved request and records a durable, side-effect-free
-envelope; it does not execute the operation.
+process, microphone, or speaker.  Broker preparation validates the approved
+request and records a durable, side-effect-free envelope; dispatch then invokes
+only the concrete allowlisted adapter selected by the approved operation.
 """
 
 from __future__ import annotations
@@ -33,6 +32,7 @@ from backend.core import runtime_store as store
 from backend.core.response import AppError
 from backend.core import security
 from backend.core import workspace
+from backend.models import providers as model_providers
 from backend.models import registry as model_registry
 from backend.rag import memory as memory_store
 
@@ -100,7 +100,7 @@ def capabilities() -> dict[str, Any]:
         "broker": {
             "contract_version": BROKER_CONTRACT_VERSION,
             "preparation_supported": True,
-            "execution_enabled": False,
+            "execution_enabled": bool(broker.supported_operations()),
             "dispatch_supported_operations": broker.supported_operations(),
             "dispatch_operation_metadata": [
                 {"operation": name, **metadata}
@@ -618,7 +618,7 @@ def build_control_preview(requested_operations: Any, workspace_ref: str | None =
                     target = workspace.resolve_path(workspace_ref)
                     if not target.exists() or not target.is_dir():
                         blocked_reasons.append("workspace_missing")
-                    elif not workspace.is_host_shell_allowed(target):
+                    elif adapter.get("requires_host_shell", True) and not workspace.is_host_shell_allowed(target):
                         blocked_reasons.append("workspace_host_shell_disabled")
                 except (OSError, ValueError):
                     blocked_reasons.append("workspace_not_approved")
@@ -655,6 +655,49 @@ def build_control_preview(requested_operations: Any, workspace_ref: str | None =
             "side_effects": False,
         },
     }
+
+
+def _resolve_coding_model(model_pack: dict[str, Any], agent_preview: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Choose the model a brokered Code task will use, without guessing at dispatch time.
+
+    Explicit Code agents win, followed by a coder/executor/main model-pack entry.  A
+    plan is blocked when no registered tool-capable model can satisfy the handoff;
+    this keeps the Assistant preview honest instead of queueing a silent Chat fallback.
+    """
+
+    candidates: list[str] = []
+    for item in agent_preview.get("agents", []):
+        if item.get("mode") == "code" or item.get("role") in {"coder", "executor"}:
+            key = str(item.get("resolved_model_key") or item.get("model_key") or "").strip()
+            if key:
+                candidates.append(key)
+    for entry in model_pack.get("entries", []):
+        if entry.get("role") in {"coder", "executor", "main"}:
+            key = str(entry.get("model_key") or "").strip()
+            if key:
+                candidates.append(key)
+            else:
+                models, by_key = _model_lookup()
+                inferred = _model_for_entry(entry, models, by_key)
+                if inferred and inferred.get("key"):
+                    candidates.append(str(inferred["key"]))
+
+    seen: set[str] = set()
+    for key in candidates:
+        if key in seen:
+            continue
+        seen.add(key)
+        model = model_registry.get_model(key)
+        if not model:
+            continue
+        if not model.get("enabled", True):
+            return None, "coding_model_disabled"
+        if str(model.get("runtime_status") or "").lower() in {"unhealthy", "stopped", "unreachable", "error"}:
+            return None, f"coding_model_runtime_{str(model.get('runtime_status')).lower()}"
+        if not model_providers.supports_agentic_tools(model):
+            return None, "coding_model_not_tool_capable"
+        return key, None
+    return None, "coding_model_missing"
 
 
 def build_plan_preview(
@@ -694,6 +737,15 @@ def build_plan_preview(
     model_preview = build_model_pack_preview(normalized_pack)
     agent_preview = build_agent_preview(clean_objective, agents, normalized_pack)
     control_preview = build_control_preview(requested_operations, workspace_ref=workspace_ref)
+    coding_model_key = None
+    coding_model_blocker = None
+    if any(item.get("operation") == "start_coding_task" for item in control_preview["operations"]):
+        coding_model_key, coding_model_blocker = _resolve_coding_model(normalized_pack, agent_preview)
+        if coding_model_blocker:
+            for item in control_preview["operations"]:
+                if item.get("operation") == "start_coding_task":
+                    item["status"] = "blocked"
+                    item.setdefault("blocked_reasons", []).append(coding_model_blocker)
     blockers = []
     for entry in model_preview["entries"]:
         if entry.get("status") == "blocked" or (entry.get("required") and entry.get("status") == "missing"):
@@ -715,6 +767,7 @@ def build_plan_preview(
         "workspace_ref": workspace_ref,
         "model_pack_source": pack_source,
         "context_source": context_source,
+        "context_capsule_id": ((context.get("capsule") or {}).get("id") if isinstance(context, dict) else None),
         "context": context,
         "model_pack": model_preview,
         "delegation": agent_preview,
@@ -725,6 +778,12 @@ def build_plan_preview(
             "side_effects": False,
             "host_actions_started": False,
             "models_started": False,
+            "coding": {
+                "mode": "code",
+                "model_key": coding_model_key,
+                "context_capsule_id": ((context.get("capsule") or {}).get("id") if isinstance(context, dict) else None),
+                "ready": bool(coding_model_key) and not coding_model_blocker,
+            } if any(item.get("operation") == "start_coding_task" for item in control_preview["operations"]) else None,
         },
         "blockers": sorted(set(blockers)),
         "next_actions": next_actions,
@@ -859,7 +918,102 @@ def _public_handoff(owner_id: str, record: dict[str, Any] | None) -> dict[str, A
     return item
 
 
-def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
+def _dispatch_start_coding_task(owner_id: str, handoff_id: str, plan_record: dict[str, Any], is_admin: bool = False) -> dict[str, Any]:
+    """Start exactly one approved Code task through the existing AgentHub.
+
+    The broker owns the allowlist and approval boundary; AgentHub remains the
+    only component allowed to create and schedule an agent task.  The result is
+    deliberately a receipt (task id, model, workspace, and capsule id), never
+    the capsule's raw context or an arbitrary command string.
+    """
+
+    plan = plan_record.get("plan") or {}
+    execution = plan.get("execution") or {}
+    coding = execution.get("coding") or {}
+    model_key = str(coding.get("model_key") or "").strip()
+    model = model_registry.get_model(model_key) if model_key else None
+    if not model or not model_providers.supports_agentic_tools(model):
+        raise AppError(
+            "assistant_coding_model_unavailable",
+            "The approved plan does not have a reachable tool-capable Code model.",
+            409,
+        )
+
+    workspace_ref = str(plan.get("workspace_ref") or ".").strip() or "."
+    try:
+        workspace.require_user_access(workspace_ref, owner_id, "contributor", is_admin)
+        target_workspace = workspace.resolve_path(workspace_ref)
+    except (OSError, ValueError, PermissionError) as exc:
+        raise AppError(
+            "assistant_coding_workspace_unavailable",
+            "The approved plan no longer has contributor access to its workspace.",
+            409,
+        ) from exc
+
+    capsule_id = str(
+        plan.get("context_capsule_id")
+        or coding.get("context_capsule_id")
+        or ((plan.get("context") or {}).get("capsule") or {}).get("id")
+        or ""
+    ).strip() or None
+    if capsule_id:
+        capsule = store.get_assistant_context_capsule(owner_id, capsule_id)
+        if not capsule:
+            raise AppError("assistant_context_capsule_missing", "The approved context capsule is missing.", 409)
+        if capsule.get("status") == "expired":
+            raise AppError("assistant_context_capsule_expired", "The approved context capsule has expired.", 409)
+        if capsule.get("status") != "approved":
+            raise AppError("assistant_context_capsule_not_approved", "Approve the context capsule before starting the Code task.", 409)
+        try:
+            capsule_workspace = workspace.resolve_path(capsule.get("workspace_ref") or ".")
+        except (OSError, ValueError) as exc:
+            raise AppError("assistant_context_capsule_workspace_mismatch", "The context capsule workspace is no longer valid.", 409) from exc
+        if str(target_workspace.resolve()).casefold() != str(capsule_workspace.resolve()).casefold():
+            raise AppError("assistant_context_capsule_workspace_mismatch", "The approved context capsule belongs to a different workspace.", 409)
+
+    # Import lazily to keep the assistant contract module independent from the
+    # API router's singleton during startup and unit-test imports.
+    from backend.api.core import hub
+
+    task = hub.start(
+        objective=str(plan.get("objective") or "Complete the approved coding task"),
+        model=model_key,
+        skill="general",
+        subagents=0,
+        workspace_path=workspace_ref,
+        mode="code",
+        reasoning="auto",
+        owner_id=owner_id,
+        context_capsule_id=capsule_id,
+    )
+    task.seen("assistant_handoff_started", {
+        "handoffId": handoff_id,
+        "planId": plan_record.get("id"),
+        "operation": "start_coding_task",
+        "model": model_key,
+        "contextCapsuleId": capsule_id,
+    })
+    task.log("governed Code task started from an approved Assistant handoff")
+    return {
+        "contract_version": BROKER_CONTRACT_VERSION,
+        "operation": "start_coding_task",
+        "adapter": broker.operation_metadata()["start_coding_task"]["adapter"],
+        "result": {
+            "task_id": task.id,
+            "status": task.status,
+            "mode": task.mode,
+            "model": task.model,
+            "workspace": task.workspace,
+            "context_capsule_id": capsule_id,
+        },
+        "action_state": "started",
+        "side_effects": True,
+        "host_mutation": True,
+        "execution_started": True,
+    }
+
+
+def dispatch_handoff(owner_id: str, handoff_id: str, is_admin: bool = False) -> dict[str, Any]:
     """Consume an approved handoff through one allowlisted broker adapter."""
 
     owner = _owner(owner_id)
@@ -896,10 +1050,13 @@ def dispatch_handoff(owner_id: str, handoff_id: str) -> dict[str, Any]:
             raise AppError("assistant_approval_unavailable", str(exc), 409) from exc
 
     try:
-        adapter_result = broker.dispatch(
-            operation,
-            workspace_path=workspace.resolve_path(workspace_ref) if broker.operation_metadata().get(operation, {}).get("requires_workspace") else None,
-        )
+        if operation == "start_coding_task":
+            adapter_result = _dispatch_start_coding_task(owner, handoff_id, plan_record, is_admin=is_admin)
+        else:
+            adapter_result = broker.dispatch(
+                operation,
+                workspace_path=workspace.resolve_path(workspace_ref) if broker.operation_metadata().get(operation, {}).get("requires_workspace") else None,
+            )
     except Exception as exc:
         request = dict(handoff.get("request") or {})
         request.update(

@@ -413,6 +413,7 @@ export function AssistantView({
                   {handoff.brokerStatus === "approved_for_broker" && <Button size="sm" variant="outline-primary" onClick={() => prepareHandoff(handoff.id)}>Prepare broker</Button>}
                   {handoff.brokerStatus === "ready_for_broker" && handoff.operation === "docker_status" && <Button size="sm" variant="outline-success" onClick={() => dispatchHandoff(handoff.id, handoff.operation)}>Inspect Docker</Button>}
                   {handoff.brokerStatus === "ready_for_broker" && handoff.operation === "open_vscode" && <Button size="sm" variant="outline-warning" onClick={() => dispatchHandoff(handoff.id, handoff.operation)}>Open VS Code</Button>}
+                  {handoff.brokerStatus === "ready_for_broker" && handoff.operation === "start_coding_task" && <Button size="sm" variant="outline-primary" onClick={() => dispatchHandoff(handoff.id, handoff.operation)}>Start Code task</Button>}
                 </div>
               </div>
             )) : <p className="small text-body-secondary mb-0"><Volume2 size={14} className="me-1" />No broker handoffs requested.</p>}

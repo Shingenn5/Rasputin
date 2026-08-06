@@ -167,6 +167,13 @@ CONTROL_OPERATIONS = {
         "risk": "high",
         "requires_approval": True,
     },
+    "start_coding_task": {
+        "label": "Start a governed coding task",
+        "category": "developer",
+        "security_flag": None,
+        "risk": "high",
+        "requires_approval": True,
+    },
     "docker_status": {
         "label": "Inspect Docker status",
         "category": "container",

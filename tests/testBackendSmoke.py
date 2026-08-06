@@ -4730,6 +4730,71 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(any("not permitted" in l for l in task2.logs))
         self.assertFalse(any("reopening execution to fix" in l for l in task2.logs))
 
+    def testStage6CodeLoopUsesApprovedCapsuleDuringEditTestRepair(self):
+        """The FRIDAY bridge keeps reviewed context attached through Code repair."""
+        capsule = runtime_store.create_assistant_context_capsule(
+            owner_id="test",
+            objective="Carry the reviewed failure into the coder",
+            workspace_ref=".",
+            context={
+                "selected_session": {
+                    "id": "source-session",
+                    "mode": "code",
+                    "messages": [{"role": "user", "content": "The focused test fails in x.py; preserve this evidence."}],
+                },
+                "memory": {"items": []},
+                "owner_history": {"results": []},
+            },
+            provenance={"workspace_ref": ".", "query": "reviewed failure"},
+            expires_in_seconds=3600,
+        )
+        runtime_store.transition_assistant_context_capsule("test", capsule["id"], "approved", actor="test")
+
+        hub = agent.AgentHub()
+        task = agent.AgentTask(
+            "Repair the focused test failure",
+            "dry-run",
+            "general",
+            mode="code",
+            workspace_path=".",
+            context_capsule_id=capsule["id"],
+        )
+        task.owner_id = "test"
+        hub._persist_session(task)
+        hub._load_context_capsule(task)
+        state = {"chat": 0, "shell": 0}
+        captured = []
+
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            state["chat"] += 1
+            captured.append(messages[0]["content"])
+            if state["chat"] % 2 == 1:
+                return "", [{"id": f"capsule-c{state['chat']}", "name": "fs_patch", "args": {"path": "x.py"}}]
+            return "repaired with the reviewed context", []
+
+        async def fake_call_tool(name, args, on_log=None):
+            if name == "shell_exec":
+                result = [{"exit_code": 1, "output": "focused test failed"}, {"exit_code": 0, "output": "focused test passed"}][min(state["shell"], 1)]
+                state["shell"] += 1
+                return result
+            return {"output": "patched"}
+
+        hub.mcp.call_tool = fake_call_tool
+        sections = [context_governor.section("task", "Task", task.objective, required=True, priority=0)]
+        with patch("backend.engine.agent._chat", scripted_chat), patch(
+            "backend.core.workspace.get_workspace_commands", lambda _path: {"test": "run-focused-tests"},
+        ):
+            result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
+
+        self.assertEqual(result, "repaired with the reviewed context")
+        self.assertEqual(state["shell"], 2)
+        self.assertIn("focused test fails in x.py", captured[0])
+        self.assertIn("reopening execution to fix", "\n".join(task.logs))
+        trace_kinds = [item["kind"] for item in task.trace]
+        self.assertIn("context_capsule_attached", trace_kinds)
+        self.assertIn("context_capsule_injected", trace_kinds)
+        self.assertIn("test_run", trace_kinds)
+
     def testStage6WorkspaceCommandsApiRoundtrip(self):
         from backend.core import workspace as workspace_mod
         target = main.ROOT / "workspace" / f"stage6-cmds-{runtime_store.new_id('s6')[-6:]}"

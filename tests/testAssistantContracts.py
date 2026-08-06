@@ -95,6 +95,7 @@ class AssistantContractTests(unittest.TestCase):
         self.assertTrue(capability_data["security"]["brokerOnly"])
         self.assertIn("docker_status", capability_data["broker"]["dispatchSupportedOperations"])
         self.assertIn("open_vscode", capability_data["broker"]["dispatchSupportedOperations"])
+        self.assertIn("start_coding_task", capability_data["broker"]["dispatchSupportedOperations"])
         metadata = next(item for item in capability_data["broker"]["dispatchOperationMetadata"] if item["operation"] == "open_vscode")
         self.assertTrue(metadata["hostMutation"])
         control_operations = capability_data["controlOperations"]
@@ -107,6 +108,64 @@ class AssistantContractTests(unittest.TestCase):
         patched = self.client.patch("/api/assistant/profile", json={"displayName": "Rasputin Prime"})
         self.assertEqual(patched.status_code, 200, patched.text)
         self.assertEqual(patched.json()["data"]["displayName"], "Rasputin Prime")
+
+    def test_approved_plan_can_start_one_governed_code_task_with_capsule_receipt(self):
+        capsule = runtime.create_context_capsule(
+            owner_id="contract-test",
+            objective="Carry the reviewed coding handoff into a Code task",
+            workspace_ref=".",
+            context_query="approved coding evidence",
+        )
+        self.assertEqual(self.client.post(f"/api/assistant/context-capsules/{capsule['id']}/approve", json={}).status_code, 200)
+        created = self.client.post(
+            "/api/assistant/plans",
+            json={
+                "objective": "Run the governed coding task",
+                "contextCapsuleId": capsule["id"],
+                "modelPack": {
+                    "packId": "contract-coder",
+                    "entries": [{"id": "coder", "role": "coder", "modelKey": "dry-run", "required": True}],
+                },
+                "requestedOperations": ["start_coding_task"],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        plan = created.json()["data"]
+        self.assertEqual(plan["plan"]["blockers"], [])
+        self.assertTrue(plan["plan"]["execution"]["coding"]["ready"])
+        self.assertEqual(plan["plan"]["execution"]["coding"]["modelKey"], "dry-run")
+        plan_id = plan["id"]
+        self.assertEqual(self.client.post(f"/api/assistant/plans/{plan_id}/approve", json={}).status_code, 200)
+        handoff = self.client.post(
+            f"/api/assistant/plans/{plan_id}/handoffs",
+            json={"operation": "start_coding_task"},
+        ).json()["data"]
+        self.assertEqual(handoff["status"], "pending_approval")
+        self.assertEqual(self.client.post(f"/api/approvals/{handoff['approvalId']}/approve", json={}).status_code, 200)
+        self.assertEqual(self.client.post(f"/api/assistant/handoffs/{handoff['id']}/prepare").status_code, 200)
+
+        # Keep the contract test deterministic: prove the bridge creates and
+        # records the task without running a model worker in this request.
+        with patch.object(hub, "_schedule_queued_task", lambda _task: None):
+            dispatched = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+        self.assertEqual(dispatched.status_code, 200, dispatched.text)
+        data = dispatched.json()["data"]
+        self.assertEqual(data["status"], "completed")
+        self.assertEqual(data["request"]["operation"], "start_coding_task")
+        self.assertTrue(data["request"]["executionStarted"])
+        self.assertTrue(data["request"]["hostMutation"])
+        self.assertTrue(data["request"]["sideEffects"])
+        result = data["request"]["result"]
+        self.assertEqual(result["mode"], "code")
+        self.assertEqual(result["model"], "dry-run")
+        self.assertEqual(result["contextCapsuleId"], capsule["id"])
+        task = hub.tasks[result["taskId"]]
+        self.assertEqual(task.context_capsule_id, capsule["id"])
+        self.assertIn("assistant_handoff_started", [item["kind"] for item in task.trace])
+
+        repeated = self.client.post(f"/api/assistant/handoffs/{handoff['id']}/dispatch", json={})
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(repeated.json()["data"]["request"]["result"]["taskId"], result["taskId"])
 
     def test_voice_preview_reports_missing_audio_models_without_starting_io(self):
         response = self.client.post(
