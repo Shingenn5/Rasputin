@@ -1,5 +1,16 @@
 $ErrorActionPreference = 'Stop'
 
+try {
+    [void](docker compose version 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose v2 is unavailable" }
+    [void](docker info 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "Docker engine is not running" }
+} catch {
+    Write-Host "Docker Compose v2 is required, and the Docker engine must be running." -ForegroundColor Red
+    Write-Host "Install Docker Desktop, start it, and rerun this installer." -ForegroundColor Yellow
+    exit 1
+}
+
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "      Rasputin Installer (Windows)       " -ForegroundColor Cyan

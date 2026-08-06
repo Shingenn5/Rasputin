@@ -27,19 +27,56 @@ function Test-DockerEnv {
     try {
         [void](docker compose version 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "Docker not found" }
+        [void](docker info 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "Docker engine is not running" }
     } catch {
-        Write-Host "Docker is not running or not installed." -ForegroundColor Red
-        Write-Host "Rasputin requires Docker Desktop to run its sandboxes." -ForegroundColor Yellow
-        Write-Host "Please install Docker Desktop from: https://www.docker.com/products/docker-desktop/" -ForegroundColor Yellow
-        Write-Host "Once installed and running, run this script again." -ForegroundColor Yellow
+        Write-Host "Docker Compose v2 is required, and the Docker engine must be running." -ForegroundColor Red
+        Write-Host "Install Docker Desktop, or Docker Engine with the Compose plugin on Linux." -ForegroundColor Yellow
+        Write-Host "Start the engine, then run this command again." -ForegroundColor Yellow
         exit 1
     }
 }
 
 function Open-Browser {
     param([string]$Url)
+    if ($NoOpen) {
+        Write-Host "Rasputin is ready at $Url" -ForegroundColor Green
+        return
+    }
     Write-Host "Opening $Url in your default browser..." -ForegroundColor Cyan
     Start-Process $Url
+}
+
+function Test-HealthUrl {
+    param(
+        [string]$Url,
+        [switch]$Insecure
+    )
+
+    try {
+        $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($Insecure -and $curl) {
+            & $curl.Source -k -sS -f $Url | Out-Null
+            return $LASTEXITCODE -eq 0
+        }
+
+        $request = @{
+            Uri = $Url
+            UseBasicParsing = $true
+            TimeoutSec = 10
+            ErrorAction = "Stop"
+        }
+        if ($Insecure) {
+            $webRequest = Get-Command Invoke-WebRequest
+            if ($webRequest.Parameters.ContainsKey("SkipCertificateCheck")) {
+                $request.SkipCertificateCheck = $true
+            }
+        }
+        $response = Invoke-WebRequest @request
+        return $response.StatusCode -eq 200
+    } catch {
+        return $false
+    }
 }
 
 function Set-RasputinCommandShim {
@@ -139,6 +176,10 @@ function Start-Rasputin {
     $tlsCert = Join-Path $PSScriptRoot "data\tls\rasputin.pem"
     $tlsKey = Join-Path $PSScriptRoot "data\tls\rasputin-key.pem"
     $https = (Test-Path $tlsCert) -and (Test-Path $tlsKey)
+    if ($Lan -and -not $https) {
+        Write-Host "Refusing to publish plain HTTP on the LAN. Run '.\rasputin.ps1 setup-https' first." -ForegroundColor Red
+        exit 1
+    }
     $env:RASPUTIN_HTTPS = if ($https) { "1" } else { "0" }
     if ($Lan) { $env:WRAPPER_BIND = "0.0.0.0" }
     $scheme = if ($https) { "https" } else { "http" }
@@ -170,13 +211,10 @@ function Start-Rasputin {
     $healthy = $false
     while ($try -lt $maxTries) {
         Start-Sleep -Seconds 2
-        try {
-            $resp = Invoke-WebRequest -Uri "$url/api/health" -UseBasicParsing -ErrorAction Stop
-            if ($resp.StatusCode -eq 200) {
-                $healthy = $true
-                break
-            }
-        } catch {
+        if (Test-HealthUrl -Url "$url/api/health" -Insecure:$https) {
+            $healthy = $true
+            break
+        } else {
             Write-Host "." -NoNewline
         }
         $try++
@@ -198,6 +236,35 @@ function Stop-Rasputin {
     Write-Host "Stopping Rasputin..." -ForegroundColor Cyan
     docker compose down
     Write-Host "Rasputin stopped." -ForegroundColor Green
+}
+
+function Show-DockerStatus {
+    Test-DockerEnv
+    docker compose ps
+    $port = if ($env:WRAPPER_PORT) { $env:WRAPPER_PORT } else { "8787" }
+    $tlsCert = Join-Path $PSScriptRoot "data\tls\rasputin.pem"
+    $tlsKey = Join-Path $PSScriptRoot "data\tls\rasputin-key.pem"
+    $https = (Test-Path $tlsCert) -and (Test-Path $tlsKey)
+    $scheme = if ($https) { "https" } else { "http" }
+    $url = "${scheme}://127.0.0.1:$port"
+    if (Test-HealthUrl -Url "$url/api/health" -Insecure:$https) {
+        Write-Host "Health: ready ($url)" -ForegroundColor Green
+        return
+    }
+    Write-Host "Health: unavailable ($url)" -ForegroundColor Yellow
+    exit 1
+}
+
+function Show-DockerLogs {
+    Test-DockerEnv
+    $tail = if ($env:RASPUTIN_LOG_TAIL) { $env:RASPUTIN_LOG_TAIL } else { "120" }
+    docker compose logs --no-color --tail $tail rasputin-wrapper
+}
+
+function Validate-DockerConfig {
+    Test-DockerEnv
+    docker compose config --quiet
+    Write-Host "Docker Compose configuration is valid." -ForegroundColor Green
 }
 
 function Initialize-NativeEnvironment {
@@ -423,6 +490,9 @@ switch ($Command.ToLower()) {
         }
     }
     "stop" { Stop-Rasputin }
+    "status" { Show-DockerStatus }
+    "logs" { Show-DockerLogs }
+    "config" { Validate-DockerConfig }
     "credentials" { Test-DockerEnv; Get-Credentials }
     "reset-password" { Test-DockerEnv; Reset-Password }
     "migrate-data" { Invoke-DataMigration }
@@ -443,10 +513,14 @@ switch ($Command.ToLower()) {
     default {
         Write-Host "Usage:" -ForegroundColor Cyan
         Write-Host "  .\rasputin.ps1 start             - Starts Rasputin (Docker) in the background"
+        Write-Host "  .\rasputin.ps1 start -NoOpen    - Starts Docker mode without opening a browser"
         Write-Host "  .\rasputin.ps1 start -Native [-Port 8788] [-Lan] - Starts the native daily driver"
         Write-Host "  .\rasputin.ps1 start -Lan        - Publishes Docker mode on the LAN (use HTTPS)"
         Write-Host "  .\rasputin.ps1 start -EnableWarSat - Starts Rasputin with Docker Control layer"
         Write-Host "  .\rasputin.ps1 stop              - Stops all Rasputin containers"
+        Write-Host "  .\rasputin.ps1 status            - Shows Docker status and /api/health"
+        Write-Host "  .\rasputin.ps1 logs              - Shows recent wrapper logs"
+        Write-Host "  .\rasputin.ps1 config            - Validates Docker Compose configuration"
         Write-Host "  .\rasputin.ps1 credentials       - Reads the original generated login from current container logs"
         Write-Host "  .\rasputin.ps1 reset-password    - Resets the admin password and prints a new one"
         Write-Host "  .\rasputin.ps1 migrate-data      - Moves existing .\data into the named volume (idempotent)"

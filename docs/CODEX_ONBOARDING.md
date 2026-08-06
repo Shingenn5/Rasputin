@@ -145,7 +145,7 @@ coding task on a coder model (e.g. Qwen2.5-Coder).
 |---|---|
 | `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` | **Current** — the working plan; honest `[~]` markers |
 | `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | §4 is current/canonical; later backend path maps still contain pre-package-layout names |
-| `ONBOARDING.md` (root) | Current general architecture/auth introduction |
+| `docs/README.md` | Canonical documentation map and source-of-truth rules |
 | `docs/REMAINING_WORK.md` | Current dual-mode/security residuals + open Phase 5 packaging |
 | `docs/DEPLOYMENT_MATRIX.md`, `docs/DESKTOP_ARCHITECTURE.md` | Current runtime and packaging guidance |
 | `THREAT_MODEL.md`, `docs/WRAPPER_RUNTIME_CONTRACT.md` | Current security and runtime contracts |

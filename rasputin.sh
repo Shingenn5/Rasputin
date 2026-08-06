@@ -1,71 +1,133 @@
 #!/usr/bin/env bash
-set -e
+set -Eeuo pipefail
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 ENABLE_WARSAT=0
 ALLOW_LAN=0
+NO_OPEN=0
 COMMAND="help"
 
 for arg in "$@"; do
-    if [ "$arg" == "-EnableWarSat" ]; then
-        ENABLE_WARSAT=1
-    elif [ "$arg" == "-Lan" ] || [ "$arg" == "--lan" ]; then
-        ALLOW_LAN=1
-    elif [ "$COMMAND" == "help" ]; then
-        COMMAND="$arg"
-    fi
+    normalized="$(printf '%s' "$arg" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        -enablewarsat|--enable-warsat)
+            ENABLE_WARSAT=1
+            ;;
+        -lan|--lan)
+            ALLOW_LAN=1
+            ;;
+        -noopen|--no-open)
+            NO_OPEN=1
+            ;;
+        -h|--help|help)
+            if [ "$COMMAND" = "help" ]; then COMMAND="help"; fi
+            ;;
+        start|stop|credentials|reset-password|logs|status|config|setup-https)
+            if [ "$COMMAND" = "help" ]; then COMMAND="$normalized"; fi
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Run './rasputin.sh help' for usage." >&2
+            exit 2
+            ;;
+    esac
 done
 
 show_header() {
-    echo ""
-    echo -e "\033[0;36m=========================================\033[0m"
-    echo -e "\033[0;36m           🛡️ RASPUTIN MANAGER          \033[0m"
-    echo -e "\033[0;36m=========================================\033[0m"
-    echo ""
+    printf '\n=========================================\n'
+    printf '             RASPUTIN MANAGER\n'
+    printf '=========================================\n\n'
+}
+
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf 'Required command not found: %s\n' "$1" >&2
+        exit 1
+    fi
 }
 
 check_docker() {
+    require_command docker
+    require_command curl
     if ! docker compose version >/dev/null 2>&1; then
-        echo -e "\033[0;31m❌ Docker is not running or not installed.\033[0m"
-        echo -e "\033[0;33mRasputin requires Docker Desktop to run its sandboxes.\033[0m"
-        echo -e "\033[0;33mPlease install Docker Desktop from: https://www.docker.com/products/docker-desktop/\033[0m"
-        echo -e "\033[0;33mOnce installed and running, run this script again.\033[0m"
+        echo "Docker Compose v2 is required. Install Docker Desktop or Docker Engine with the Compose plugin." >&2
+        exit 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "The Docker CLI is installed, but the Docker engine is not running or is not accessible." >&2
+        echo "Start Docker Desktop, or start the Docker service and retry." >&2
         exit 1
     fi
 }
 
 open_browser() {
-    local url=$1
-    echo -e "\033[0;36mOpening $url in your default browser...\033[0m"
+    local url="$1"
+    if [ "$NO_OPEN" -eq 1 ]; then
+        echo "Rasputin is ready at $url"
+        return
+    fi
     if command -v open >/dev/null 2>&1; then
-        open "$url"
+        open "$url" >/dev/null 2>&1 || echo "Open $url in a browser."
     elif command -v xdg-open >/dev/null 2>&1; then
-        xdg-open "$url" &>/dev/null &
+        xdg-open "$url" >/dev/null 2>&1 &
     else
-        echo -e "\033[0;33mCould not open browser automatically. Please navigate to $url\033[0m"
+        echo "Could not open a browser automatically. Open $url manually."
     fi
 }
 
 get_credentials() {
-    echo -e "\033[0;36mFetching credentials from logs...\033[0m"
-    
-    USERNAME=$(docker compose logs rasputin-wrapper 2>&1 | grep "username:" | awk '{print $NF}' | tail -n 1)
-    PASSWORD=$(docker compose logs rasputin-wrapper 2>&1 | grep "password:" | awk '{print $NF}' | tail -n 1)
-    
-    if [ -n "$USERNAME" ] && [ -n "$PASSWORD" ]; then
-        echo ""
-        echo -e "\033[0;32m=========================================\033[0m"
-        echo -e "\033[0;32m         RASPUTIN CREDENTIALS            \033[0m"
-        echo -e "\033[0;32m=========================================\033[0m"
-        echo -e " \033[0;32mUsername:\033[0m \033[0;33m$USERNAME\033[0m"
-        echo -e " \033[0;32mPassword:\033[0m \033[0;33m$PASSWORD\033[0m"
-        echo -e "\033[0;32m=========================================\033[0m"
-        echo -e "\033[0;90mChange this password after your first login!\033[0m"
-        echo ""
+    echo "Looking for first-run credentials in the current container logs..."
+    local logs username password
+    logs="$(docker compose logs --no-color rasputin-wrapper 2>&1 || true)"
+    username="$(printf '%s\n' "$logs" | sed -nE 's/.*username:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -n 1)"
+    password="$(printf '%s\n' "$logs" | sed -nE 's/.*password:[[:space:]]*([^[:space:]]+).*/\1/p' | tail -n 1)"
+
+    if [ -n "$username" ] && [ -n "$password" ]; then
+        printf '\nRasputin first-run credentials\n  username: %s\n  password: %s\n\n' "$username" "$password"
+        echo "Change the generated password after your first login."
     else
-        echo -e "\033[0;90mStill waiting for credentials to be generated... (Check 'docker compose logs' if this persists)\033[0m"
+        echo "No generated password was found in the current logs."
+        echo "This is normal after the first boot log was rotated or the password was changed."
+        echo "Use './rasputin.sh reset-password' if you need a new one."
     fi
+}
+
+reset_password() {
+    check_docker
+    echo "Resetting the admin password inside the running container..."
+    docker compose exec -T rasputin-wrapper python -m backend.tools.reset_password
+}
+
+show_logs() {
+    check_docker
+    docker compose logs --no-color --tail "${RASPUTIN_LOG_TAIL:-120}" rasputin-wrapper
+}
+
+show_status() {
+    check_docker
+    docker compose ps
+    local port scheme curl_args
+    port="${WRAPPER_PORT:-8787}"
+    scheme=http
+    curl_args=(-sS -f)
+    if [ -f "data/tls/rasputin.pem" ] && [ -f "data/tls/rasputin-key.pem" ]; then
+        scheme=https
+        curl_args+=(-k)
+    fi
+    if curl "${curl_args[@]}" "${scheme}://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
+        echo "Health: ready (${scheme}://127.0.0.1:${port})"
+    else
+        echo "Health: unavailable (${scheme}://127.0.0.1:${port})"
+        return 1
+    fi
+}
+
+validate_config() {
+    check_docker
+    docker compose config --quiet
+    echo "Docker Compose configuration is valid."
 }
 
 start_rasputin() {
@@ -75,104 +137,117 @@ start_rasputin() {
         mkdir -p "$dir"
     done
 
-    PORT="${WRAPPER_PORT:-8787}"
+    local port scheme url
+    port="${WRAPPER_PORT:-8787}"
     if [ -f "data/tls/rasputin.pem" ] && [ -f "data/tls/rasputin-key.pem" ]; then
         export RASPUTIN_HTTPS=1
-        SCHEME=https
+        scheme=https
     else
         export RASPUTIN_HTTPS=0
-        SCHEME=http
+        scheme=http
     fi
     if [ "$ALLOW_LAN" -eq 1 ]; then
-        export WRAPPER_BIND=0.0.0.0
-    fi
-    URL="$SCHEME://localhost:$PORT"
-
-    echo -e "\033[0;36mStarting Rasputin on $URL\033[0m"
-
-    COMPOSE_FILES=(-f docker-compose.yml)
-    if [ "$ENABLE_WARSAT" -eq 1 ]; then
-        echo -e "\033[0;35mEnabled WarSat Docker Control Layer...\033[0m"
-        COMPOSE_FILES+=(-f docker-compose.docker-control.yml)
-    fi
-    # Approving a local folder from the Workspaces tab writes this file with
-    # the new bind mount; including it here means picking it up is just a
-    # normal restart, no manual editing of any compose file.
-    MOUNTS_OVERRIDE="data/docker-compose.mounts.yml"
-    if [ -f "$MOUNTS_OVERRIDE" ]; then
-        echo -e "\033[0;36mIncluding approved folder mounts from $MOUNTS_OVERRIDE\033[0m"
-        COMPOSE_FILES+=(-f "$MOUNTS_OVERRIDE")
-    fi
-    docker compose "${COMPOSE_FILES[@]}" up --build -d
-
-    echo -e "\033[0;36mWaiting for Rasputin to become healthy...\033[0m"
-    
-    MAX_TRIES=30
-    TRY=0
-    HEALTHY=0
-    while [ $TRY -lt $MAX_TRIES ]; do
-        sleep 2
-        if curl -s -f "$URL/api/health" > /dev/null; then
-            HEALTHY=1
-            break
-        else
-            echo -n "."
+        if [ "$scheme" != "https" ]; then
+            echo "Refusing to publish plain HTTP on the LAN. Run './rasputin.sh setup-https' first." >&2
+            exit 1
         fi
-        TRY=$((TRY+1))
-    done
-    echo ""
+        export WRAPPER_BIND=0.0.0.0
+    elif [ -z "${WRAPPER_BIND:-}" ]; then
+        export WRAPPER_BIND=127.0.0.1
+    fi
+    url="$scheme://localhost:$port"
 
-    if [ "$HEALTHY" -eq 1 ]; then
-        echo -e "\033[0;32mRasputin is UP and RUNNING!\033[0m"
+    echo "Starting Rasputin on $url"
+
+    local compose_files=( -f docker-compose.yml )
+    if [ "$ENABLE_WARSAT" -eq 1 ]; then
+        echo "Enabled the opt-in WarSat Docker control layer."
+        compose_files+=( -f docker-compose.docker-control.yml )
+    fi
+    local mounts_override="data/docker-compose.mounts.yml"
+    if [ -f "$mounts_override" ]; then
+        echo "Including approved folder mounts from $mounts_override"
+        compose_files+=( -f "$mounts_override" )
+    fi
+    if ! docker compose "${compose_files[@]}" up --build -d; then
+        echo "Docker could not start Rasputin. Recent service status:" >&2
+        docker compose "${compose_files[@]}" ps >&2 || true
+        exit 1
+    fi
+
+    echo "Waiting for Rasputin to become healthy..."
+    local max_tries=30 try=0 healthy=0
+    local curl_args=(-sS -f)
+    if [ "$scheme" = "https" ]; then curl_args+=(-k); fi
+    while [ "$try" -lt "$max_tries" ]; do
+        sleep 2
+        if curl "${curl_args[@]}" "$url/api/health" >/dev/null 2>&1; then
+            healthy=1
+            break
+        fi
+        printf '.'
+        try=$((try + 1))
+    done
+    echo
+
+    if [ "$healthy" -eq 1 ]; then
+        echo "Rasputin is up and running."
         get_credentials
-        open_browser "$URL"
+        open_browser "$url"
     else
-        echo -e "\033[0;33mRasputin took too long to respond. It might still be starting up.\033[0m"
-        echo -e "\033[0;33mRun './rasputin.sh credentials' in a few moments.\033[0m"
+        echo "Rasputin did not answer within 60 seconds. Check './rasputin.sh logs'." >&2
+        exit 1
     fi
 }
 
 setup_https() {
-    if ! command -v python3 >/dev/null 2>&1; then
-        echo "Python 3 is required to run the HTTPS setup helper."
-        exit 1
-    fi
+    require_command python3
     python3 scripts/setup_https.py --output-dir data/tls
     echo "HTTPS is ready. Restart Rasputin to use it."
-    echo "Install rootCA.pem on other LAN devices; never copy rootCA-key.pem."
+    echo "Install only the public rootCA.pem on trusted client devices; never copy rootCA-key.pem."
 }
 
 stop_rasputin() {
     check_docker
-    echo -e "\033[0;36mStopping Rasputin...\033[0m"
+    echo "Stopping Rasputin..."
     docker compose down
-    echo -e "\033[0;32mRasputin stopped.\033[0m"
+    echo "Rasputin stopped. Named volumes were preserved."
 }
 
 show_header
 
-case "$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')" in
-    start)
-        start_rasputin
-        ;;
-    stop)
-        stop_rasputin
-        ;;
-    credentials)
-        check_docker
-        get_credentials
-        ;;
-    setup-https)
-        setup_https
-        ;;
-    *)
-        echo -e "\033[0;36mUsage:\033[0m"
-        echo "  ./rasputin.sh start             - Starts Rasputin in the background"
-        echo "  ./rasputin.sh start -EnableWarSat - Starts Rasputin with Docker Control layer"
-        echo "  ./rasputin.sh stop              - Stops all Rasputin containers"
-        echo "  ./rasputin.sh credentials       - Fetches your login credentials"
-        echo "  ./rasputin.sh setup-https       - Creates a trusted local certificate with mkcert"
-        echo "  ./rasputin.sh start --lan       - Publishes Docker mode on the LAN (use HTTPS)"
-        echo ""
+case "$COMMAND" in
+    start) start_rasputin ;;
+    stop) stop_rasputin ;;
+    credentials) check_docker; get_credentials ;;
+    reset-password) reset_password ;;
+    logs) show_logs ;;
+    status) show_status ;;
+    config) validate_config ;;
+    setup-https) setup_https ;;
+    help)
+        cat <<'USAGE'
+Usage: ./rasputin.sh <command> [options]
+
+Commands:
+  start                 Build and start the Docker server (default port 8787)
+  stop                  Stop the Docker server without deleting named volumes
+  status                Show container status and query /api/health
+  logs                  Show recent wrapper logs (set RASPUTIN_LOG_TAIL to change the count)
+  credentials           Read first-run credentials from current container logs
+  reset-password        Generate a new admin password inside the running container
+  config                Validate the rendered Docker Compose configuration
+  setup-https           Generate a trusted local certificate with mkcert
+
+Options:
+  --no-open             Do not open a browser after a successful start
+  --lan                 Publish directly to the LAN (requires setup-https first)
+  --enable-warsat       Mount the Docker socket for opt-in WarSat control
+  --help                Show this help
+
+Environment:
+  WRAPPER_PORT=8787     Change the host port
+  WRAPPER_BIND=127.0.0.1  Change the host bind address (keep loopback by default)
+USAGE
         ;;
 esac
