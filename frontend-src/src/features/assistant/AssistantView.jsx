@@ -6,6 +6,10 @@ function titleize(value) {
   return String(value || "").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function workflowLabel(session) {
+  return session?.mode === "code" ? "Coding" : "Assistant";
+}
+
 function statusVariant(status) {
   if (["approved", "prepared", "ready_for_broker", "approved_for_broker", "ready", "completed"].includes(status)) return "success";
   if (["rejected", "denied", "blocked", "expired", "missing", "failed"].includes(status)) return "danger";
@@ -34,6 +38,7 @@ export function AssistantView({
   handoffs,
   voicePreview,
   contextPreview,
+  sessions = { sessions: [] },
   loading = false,
   error = "",
   refresh,
@@ -64,6 +69,7 @@ export function AssistantView({
   const handoffItems = handoffs?.handoffs || [];
   const voiceRoles = capabilities?.voiceRoles || [];
   const workflows = Array.isArray(capabilities?.workflows) ? capabilities.workflows : [];
+  const sessionItems = (sessions?.sessions || []).slice(0, 30);
   const policy = profile?.localControlPolicy || {};
   const contextPolicy = profile?.contextAuthority || {};
 
@@ -157,6 +163,17 @@ export function AssistantView({
                     <Row className="g-2">
                       <Col md={6}><Form.Control name="contextObjective" required placeholder="What should Rasputin recall?" aria-label="Context objective" /></Col>
                       <Col md={6}><Form.Control name="contextQuery" placeholder="Search across chats and workspaces" aria-label="Context query" /></Col>
+                      <Col md={12}>
+                        <Form.Select name="contextSessionId" aria-label="Context source session" defaultValue="">
+                          <option value="">Use owner history and memory</option>
+                          {sessionItems.map((session) => (
+                            <option key={session.id} value={session.id}>
+                              {workflowLabel(session)} · {session.title || "Untitled chat"} · {session.workspace || "."}
+                            </option>
+                          ))}
+                        </Form.Select>
+                        <Form.Text>Choose an Assistant or Coding chat when the context should be anchored to one conversation.</Form.Text>
+                      </Col>
                     </Row>
                     <div className="d-flex justify-content-end mt-2"><Button type="submit" size="sm" variant="outline-primary">Inspect context</Button></div>
                   </Form>
@@ -167,6 +184,11 @@ export function AssistantView({
                         <Badge bg="secondary">History {contextPreview.ownerHistory?.results?.length || 0}</Badge>
                         <Badge bg="light" text="dark">Sensitive excluded {contextPreview.memory?.sensitiveExcluded || 0}</Badge>
                       </div>
+                      {contextPreview.selectedSession && (
+                        <div className="text-body-secondary mt-2">
+                          Source session: <strong>{workflowLabel(contextPreview.selectedSession)}</strong> · {contextPreview.selectedSession.title || "Untitled chat"}
+                        </div>
+                      )}
                       <div className="text-body-secondary mt-2">Owner scoped: {contextPreview.policy?.ownerScoped ? "yes" : "no"} · Cross workspace: {contextPreview.policy?.crossWorkspace ? "yes" : "no"}</div>
                     </div>
                   )}
@@ -185,6 +207,23 @@ export function AssistantView({
                     <Form.Control name="objective" required placeholder="Prepare a voice-enabled coding session" />
                   </Form.Group>
                   <Row className="g-2">
+                    <Col md={6}>
+                      <Form.Label htmlFor="assistantContextSession">Context source</Form.Label>
+                      <Form.Select id="assistantContextSession" name="contextSessionId" defaultValue="">
+                        <option value="">Use owner history and memory</option>
+                        {sessionItems.map((session) => (
+                          <option key={session.id} value={session.id}>
+                            {workflowLabel(session)} · {session.title || "Untitled chat"}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Label htmlFor="assistantContextQuery">Context query</Form.Label>
+                      <Form.Control id="assistantContextQuery" name="contextQuery" placeholder="What should the plan recall?" />
+                    </Col>
+                  </Row>
+                  <Row className="g-2 mt-1">
                     <Col md={6}>
                       <Form.Label htmlFor="assistantModelPack">Model pack</Form.Label>
                       <Form.Select id="assistantModelPack" name="modelPackId" defaultValue="">

@@ -12,7 +12,7 @@ os.environ.setdefault("RASPUTIN_DATA_DIR", tempfile.mkdtemp(prefix="rasputin-ass
 from fastapi.testclient import TestClient
 
 from backend import main
-from backend.api.core import current_user
+from backend.api.core import current_user, hub
 from backend.assistant import contracts
 from backend.core import security
 from backend.core import workspace
@@ -181,6 +181,60 @@ class AssistantContractTests(unittest.TestCase):
         )
         self.assertEqual(sensitive.status_code, 403, sensitive.text)
         self.assertEqual(sensitive.json()["error"]["code"], "permissionDenied")
+
+    def test_context_preview_keeps_selected_workflow_session_explicit(self):
+        coding = hub.create_session(
+            "Coding history",
+            ".",
+            "coder-local",
+            "code",
+            "general",
+            "",
+            "contract-test",
+        )
+        response = self.client.post(
+            "/api/assistant/context-preview",
+            json={
+                "objective": "Continue the approved coding work",
+                "sessionId": coding["session"]["id"],
+                "workspacePath": ".",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["selectedSession"]["id"], coding["session"]["id"])
+        self.assertEqual(data["selectedSession"]["mode"], "code")
+        self.assertTrue(data["policy"]["ownerScoped"])
+
+        planned = self.client.post(
+            "/api/assistant/plans",
+            json={
+                "objective": "Plan the next coding handoff",
+                "sessionId": coding["session"]["id"],
+                "contextQuery": "coding handoff",
+            },
+        )
+        self.assertEqual(planned.status_code, 200, planned.text)
+        self.assertEqual(
+            planned.json()["data"]["plan"]["context"]["selectedSession"]["id"],
+            coding["session"]["id"],
+        )
+
+        other = hub.create_session(
+            "Other owner history",
+            ".",
+            "main-local",
+            "chat",
+            "general",
+            "",
+            "other-owner",
+        )
+        denied = self.client.post(
+            "/api/assistant/context-preview",
+            json={"objective": "Do not cross owner boundaries", "sessionId": other["session"]["id"]},
+        )
+        self.assertEqual(denied.status_code, 400, denied.text)
+        self.assertEqual(denied.json()["error"]["code"], "badRequest")
 
     def test_sensitive_context_preview_requires_admin(self):
         main.app.dependency_overrides[current_user] = lambda: {"username": "member-test", "role": "member"}

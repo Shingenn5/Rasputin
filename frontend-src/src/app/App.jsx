@@ -1486,6 +1486,8 @@ export function App() {
     try {
       await postJson("/api/assistant/plans", {
         objective: String(form.get("objective") || "").trim(),
+        sessionId: String(form.get("contextSessionId") || "").trim() || undefined,
+        contextQuery: String(form.get("contextQuery") || "").trim() || undefined,
         modelPackId: String(form.get("modelPackId") || "").trim() || undefined,
         requestedOperations: operations,
       });
@@ -1589,6 +1591,7 @@ export function App() {
       const preview = await postJson("/api/assistant/context-preview", {
         objective: String(form.get("contextObjective") || "").trim(),
         contextQuery: String(form.get("contextQuery") || "").trim() || undefined,
+        sessionId: String(form.get("contextSessionId") || "").trim() || undefined,
         workspacePath: workspace.activePath || ".",
       });
       setAssistantContextPreview(preview);
@@ -2393,6 +2396,7 @@ export function App() {
         view={view}
         profile={assistantProfile}
         capabilities={assistantCapabilities}
+        sessions={sessions}
         plans={assistantPlans}
         modelPacks={assistantModelPacks}
         handoffs={assistantHandoffs}
