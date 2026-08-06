@@ -157,6 +157,9 @@ export function HomeView(props) {
     setIsolateWorkspace,
     runningTasks,
     openTaskDetails,
+    contextCapsules,
+    selectedContextCapsuleId,
+    setSelectedContextCapsuleId,
   } = props;
 
   const threadScrollRef = useRef(null);
@@ -952,6 +955,25 @@ export function HomeView(props) {
                         />
                         <ShieldCheck size={14} aria-hidden="true" />
                         <span>Isolate repo</span>
+                      </label>
+                    )}
+                    {contextCapsules?.length > 0 && (
+                      <label className="composer-chip" title="Attach an owner-approved context capsule to the next task">
+                        <ShieldCheck size={14} aria-hidden="true" />
+                        <span>Context</span>
+                        <select
+                          data-testid="task-context-capsule-selector"
+                          aria-label="Approved context capsule"
+                          value={selectedContextCapsuleId || ""}
+                          onChange={(event) => setSelectedContextCapsuleId?.(event.target.value)}
+                        >
+                          <option value="">Live context only</option>
+                          {contextCapsules.map((capsule) => (
+                            <option key={capsule.id} value={capsule.id}>
+                              {String(capsule.objective || capsule.id).slice(0, 42)}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                     )}
                   </div>

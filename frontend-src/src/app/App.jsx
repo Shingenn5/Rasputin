@@ -168,6 +168,7 @@ export function App() {
   const [assistantCapabilities, setAssistantCapabilities] = useState(null);
   const [assistantPlans, setAssistantPlans] = useState({ plans: [] });
   const [assistantContextCapsules, setAssistantContextCapsules] = useState({ capsules: [] });
+  const [selectedTaskContextCapsuleId, setSelectedTaskContextCapsuleId] = useState("");
   const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
   const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
   const [assistantVoicePreview, setAssistantVoicePreview] = useState(null);
@@ -243,6 +244,7 @@ export function App() {
     ? { active: true, id: activeWorkspaceEntry.id, name: activeWorkspaceEntry.displayName || activeWorkspaceEntry.name || activeWorkspaceName }
     : null;
   const healthy = isModelHealthy(selectedModelObject);
+  const approvedContextCapsules = (assistantContextCapsules?.capsules || []).filter((capsule) => capsule.status === "approved");
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const queuedMessages = tasks
@@ -911,6 +913,7 @@ export function App() {
     const mode = options.mode || taskMode;
     const reasoning = options.reasoning || reasoningMode;
     const modelKey = options.model || selectedModel;
+    const contextCapsuleId = options.contextCapsuleId || selectedTaskContextCapsuleId || undefined;
     const requestedModel = models.find((model) => model.key === modelKey) || null;
     if (mode === "code" && !supportsAgenticMode(requestedModel, mode)) {
       setComposerStatus("Coding workflow requires a healthy, tool-capable coder model. Register or start one before sending.");
@@ -934,6 +937,7 @@ export function App() {
       mode,
       reasoning,
       isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
+      contextCapsuleId,
       status: "queued",
       progress: 0,
       logs: ["queued"],
@@ -965,6 +969,7 @@ export function App() {
         maxAttempts: options.maxAttempts || 1,
         attachmentIds: options.attachmentIds || [],
         isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
+        contextCapsuleId,
       });
       setTasks((current) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
       queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
@@ -1471,6 +1476,8 @@ export function App() {
       setAssistantCapabilities(nextCapabilities);
       setAssistantPlans(nextPlans || { plans: [] });
       setAssistantContextCapsules(nextCapsules || { capsules: [] });
+      const approvedCapsules = (nextCapsules?.capsules || []).filter((capsule) => capsule.status === "approved");
+      setSelectedTaskContextCapsuleId((current) => approvedCapsules.some((capsule) => capsule.id === current) ? current : "");
       setAssistantModelPacks(nextPacks || { packs: [] });
       setAssistantHandoffs(nextHandoffs || { handoffs: [] });
       return { profile: nextProfile, capabilities: nextCapabilities, plans: nextPlans, contextCapsules: nextCapsules, modelPacks: nextPacks, handoffs: nextHandoffs };
@@ -2241,6 +2248,9 @@ export function App() {
         setIsolateWorkspace={setIsolateWorkspace}
         runningTasks={runningTasks}
         openTaskDetails={openTaskDetails}
+        contextCapsules={approvedContextCapsules}
+        selectedContextCapsuleId={selectedTaskContextCapsuleId}
+        setSelectedContextCapsuleId={setSelectedTaskContextCapsuleId}
         setPrompt={(prompt, mode) => {
           setObjective(prompt);
           chooseTaskMode(mode === "analyze files" ? "analyze" : mode || "chat");

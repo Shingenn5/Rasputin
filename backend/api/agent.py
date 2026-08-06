@@ -116,6 +116,7 @@ class TaskIn(CamelModel):
     max_attempts: int = 1
     attachment_ids: list[str] = Field(default_factory=list)
     isolate_workspace: bool = False
+    context_capsule_id: str | None = None
 
 class IntakeCreateIn(CamelModel):
     name: str
@@ -151,6 +152,22 @@ class ScheduleIn(CamelModel):
 async def create_task(req: TaskIn, _user=Depends(require_member)):
     workspace_ref = req.workspace_path or workspace.get_active(_user["username"], _user["role"] == "admin").get("active_path") or "."
     workspace.require_user_access(workspace_ref, _user["username"], "contributor", _user["role"] == "admin")
+    if req.context_capsule_id:
+        context_capsule = store.get_assistant_context_capsule(_user["username"], req.context_capsule_id)
+        if not context_capsule:
+            raise AppError("assistant_context_capsule_missing", "The approved context capsule is missing or not visible to this owner.", 409)
+        if context_capsule.get("status") == "expired":
+            raise AppError("assistant_context_capsule_expired", "The context capsule has expired.", 409)
+        if context_capsule.get("status") != "approved":
+            raise AppError("assistant_context_capsule_not_approved", "Approve the context capsule before starting a task.", 409)
+        try:
+            requested_root = str(workspace.resolve_path(workspace_ref))
+            capsule_root = str(workspace.resolve_path(context_capsule.get("workspace_ref") or "."))
+        except (OSError, ValueError):
+            requested_root = str(workspace_ref)
+            capsule_root = str(context_capsule.get("workspace_ref") or ".")
+        if requested_root.casefold() != capsule_root.casefold():
+            raise AppError("assistant_context_capsule_workspace_mismatch", "The approved context capsule belongs to a different workspace.", 409)
     attachment_context, attachment_records = intake.prepare_task_context(_user["username"], req.attachment_ids)
     objective = str(req.objective or "").strip()
     if attachment_context:
@@ -191,6 +208,7 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
         scheduled_for=req.scheduled_for,
         max_attempts=req.max_attempts,
         isolate_workspace=req.isolate_workspace,
+        context_capsule_id=req.context_capsule_id,
     )
     intake.bind_to_task(_user["username"], attachment_records, task.id)
     if attachment_records:

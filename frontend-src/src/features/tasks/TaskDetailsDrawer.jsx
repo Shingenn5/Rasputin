@@ -237,6 +237,7 @@ export function TaskDetailsDrawer({
                 <section id="task-detail-panel-seen" role="tabpanel" aria-labelledby="task-detail-tab-seen" data-testid="task-details-seen">
                   <div className="context-stack">
                     <ContextBudgetPanel budgets={contextBudgets} />
+                    <ContextCapsulePanel task={task} trace={detail.trace || []} />
                     <ContextBlock title="Local RAG Sources" empty="No local RAG sources were attached to this snapshot.">
                       {(task.sources || []).map((source, index) => (
                         <li key={`${source.source}-${source.chunk}-${index}`}>
@@ -259,7 +260,7 @@ export function TaskDetailsDrawer({
                     </article>
                     <ContextBlock title="Memory And Context Trace" empty="No context trace was recorded yet.">
                       {(detail.trace || [])
-                        .filter((item) => ["memory_recall", "rag_context", "graph_context", "tool_plan"].includes(item.kind))
+                        .filter((item) => ["memory_recall", "rag_context", "graph_context", "tool_plan", "context_capsule_attached", "context_capsule_injected", "context_capsule_blocked"].includes(item.kind))
                         .map((item, index) => (
                           <li key={`${item.kind}-${index}`}>
                             <strong>{labelize(item.kind)}</strong>
@@ -681,6 +682,35 @@ function ContextBudgetPanel({ budgets }) {
           ))}
         </ul>
       )}
+    </article>
+  );
+}
+
+function ContextCapsulePanel({ task, trace }) {
+  const receipt = task?.contextCapsule || null;
+  const attached = [...(trace || [])].reverse().find((item) => item.kind === "context_capsule_attached")?.detail || null;
+  const blocked = [...(trace || [])].reverse().find((item) => item.kind === "context_capsule_blocked")?.detail || null;
+  if (!task?.contextCapsuleId && !attached && !blocked) return null;
+  const details = receipt || attached || {};
+  return (
+    <article className="context-block context-capsule-card" data-testid="task-context-capsule">
+      <div className="section-row">
+        <div>
+          <h2>Approved Context Capsule</h2>
+          <p>{blocked ? "Execution blocked by the capsule safety gate." : receipt?.status || attached?.status || "Queued for run-time validation"}</p>
+        </div>
+        <span className={`status-pill status-${blocked ? "error" : receipt?.status || attached?.status || "queued"}`}>
+          {blocked ? "blocked" : receipt?.status || attached?.status || "queued"}
+        </span>
+      </div>
+      <dl className="detail-grid">
+        <dt>Capsule ID</dt><dd><code>{task.contextCapsuleId || details.id}</code></dd>
+        <dt>Source session</dt><dd>{details.sourceSessionId || "None"}</dd>
+        <dt>Workspace</dt><dd>{details.workspaceRef || task.workspace || "."}</dd>
+        <dt>Evidence counts</dt><dd>{Number(details.selectedMessageCount || 0)} messages / {Number(details.memoryItemCount || 0)} memory / {Number(details.historyResultCount || 0)} history</dd>
+        <dt>Expires</dt><dd>{details.expiresAt ? formatTime(details.expiresAt) : "Not attached yet"}</dd>
+      </dl>
+      {blocked && <p className="drawer-error" role="alert">{blocked.reason === "expired" ? "The approved capsule expired before this queued task started." : "The approved capsule could not be used for this task."}</p>}
     </article>
   );
 }

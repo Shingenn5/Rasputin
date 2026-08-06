@@ -347,6 +347,7 @@ def init_db():
             "attempt_count": "INTEGER NOT NULL DEFAULT 0",
             "max_attempts": "INTEGER NOT NULL DEFAULT 1",
             "source_task_id": "TEXT",
+            "context_capsule_id": "TEXT",
             "isolation_requested": "INTEGER NOT NULL DEFAULT 0",
             "isolation_state": "TEXT NOT NULL DEFAULT 'none'",
             "execution_workspace": "TEXT NOT NULL DEFAULT ''",

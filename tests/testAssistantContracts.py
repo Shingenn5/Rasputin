@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import unittest
@@ -18,6 +19,8 @@ from backend.assistant import runtime
 from backend.core import runtime_store
 from backend.core import security
 from backend.core import workspace
+from backend.engine import agent
+from backend.engine import context as context_governor
 
 
 class AssistantContractTests(unittest.TestCase):
@@ -341,6 +344,115 @@ class AssistantContractTests(unittest.TestCase):
         with patch("backend.core.runtime_store.now", return_value=capsule["expires_at"] + 1):
             fetched = runtime_store.get_assistant_context_capsule("contract-test", capsule["id"])
         self.assertEqual(fetched["status"], "expired")
+
+    def test_approved_context_capsule_can_start_task_with_bounded_receipt(self):
+        source_session = hub.create_session(
+            "Receipt source", ".", "dry-run", "chat", "general", "", "contract-test",
+        )
+        hub._add_message(
+            source_session["session"]["id"],
+            None,
+            "user",
+            "Approved source detail must reach the governed prompt.",
+        )
+        capsule = runtime.create_context_capsule(
+            owner_id="contract-test",
+            objective="Carry the reviewed coding handoff into execution",
+            workspace_ref=".",
+            session_id=source_session["session"]["id"],
+            context_query="coding handoff",
+        )
+        approved = self.client.post(f"/api/assistant/context-capsules/{capsule['id']}/approve", json={})
+        self.assertEqual(approved.status_code, 200, approved.text)
+
+        with patch.object(hub, "_schedule_queued_task", lambda _task: None):
+            created = self.client.post(
+                "/api/tasks",
+                json={
+                    "objective": "Use the approved coding handoff",
+                    "model": "dry-run",
+                    "mode": "chat",
+                    "workspacePath": ".",
+                    "contextCapsuleId": capsule["id"],
+                },
+            )
+        self.assertEqual(created.status_code, 200, created.text)
+        task_data = created.json()["data"]
+        self.assertEqual(task_data["contextCapsuleId"], capsule["id"])
+        self.assertIsNone(task_data.get("contextCapsule"))
+
+        task = hub.tasks[task_data["id"]]
+        captured = []
+
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            captured.append(messages[0]["content"])
+            return "governed response", []
+
+        hub._load_context_capsule(task)
+        sections = [context_governor.section("task", "Task", task.objective, required=True, priority=0)]
+        rich_model = {"key": "dry-run", "compatibility": {"status": "compatible", "promptProfile": "standard"}}
+        with patch("backend.engine.agent._chat", scripted_chat), patch("backend.engine.agent.model_registry.get_model", return_value=rich_model):
+            result = asyncio.run(hub.governed_chat(task, "chat", "main", sections))
+        self.assertEqual(result, "governed response")
+        self.assertEqual(task.context_capsule_receipt["id"], capsule["id"])
+        self.assertIn("Approved shared context", captured[0])
+        self.assertIn("Approved source detail", captured[0])
+        self.assertIn("context_capsule_injected", [item["kind"] for item in task.trace])
+        self.assertIn("context_capsule_attached", [item["kind"] for item in task.trace])
+        self.assertNotIn("context_json", task_data)
+
+        detail = self.client.get(f"/api/tasks/{task_data['id']}")
+        self.assertEqual(detail.status_code, 200, detail.text)
+        trace_kinds = [item["kind"] for item in detail.json()["data"]["trace"]]
+        self.assertIn("context_capsule_attached", trace_kinds)
+        self.assertIn("context_capsule_injected", trace_kinds)
+
+    def test_task_rejects_unapproved_context_capsule_before_queueing(self):
+        capsule = runtime.create_context_capsule(
+            owner_id="contract-test",
+            objective="Needs explicit review",
+            workspace_ref=".",
+            context_query="review me",
+        )
+        with patch.object(hub, "_schedule_queued_task", lambda _task: self.fail("task should not queue")):
+            blocked = self.client.post(
+                "/api/tasks",
+                json={
+                    "objective": "Do not run before review",
+                    "model": "dry-run",
+                    "mode": "chat",
+                    "workspacePath": ".",
+                    "contextCapsuleId": capsule["id"],
+                },
+            )
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        self.assertEqual(blocked.json()["error"]["code"], "assistantContextCapsuleNotApproved")
+
+    def test_queued_task_rechecks_capsule_expiry_at_runtime(self):
+        capsule = runtime_store.create_assistant_context_capsule(
+            owner_id="contract-test",
+            objective="Expire before the queued worker starts",
+            workspace_ref=".",
+            context={"query": "queued expiry"},
+            expires_in_seconds=300,
+        )
+        runtime_store.transition_assistant_context_capsule(
+            "contract-test", capsule["id"], "approved", actor="contract-test",
+        )
+        task = agent.AgentTask(
+            "Run only while the capsule is valid",
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path=".",
+            context_capsule_id=capsule["id"],
+        )
+        task.owner_id = "contract-test"
+        with patch("backend.core.runtime_store.now", return_value=capsule["expires_at"] + 1):
+            with self.assertRaisesRegex(RuntimeError, "expired"):
+                agent.AgentHub()._load_context_capsule(task)
+        self.assertEqual(task.trace[-1]["kind"], "context_capsule_blocked")
+        self.assertEqual(task.trace[-1]["detail"]["reason"], "expired")
 
     def test_persisted_plan_stays_side_effect_free_through_review(self):
         created = self.client.post(
