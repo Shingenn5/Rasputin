@@ -117,6 +117,47 @@ def _session_reference(owner_id: str, session_id: str | None) -> dict[str, Any] 
     return dict(row)
 
 
+def _selected_session_context(owner_id: str, session_id: str | None, limit: int = 12) -> dict[str, Any] | None:
+    """Return a small, owner-validated excerpt for an explicitly selected session."""
+    session = _session_reference(owner_id, session_id)
+    if not session:
+        return None
+    cap = max(1, min(int(limit or 12), 20))
+    store.init_db()
+    with store._lock, store.connect() as conn:
+        total_row = conn.execute(
+            "SELECT COUNT(*) AS count FROM messages WHERE session_id=? AND evicted=0",
+            (session["id"],),
+        ).fetchone()
+        rows = conn.execute(
+            """
+            SELECT id,role,content,task_id,created_at
+            FROM messages
+            WHERE session_id=? AND evicted=0
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (session["id"], cap),
+        ).fetchall()
+    messages = [
+        {
+            "id": row["id"],
+            "role": row["role"],
+            "content": str(row["content"] or "")[:1200],
+            "task_id": row["task_id"],
+            "created_at": row["created_at"],
+        }
+        for row in reversed(rows)
+    ]
+    total = int(total_row["count"] if total_row else 0)
+    return {
+        **session,
+        "messages": messages,
+        "message_count": total,
+        "messages_truncated": total > len(messages),
+    }
+
+
 def _safe_context_item(item: dict[str, Any], include_sensitive: bool) -> dict[str, Any] | None:
     if bool(item.get("sensitive")) and not include_sensitive:
         return None
@@ -151,7 +192,7 @@ def build_context_preview(
 ) -> dict[str, Any]:
     owner = _owner(owner_id)
     query = str(context_query or objective or "").strip()[:500]
-    session = _session_reference(owner, session_id)
+    session = _selected_session_context(owner, session_id)
     memory_result = memory_store.search(query, limit=12, owner_id=owner, workspace_id=workspace_ref) if query else {"items": []}
     memory_items = []
     excluded_sensitive = 0

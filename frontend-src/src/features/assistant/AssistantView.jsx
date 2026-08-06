@@ -187,6 +187,22 @@ export function AssistantView({
                       {contextPreview.selectedSession && (
                         <div className="text-body-secondary mt-2">
                           Source session: <strong>{workflowLabel(contextPreview.selectedSession)}</strong> · {contextPreview.selectedSession.title || "Untitled chat"}
+                          {(contextPreview.selectedSession.messages || []).length > 0 && (
+                            <div className="border rounded p-2 mt-2" data-testid="assistant-selected-session-context">
+                              <div className="d-flex justify-content-between gap-2">
+                                <span>Selected excerpts</span>
+                                <span>{contextPreview.selectedSession.messageCount || 0} messages{contextPreview.selectedSession.messagesTruncated ? " · latest shown" : ""}</span>
+                              </div>
+                              <Stack gap={1} className="mt-2">
+                                {contextPreview.selectedSession.messages.map((message) => (
+                                  <div key={message.id} className="bg-body-tertiary rounded px-2 py-1">
+                                    <strong className="me-1">{titleize(message.role)}</strong>
+                                    <span>{message.content}</span>
+                                  </div>
+                                ))}
+                              </Stack>
+                            </div>
+                          )}
                         </div>
                       )}
                       <div className="text-body-secondary mt-2">Owner scoped: {contextPreview.policy?.ownerScoped ? "yes" : "no"} · Cross workspace: {contextPreview.policy?.crossWorkspace ? "yes" : "no"}</div>

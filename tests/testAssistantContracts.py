@@ -192,6 +192,18 @@ class AssistantContractTests(unittest.TestCase):
             "",
             "contract-test",
         )
+        hub._add_message(
+            coding["session"]["id"],
+            None,
+            "user",
+            "Use the coding workflow to repair the failing test.",
+        )
+        hub._add_message(
+            coding["session"]["id"],
+            None,
+            "assistant",
+            "Coding handoff: run the focused test before changing unrelated files.",
+        )
         response = self.client.post(
             "/api/assistant/context-preview",
             json={
@@ -204,6 +216,15 @@ class AssistantContractTests(unittest.TestCase):
         data = response.json()["data"]
         self.assertEqual(data["selectedSession"]["id"], coding["session"]["id"])
         self.assertEqual(data["selectedSession"]["mode"], "code")
+        self.assertEqual(data["selectedSession"]["messageCount"], 2)
+        self.assertFalse(data["selectedSession"]["messagesTruncated"])
+        self.assertEqual(
+            [message["content"] for message in data["selectedSession"]["messages"]],
+            [
+                "Use the coding workflow to repair the failing test.",
+                "Coding handoff: run the focused test before changing unrelated files.",
+            ],
+        )
         self.assertTrue(data["policy"]["ownerScoped"])
 
         planned = self.client.post(
@@ -218,6 +239,10 @@ class AssistantContractTests(unittest.TestCase):
         self.assertEqual(
             planned.json()["data"]["plan"]["context"]["selectedSession"]["id"],
             coding["session"]["id"],
+        )
+        self.assertEqual(
+            planned.json()["data"]["plan"]["context"]["selectedSession"]["messages"][1]["role"],
+            "assistant",
         )
 
         other = hub.create_session(
