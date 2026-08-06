@@ -81,6 +81,18 @@ function routeHashFor(view, section) {
   return `#${view || "home"}`;
 }
 
+function supportsAgenticMode(model, mode) {
+  if (!model) return false;
+  if (mode === "chat") return true;
+  const certifiedModes = model.compatibility?.supportedModes;
+  const certificationAllowsMode = !Array.isArray(certifiedModes) || certifiedModes.includes(mode);
+  return certificationAllowsMode && (
+    !model.managed
+    || model.toolSupport === "agentic"
+    || Boolean(model.toolCallParser)
+  );
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const [ready, setReady] = useState(false);
@@ -665,12 +677,7 @@ export function App() {
   const chooseTaskMode = useCallback((mode) => {
     const routedModel = modelKeyForMode(mode);
     const routedConfig = models.find((model) => model.key === routedModel);
-    const certifiedModes = routedConfig?.compatibility?.supportedModes;
-    const certificationAllowsMode = !Array.isArray(certifiedModes) || certifiedModes.includes(mode);
-    const supportsAgenticMode = certificationAllowsMode && (!routedConfig?.managed
-      || routedConfig.toolSupport === "agentic"
-      || Boolean(routedConfig.toolCallParser));
-    const resolvedMode = mode !== "chat" && !supportsAgenticMode ? "chat" : mode;
+    const resolvedMode = mode !== "chat" && !supportsAgenticMode(routedConfig, mode) ? "chat" : mode;
     setTaskMode(resolvedMode);
     const resolvedModel = resolvedMode === mode ? routedModel : modelKeyForMode(resolvedMode);
     if (resolvedModel) setSelectedModel(resolvedModel);
@@ -678,6 +685,49 @@ export function App() {
       setGlobalStatus("The selected local model is chat-only, so Rasputin switched to Chat mode before sending your message.");
     }
   }, [modelKeyForMode, models]);
+
+  async function openAssistantWorkflow(workflowId) {
+    const workflow = workflowId === "coding"
+      ? { id: "coding", label: "Coding", mode: "code", role: "coder", title: "Coding workspace" }
+      : { id: "assistant", label: "Assistant", mode: "chat", role: "main", title: "Assistant chat" };
+    const exactRoleModel = models.find(
+      (model) => model.role === workflow.role && isUserFacingModel(model, testingMode) && isModelRouteable(model),
+    );
+    const routedModel = exactRoleModel?.key || (workflow.mode === "chat" ? modelKeyForMode("chat") : null);
+    const routedModelObject = models.find((model) => model.key === routedModel) || null;
+
+    // Keep the requested workflow selected even when its model is unavailable.
+    // The composer will show the blocker instead of silently converting a
+    // coding request into ordinary chat.
+    setTaskMode(workflow.mode);
+    setSelectedModel(routedModel || null);
+    setObjective("");
+    setComposerStatus("");
+    setHomeTaskIds(new Set());
+
+    try {
+      const detail = await postJson("/api/sessions", {
+        title: workflow.title,
+        workspace: workspace.activePath || ".",
+        model: routedModel || "dry-run",
+        mode: workflow.mode,
+        skill: "general",
+        folder: "",
+      });
+      const sessionId = detail?.session?.id;
+      setSelectedSession(detail);
+      setActiveChatSessionId(sessionId || null);
+      go("chat");
+      setGlobalStatus(routedModelObject
+        ? `${workflow.label} workflow ready. Its task mode is independent from the other workflow.`
+        : `${workflow.label} workflow selected. Register a healthy ${workflow.role} model before sending.`);
+      await loadChatFolders();
+      return detail;
+    } catch (error) {
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
 
   const setModeModelOverride = useCallback((mode, modelKey) => {
     setModeModelOverrides((current) => {
@@ -860,6 +910,11 @@ export function App() {
     const mode = options.mode || taskMode;
     const reasoning = options.reasoning || reasoningMode;
     const modelKey = options.model || selectedModel;
+    const requestedModel = models.find((model) => model.key === modelKey) || null;
+    if (mode === "code" && !supportsAgenticMode(requestedModel, mode)) {
+      setComposerStatus("Coding workflow requires a healthy, tool-capable coder model. Register or start one before sending.");
+      return false;
+    }
     if (!healthy) {
       setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
       return false;
@@ -2354,6 +2409,7 @@ export function App() {
         dispatchHandoff={dispatchAssistantHandoff}
         previewVoice={previewAssistantVoice}
         previewContext={previewAssistantContext}
+        openWorkflow={openAssistantWorkflow}
       />
       <ActivityView
         view={view}

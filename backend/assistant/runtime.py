@@ -17,6 +17,7 @@ from backend.assistant.contracts import (
     CONTROL_OPERATIONS,
     DEFAULT_PROFILE,
     MODEL_PACK_ROLES,
+    WORKFLOW_DEFINITIONS,
     VOICE_LOOP_STAGES,
     VOICE_ROLES,
     merge_profile,
@@ -69,6 +70,7 @@ def capabilities() -> dict[str, Any]:
         "identity": {"assistant_id": "rasputin", "display_name": "Rasputin"},
         "model_roles": sorted(MODEL_PACK_ROLES),
         "voice_roles": sorted(VOICE_ROLES),
+        "workflows": [dict(workflow) for workflow in WORKFLOW_DEFINITIONS],
         "model_pack_storage": "owner_scoped",
         "control_operations": {
             name: {

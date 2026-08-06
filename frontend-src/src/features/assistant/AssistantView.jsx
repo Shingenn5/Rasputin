@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { Alert, Badge, Button, Card, Col, Form, Row, Stack } from "react-bootstrap";
-import { Bot, CheckCircle2, Clock3, Link2, Mic, RefreshCw, ShieldCheck, Volume2, XCircle } from "lucide-react";
+import { ArrowRight, Bot, CheckCircle2, Clock3, Code2, Link2, MessageSquare, Mic, RefreshCw, ShieldCheck, Volume2, XCircle } from "lucide-react";
 
 function titleize(value) {
   return String(value || "").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -44,6 +44,8 @@ export function AssistantView({
   prepareHandoff,
   dispatchHandoff,
   previewVoice,
+  previewContext,
+  openWorkflow,
 }) {
   const controlOperations = capabilities?.controlOperations || {};
   const brokerOperationMetadata = useMemo(() => {
@@ -61,6 +63,7 @@ export function AssistantView({
   const packItems = modelPacks?.packs || [];
   const handoffItems = handoffs?.handoffs || [];
   const voiceRoles = capabilities?.voiceRoles || [];
+  const workflows = Array.isArray(capabilities?.workflows) ? capabilities.workflows : [];
   const policy = profile?.localControlPolicy || {};
   const contextPolicy = profile?.contextAuthority || {};
 
@@ -81,6 +84,46 @@ export function AssistantView({
       {error && <Alert variant="danger" role="alert">{error}</Alert>}
 
       <div className="task-dashboard assistant-dashboard">
+        <Card className="settings-card shadow-sm mb-3" data-testid="assistant-workflow-launcher">
+          <Card.Body>
+            <SectionHeader
+              title="Independent workspaces"
+              text="Use the Assistant and Coding workflows separately. They share Rasputin's identity, context policy, and safety broker, but each opens its own task surface."
+            />
+            <Row className="g-3">
+              {workflows.map((workflow) => {
+                const isCoding = workflow.id === "coding";
+                const Icon = isCoding ? Code2 : MessageSquare;
+                return (
+                  <Col md={6} key={workflow.id}>
+                    <div className="border rounded p-3 h-100 d-flex flex-column gap-2" data-testid={`assistant-workflow-${workflow.id}`}>
+                      <div className="d-flex align-items-start gap-2">
+                        <div className="rounded-circle bg-primary-subtle text-primary p-2"><Icon size={18} aria-hidden="true" /></div>
+                        <div>
+                          <h3 className="h6 mb-1">{workflow.label || titleize(workflow.id)} workflow</h3>
+                          <p className="small text-body-secondary mb-0">{workflow.description}</p>
+                        </div>
+                      </div>
+                      <div className="d-flex flex-wrap gap-1 mt-auto">
+                        {(workflow.capabilities || []).map((capability) => <Badge bg="light" text="dark" key={capability}>{titleize(capability)}</Badge>)}
+                      </div>
+                      <Button
+                        type="button"
+                        variant={isCoding ? "outline-primary" : "primary"}
+                        className="align-self-start"
+                        data-testid={`assistant-open-workflow-${workflow.id}`}
+                        onClick={() => openWorkflow?.(workflow.id)}
+                      >
+                        Open {workflow.label || titleize(workflow.id)} <ArrowRight size={14} className="ms-1" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  </Col>
+                );
+              })}
+            </Row>
+          </Card.Body>
+        </Card>
+
         <Row className="g-3">
           <Col xl={5}>
             <Card className="settings-card shadow-sm h-100" data-testid="assistant-identity-card">

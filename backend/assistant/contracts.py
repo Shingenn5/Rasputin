@@ -32,6 +32,29 @@ AGENT_MODES = {"chat", "plan", "research", "code", "test"}
 
 VOICE_ROLES = {"speech_to_text", "text_to_speech"}
 
+# The personal-assistant surface and the coding surface are intentionally
+# separate entrypoints.  They share Rasputin's identity, context authority,
+# model registry, and safety broker, but each can be opened and used on its
+# own without requiring the other workflow to be active.
+WORKFLOW_DEFINITIONS = (
+    {
+        "id": "assistant",
+        "label": "Assistant",
+        "mode": "chat",
+        "role": "main",
+        "description": "Conversation, context recall, planning, and local assistant guidance.",
+        "capabilities": ["conversation", "context", "planning", "voice"],
+    },
+    {
+        "id": "coding",
+        "label": "Coding",
+        "mode": "code",
+        "role": "coder",
+        "description": "Repository analysis, edits, tests, repair, and review in a coding task.",
+        "capabilities": ["workspace", "patch", "tests", "review"],
+    },
+)
+
 VOICE_LOOP_STAGES = (
     {
         "id": "transcribe",

@@ -81,6 +81,11 @@ class AssistantContractTests(unittest.TestCase):
         self.assertEqual(capabilities.status_code, 200, capabilities.text)
         capability_data = capabilities.json()["data"]
         self.assertIn("speech_to_text", capability_data["voiceRoles"])
+        workflows = {item["id"]: item for item in capability_data["workflows"]}
+        self.assertEqual(workflows["assistant"]["mode"], "chat")
+        self.assertEqual(workflows["assistant"]["role"], "main")
+        self.assertEqual(workflows["coding"]["mode"], "code")
+        self.assertEqual(workflows["coding"]["role"], "coder")
         self.assertTrue(capability_data["security"]["brokerOnly"])
         self.assertIn("docker_status", capability_data["broker"]["dispatchSupportedOperations"])
         self.assertIn("open_vscode", capability_data["broker"]["dispatchSupportedOperations"])
