@@ -284,6 +284,22 @@ def init_db():
               review_note TEXT NOT NULL DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS assistant_context_capsules (
+              id TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'preview',
+              objective TEXT NOT NULL DEFAULT '',
+              workspace_ref TEXT NOT NULL DEFAULT '.',
+              context_json TEXT NOT NULL DEFAULT '{}',
+              provenance_json TEXT NOT NULL DEFAULT '{}',
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              expires_at REAL NOT NULL,
+              approved_at REAL,
+              approved_by TEXT,
+              review_note TEXT NOT NULL DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS assistant_model_packs (
               owner_id TEXT NOT NULL,
               pack_id TEXT NOT NULL,
@@ -458,6 +474,7 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_ready ON memory_jobs(status, next_attempt_at, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_owner ON memory_jobs(owner_id, status, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_plans_owner_updated ON assistant_plans(owner_id, updated_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_context_capsules_owner_updated ON assistant_context_capsules(owner_id, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_model_packs_owner_updated ON assistant_model_packs(owner_id, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_handoffs_owner_updated ON assistant_handoffs(owner_id, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_handoffs_plan_operation ON assistant_handoffs(plan_id, operation)")
@@ -814,6 +831,144 @@ def transition_assistant_plan(owner_id, plan_id, status, actor=None, review_note
         row = conn.execute("SELECT * FROM assistant_plans WHERE id=? AND owner_id=?", (identifier, owner)).fetchone()
         conn.commit()
     return _public_assistant_plan(row)
+
+
+_ASSISTANT_CONTEXT_CAPSULE_STATUSES = {"preview", "approved", "rejected", "expired"}
+
+
+def _context_capsule_status(row):
+    status = str(row["status"] or "preview")
+    if status in {"preview", "approved"} and float(row["expires_at"] or 0) <= now():
+        return "expired"
+    return status
+
+
+def _public_assistant_context_capsule(row, include_context=True):
+    if not row:
+        return None
+    item = dict(row)
+    item["status"] = _context_capsule_status(row)
+    if include_context:
+        item["context"] = _loads(item.pop("context_json", "{}"), {})
+    else:
+        item.pop("context_json", None)
+    item["provenance"] = _loads(item.pop("provenance_json", "{}"), {})
+    return item
+
+
+def create_assistant_context_capsule(
+    owner_id,
+    objective,
+    workspace_ref,
+    context,
+    provenance=None,
+    expires_in_seconds=3600,
+    capsule_id=None,
+):
+    """Persist a bounded context snapshot for explicit review before orchestration."""
+
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    identifier = str(capsule_id or new_id("ctx"))
+    clean_objective = str(objective or "Shared context").strip()[:1200] or "Shared context"
+    clean_workspace = str(workspace_ref or ".").strip()[:500] or "."
+    ttl = max(300, min(int(expires_in_seconds or 3600), 604800))
+    stamp = now()
+    expires_at = stamp + ttl
+    with _lock, connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO assistant_context_capsules(
+              id,owner_id,status,objective,workspace_ref,context_json,provenance_json,
+              created_at,updated_at,expires_at,approved_at,approved_by,review_note
+            ) VALUES(?,?, 'preview', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, '')
+            """,
+            (
+                identifier,
+                owner,
+                clean_objective,
+                clean_workspace,
+                _json(context or {}),
+                _json(provenance or {}),
+                stamp,
+                stamp,
+                expires_at,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM assistant_context_capsules WHERE id=? AND owner_id=?",
+            (identifier, owner),
+        ).fetchone()
+        conn.commit()
+    return _public_assistant_context_capsule(row)
+
+
+def get_assistant_context_capsule(owner_id, capsule_id):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    with _lock, connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM assistant_context_capsules WHERE id=? AND owner_id=?",
+            (str(capsule_id), owner),
+        ).fetchone()
+    return _public_assistant_context_capsule(row)
+
+
+def list_assistant_context_capsules(owner_id, limit=50):
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    cap = max(1, min(int(limit or 50), 200))
+    with _lock, connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM assistant_context_capsules WHERE owner_id=? ORDER BY updated_at DESC LIMIT ?",
+            (owner, cap),
+        ).fetchall()
+    return [_public_assistant_context_capsule(row, include_context=False) for row in rows]
+
+
+def transition_assistant_context_capsule(owner_id, capsule_id, status, actor=None, review_note=""):
+    """Approve or reject a capsule without starting a task, model, or host action."""
+
+    if status not in {"approved", "rejected"}:
+        raise ValueError("invalid assistant context capsule status")
+    init_db()
+    owner = str(owner_id or "admin").strip() or "admin"
+    identifier = str(capsule_id)
+    stamp = now()
+    note = str(review_note or "").strip()[:500]
+    with _lock, connect() as conn:
+        current = conn.execute(
+            "SELECT * FROM assistant_context_capsules WHERE id=? AND owner_id=?",
+            (identifier, owner),
+        ).fetchone()
+        if not current:
+            return None
+        if _context_capsule_status(current) == "expired":
+            raise ValueError("assistant context capsule has expired")
+        if current["status"] != "preview":
+            raise ValueError("assistant context capsule has already been reviewed")
+        conn.execute(
+            """
+            UPDATE assistant_context_capsules
+            SET status=?, updated_at=?, approved_at=?, approved_by=?, review_note=?
+            WHERE id=? AND owner_id=? AND status='preview'
+            """,
+            (
+                status,
+                stamp,
+                stamp if status == "approved" else None,
+                str(actor or owner) if status == "approved" else None,
+                note,
+                identifier,
+                owner,
+            ),
+        )
+        row = conn.execute(
+            "SELECT * FROM assistant_context_capsules WHERE id=? AND owner_id=?",
+            (identifier, owner),
+        ).fetchone()
+        conn.commit()
+    return _public_assistant_context_capsule(row)
 
 
 def _public_assistant_model_pack(row):

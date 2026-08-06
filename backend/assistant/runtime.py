@@ -72,6 +72,13 @@ def capabilities() -> dict[str, Any]:
         "voice_roles": sorted(VOICE_ROLES),
         "workflows": [dict(workflow) for workflow in WORKFLOW_DEFINITIONS],
         "model_pack_storage": "owner_scoped",
+        "context_capsules": {
+            "supported": True,
+            "storage": "owner_scoped_sqlite",
+            "approval_required": True,
+            "default_ttl_seconds": 3600,
+            "max_ttl_seconds": 604800,
+        },
         "control_operations": {
             name: {
                 "operation": name,
@@ -216,6 +223,14 @@ def build_context_preview(
             "results": history.get("results", []),
             "matched": history.get("count", 0),
         },
+        "provenance": {
+            "source_session_id": session.get("id") if session else None,
+            "source_session_mode": session.get("mode") if session else None,
+            "workspace_ref": workspace_ref,
+            "query": query,
+            "memory_item_ids": [item.get("id") for item in memory_items if item.get("id")],
+            "history_result_ids": [item.get("id") for item in history.get("results", []) if item.get("id")],
+        },
         "policy": {
             "owner_scoped": True,
             "cross_workspace": True,
@@ -223,6 +238,87 @@ def build_context_preview(
             "no_unscoped_database_reads": True,
         },
     }
+
+
+def create_context_capsule(
+    owner_id: str,
+    objective: str,
+    workspace_ref: str,
+    session_id: str | None = None,
+    context_query: str | None = None,
+    include_sensitive: bool = False,
+    expires_in_seconds: int = 3600,
+) -> dict[str, Any]:
+    context = build_context_preview(
+        owner_id=owner_id,
+        objective=objective,
+        workspace_ref=workspace_ref,
+        session_id=session_id,
+        context_query=context_query,
+        include_sensitive=include_sensitive,
+    )
+    record = store.create_assistant_context_capsule(
+        owner_id=owner_id,
+        objective=objective,
+        workspace_ref=workspace_ref,
+        context=context,
+        provenance=context.get("provenance"),
+        expires_in_seconds=expires_in_seconds,
+    )
+    audit.log(
+        "assistant_context_capsule_created",
+        {
+            "capsule_id": record["id"],
+            "source_session_id": context.get("provenance", {}).get("source_session_id"),
+            "expires_at": record.get("expires_at"),
+        },
+        actor=_owner(owner_id),
+    )
+    return record
+
+
+def get_context_capsule(owner_id: str, capsule_id: str) -> dict[str, Any] | None:
+    return store.get_assistant_context_capsule(_owner(owner_id), capsule_id)
+
+
+def list_context_capsules(owner_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    return store.list_assistant_context_capsules(_owner(owner_id), limit)
+
+
+def review_context_capsule(owner_id: str, capsule_id: str, status: str, note: str = "") -> dict[str, Any]:
+    owner = _owner(owner_id)
+    current = store.get_assistant_context_capsule(owner, capsule_id)
+    if not current:
+        raise ValueError("assistant context capsule missing")
+    updated = store.transition_assistant_context_capsule(owner, capsule_id, status, actor=owner, review_note=note)
+    if not updated:
+        raise ValueError("assistant context capsule missing")
+    audit.log(
+        "assistant_context_capsule_reviewed",
+        {"capsule_id": capsule_id, "status": status},
+        actor=owner,
+    )
+    return updated
+
+
+def _approved_context_capsule(owner_id: str, capsule_id: str) -> dict[str, Any]:
+    capsule = store.get_assistant_context_capsule(_owner(owner_id), capsule_id)
+    if not capsule:
+        raise ValueError("assistant context capsule missing")
+    if capsule.get("status") == "expired":
+        raise AppError("assistant_context_capsule_expired", "The context capsule has expired.", 409)
+    if capsule.get("status") != "approved":
+        raise AppError("assistant_context_capsule_not_approved", "Approve the context capsule before using it in a plan.", 409)
+    context = dict(capsule.get("context") or {})
+    context["capsule"] = {
+        "id": capsule["id"],
+        "status": capsule["status"],
+        "approved_at": capsule.get("approved_at"),
+        "approved_by": capsule.get("approved_by"),
+        "expires_at": capsule.get("expires_at"),
+        "provenance": capsule.get("provenance") or {},
+    }
+    return context
 
 
 def _model_lookup() -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
@@ -572,6 +668,7 @@ def build_plan_preview(
     agents: Any = None,
     requested_operations: Any = None,
     include_sensitive: bool = False,
+    context_capsule_id: str | None = None,
 ) -> dict[str, Any]:
     clean_objective = str(objective or "").strip()[:1200]
     if not clean_objective:
@@ -586,7 +683,14 @@ def build_plan_preview(
         model_pack = saved_pack.get("pack")
         pack_source = "saved"
     normalized_pack = normalize_model_pack(model_pack)
-    context = build_context_preview(owner_id, clean_objective, workspace_ref, session_id, context_query, include_sensitive)
+    if context_capsule_id:
+        if session_id or context_query:
+            raise ValueError("choose either context capsule or live context selection")
+        context = _approved_context_capsule(owner_id, context_capsule_id)
+        context_source = "approved_capsule"
+    else:
+        context = build_context_preview(owner_id, clean_objective, workspace_ref, session_id, context_query, include_sensitive)
+        context_source = "live_preview"
     model_preview = build_model_pack_preview(normalized_pack)
     agent_preview = build_agent_preview(clean_objective, agents, normalized_pack)
     control_preview = build_control_preview(requested_operations, workspace_ref=workspace_ref)
@@ -610,6 +714,7 @@ def build_plan_preview(
         "objective": clean_objective,
         "workspace_ref": workspace_ref,
         "model_pack_source": pack_source,
+        "context_source": context_source,
         "context": context,
         "model_pack": model_preview,
         "delegation": agent_preview,
@@ -651,6 +756,7 @@ def create_persisted_plan(
     agents: Any = None,
     requested_operations: Any = None,
     include_sensitive: bool = False,
+    context_capsule_id: str | None = None,
 ) -> dict[str, Any]:
     plan = build_plan_preview(
         owner_id=owner_id,
@@ -663,6 +769,7 @@ def create_persisted_plan(
         agents=agents,
         requested_operations=requested_operations,
         include_sensitive=include_sensitive,
+        context_capsule_id=context_capsule_id,
     )
     record = store.create_assistant_plan(owner_id, plan)
     audit.log(

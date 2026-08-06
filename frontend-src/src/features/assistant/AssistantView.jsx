@@ -34,6 +34,7 @@ export function AssistantView({
   profile,
   capabilities,
   plans,
+  contextCapsules = { capsules: [] },
   modelPacks,
   handoffs,
   voicePreview,
@@ -50,6 +51,8 @@ export function AssistantView({
   dispatchHandoff,
   previewVoice,
   previewContext,
+  createContextCapsule,
+  reviewContextCapsule,
   openWorkflow,
 }) {
   const controlOperations = capabilities?.controlOperations || {};
@@ -65,6 +68,8 @@ export function AssistantView({
     });
   }, [controlOperations]);
   const planItems = plans?.plans || [];
+  const capsuleItems = contextCapsules?.capsules || [];
+  const approvedCapsules = capsuleItems.filter((capsule) => capsule.status === "approved");
   const packItems = modelPacks?.packs || [];
   const handoffItems = handoffs?.handoffs || [];
   const voiceRoles = capabilities?.voiceRoles || [];
@@ -206,6 +211,28 @@ export function AssistantView({
                         </div>
                       )}
                       <div className="text-body-secondary mt-2">Owner scoped: {contextPreview.policy?.ownerScoped ? "yes" : "no"} · Cross workspace: {contextPreview.policy?.crossWorkspace ? "yes" : "no"}</div>
+                      <div className="d-flex justify-content-end mt-2">
+                        <Button size="sm" variant="outline-primary" onClick={() => createContextCapsule?.(contextPreview)} data-testid="assistant-save-context-capsule">
+                          Save review capsule
+                        </Button>
+                      </div>
+                      {capsuleItems.length > 0 && (
+                        <div className="border-top mt-3 pt-2" data-testid="assistant-context-capsule-ledger">
+                          <div className="fw-semibold">Context capsule ledger</div>
+                          <Stack gap={1} className="mt-2">
+                            {capsuleItems.slice(0, 6).map((capsule) => (
+                              <div key={capsule.id} className="d-flex flex-wrap align-items-center justify-content-between gap-2 border rounded px-2 py-1">
+                                <span>{capsule.objective || "Shared context"}</span>
+                                <span className="d-flex align-items-center gap-2">
+                                  <Badge bg={statusVariant(capsule.status)}>{titleize(capsule.status)}</Badge>
+                                  {capsule.status === "preview" && <Button size="sm" variant="outline-success" onClick={() => reviewContextCapsule?.(capsule.id, "approved")}>Approve</Button>}
+                                  {capsule.status === "preview" && <Button size="sm" variant="outline-danger" onClick={() => reviewContextCapsule?.(capsule.id, "rejected")}>Reject</Button>}
+                                </span>
+                              </div>
+                            ))}
+                          </Stack>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -237,6 +264,18 @@ export function AssistantView({
                     <Col md={6}>
                       <Form.Label htmlFor="assistantContextQuery">Context query</Form.Label>
                       <Form.Control id="assistantContextQuery" name="contextQuery" placeholder="What should the plan recall?" />
+                    </Col>
+                  </Row>
+                  <Row className="g-2 mt-1">
+                    <Col md={12}>
+                      <Form.Label htmlFor="assistantContextCapsule">Approved context capsule</Form.Label>
+                      <Form.Select id="assistantContextCapsule" name="contextCapsuleId" defaultValue="">
+                        <option value="">Use live context selection above</option>
+                        {approvedCapsules.map((capsule) => (
+                          <option key={capsule.id} value={capsule.id}>{capsule.objective || "Shared context"} · {capsule.id}</option>
+                        ))}
+                      </Form.Select>
+                      <Form.Text>Approved capsules preserve the inspected context and provenance until their expiry.</Form.Text>
                     </Col>
                   </Row>
                   <Row className="g-2 mt-1">

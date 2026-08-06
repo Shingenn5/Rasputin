@@ -167,6 +167,7 @@ export function App() {
   const [assistantProfile, setAssistantProfile] = useState(null);
   const [assistantCapabilities, setAssistantCapabilities] = useState(null);
   const [assistantPlans, setAssistantPlans] = useState({ plans: [] });
+  const [assistantContextCapsules, setAssistantContextCapsules] = useState({ capsules: [] });
   const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
   const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
   const [assistantVoicePreview, setAssistantVoicePreview] = useState(null);
@@ -1458,19 +1459,21 @@ export function App() {
     setAssistantLoading(true);
     setAssistantError("");
     try {
-      const [nextProfile, nextCapabilities, nextPlans, nextPacks, nextHandoffs] = await Promise.all([
+      const [nextProfile, nextCapabilities, nextPlans, nextCapsules, nextPacks, nextHandoffs] = await Promise.all([
         api("/api/assistant/profile"),
         api("/api/assistant/capabilities"),
         api("/api/assistant/plans"),
+        api("/api/assistant/context-capsules"),
         api("/api/assistant/model-packs"),
         api("/api/assistant/handoffs"),
       ]);
       setAssistantProfile(nextProfile);
       setAssistantCapabilities(nextCapabilities);
       setAssistantPlans(nextPlans || { plans: [] });
+      setAssistantContextCapsules(nextCapsules || { capsules: [] });
       setAssistantModelPacks(nextPacks || { packs: [] });
       setAssistantHandoffs(nextHandoffs || { handoffs: [] });
-      return { profile: nextProfile, capabilities: nextCapabilities, plans: nextPlans, modelPacks: nextPacks, handoffs: nextHandoffs };
+      return { profile: nextProfile, capabilities: nextCapabilities, plans: nextPlans, contextCapsules: nextCapsules, modelPacks: nextPacks, handoffs: nextHandoffs };
     } catch (error) {
       setAssistantError(error.message);
       throw error;
@@ -1488,6 +1491,7 @@ export function App() {
         objective: String(form.get("objective") || "").trim(),
         sessionId: String(form.get("contextSessionId") || "").trim() || undefined,
         contextQuery: String(form.get("contextQuery") || "").trim() || undefined,
+        contextCapsuleId: String(form.get("contextCapsuleId") || "").trim() || undefined,
         modelPackId: String(form.get("modelPackId") || "").trim() || undefined,
         requestedOperations: operations,
       });
@@ -1596,6 +1600,33 @@ export function App() {
       });
       setAssistantContextPreview(preview);
       setGlobalStatus("Context preview refreshed; sensitive items remain excluded by default.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function createAssistantContextCapsule(contextPreview) {
+    try {
+      await postJson("/api/assistant/context-capsules", {
+        objective: contextPreview?.query || "Shared context",
+        contextQuery: contextPreview?.query || undefined,
+        sessionId: contextPreview?.selectedSession?.id || undefined,
+        workspacePath: contextPreview?.workspaceRef || workspace.activePath || ".",
+      });
+      await loadAssistantData();
+      setGlobalStatus("Context capsule saved for explicit review.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
+  async function reviewAssistantContextCapsule(capsuleId, status) {
+    try {
+      await postJson(`/api/assistant/context-capsules/${encodeURIComponent(capsuleId)}/${status === "approved" ? "approve" : "reject"}`, {});
+      await loadAssistantData();
+      setGlobalStatus(status === "approved" ? "Context capsule approved for plan use." : "Context capsule rejected.");
     } catch (error) {
       setAssistantError(error.message);
       setGlobalStatus(error.message);
@@ -2398,6 +2429,7 @@ export function App() {
         capabilities={assistantCapabilities}
         sessions={sessions}
         plans={assistantPlans}
+        contextCapsules={assistantContextCapsules}
         modelPacks={assistantModelPacks}
         handoffs={assistantHandoffs}
         voicePreview={assistantVoicePreview}
@@ -2413,6 +2445,8 @@ export function App() {
         dispatchHandoff={dispatchAssistantHandoff}
         previewVoice={previewAssistantVoice}
         previewContext={previewAssistantContext}
+        createContextCapsule={createAssistantContextCapsule}
+        reviewContextCapsule={reviewAssistantContextCapsule}
         openWorkflow={openAssistantWorkflow}
       />
       <ActivityView

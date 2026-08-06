@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 from backend import main
 from backend.api.core import current_user, hub
 from backend.assistant import contracts
+from backend.assistant import runtime
+from backend.core import runtime_store
 from backend.core import security
 from backend.core import workspace
 
@@ -81,6 +83,7 @@ class AssistantContractTests(unittest.TestCase):
         self.assertEqual(capabilities.status_code, 200, capabilities.text)
         capability_data = capabilities.json()["data"]
         self.assertIn("speech_to_text", capability_data["voiceRoles"])
+        self.assertTrue(capability_data["contextCapsules"]["approvalRequired"])
         workflows = {item["id"]: item for item in capability_data["workflows"]}
         self.assertEqual(workflows["assistant"]["mode"], "chat")
         self.assertEqual(workflows["assistant"]["role"], "main")
@@ -269,6 +272,75 @@ class AssistantContractTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403, response.text)
         self.assertEqual(response.json()["error"]["code"], "permissionDenied")
+
+    def test_context_capsule_requires_review_and_keeps_provenance(self):
+        coding = hub.create_session(
+            "Capsule coding history",
+            ".",
+            "coder-local",
+            "code",
+            "general",
+            "",
+            "contract-test",
+        )
+        hub._add_message(coding["session"]["id"], None, "user", "Keep this coding handoff explicit.")
+        created = self.client.post(
+            "/api/assistant/context-capsules",
+            json={
+                "objective": "Prepare the next coding handoff",
+                "contextQuery": "coding handoff",
+                "sessionId": coding["session"]["id"],
+                "workspacePath": ".",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        capsule = created.json()["data"]
+        self.assertEqual(capsule["status"], "preview")
+        self.assertEqual(capsule["provenance"]["sourceSessionId"], coding["session"]["id"])
+        self.assertEqual(capsule["context"]["selectedSession"]["messages"][0]["content"], "Keep this coding handoff explicit.")
+
+        blocked = self.client.post(
+            "/api/assistant/plans",
+            json={"objective": "Use the reviewed coding context", "contextCapsuleId": capsule["id"]},
+        )
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        self.assertEqual(blocked.json()["error"]["code"], "assistantContextCapsuleNotApproved")
+
+        approved = self.client.post(f"/api/assistant/context-capsules/{capsule['id']}/approve", json={})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(approved.json()["data"]["status"], "approved")
+
+        planned = self.client.post(
+            "/api/assistant/plans",
+            json={"objective": "Use the reviewed coding context", "contextCapsuleId": capsule["id"]},
+        )
+        self.assertEqual(planned.status_code, 200, planned.text)
+        plan = planned.json()["data"]["plan"]
+        self.assertEqual(plan["contextSource"], "approved_capsule")
+        self.assertEqual(plan["context"]["capsule"]["id"], capsule["id"])
+        self.assertEqual(plan["context"]["capsule"]["status"], "approved")
+
+        other = runtime.create_context_capsule(
+            owner_id="other-owner",
+            objective="Private capsule",
+            workspace_ref=".",
+            context_query="private",
+        )
+        denied = self.client.get(f"/api/assistant/context-capsules/{other['id']}")
+        self.assertEqual(denied.status_code, 400, denied.text)
+        self.assertEqual(denied.json()["error"]["code"], "badRequest")
+
+    def test_context_capsule_expiry_is_visible_before_review(self):
+        capsule = runtime_store.create_assistant_context_capsule(
+            owner_id="contract-test",
+            objective="Short-lived context",
+            workspace_ref=".",
+            context={"query": "short-lived"},
+            expires_in_seconds=300,
+        )
+        with patch("backend.core.runtime_store.now", return_value=capsule["expires_at"] + 1):
+            fetched = runtime_store.get_assistant_context_capsule("contract-test", capsule["id"])
+        self.assertEqual(fetched["status"], "expired")
 
     def test_persisted_plan_stays_side_effect_free_through_review(self):
         created = self.client.post(

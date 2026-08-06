@@ -27,6 +27,7 @@ class PlanPreviewIn(CamelModel):
     workspace_path: str | None = None
     session_id: str | None = None
     context_query: str | None = None
+    context_capsule_id: str | None = None
     model_pack: dict | None = None
     model_pack_id: str | None = None
     agents: list[dict] = Field(default_factory=list)
@@ -63,6 +64,7 @@ class ContextPreviewIn(CamelModel):
     session_id: str | None = None
     context_query: str | None = None
     include_sensitive: bool = False
+    expires_in_seconds: int = Field(default=3600, ge=300, le=604800)
 
 
 def _workspace_for_request(req: PlanPreviewIn, user: dict) -> str:
@@ -114,6 +116,46 @@ async def assistant_context_preview(req: ContextPreviewIn, _user=Depends(require
     )
 
 
+@router.post("/context-capsules")
+async def assistant_context_capsule_create(req: ContextPreviewIn, _user=Depends(require_member)):
+    _assert_sensitive_allowed(req, _user)
+    workspace_ref = _workspace_for_request(req, _user)
+    return ok(
+        runtime.create_context_capsule(
+            owner_id=_user["username"],
+            objective=req.objective,
+            workspace_ref=workspace_ref,
+            session_id=req.session_id,
+            context_query=req.context_query,
+            include_sensitive=req.include_sensitive,
+            expires_in_seconds=req.expires_in_seconds,
+        )
+    )
+
+
+@router.get("/context-capsules")
+async def assistant_context_capsule_list(limit: int = 50, _user=Depends(current_user)):
+    return ok({"capsules": runtime.list_context_capsules(_user["username"], limit)})
+
+
+@router.get("/context-capsules/{capsule_id}")
+async def assistant_context_capsule_get(capsule_id: str, _user=Depends(current_user)):
+    capsule = runtime.get_context_capsule(_user["username"], capsule_id)
+    if not capsule:
+        raise ValueError("assistant context capsule missing")
+    return ok(capsule)
+
+
+@router.post("/context-capsules/{capsule_id}/approve")
+async def assistant_context_capsule_approve(capsule_id: str, req: PlanReviewIn, _user=Depends(require_member)):
+    return ok(runtime.review_context_capsule(_user["username"], capsule_id, "approved", req.note or ""))
+
+
+@router.post("/context-capsules/{capsule_id}/reject")
+async def assistant_context_capsule_reject(capsule_id: str, req: PlanReviewIn, _user=Depends(require_member)):
+    return ok(runtime.review_context_capsule(_user["username"], capsule_id, "rejected", req.note or ""))
+
+
 @router.get("/profile")
 async def assistant_profile(_user=Depends(current_user)):
     return ok(runtime.get_profile(_user["username"]))
@@ -137,6 +179,7 @@ async def assistant_plan_preview(req: PlanPreviewIn, _user=Depends(require_membe
             workspace_ref=workspace_ref,
             session_id=req.session_id,
             context_query=req.context_query,
+            context_capsule_id=req.context_capsule_id,
             model_pack=req.model_pack,
             model_pack_id=req.model_pack_id,
             agents=req.agents,
@@ -157,6 +200,7 @@ async def assistant_plan_create(req: PlanPreviewIn, _user=Depends(require_member
             workspace_ref=workspace_ref,
             session_id=req.session_id,
             context_query=req.context_query,
+            context_capsule_id=req.context_capsule_id,
             model_pack=req.model_pack,
             model_pack_id=req.model_pack_id,
             agents=req.agents,
