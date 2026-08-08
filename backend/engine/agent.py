@@ -427,6 +427,7 @@ class AgentHub:
     def _add_message(self, session_id, task_id, role, content, memory_job=None):
         msg_id = store.new_id("msg")
         stamp = store.now()
+        export_owner = getattr(memory_job, "owner_id", None)
         with store._lock, store.connect() as conn:
             conn.execute(
                 "INSERT INTO messages(id,session_id,task_id,role,content,created_at) VALUES(?,?,?,?,?,?)",
@@ -447,26 +448,29 @@ class AgentHub:
                     owner_id=getattr(memory_job, "owner_id", "admin"),
                     connection=conn,
                 )
+            if not export_owner:
+                owner_row = conn.execute("SELECT owner_id FROM sessions WHERE id=?", (session_id,)).fetchone()
+                export_owner = owner_row["owner_id"] if owner_row else "admin"
             conn.commit()
-        self._schedule_master_context_export()
+        self._schedule_master_context_export(export_owner)
         return msg_id
 
-    def _schedule_master_context_export(self):
+    def _schedule_master_context_export(self, owner_id="admin"):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             try:
-                memory.export_master_context()
+                memory.export_master_context(owner_id)
             except Exception:
                 pass
             return
         if self._memory_export_task and not self._memory_export_task.done():
             return
-        self._memory_export_task = loop.create_task(self._export_master_context())
+        self._memory_export_task = loop.create_task(self._export_master_context(owner_id))
 
-    async def _export_master_context(self):
+    async def _export_master_context(self, owner_id="admin"):
         try:
-            await asyncio.to_thread(memory.export_master_context)
+            await asyncio.to_thread(memory.export_master_context, owner_id)
         except Exception:
             pass
 

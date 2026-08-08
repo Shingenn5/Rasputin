@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field
 from backend.api.core import CamelModel, current_user, require_admin, require_member, hub
 from backend.core import audit
@@ -18,7 +18,7 @@ from backend.rag import graph as graphify
 from backend.rag import memory as memory_store
 from backend.rag import obsidian as obsidian_export
 from backend.rag import vector as rag
-from backend.rag.memory import load_memory, remember
+from backend.rag.memory import load_memory
 
 router = APIRouter()
 
@@ -449,6 +449,23 @@ memory_router = APIRouter(prefix="/api/memory", tags=["memory"])
 class MemoryIn(CamelModel):
     kind: str = "fact"
     value: object
+    scope: str = "global"
+    workspace_id: str | None = None
+    sensitive: bool = False
+    confidence: float = 0.5
+    importance: float = 0.5
+    canonical_key: str | None = None
+
+
+class MemoryUpdateIn(CamelModel):
+    kind: str | None = None
+    value: object | None = None
+    scope: str | None = None
+    workspace_id: str | None = None
+    sensitive: bool | None = None
+    confidence: float | None = None
+    importance: float | None = None
+    canonical_key: str | None = None
 
 class MemorySearchIn(CamelModel):
     query: str
@@ -467,7 +484,61 @@ async def memory(_user=Depends(current_user)):
 @memory_router.post("")
 
 async def add_memory(req: MemoryIn, _user=Depends(current_user)):
-    return ok(remember(req.kind, req.value, _user["username"]))
+    item = memory_store.add_item(
+        req.kind,
+        req.value,
+        scope=req.scope,
+        workspace_id=req.workspace_id,
+        sensitive=req.sensitive,
+        confidence=req.confidence,
+        importance=req.importance,
+        canonical_key=req.canonical_key,
+        owner_id=_user["username"],
+    )
+    # Preserve the legacy summary response while exposing the durable record
+    # so newer clients can render its scope, provenance, and recall metadata.
+    return ok({**load_memory(_user["username"]), "item": item})
+
+
+@memory_router.get("/items")
+
+async def memory_items(
+    status: str = "saved",
+    limit: int = 200,
+    workspace_id: str | None = Query(default=None, alias="workspaceId"),
+    _user=Depends(current_user),
+):
+    return ok({"items": memory_store.list_items(status, limit, _user["username"], workspace_id)})
+
+
+@memory_router.patch("/items/{item_id}")
+
+async def memory_item_update(item_id: str, req: MemoryUpdateIn, _user=Depends(current_user)):
+    updates = {}
+    fields = getattr(req, "model_fields_set", set())
+    if "kind" in fields:
+        updates["kind"] = req.kind
+    if "value" in fields:
+        updates["content"] = req.value
+    if "scope" in fields:
+        updates["scope"] = req.scope
+    if "workspace_id" in fields:
+        updates["workspace_id"] = req.workspace_id
+    if "sensitive" in fields:
+        updates["sensitive"] = req.sensitive
+    if "confidence" in fields:
+        updates["confidence"] = req.confidence
+    if "importance" in fields:
+        updates["importance"] = req.importance
+    if "canonical_key" in fields:
+        updates["canonical_key"] = req.canonical_key
+    return ok(memory_store.update_item(item_id, updates, _user["username"]))
+
+
+@memory_router.delete("/items/{item_id}")
+
+async def memory_item_delete(item_id: str, _user=Depends(current_user)):
+    return ok(memory_store.delete_item(item_id, _user["username"]))
 
 @memory_router.get("/review")
 

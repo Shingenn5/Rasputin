@@ -1855,6 +1855,98 @@ class BackendSmokeTests(unittest.TestCase):
         with patch("backend.engine.context.model_registry.get_model", return_value={"contextWindow": 131072, "maxTokens": 4096}):
             self.assertEqual(context_governor.memory_budget("large"), 800)
 
+    def testMemoryLifecycleSupportsScopedEditRecallAndDelete(self):
+        created_response = self.assertOk(self.client.post("/api/memory", json={
+            "kind": "project_note",
+            "value": "The durable memory workflow uses explicit review.",
+            "scope": "workspace",
+            "workspaceId": "C:/workspace/lasting-memory",
+            "confidence": 0.9,
+            "importance": 0.8,
+        }))
+        self.assertIn("prefs", created_response)
+        created = created_response["item"]
+        other_workspace = memory_store.add_item(
+            "project_note",
+            "A different workspace should not appear in this list.",
+            scope="workspace",
+            workspace_id="C:/workspace/other",
+            owner_id="test",
+            export=False,
+        )
+        self.assertEqual(created["scope"], "workspace")
+        self.assertEqual(created["workspaceId"], "C:/workspace/lasting-memory")
+        self.assertAlmostEqual(created["confidence"], 0.9)
+        self.assertTrue(created["contentHash"])
+
+        listed = self.assertOk(self.client.get("/api/memory/items", params={
+            "workspaceId": "C:/workspace/lasting-memory",
+        }))
+        self.assertTrue(any(item["id"] == created["id"] for item in listed["items"]))
+        self.assertFalse(any(item["id"] == other_workspace["id"] for item in listed["items"]))
+
+        updated = self.assertOk(self.client.patch(f"/api/memory/items/{created['id']}", json={
+            "value": "The durable memory workflow is owner-scoped and reviewable.",
+        }))
+        self.assertIn("owner-scoped", updated["content"])
+        self.assertNotEqual(updated["contentHash"], created["contentHash"])
+
+        searched = self.assertOk(self.client.post("/api/memory/search", json={
+            "query": "reviewable",
+            "workspaceId": "C:/workspace/lasting-memory",
+        }))
+        recalled = next(item for item in searched["items"] if item["id"] == created["id"])
+        self.assertGreaterEqual(recalled["recallCount"], 1)
+        self.assertIsNotNone(recalled["lastUsedAt"])
+
+        self.assertEqual(self.client.delete(f"/api/memory/items/{created['id']}").status_code, 200)
+        self.assertIsNone(memory_store.get_item(created["id"], "test"))
+        self.assertIsNone(memory_store.get_item(created["id"], "someone-else"))
+        after_delete = self.assertOk(self.client.post("/api/memory/search", json={
+            "query": "reviewable",
+            "workspaceId": "C:/workspace/lasting-memory",
+        }))
+        self.assertFalse(any(item["id"] == created["id"] for item in after_delete["items"]))
+
+    def testMemoryToolUsesPersistedTaskOwnerAndWorkspace(self):
+        unique_term = f"taskscopedmemory{runtime_store.new_id('term')}"
+        memory_store.add_item(
+            "fact",
+            f"{unique_term} belongs to the task owner",
+            scope="workspace",
+            workspace_id="C:/workspace/tool-owner",
+            owner_id="test",
+            export=False,
+        )
+        memory_store.add_item(
+            "fact",
+            f"{unique_term} belongs to another owner",
+            scope="workspace",
+            workspace_id="C:/workspace/tool-owner",
+            owner_id="someone-else",
+            export=False,
+        )
+        task = agent.AgentTask(
+            "Search task-scoped memory",
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path="C:/workspace/tool-owner",
+        )
+        task.owner_id = "test"
+        local_hub = agent.AgentHub()
+        local_hub._persist_task(task)
+
+        result = asyncio.run(McpLayer().call_tool("memory_search", {
+            "query": unique_term,
+            "limit": 10,
+            "_task_id": task.id,
+        }))
+        contents = [str(item["content"]) for item in result["items"]]
+        self.assertTrue(any("task owner" in content for content in contents))
+        self.assertFalse(any("another owner" in content for content in contents))
+        self.assertEqual(result["workspace_id"], "C:/workspace/tool-owner")
+
     def testSessionCompactionRewritesOneBoundedCheckpoint(self):
         local_hub = agent.AgentHub()
         task = agent.AgentTask(

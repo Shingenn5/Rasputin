@@ -27,6 +27,7 @@ These are the documents to consult before starting implementation work.
 | [`DESKTOP_ARCHITECTURE.md`](DESKTOP_ARCHITECTURE.md) | Windows desktop packaging and lifecycle | Current packaging reference |
 | [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md) | Native versus Docker runtime behavior | Runtime contract |
 | [`REMAINING_WORK.md`](REMAINING_WORK.md) | Dual-mode/security residuals and packaging track | Track-specific status; not a replacement for the checklist |
+| [`LASTING_MEMORY.md`](LASTING_MEMORY.md) | Owner/workspace-scoped durable memory contract and current API/UI | Implemented foundation; follow-up slices remain |
 
 ## Product direction and design records
 

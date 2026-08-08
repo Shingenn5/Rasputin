@@ -1,6 +1,5 @@
 import json
-import shutil
-import time
+import hashlib
 from pathlib import Path
 
 from backend.core import audit as audit
@@ -38,6 +37,9 @@ KINDS = {
     "session",
 }
 
+MEMORY_SCOPES = {"global", "workspace"}
+MEMORY_STATUSES = {"saved", "pending", "rejected"}
+
 
 def _text(value):
     if isinstance(value, str):
@@ -62,10 +64,65 @@ def _normalize_kind(kind):
     return "fact"
 
 
+def _normalize_owner(owner_id):
+    return str(owner_id or "admin").strip() or "admin"
+
+
+def _normalize_scope(scope, workspace_id=None):
+    value = str(scope or "global").strip().lower()
+    if value not in MEMORY_SCOPES:
+        raise ValueError("memory scope must be global or workspace")
+    workspace = str(workspace_id or "").strip()
+    if value == "workspace" and not workspace:
+        raise ValueError("workspace-scoped memory requires a workspace")
+    return value, workspace or None
+
+
+def _score(value, default=0.5):
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _source_message_ids(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parsed = _parse(value)
+        value = parsed if isinstance(parsed, list) else [value]
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item).strip()[:120] for item in value if str(item).strip()][:200]
+
+
+def _content_hash(kind, scope, workspace_id, content):
+    payload = json.dumps(
+        {
+            "kind": kind,
+            "scope": scope,
+            "workspace_id": workspace_id,
+            "content": content,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _canonical_key(kind, content, explicit=None):
+    if explicit is not None:
+        return str(explicit or "").strip()[:240]
+    if kind == "preference" and isinstance(content, dict) and content.get("key"):
+        return f"preference:{str(content['key']).strip().casefold()[:180]}"
+    return ""
+
+
 def init_memory():
     store.init_db()
     store.set_kv("memory_json_imported", True)
-    export_markdown()
 
 
 def queue_turn(task_id, session_id, workspace_id=None, owner_id="admin", connection=None):
@@ -154,17 +211,66 @@ def list_jobs(status=None, limit=100, owner_id="admin"):
     return {"jobs": [_public_job(row) for row in rows]}
 
 
-def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, status="saved", source_task_id=None, export=True, owner_id="admin"):
+def add_item(
+    kind,
+    content,
+    scope="global",
+    workspace_id=None,
+    sensitive=False,
+    status="saved",
+    source_task_id=None,
+    export=True,
+    owner_id="admin",
+    source_session_id=None,
+    source_message_ids=None,
+    confidence=0.5,
+    importance=0.5,
+    canonical_key=None,
+):
+    store.init_db()
     kind = _normalize_kind(kind)
+    owner_id = _normalize_owner(owner_id)
+    scope, workspace_id = _normalize_scope(scope, workspace_id)
+    status = str(status or "saved").strip().lower()
+    if status not in MEMORY_STATUSES:
+        raise ValueError("memory status is invalid")
+    source_task_id = str(source_task_id or "").strip() or None
+    source_session_id = str(source_session_id or "").strip() or None
+    source_message_ids = _source_message_ids(source_message_ids)
+    confidence = _score(confidence)
+    importance = _score(importance)
+    canonical_key = _canonical_key(kind, content, canonical_key)
+    content_hash = _content_hash(kind, scope, workspace_id, content)
     item_id = store.new_id("mem")
     stamp = store.now()
     with store._lock, store.connect() as conn:
         conn.execute(
             """
-            INSERT INTO memory_items(id,kind,scope,workspace_id,content,sensitive,status,source_task_id,created_at,updated_at,owner_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO memory_items(
+              id,kind,scope,workspace_id,content,sensitive,status,source_task_id,
+              created_at,updated_at,owner_id,canonical_key,confidence,importance,
+              source_session_id,source_message_ids,content_hash
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (item_id, kind, scope, workspace_id, _text(content), int(bool(sensitive)), status, source_task_id, stamp, stamp, owner_id),
+            (
+                item_id,
+                kind,
+                scope,
+                workspace_id,
+                _text(content),
+                int(bool(sensitive)),
+                status,
+                source_task_id,
+                stamp,
+                stamp,
+                owner_id,
+                canonical_key,
+                confidence,
+                importance,
+                source_session_id,
+                json.dumps(source_message_ids),
+                content_hash,
+            ),
         )
         try:
             conn.execute(
@@ -180,14 +286,16 @@ def add_item(kind, content, scope="global", workspace_id=None, sensitive=False, 
         "scope": scope,
         "workspace_id": workspace_id,
         "status": status,
+        "owner_id": owner_id,
     })
     if status == "saved" and export:
-        export_markdown()
+        export_markdown(owner_id)
     return get_item(item_id, owner_id)
 
 
 def get_item(item_id, owner_id="admin"):
     store.init_db()
+    owner_id = _normalize_owner(owner_id)
     with store._lock, store.connect() as conn:
         row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
     return _public(row)
@@ -198,16 +306,32 @@ def _public(row):
         return None
     data = dict(row)
     data["content"] = _parse(data.get("content", ""))
+    data["source_message_ids"] = _source_message_ids(data.get("source_message_ids"))
     data["sensitive"] = bool(data.get("sensitive"))
+    for key in ("confidence", "importance"):
+        if data.get(key) is not None:
+            data[key] = float(data[key])
+    data["recall_count"] = int(data.get("recall_count") or 0)
     return data
 
 
-def list_items(status="saved", limit=200, owner_id="admin"):
+def list_items(status="saved", limit=200, owner_id="admin", workspace_id=None):
     init_memory()
+    owner_id = _normalize_owner(owner_id)
+    status = str(status or "saved").strip().lower()
+    if status not in MEMORY_STATUSES:
+        raise ValueError("memory status is invalid")
+    workspace_id = str(workspace_id or "").strip()
+    where = "status=? AND owner_id=?"
+    params = [status, owner_id]
+    if workspace_id:
+        where += " AND (scope='global' OR workspace_id=?)"
+        params.append(workspace_id)
+    params.append(max(1, min(int(limit), 500)))
     with store._lock, store.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM memory_items WHERE status=? AND owner_id=? ORDER BY updated_at DESC LIMIT ?",
-            (status, owner_id, max(1, min(int(limit), 500))),
+            f"SELECT * FROM memory_items WHERE {where} ORDER BY updated_at DESC LIMIT ?",
+            params,
         ).fetchall()
     return [_public(row) for row in rows]
 
@@ -217,6 +341,7 @@ def pending_review(owner_id="admin"):
 
 
 def approve_item(item_id, owner_id="admin"):
+    owner_id = _normalize_owner(owner_id)
     stamp = store.now()
     with store._lock, store.connect() as conn:
         row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
@@ -224,12 +349,13 @@ def approve_item(item_id, owner_id="admin"):
             raise ValueError("memory item missing")
         conn.execute("UPDATE memory_items SET status='saved', updated_at=? WHERE id=? AND owner_id=?", (stamp, item_id, owner_id))
         conn.commit()
-    audit.log("memory_item_approved", {"id": item_id})
-    export_markdown()
+    audit.log("memory_item_approved", {"id": item_id, "owner_id": owner_id})
+    export_markdown(owner_id)
     return get_item(item_id, owner_id)
 
 
 def reject_item(item_id, owner_id="admin"):
+    owner_id = _normalize_owner(owner_id)
     stamp = store.now()
     with store._lock, store.connect() as conn:
         row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
@@ -237,8 +363,92 @@ def reject_item(item_id, owner_id="admin"):
             raise ValueError("memory item missing")
         conn.execute("UPDATE memory_items SET status='rejected', updated_at=? WHERE id=? AND owner_id=?", (stamp, item_id, owner_id))
         conn.commit()
-    audit.log("memory_item_rejected", {"id": item_id})
+    audit.log("memory_item_rejected", {"id": item_id, "owner_id": owner_id})
     return get_item(item_id, owner_id)
+
+
+def update_item(item_id, updates, owner_id="admin"):
+    """Edit one owner-visible memory item without changing its provenance."""
+
+    owner_id = _normalize_owner(owner_id)
+    if not isinstance(updates, dict):
+        raise ValueError("memory updates must be an object")
+    store.init_db()
+    with store._lock, store.connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM memory_items WHERE id=? AND owner_id=?",
+            (item_id, owner_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("memory item missing")
+        current = _public(row)
+        kind = _normalize_kind(updates.get("kind", current.get("kind")))
+        content = updates.get("content", current.get("content"))
+        scope, workspace_id = _normalize_scope(
+            updates.get("scope", current.get("scope")),
+            updates.get("workspace_id", current.get("workspace_id")),
+        )
+        sensitive = bool(updates.get("sensitive", current.get("sensitive")))
+        confidence = _score(updates.get("confidence", current.get("confidence")))
+        importance = _score(updates.get("importance", current.get("importance")))
+        canonical_key = _canonical_key(kind, content, updates.get("canonical_key", current.get("canonical_key")))
+        content_hash = _content_hash(kind, scope, workspace_id, content)
+        stamp = store.now()
+        conn.execute(
+            """
+            UPDATE memory_items
+            SET kind=?,scope=?,workspace_id=?,content=?,sensitive=?,updated_at=?,
+                canonical_key=?,confidence=?,importance=?,content_hash=?
+            WHERE id=? AND owner_id=?
+            """,
+            (
+                kind,
+                scope,
+                workspace_id,
+                _text(content),
+                int(sensitive),
+                stamp,
+                canonical_key,
+                confidence,
+                importance,
+                content_hash,
+                item_id,
+                owner_id,
+            ),
+        )
+        try:
+            conn.execute("DELETE FROM memory_fts WHERE id=?", (item_id,))
+            conn.execute("INSERT INTO memory_fts(id,kind,content) VALUES(?,?,?)", (item_id, kind, _text(content)))
+        except Exception:
+            pass
+        conn.commit()
+    audit.log("memory_item_updated", {"id": item_id, "owner_id": owner_id, "kind": kind, "scope": scope})
+    if current.get("status") == "saved":
+        export_markdown(owner_id)
+    return get_item(item_id, owner_id)
+
+
+def delete_item(item_id, owner_id="admin"):
+    """Delete a memory item and its search index entry for the owning user."""
+
+    owner_id = _normalize_owner(owner_id)
+    store.init_db()
+    with store._lock, store.connect() as conn:
+        row = conn.execute(
+            "SELECT id,status FROM memory_items WHERE id=? AND owner_id=?",
+            (item_id, owner_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("memory item missing")
+        conn.execute("DELETE FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id))
+        try:
+            conn.execute("DELETE FROM memory_fts WHERE id=?", (item_id,))
+        except Exception:
+            pass
+        conn.commit()
+    audit.log("memory_item_deleted", {"id": item_id, "owner_id": owner_id, "status": row["status"]})
+    export_markdown(owner_id)
+    return {"deleted": True, "id": item_id}
 
 
 def suggest_from_task(task_id, objective, result, workspace_id=None, owner_id="admin"):
@@ -254,7 +464,7 @@ def suggest_from_task(task_id, objective, result, workspace_id=None, owner_id="a
             "source": "task_review",
             "objective": objective[:500],
             "summary": result[:1000],
-        }, workspace_id=workspace_id, status="pending", source_task_id=task_id, owner_id=owner_id)
+        }, scope="workspace" if workspace_id else "global", workspace_id=workspace_id, status="pending", source_task_id=task_id, owner_id=owner_id)
     return None
 
 
@@ -263,7 +473,7 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
     query = str(query or "").strip()
     if not query:
         return {"query": query, "items": []}
-    owner_id = str(owner_id or "admin").strip() or "admin"
+    owner_id = _normalize_owner(owner_id)
     workspace_id = str(workspace_id or "").strip()
     with store._lock, store.connect() as conn:
         try:
@@ -304,6 +514,17 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
                 (owner_id, f"%{query}%", workspace_id, workspace_id, max(1, min(int(limit), 50))),
             ).fetchall()
     items = [_public(row) for row in rows]
+    if items:
+        stamp = store.now()
+        with store._lock, store.connect() as conn:
+            conn.executemany(
+                "UPDATE memory_items SET last_used_at=?, recall_count=COALESCE(recall_count,0)+1 WHERE id=? AND owner_id=?",
+                [(stamp, item["id"], owner_id) for item in items],
+            )
+            conn.commit()
+        for item in items:
+            item["last_used_at"] = stamp
+            item["recall_count"] = int(item.get("recall_count") or 0) + 1
     return {"query": query, "items": items, "workspace_id": workspace_id}
 
 
@@ -349,13 +570,32 @@ def remember(kind, value, owner_id="admin"):
     return load_memory(owner_id)
 
 
-def export_markdown():
+def _export_root(base, owner_id=None):
+    owner = _normalize_owner(owner_id) if owner_id else "admin"
+    if owner == "admin":
+        return base
+    safe = "".join(ch if ch.isalnum() or ch in "-_ ." else "-" for ch in owner).strip().replace(" ", "-")[:80] or "owner"
+    target = base / "owners" / safe
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def export_markdown(owner_id=None):
     store.init_db()
-    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    (MEMORY_DIR / "projects").mkdir(exist_ok=True)
+    export_root = _export_root(MEMORY_DIR, owner_id)
+    export_root.mkdir(parents=True, exist_ok=True)
+    projects_root = export_root / "projects"
+    projects_root.mkdir(exist_ok=True)
+    for stale in projects_root.glob("*.md"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+    owner = _normalize_owner(owner_id) if owner_id else "admin"
     with store._lock, store.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM memory_items WHERE status='saved' ORDER BY updated_at DESC LIMIT 500"
+            "SELECT * FROM memory_items WHERE status='saved' AND owner_id=? ORDER BY updated_at DESC LIMIT 500",
+            (owner,),
         ).fetchall()
     items = [_public(row) for row in rows]
 
@@ -366,12 +606,12 @@ def export_markdown():
     user_lines = ["# User Memory", ""]
     for item in prefs:
         user_lines.append(f"- {_text(item['content'])}")
-    (MEMORY_DIR / "user.md").write_text("\n".join(user_lines).strip() + "\n", encoding="utf-8")
+    (export_root / "user.md").write_text("\n".join(user_lines).strip() + "\n", encoding="utf-8")
 
     memory_lines = ["# Rasputin Memory", ""]
     for item in facts:
         memory_lines.append(f"- **{item['kind']}**: {_text(item['content'])}")
-    (MEMORY_DIR / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
+    (export_root / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
 
     grouped = {}
     for item in projects:
@@ -381,26 +621,40 @@ def export_markdown():
         for item in group:
             lines.append(f"- {_text(item['content'])}")
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in wid)[:80] or "project"
-        (MEMORY_DIR / "projects" / f"{safe}.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
-    export_master_context()
+        (projects_root / f"{safe}.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    export_master_context(owner)
 
 
-def export_master_context():
+def export_master_context(owner_id=None):
     store.init_db()
-    MASTER_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
+    owner = _normalize_owner(owner_id) if owner_id else "admin"
+    export_root = _export_root(MASTER_CONTEXT_DIR, owner)
+    export_root.mkdir(parents=True, exist_ok=True)
     # read-only-ish export; don't block normal task writes
     with store.connect() as conn:
         sessions = conn.execute(
-            "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 200"
+            "SELECT * FROM sessions WHERE owner_id=? ORDER BY updated_at DESC LIMIT 200",
+            (owner,),
         ).fetchall()
         messages = conn.execute(
-            "SELECT * FROM messages ORDER BY created_at DESC LIMIT 800"
+            """
+            SELECT m.* FROM messages m
+            JOIN sessions s ON s.id=m.session_id
+            WHERE s.owner_id=?
+            ORDER BY m.created_at DESC LIMIT 800
+            """,
+            (owner,),
         ).fetchall()
         tasks = conn.execute(
-            "SELECT id,session_id,objective,model,mode,status,result,workspace,created_at,updated_at FROM tasks ORDER BY updated_at DESC LIMIT 300"
+            """
+            SELECT id,session_id,objective,model,mode,status,result,workspace,created_at,updated_at
+            FROM tasks WHERE owner_id=? ORDER BY updated_at DESC LIMIT 300
+            """,
+            (owner,),
         ).fetchall()
         memory_rows = conn.execute(
-            "SELECT * FROM memory_items WHERE status='saved' ORDER BY updated_at DESC LIMIT 500"
+            "SELECT * FROM memory_items WHERE status='saved' AND owner_id=? ORDER BY updated_at DESC LIMIT 500",
+            (owner,),
         ).fetchall()
 
     session_lines = ["# Warmind Context", "", "Local cross-session context for Rasputin.", ""]
@@ -454,10 +708,10 @@ def export_master_context():
         "Do not commit this folder. It lives under ignored local `data/` storage.",
     ]
 
-    (MASTER_CONTEXT_DIR / "README.md").write_text("\n".join(readme_lines).strip() + "\n", encoding="utf-8")
-    (MASTER_CONTEXT_DIR / "sessions.md").write_text("\n".join(session_lines).strip() + "\n", encoding="utf-8")
-    (MASTER_CONTEXT_DIR / "tasks.md").write_text("\n".join(task_lines).strip() + "\n", encoding="utf-8")
-    (MASTER_CONTEXT_DIR / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
+    (export_root / "README.md").write_text("\n".join(readme_lines).strip() + "\n", encoding="utf-8")
+    (export_root / "sessions.md").write_text("\n".join(session_lines).strip() + "\n", encoding="utf-8")
+    (export_root / "tasks.md").write_text("\n".join(task_lines).strip() + "\n", encoding="utf-8")
+    (export_root / "memory.md").write_text("\n".join(memory_lines).strip() + "\n", encoding="utf-8")
 
 
 async def consolidate_long_term_memory(session_id, messages, owner_id="admin", workspace_id=None):

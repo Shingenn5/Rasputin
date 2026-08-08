@@ -265,13 +265,146 @@ export function ApprovalsView({ view, approvals, approveApproval, denyApproval, 
   );
 }
 
-export function MemoryView({ view, memoryReview, memorySearchResults, searchMemory, approveMemory, rejectMemory }) {
+export function MemoryView({
+  view,
+  workspace,
+  memoryItems,
+  memoryReview,
+  memorySearchResults,
+  addMemory,
+  updateMemory,
+  deleteMemory,
+  searchMemory,
+  approveMemory,
+  rejectMemory,
+}) {
   const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("fact");
+  const [scope, setScope] = useState("global");
+  const [workspaceId, setWorkspaceId] = useState(workspace?.activePath || "");
+  const [value, setValue] = useState("");
+  const [sensitive, setSensitive] = useState(false);
+  const [memoryError, setMemoryError] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editingValue, setEditingValue] = useState("");
   const pending = memoryReview?.items || [];
+  const saved = memoryItems?.items || [];
+
+  useEffect(() => {
+    if (!workspaceId && workspace?.activePath) setWorkspaceId(workspace.activePath);
+  }, [workspace?.activePath, workspaceId]);
+
+  async function submitMemory(event) {
+    event.preventDefault();
+    setMemoryError("");
+    try {
+      await addMemory({
+        kind,
+        value,
+        scope,
+        workspaceId: scope === "workspace" ? workspaceId : null,
+        sensitive,
+      });
+      setValue("");
+      setSensitive(false);
+    } catch (error) {
+      setMemoryError(error.message);
+    }
+  }
+
+  function beginEdit(item) {
+    setEditingId(item.id);
+    setEditingValue(formatMemoryContent(item.content));
+    setMemoryError("");
+  }
+
+  async function saveEdit(item) {
+    setMemoryError("");
+    try {
+      await updateMemory(item.id, { value: editingValue });
+      setEditingId("");
+      setEditingValue("");
+    } catch (error) {
+      setMemoryError(error.message);
+    }
+  }
+
+  async function removeMemory(item) {
+    if (!window.confirm("Delete this saved memory? This cannot be undone.")) return;
+    setMemoryError("");
+    try {
+      await deleteMemory(item.id);
+      if (editingId === item.id) setEditingId("");
+    } catch (error) {
+      setMemoryError(error.message);
+    }
+  }
+
   return (
     <section className={`app-view ${view === "memory" ? "active" : ""}`} id="memoryView" data-app-view="memory">
-      <PageHeader title="Memory" text="Warmind recall, memory suggestions, and local Markdown exports." />
+      <PageHeader title="Memory" text="Durable owner-scoped recall with explicit review, editing, and deletion." />
       <div className="task-dashboard">
+        <Card className="settings-card shadow-sm" data-testid="memory-create-card">
+          <Card.Body>
+            <h2>Save a memory</h2>
+            <p className="text-body-secondary">Keep a preference, fact, or project lesson across future conversations.</p>
+            <Form onSubmit={submitMemory} data-testid="memory-create-form">
+              <Row className="g-2">
+                <Col md={5}>
+                  <Form.Label htmlFor="memoryValue">Memory</Form.Label>
+                  <Form.Control
+                    id="memoryValue"
+                    as="textarea"
+                    rows={2}
+                    value={value}
+                    onChange={(event) => setValue(event.target.value)}
+                    placeholder="Example: Prefer concise status summaries."
+                    required
+                  />
+                </Col>
+                <Col md={2}>
+                  <Form.Label htmlFor="memoryKind">Type</Form.Label>
+                  <Form.Select id="memoryKind" value={kind} onChange={(event) => setKind(event.target.value)}>
+                    <option value="fact">Fact</option>
+                    <option value="preference">Preference</option>
+                    <option value="project_note">Project note</option>
+                    <option value="workflow_lesson">Workflow lesson</option>
+                    <option value="tool_lesson">Tool lesson</option>
+                    <option value="blocked_pattern">Blocked pattern</option>
+                  </Form.Select>
+                </Col>
+                <Col md={2}>
+                  <Form.Label htmlFor="memoryScope">Scope</Form.Label>
+                  <Form.Select id="memoryScope" value={scope} onChange={(event) => setScope(event.target.value)}>
+                    <option value="global">All workspaces</option>
+                    <option value="workspace">This workspace</option>
+                  </Form.Select>
+                </Col>
+                <Col md={3}>
+                  <Form.Label htmlFor="memoryWorkspace">Workspace reference</Form.Label>
+                  <Form.Control
+                    id="memoryWorkspace"
+                    value={workspaceId}
+                    onChange={(event) => setWorkspaceId(event.target.value)}
+                    disabled={scope !== "workspace"}
+                    placeholder={workspace?.activePath || "."}
+                  />
+                </Col>
+              </Row>
+              <div className="d-flex align-items-center gap-3 mt-3">
+                <Form.Check
+                  id="memorySensitive"
+                  type="checkbox"
+                  label="Sensitive (excluded from normal context previews)"
+                  checked={sensitive}
+                  onChange={(event) => setSensitive(event.target.checked)}
+                />
+                <Button type="submit" data-testid="memory-add-button">Save memory</Button>
+              </div>
+            </Form>
+            {memoryError && <div className="text-danger mt-3" role="alert">{memoryError}</div>}
+          </Card.Body>
+        </Card>
         <Card className="settings-card shadow-sm">
           <Card.Body>
             <Form onSubmit={(event) => { event.preventDefault(); searchMemory(query); }}>
@@ -282,6 +415,44 @@ export function MemoryView({ view, memoryReview, memorySearchResults, searchMemo
             </Form>
             <Stack gap={2} className="mt-3">
               {(memorySearchResults?.items || []).map((item) => <MemoryItem key={item.id} item={item} />)}
+            </Stack>
+          </Card.Body>
+        </Card>
+        <Card className="settings-card shadow-sm mt-3" data-testid="memory-saved-list">
+          <Card.Body>
+            <h2>Saved memory</h2>
+            <Stack gap={2}>
+              {saved.map((item) => (
+                <Card className="message-card" key={item.id}>
+                  <Card.Body>
+                    {editingId === item.id ? (
+                      <>
+                        <Form.Label htmlFor={`memory-edit-${item.id}`}>Edit memory</Form.Label>
+                        <Form.Control
+                          id={`memory-edit-${item.id}`}
+                          as="textarea"
+                          rows={3}
+                          value={editingValue}
+                          onChange={(event) => setEditingValue(event.target.value)}
+                        />
+                        <Stack direction="horizontal" gap={2} className="mt-2">
+                          <Button size="sm" onClick={() => saveEdit(item)} data-testid={`memory-save-edit-${item.id}`}>Save changes</Button>
+                          <Button size="sm" variant="outline-secondary" onClick={() => setEditingId("")}>Cancel</Button>
+                        </Stack>
+                      </>
+                    ) : (
+                      <>
+                        <MemoryItem item={item} />
+                        <Stack direction="horizontal" gap={2} className="mt-2">
+                          <Button size="sm" variant="outline-secondary" onClick={() => beginEdit(item)} data-testid={`memory-edit-${item.id}`}>Edit</Button>
+                          <Button size="sm" variant="outline-danger" onClick={() => removeMemory(item)} data-testid={`memory-delete-${item.id}`}>Delete</Button>
+                        </Stack>
+                      </>
+                    )}
+                  </Card.Body>
+                </Card>
+              ))}
+              {!saved.length && <p className="text-body-secondary mb-0">No saved memories yet.</p>}
             </Stack>
           </Card.Body>
         </Card>
@@ -1364,12 +1535,24 @@ function EmptyCard({ title, text }) {
 }
 
 function MemoryItem({ item }) {
+  const workspaceId = item.workspaceId || item.workspace_id;
+  const scope = item.scope === "workspace" ? `Workspace: ${workspaceId || "unknown"}` : "Global";
+  const recallCount = Number(item.recallCount ?? item.recall_count ?? 0);
   return (
     <div>
       <Badge bg={item.status === "pending" ? "warning" : "secondary"}>{item.kind}</Badge>
-      <p className="mb-0 mt-2">{typeof item.content === "string" ? item.content : JSON.stringify(item.content)}</p>
+      <span className="small text-body-secondary ms-2">{scope}</span>
+      <p className="mb-0 mt-2">{formatMemoryContent(item.content)}</p>
+      <div className="small text-body-secondary mt-2">
+        Confidence {Math.round(Number(item.confidence ?? 0.5) * 100)}% · Importance {Math.round(Number(item.importance ?? 0.5) * 100)}% · Recalled {recallCount} times
+        {item.sensitive && " · Sensitive"}
+      </div>
     </div>
   );
+}
+
+function formatMemoryContent(content) {
+  return typeof content === "string" ? content : JSON.stringify(content, null, 2);
 }
 
 function formatRuntimeTime(value) {

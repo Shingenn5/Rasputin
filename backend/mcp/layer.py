@@ -257,6 +257,30 @@ class McpLayer:
             raise ValueError("path outside safe root")
         return target
 
+    @staticmethod
+    def _task_memory_context(task_id):
+        """Resolve memory visibility from the persisted task owner/workspace.
+
+        Tool arguments are model-authored and must never be trusted to select a
+        different user's memory.  A task id is the authoritative context for
+        agentic calls; task-less operator probes retain the legacy admin scope.
+        """
+
+        owner_id = "admin"
+        workspace_id = None
+        if not task_id:
+            return owner_id, workspace_id
+        store.init_db()
+        with store._lock, store.connect() as conn:
+            row = conn.execute(
+                "SELECT owner_id,workspace FROM tasks WHERE id=?",
+                (str(task_id),),
+            ).fetchone()
+        if row:
+            owner_id = str(row["owner_id"] or "admin").strip() or "admin"
+            workspace_id = str(row["workspace"] or "").strip() or None
+        return owner_id, workspace_id
+
     def _protect_task_git_metadata(self, target, prohibit_root=False):
         """Keep a linked worktree's .git pointer out of mutation tools.
 
@@ -287,6 +311,7 @@ class McpLayer:
         args = dict(args or {})
         task_id = args.pop("_task_id", None)
         tool_call_id = args.pop("_tool_call_id", None) or store.new_id("tool")
+        task_owner, task_workspace = self._task_memory_context(task_id)
         self._record_tool(tool_call_id, task_id, name, definition.get("risk", "safe"), "running", args)
         try:
             if not tool_relay.permission_allowed(definition):
@@ -296,6 +321,14 @@ class McpLayer:
                 result = await mcp_relay.call_tool(name, args, task_id=task_id, tool_call_id=tool_call_id)
             elif name == "shell_exec":
                 result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id, _on_log=on_log)
+            elif name == "memory_search":
+                result = await self.tools[name](
+                    **args,
+                    _task_id=task_id,
+                    _tool_call_id=tool_call_id,
+                    _owner_id=task_owner,
+                    _workspace_id=task_workspace,
+                )
             else:
                 result = await self.tools[name](**args, _task_id=task_id, _tool_call_id=tool_call_id)
             status = "pending_approval" if isinstance(result, dict) and result.get("approval_id") else "done"
@@ -635,8 +668,8 @@ class McpLayer:
         })
         return plan
 
-    async def memory_search(self, query, limit=10, _task_id=None, _tool_call_id=None):
-        return await asyncio.to_thread(memory.search, query, limit)
+    async def memory_search(self, query, limit=10, _task_id=None, _tool_call_id=None, _owner_id="admin", _workspace_id=None):
+        return await asyncio.to_thread(memory.search, query, limit, _owner_id, _workspace_id)
 
     async def model_health(self, key="dry-run", _task_id=None, _tool_call_id=None):
         return await asyncio.to_thread(model_registry.test_model, key)
