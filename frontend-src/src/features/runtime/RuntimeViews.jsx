@@ -1603,6 +1603,7 @@ function MemoryItem({ item }) {
   const sourceSession = item.sourceSessionId || item.source_session_id;
   const sourceMessages = item.sourceMessageIds || item.source_message_ids || [];
   const supersedes = item.supersedesId || item.supersedes_id;
+  const recallExplanation = item.recallExplanation || item.recall_explanation;
   const statusTone = item.status === "pending" ? "warning" : item.status === "expired" ? "danger" : item.status === "superseded" ? "dark" : "secondary";
   const badgeLabel = item.status === "expired" || item.status === "superseded" ? item.status : item.kind;
   return (
@@ -1621,6 +1622,11 @@ function MemoryItem({ item }) {
           Source: {sourceTask ? `task ${sourceTask}` : "manual"}
           {sourceSession ? ` · session ${sourceSession}` : ""}
           {sourceMessages.length ? ` · ${sourceMessages.length} message${sourceMessages.length === 1 ? "" : "s"}` : ""}
+        </div>
+      )}
+      {recallExplanation?.summary && (
+        <div className="small text-body-secondary mt-1" data-testid="memory-recall-explanation">
+          Why recalled: {recallExplanation.summary}
         </div>
       )}
       {supersedes && (

@@ -1823,6 +1823,14 @@ class AgentHub:
             task.log("memory recall suppressed by task setting")
             return None
         recall = memory.search(query, limit, owner_id, task.workspace) or {"items": []}
+        explanations = []
+        for item in (recall.get("items") or [])[:5]:
+            explanation = item.get("recall_explanation") or {}
+            if explanation:
+                explanations.append({
+                    "memoryId": item.get("id"),
+                    **explanation,
+                })
         task.seen("memory_recall", {
             "status": "included",
             "mode": mode,
@@ -1831,6 +1839,7 @@ class AgentHub:
             "tokenBudget": token_budget,
             "workspace": task.workspace,
             "phase": phase,
+            "explanations": explanations,
         })
         return recall
 

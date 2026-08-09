@@ -1,5 +1,6 @@
-import json
 import hashlib
+import json
+import re
 from pathlib import Path
 
 from backend.core import audit as audit
@@ -760,6 +761,7 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
                 FROM memory_fts
                 JOIN memory_items m ON m.id = memory_fts.id
                 WHERE memory_fts MATCH ? AND m.status='saved' AND m.owner_id=?
+                  AND (m.scope='global' OR (? != '' AND m.workspace_id=?))
                 ORDER BY
                   CASE
                     WHEN m.scope='global' THEN 0
@@ -770,7 +772,7 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
                   score
                 LIMIT ?
                 """,
-                (query, owner_id, workspace_id, workspace_id, max(1, min(int(limit), 50))),
+                (query, owner_id, workspace_id, workspace_id, workspace_id, workspace_id, max(1, min(int(limit), 50))),
             ).fetchall()
         except Exception:
             rows = conn.execute(
@@ -778,6 +780,7 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
                 SELECT *, 0 AS score
                 FROM memory_items
                 WHERE status='saved' AND owner_id=? AND content LIKE ?
+                  AND (scope='global' OR (? != '' AND workspace_id=?))
                 ORDER BY
                   CASE
                     WHEN scope='global' THEN 0
@@ -788,9 +791,36 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
                   updated_at DESC
                 LIMIT ?
                 """,
-                (owner_id, f"%{query}%", workspace_id, workspace_id, max(1, min(int(limit), 50))),
+                (owner_id, f"%{query}%", workspace_id, workspace_id, workspace_id, workspace_id, max(1, min(int(limit), 50))),
             ).fetchall()
-    items = [_public(row) for row in rows]
+    query_terms = list(dict.fromkeys(re.findall(r"[\w]{3,}", query.casefold())))
+    items = []
+    for row in rows:
+        item = _public(row)
+        content_text = json.dumps(item.get("content"), ensure_ascii=False).casefold()
+        matched_terms = [term for term in query_terms if term in content_text]
+        scope = str(item.get("scope") or "global")
+        same_workspace = scope == "workspace" and bool(workspace_id) and item.get("workspace_id") == workspace_id
+        if scope == "global":
+            scope_reason = "global memory is eligible in every workspace"
+        elif same_workspace:
+            scope_reason = "workspace memory matches the active workspace"
+        else:
+            scope_reason = "owner-visible memory matched the workspace policy"
+        score = row["score"] if "score" in row.keys() else None
+        try:
+            score = float(score) if score is not None else None
+        except (TypeError, ValueError):
+            score = None
+        terms_text = ", ".join(matched_terms[:6]) if matched_terms else "the task query"
+        item["recall_explanation"] = {
+            "summary": f"Matched {terms_text}; {scope_reason}. Ranked using lexical relevance, importance, and scope.",
+            "matched_terms": matched_terms[:6],
+            "scope_reason": scope_reason,
+            "score": score,
+            "importance": item.get("importance"),
+        }
+        items.append(item)
     if items:
         stamp = store.now()
         with store._lock, store.connect() as conn:

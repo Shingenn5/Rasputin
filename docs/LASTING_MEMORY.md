@@ -61,6 +61,13 @@ The Chat composer exposes this as a per-task selector. The selected default is
 stored in user preferences, while the value sent with each task remains visible
 in task details and can be audited alongside the `memory_recall` trace.
 
+When memory is included, each search result carries a transient explanation:
+matched query terms, the global or same-workspace eligibility reason, and the
+ranking factors used by local search. The task inspector renders these details
+under “Why memory was recalled?” without sending the explanation back into the
+model prompt. Workspace-scoped records from another workspace are excluded;
+only global records and records matching the active workspace can be recalled.
+
 ## User workflow
 
 The Memory view supports:
@@ -93,9 +100,9 @@ older item `superseded`. Explicit corrections can provide `supersedesId` on
 ## Deliberate next steps
 
 This is the durable foundation, not the final memory intelligence. The next
-memory slices should add:
+memory slices should add (the recall-explanation item is implemented above):
 
-- visible source/session links and a “why was this recalled?” explanation;
+- richer visible source/session links and correction history in the UI;
 - richer conflict explanations and correction history in the UI;
 - export/delete-all workflows;
 - measured consolidation from completed conversations, with suggestions kept

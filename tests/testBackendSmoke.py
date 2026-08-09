@@ -1903,6 +1903,14 @@ class BackendSmokeTests(unittest.TestCase):
             export=False,
         )
         memory_store.add_item(
+            "project_note",
+            f"{unique_term} belongs to another workspace",
+            scope="workspace",
+            workspace_id="C:/workspace/beta",
+            owner_id="test",
+            export=False,
+        )
+        memory_store.add_item(
             "fact",
             f"{unique_term} belongs to a different user",
             owner_id="someone-else",
@@ -1919,7 +1927,26 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(len(contents), 2)
         self.assertTrue(any("compact cards" in content for content in contents))
         self.assertTrue(any("blue status indicators" in content for content in contents))
+        self.assertFalse(any("another workspace" in content for content in contents))
         self.assertFalse(any("different user" in content for content in contents))
+        for item in recalled["items"]:
+            self.assertIn("recall_explanation", item)
+            self.assertTrue(item["recall_explanation"]["summary"])
+
+        recall_task = agent.AgentTask(
+            unique_term,
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path="C:/workspace/alpha",
+        )
+        recall_task.owner_id = "test"
+        agent_hub = agent.AgentHub()
+        agent_hub._recall_memory(recall_task, unique_term, 10, "test", 128, "chat")
+        trace = [item for item in recall_task.trace if item["kind"] == "memory_recall"][-1]["detail"]
+        self.assertEqual(trace["status"], "included")
+        self.assertTrue(trace["explanations"])
+        self.assertTrue(trace["explanations"][0]["summary"])
 
         with patch("backend.engine.context.model_registry.get_model", return_value={"contextWindow": 4096, "maxTokens": 1024}):
             self.assertEqual(context_governor.memory_budget("small"), 327)
@@ -1978,6 +2005,8 @@ class BackendSmokeTests(unittest.TestCase):
         recalled = next(item for item in searched["items"] if item["id"] == created["id"])
         self.assertGreaterEqual(recalled["recallCount"], 1)
         self.assertIsNotNone(recalled["lastUsedAt"])
+        self.assertIn("recallExplanation", recalled)
+        self.assertIn("Matched", recalled["recallExplanation"]["summary"])
 
         self.assertEqual(self.client.delete(f"/api/memory/items/{created['id']}").status_code, 200)
         self.assertIsNone(memory_store.get_item(created["id"], "test"))

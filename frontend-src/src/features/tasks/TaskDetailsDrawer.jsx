@@ -246,6 +246,7 @@ export function TaskDetailsDrawer({
                         </li>
                       ))}
                     </ContextBlock>
+                    <MemoryRecallPanel recalls={(detail.trace || []).filter((item) => item.kind === "memory_recall")} />
                     <article className="context-block task-graph-context" data-testid="task-graph-evidence">
                       <h2>Graphify Relationships</h2>
                       {(task.graph || []).length ? (
@@ -681,6 +682,40 @@ function ContextBudgetPanel({ budgets }) {
             </li>
           ))}
         </ul>
+      )}
+    </article>
+  );
+}
+
+function MemoryRecallPanel({ recalls }) {
+  if (!recalls.length) return null;
+  const latest = recalls[recalls.length - 1]?.detail || {};
+  const explanations = latest.explanations || [];
+  const suppressed = latest.status === "suppressed";
+  return (
+    <article className="context-block" data-testid="task-memory-recall-explanation">
+      <h2>Why memory was recalled</h2>
+      {suppressed ? (
+        <p className="empty-inline">Memory search was suppressed by this task's memory setting.</p>
+      ) : (
+        <>
+          <p className="text-body-secondary">
+            {latest.mode === "include" ? "This task explicitly requested memory." : "This task used the normal memory policy."}
+            {latest.phase ? ` Phase: ${labelize(latest.phase)}.` : ""}
+          </p>
+          {explanations.length ? (
+            <ul>
+              {explanations.map((item, index) => (
+                <li key={`${item.memoryId || item.memory_id || "memory"}-${index}`}>
+                  <strong>Memory {item.memoryId || item.memory_id || "record"}</strong>
+                  <span>{item.summary || "Matched the task query and passed the owner/workspace filter."}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty-inline">No saved memory matched this task query.</p>
+          )}
+        </>
       )}
     </article>
   );
