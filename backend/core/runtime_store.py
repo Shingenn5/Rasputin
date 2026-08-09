@@ -227,6 +227,8 @@ def init_db():
               sensitive INTEGER NOT NULL DEFAULT 0,
               status TEXT NOT NULL DEFAULT 'saved',
               source_task_id TEXT,
+              retention TEXT NOT NULL DEFAULT 'persistent',
+              expires_at REAL,
               created_at REAL NOT NULL,
               updated_at REAL NOT NULL
             );
@@ -391,6 +393,8 @@ def init_db():
             "content_hash": "TEXT NOT NULL DEFAULT ''",
             "last_used_at": "REAL",
             "recall_count": "INTEGER NOT NULL DEFAULT 0",
+            "retention": "TEXT NOT NULL DEFAULT 'persistent'",
+            "expires_at": "REAL",
         }
         for name, definition in memory_migrations.items():
             if name not in memory_columns:
@@ -472,6 +476,7 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(username)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_owner_status ON memory_items(owner_id, status, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_owner_key ON memory_items(owner_id, canonical_key)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_expiry ON memory_items(owner_id, status, expires_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_ready ON memory_jobs(status, next_attempt_at, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_jobs_owner ON memory_jobs(owner_id, status, updated_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assistant_plans_owner_updated ON assistant_plans(owner_id, updated_at DESC)")

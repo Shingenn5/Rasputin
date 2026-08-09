@@ -1329,7 +1329,13 @@ class AgentHub:
                 task.output("markdown", "Chat reply", reply)
                 task.progress = 100
                 task.status = "done"
-                memory.remember("session", {"objective": task.objective, "result": reply, "model": task.model}, task.owner_id)
+                memory.remember(
+                    "session",
+                    {"objective": task.objective, "result": reply, "model": task.model},
+                    task.owner_id,
+                    source_task_id=task.id,
+                    source_session_id=task.session_id,
+                )
                 memory.suggest_from_task(task.id, task.objective, reply, task.workspace, task.owner_id)
                 self._add_message(task.session_id, task.id, "assistant", reply, memory_job=task)
                 await self.compact_session(task)
@@ -1358,7 +1364,13 @@ class AgentHub:
                 task.output("markdown", "Task summary", reflection)
                 task.progress = 100
                 task.status = "done"
-                memory.remember("session", {"objective": task.objective, "result": reflection, "model": task.model}, task.owner_id)
+                memory.remember(
+                    "session",
+                    {"objective": task.objective, "result": reflection, "model": task.model},
+                    task.owner_id,
+                    source_task_id=task.id,
+                    source_session_id=task.session_id,
+                )
                 memory.suggest_from_task(task.id, task.objective, reflection, task.workspace, task.owner_id)
                 self._add_message(task.session_id, task.id, "assistant", reflection, memory_job=task)
                 await self.compact_session(task)

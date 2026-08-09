@@ -455,6 +455,10 @@ class MemoryIn(CamelModel):
     confidence: float = 0.5
     importance: float = 0.5
     canonical_key: str | None = None
+    retention: str = "persistent"
+    source_task_id: str | None = None
+    source_session_id: str | None = None
+    source_message_ids: list[str] = Field(default_factory=list)
 
 
 class MemoryUpdateIn(CamelModel):
@@ -466,6 +470,7 @@ class MemoryUpdateIn(CamelModel):
     confidence: float | None = None
     importance: float | None = None
     canonical_key: str | None = None
+    retention: str | None = None
 
 class MemorySearchIn(CamelModel):
     query: str
@@ -493,6 +498,10 @@ async def add_memory(req: MemoryIn, _user=Depends(current_user)):
         confidence=req.confidence,
         importance=req.importance,
         canonical_key=req.canonical_key,
+        retention=req.retention,
+        source_task_id=req.source_task_id,
+        source_session_id=req.source_session_id,
+        source_message_ids=req.source_message_ids,
         owner_id=_user["username"],
     )
     # Preserve the legacy summary response while exposing the durable record
@@ -532,6 +541,8 @@ async def memory_item_update(item_id: str, req: MemoryUpdateIn, _user=Depends(cu
         updates["importance"] = req.importance
     if "canonical_key" in fields:
         updates["canonical_key"] = req.canonical_key
+    if "retention" in fields:
+        updates["retention"] = req.retention
     return ok(memory_store.update_item(item_id, updates, _user["username"]))
 
 

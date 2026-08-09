@@ -186,6 +186,13 @@ def _safe_context_item(item: dict[str, Any], include_sensitive: bool) -> dict[st
         "content": content,
         "sensitive": bool(item.get("sensitive")),
         "updated_at": item.get("updated_at"),
+        "retention": item.get("retention") or "persistent",
+        "expires_at": item.get("expires_at"),
+        "source_task_id": item.get("source_task_id"),
+        "source_session_id": item.get("source_session_id"),
+        "source_message_ids": item.get("source_message_ids") or [],
+        "confidence": item.get("confidence"),
+        "importance": item.get("importance"),
     }
 
 

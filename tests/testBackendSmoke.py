@@ -1863,6 +1863,10 @@ class BackendSmokeTests(unittest.TestCase):
             "workspaceId": "C:/workspace/lasting-memory",
             "confidence": 0.9,
             "importance": 0.8,
+            "retention": "30_days",
+            "sourceTaskId": "task-memory-provenance",
+            "sourceSessionId": "session-memory-provenance",
+            "sourceMessageIds": ["msg-memory-1", "msg-memory-2"],
         }))
         self.assertIn("prefs", created_response)
         created = created_response["item"]
@@ -1878,6 +1882,11 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(created["workspaceId"], "C:/workspace/lasting-memory")
         self.assertAlmostEqual(created["confidence"], 0.9)
         self.assertTrue(created["contentHash"])
+        self.assertEqual(created["retention"], "30_days")
+        self.assertIsNotNone(created["expiresAt"])
+        self.assertEqual(created["sourceTaskId"], "task-memory-provenance")
+        self.assertEqual(created["sourceSessionId"], "session-memory-provenance")
+        self.assertEqual(created["sourceMessageIds"], ["msg-memory-1", "msg-memory-2"])
 
         listed = self.assertOk(self.client.get("/api/memory/items", params={
             "workspaceId": "C:/workspace/lasting-memory",
@@ -1907,6 +1916,32 @@ class BackendSmokeTests(unittest.TestCase):
             "workspaceId": "C:/workspace/lasting-memory",
         }))
         self.assertFalse(any(item["id"] == created["id"] for item in after_delete["items"]))
+
+    def testMemoryRetentionExpiresWithProvenanceAndCanBeRestored(self):
+        item = memory_store.add_item(
+            "workflow_lesson",
+            "A temporary lesson should leave an auditable expiration record.",
+            retention="7_days",
+            source_task_id="task-retention",
+            source_session_id="session-retention",
+            source_message_ids=["msg-retention"],
+            owner_id="test",
+            export=False,
+        )
+        self.assertEqual(item["retention"], "7_days")
+        self.assertGreater(item["expires_at"], item["created_at"])
+        with patch("backend.rag.memory.store.now", return_value=item["expires_at"] + 1):
+            self.assertEqual(memory_store.search("auditable expiration", owner_id="test")["items"], [])
+            expired = memory_store.get_item(item["id"], "test")
+            self.assertEqual(expired["status"], "expired")
+            expired_list = memory_store.list_items("expired", owner_id="test")
+            self.assertTrue(any(row["id"] == item["id"] for row in expired_list))
+        restored = memory_store.update_item(item["id"], {"retention": "persistent"}, "test")
+        self.assertEqual(restored["status"], "saved")
+        self.assertIsNone(restored["expires_at"])
+        self.assertEqual(restored["source_task_id"], "task-retention")
+        self.assertEqual(restored["source_session_id"], "session-retention")
+        self.assertEqual(restored["source_message_ids"], ["msg-retention"])
 
     def testMemoryToolUsesPersistedTaskOwnerAndWorkspace(self):
         unique_term = f"taskscopedmemory{runtime_store.new_id('term')}"

@@ -38,7 +38,13 @@ KINDS = {
 }
 
 MEMORY_SCOPES = {"global", "workspace"}
-MEMORY_STATUSES = {"saved", "pending", "rejected"}
+MEMORY_STATUSES = {"saved", "pending", "rejected", "expired"}
+RETENTION_POLICIES = {
+    "persistent": None,
+    "7_days": 7 * 24 * 60 * 60,
+    "30_days": 30 * 24 * 60 * 60,
+    "90_days": 90 * 24 * 60 * 60,
+}
 
 
 def _text(value):
@@ -94,6 +100,23 @@ def _source_message_ids(value):
     if not isinstance(value, (list, tuple)):
         return []
     return [str(item).strip()[:120] for item in value if str(item).strip()][:200]
+
+
+def _normalize_retention(retention):
+    value = str(retention or "persistent").strip().lower().replace("-", "_").replace(" ", "_")
+    if value in {"", "none", "never", "forever"}:
+        value = "persistent"
+    if value not in RETENTION_POLICIES:
+        raise ValueError("memory retention must be persistent, 7_days, 30_days, or 90_days")
+    return value
+
+
+def _retention_expiry(retention, stamp=None):
+    retention = _normalize_retention(retention)
+    duration = RETENTION_POLICIES[retention]
+    if duration is None:
+        return retention, None
+    return retention, (stamp if stamp is not None else store.now()) + duration
 
 
 def _content_hash(kind, scope, workspace_id, content):
@@ -226,6 +249,7 @@ def add_item(
     confidence=0.5,
     importance=0.5,
     canonical_key=None,
+    retention="persistent",
 ):
     store.init_db()
     kind = _normalize_kind(kind)
@@ -240,17 +264,18 @@ def add_item(
     confidence = _score(confidence)
     importance = _score(importance)
     canonical_key = _canonical_key(kind, content, canonical_key)
-    content_hash = _content_hash(kind, scope, workspace_id, content)
     item_id = store.new_id("mem")
     stamp = store.now()
+    retention, expires_at = _retention_expiry(retention, stamp)
+    content_hash = _content_hash(kind, scope, workspace_id, content)
     with store._lock, store.connect() as conn:
         conn.execute(
             """
             INSERT INTO memory_items(
               id,kind,scope,workspace_id,content,sensitive,status,source_task_id,
               created_at,updated_at,owner_id,canonical_key,confidence,importance,
-              source_session_id,source_message_ids,content_hash
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              source_session_id,source_message_ids,content_hash,retention,expires_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 item_id,
@@ -270,6 +295,8 @@ def add_item(
                 source_session_id,
                 json.dumps(source_message_ids),
                 content_hash,
+                retention,
+                expires_at,
             ),
         )
         try:
@@ -287,15 +314,60 @@ def add_item(
         "workspace_id": workspace_id,
         "status": status,
         "owner_id": owner_id,
+        "retention": retention,
+        "expires_at": expires_at,
+        "source_task_id": source_task_id,
+        "source_session_id": source_session_id,
     })
     if status == "saved" and export:
         export_markdown(owner_id)
     return get_item(item_id, owner_id)
 
 
+def _expire_items(owner_id=None, export=True):
+    """Move due saved/pending items to an auditable expired state."""
+
+    owner = _normalize_owner(owner_id) if owner_id else None
+    now = store.now()
+    where = "status IN ('saved', 'pending') AND expires_at IS NOT NULL AND expires_at <= ?"
+    params = [now]
+    if owner:
+        where += " AND owner_id=?"
+        params.append(owner)
+    with store._lock, store.connect() as conn:
+        rows = conn.execute(f"SELECT id,owner_id,status FROM memory_items WHERE {where}", params).fetchall()
+        if rows:
+            conn.executemany(
+                "UPDATE memory_items SET status='expired', updated_at=? WHERE id=?",
+                [(now, row["id"]) for row in rows],
+            )
+            try:
+                conn.executemany("DELETE FROM memory_fts WHERE id=?", [(row["id"],) for row in rows])
+            except Exception:
+                pass
+            conn.commit()
+    if not rows:
+        return 0
+    owners = {row["owner_id"] for row in rows}
+    for row in rows:
+        audit.log("memory_item_expired", {
+            "id": row["id"],
+            "owner_id": row["owner_id"],
+            "previous_status": row["status"],
+        })
+    if export:
+        for expired_owner in owners:
+            try:
+                export_markdown(expired_owner)
+            except Exception:
+                pass
+    return len(rows)
+
+
 def get_item(item_id, owner_id="admin"):
     store.init_db()
     owner_id = _normalize_owner(owner_id)
+    _expire_items(owner_id)
     with store._lock, store.connect() as conn:
         row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
     return _public(row)
@@ -307,6 +379,9 @@ def _public(row):
     data = dict(row)
     data["content"] = _parse(data.get("content", ""))
     data["source_message_ids"] = _source_message_ids(data.get("source_message_ids"))
+    data["retention"] = _normalize_retention(data.get("retention"))
+    if data.get("expires_at") is not None:
+        data["expires_at"] = float(data["expires_at"])
     data["sensitive"] = bool(data.get("sensitive"))
     for key in ("confidence", "importance"):
         if data.get(key) is not None:
@@ -319,11 +394,15 @@ def list_items(status="saved", limit=200, owner_id="admin", workspace_id=None):
     init_memory()
     owner_id = _normalize_owner(owner_id)
     status = str(status or "saved").strip().lower()
-    if status not in MEMORY_STATUSES:
+    if status not in MEMORY_STATUSES and status != "all":
         raise ValueError("memory status is invalid")
+    _expire_items(owner_id)
     workspace_id = str(workspace_id or "").strip()
-    where = "status=? AND owner_id=?"
-    params = [status, owner_id]
+    where = "owner_id=?"
+    params = [owner_id]
+    if status != "all":
+        where = "status=? AND " + where
+        params.insert(0, status)
     if workspace_id:
         where += " AND (scope='global' OR workspace_id=?)"
         params.append(workspace_id)
@@ -374,6 +453,7 @@ def update_item(item_id, updates, owner_id="admin"):
     if not isinstance(updates, dict):
         raise ValueError("memory updates must be an object")
     store.init_db()
+    _expire_items(owner_id)
     with store._lock, store.connect() as conn:
         row = conn.execute(
             "SELECT * FROM memory_items WHERE id=? AND owner_id=?",
@@ -392,13 +472,20 @@ def update_item(item_id, updates, owner_id="admin"):
         confidence = _score(updates.get("confidence", current.get("confidence")))
         importance = _score(updates.get("importance", current.get("importance")))
         canonical_key = _canonical_key(kind, content, updates.get("canonical_key", current.get("canonical_key")))
+        retention = _normalize_retention(updates.get("retention", current.get("retention")))
         content_hash = _content_hash(kind, scope, workspace_id, content)
         stamp = store.now()
+        expires_at = current.get("expires_at")
+        if "retention" in updates:
+            retention, expires_at = _retention_expiry(retention, stamp)
+        status = current.get("status") or "saved"
+        if current.get("status") == "expired" and "retention" in updates:
+            status = "saved"
         conn.execute(
             """
             UPDATE memory_items
             SET kind=?,scope=?,workspace_id=?,content=?,sensitive=?,updated_at=?,
-                canonical_key=?,confidence=?,importance=?,content_hash=?
+                canonical_key=?,confidence=?,importance=?,content_hash=?,retention=?,expires_at=?,status=?
             WHERE id=? AND owner_id=?
             """,
             (
@@ -412,18 +499,31 @@ def update_item(item_id, updates, owner_id="admin"):
                 confidence,
                 importance,
                 content_hash,
+                retention,
+                expires_at,
+                status,
                 item_id,
                 owner_id,
             ),
         )
         try:
             conn.execute("DELETE FROM memory_fts WHERE id=?", (item_id,))
-            conn.execute("INSERT INTO memory_fts(id,kind,content) VALUES(?,?,?)", (item_id, kind, _text(content)))
+            if status == "saved":
+                conn.execute("INSERT INTO memory_fts(id,kind,content) VALUES(?,?,?)", (item_id, kind, _text(content)))
         except Exception:
             pass
         conn.commit()
-    audit.log("memory_item_updated", {"id": item_id, "owner_id": owner_id, "kind": kind, "scope": scope})
-    if current.get("status") == "saved":
+    audit.log("memory_item_updated", {
+        "id": item_id,
+        "owner_id": owner_id,
+        "kind": kind,
+        "scope": scope,
+        "status": status,
+        "retention": retention,
+        "expires_at": expires_at,
+        "provenance_unchanged": True,
+    })
+    if status == "saved" or current.get("status") == "saved":
         export_markdown(owner_id)
     return get_item(item_id, owner_id)
 
@@ -451,20 +551,44 @@ def delete_item(item_id, owner_id="admin"):
     return {"deleted": True, "id": item_id}
 
 
+def _task_provenance(task_id, owner_id):
+    task_id = str(task_id or "").strip()
+    owner_id = _normalize_owner(owner_id)
+    if not task_id:
+        return None, []
+    store.init_db()
+    with store._lock, store.connect() as conn:
+        task = conn.execute(
+            "SELECT session_id FROM tasks WHERE id=? AND owner_id=?",
+            (task_id, owner_id),
+        ).fetchone()
+        if not task:
+            return None, []
+        rows = conn.execute(
+            "SELECT id FROM messages WHERE task_id=? AND session_id=? ORDER BY created_at ASC LIMIT 200",
+            (task_id, task["session_id"]),
+        ).fetchall()
+    return task["session_id"], [row["id"] for row in rows]
+
+
 def suggest_from_task(task_id, objective, result, workspace_id=None, owner_id="admin"):
+    source_session_id, source_message_ids = _task_provenance(task_id, owner_id)
     lower = f"{objective}\n{result}".lower()
     if any(word in lower for word in ["prefer", "always", "never", "remember"]):
         return add_item("preference", {
             "source": "task_review",
             "objective": objective[:500],
             "note": result[:1000],
-        }, status="pending", source_task_id=task_id, sensitive=True, owner_id=owner_id)
+        }, status="pending", source_task_id=task_id, source_session_id=source_session_id,
+            source_message_ids=source_message_ids, sensitive=True, owner_id=owner_id)
     if result:
         return add_item("workflow_lesson", {
             "source": "task_review",
             "objective": objective[:500],
             "summary": result[:1000],
-        }, scope="workspace" if workspace_id else "global", workspace_id=workspace_id, status="pending", source_task_id=task_id, owner_id=owner_id)
+        }, scope="workspace" if workspace_id else "global", workspace_id=workspace_id, status="pending",
+            source_task_id=task_id, source_session_id=source_session_id,
+            source_message_ids=source_message_ids, owner_id=owner_id)
     return None
 
 
@@ -475,6 +599,7 @@ def search(query, limit=10, owner_id="admin", workspace_id=None):
         return {"query": query, "items": []}
     owner_id = _normalize_owner(owner_id)
     workspace_id = str(workspace_id or "").strip()
+    _expire_items(owner_id)
     with store._lock, store.connect() as conn:
         try:
             rows = conn.execute(
@@ -560,13 +685,27 @@ def save_memory(data, owner_id="admin"):
     return load_memory(owner_id)
 
 
-def remember(kind, value, owner_id="admin"):
+def remember(kind, value, owner_id="admin", source_task_id=None, source_session_id=None, source_message_ids=None):
     kind = _normalize_kind(kind)
     if kind == "preference" and isinstance(value, dict):
         for key, pref in value.items():
-            add_item("preference", {"key": key, "value": pref}, owner_id=owner_id)
+            add_item(
+                "preference",
+                {"key": key, "value": pref},
+                owner_id=owner_id,
+                source_task_id=source_task_id,
+                source_session_id=source_session_id,
+                source_message_ids=source_message_ids,
+            )
     else:
-        add_item(kind, value, owner_id=owner_id)
+        add_item(
+            kind,
+            value,
+            owner_id=owner_id,
+            source_task_id=source_task_id,
+            source_session_id=source_session_id,
+            source_message_ids=source_message_ids,
+        )
     return load_memory(owner_id)
 
 
@@ -582,6 +721,7 @@ def _export_root(base, owner_id=None):
 
 def export_markdown(owner_id=None):
     store.init_db()
+    _expire_items(owner_id, export=False)
     export_root = _export_root(MEMORY_DIR, owner_id)
     export_root.mkdir(parents=True, exist_ok=True)
     projects_root = export_root / "projects"
@@ -628,6 +768,7 @@ def export_markdown(owner_id=None):
 def export_master_context(owner_id=None):
     store.init_db()
     owner = _normalize_owner(owner_id) if owner_id else "admin"
+    _expire_items(owner, export=False)
     export_root = _export_root(MASTER_CONTEXT_DIR, owner)
     export_root.mkdir(parents=True, exist_ok=True)
     # read-only-ish export; don't block normal task writes

@@ -297,6 +297,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "tasks": hub.all_tasks(limit=80, include_details=False, owner_id=username),
         "memory": load_memory(username),
         "memory_items": {"items": memory_store.list_items("saved", 200, username)},
+        "memory_expired_items": {"items": memory_store.list_items("expired", 200, username)},
         "memory_review": memory_store.pending_review(username),
         "rag_stats": rag.stats(),
         "workspace": workspace.get_active(username, is_admin),

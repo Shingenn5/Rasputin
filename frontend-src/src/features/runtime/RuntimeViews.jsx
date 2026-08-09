@@ -269,6 +269,7 @@ export function MemoryView({
   view,
   workspace,
   memoryItems,
+  memoryExpiredItems,
   memoryReview,
   memorySearchResults,
   addMemory,
@@ -284,11 +285,14 @@ export function MemoryView({
   const [workspaceId, setWorkspaceId] = useState(workspace?.activePath || "");
   const [value, setValue] = useState("");
   const [sensitive, setSensitive] = useState(false);
+  const [retention, setRetention] = useState("persistent");
   const [memoryError, setMemoryError] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editingValue, setEditingValue] = useState("");
+  const [editingRetention, setEditingRetention] = useState("persistent");
   const pending = memoryReview?.items || [];
   const saved = memoryItems?.items || [];
+  const expired = memoryExpiredItems?.items || [];
 
   useEffect(() => {
     if (!workspaceId && workspace?.activePath) setWorkspaceId(workspace.activePath);
@@ -304,9 +308,11 @@ export function MemoryView({
         scope,
         workspaceId: scope === "workspace" ? workspaceId : null,
         sensitive,
+        retention,
       });
       setValue("");
       setSensitive(false);
+      setRetention("persistent");
     } catch (error) {
       setMemoryError(error.message);
     }
@@ -315,15 +321,26 @@ export function MemoryView({
   function beginEdit(item) {
     setEditingId(item.id);
     setEditingValue(formatMemoryContent(item.content));
+    setEditingRetention(item.retention || "persistent");
     setMemoryError("");
   }
 
   async function saveEdit(item) {
     setMemoryError("");
     try {
-      await updateMemory(item.id, { value: editingValue });
+      await updateMemory(item.id, { value: editingValue, retention: editingRetention });
       setEditingId("");
       setEditingValue("");
+      setEditingRetention("persistent");
+    } catch (error) {
+      setMemoryError(error.message);
+    }
+  }
+
+  async function restoreMemory(item) {
+    setMemoryError("");
+    try {
+      await updateMemory(item.id, { retention: "persistent" });
     } catch (error) {
       setMemoryError(error.message);
     }
@@ -391,6 +408,17 @@ export function MemoryView({
                   />
                 </Col>
               </Row>
+              <Row className="g-2 mt-1">
+                <Col md={3}>
+                  <Form.Label htmlFor="memoryRetention">Retention</Form.Label>
+                  <Form.Select id="memoryRetention" value={retention} onChange={(event) => setRetention(event.target.value)}>
+                    <option value="persistent">Persistent</option>
+                    <option value="7_days">Expire after 7 days</option>
+                    <option value="30_days">Expire after 30 days</option>
+                    <option value="90_days">Expire after 90 days</option>
+                  </Form.Select>
+                </Col>
+              </Row>
               <div className="d-flex align-items-center gap-3 mt-3">
                 <Form.Check
                   id="memorySensitive"
@@ -435,6 +463,17 @@ export function MemoryView({
                           value={editingValue}
                           onChange={(event) => setEditingValue(event.target.value)}
                         />
+                        <Form.Label className="mt-2" htmlFor={`memory-retention-${item.id}`}>Retention</Form.Label>
+                        <Form.Select
+                          id={`memory-retention-${item.id}`}
+                          value={editingRetention}
+                          onChange={(event) => setEditingRetention(event.target.value)}
+                        >
+                          <option value="persistent">Persistent</option>
+                          <option value="7_days">Expire after 7 days</option>
+                          <option value="30_days">Expire after 30 days</option>
+                          <option value="90_days">Expire after 90 days</option>
+                        </Form.Select>
                         <Stack direction="horizontal" gap={2} className="mt-2">
                           <Button size="sm" onClick={() => saveEdit(item)} data-testid={`memory-save-edit-${item.id}`}>Save changes</Button>
                           <Button size="sm" variant="outline-secondary" onClick={() => setEditingId("")}>Cancel</Button>
@@ -453,6 +492,26 @@ export function MemoryView({
                 </Card>
               ))}
               {!saved.length && <p className="text-body-secondary mb-0">No saved memories yet.</p>}
+            </Stack>
+          </Card.Body>
+        </Card>
+        <Card className="settings-card shadow-sm mt-3" data-testid="memory-expired-list">
+          <Card.Body>
+            <h2>Expired memory</h2>
+            <p className="text-body-secondary">Expired records stay visible for audit and can be restored as persistent memory.</p>
+            <Stack gap={2}>
+              {expired.map((item) => (
+                <Card className="message-card" key={item.id}>
+                  <Card.Body>
+                    <MemoryItem item={item} />
+                    <Stack direction="horizontal" gap={2} className="mt-2">
+                      <Button size="sm" onClick={() => restoreMemory(item)}>Restore persistently</Button>
+                      <Button size="sm" variant="outline-danger" onClick={() => removeMemory(item)} data-testid={`memory-delete-expired-${item.id}`}>Delete</Button>
+                    </Stack>
+                  </Card.Body>
+                </Card>
+              ))}
+              {!expired.length && <p className="text-body-secondary mb-0">No expired memories.</p>}
             </Stack>
           </Card.Body>
         </Card>
@@ -1538,15 +1597,30 @@ function MemoryItem({ item }) {
   const workspaceId = item.workspaceId || item.workspace_id;
   const scope = item.scope === "workspace" ? `Workspace: ${workspaceId || "unknown"}` : "Global";
   const recallCount = Number(item.recallCount ?? item.recall_count ?? 0);
+  const retention = item.retention || "persistent";
+  const expiresAt = item.expiresAt ?? item.expires_at;
+  const sourceTask = item.sourceTaskId || item.source_task_id;
+  const sourceSession = item.sourceSessionId || item.source_session_id;
+  const sourceMessages = item.sourceMessageIds || item.source_message_ids || [];
+  const statusTone = item.status === "pending" ? "warning" : item.status === "expired" ? "danger" : "secondary";
   return (
     <div>
-      <Badge bg={item.status === "pending" ? "warning" : "secondary"}>{item.kind}</Badge>
+      <Badge bg={statusTone}>{item.status === "expired" ? "expired" : item.kind}</Badge>
       <span className="small text-body-secondary ms-2">{scope}</span>
       <p className="mb-0 mt-2">{formatMemoryContent(item.content)}</p>
       <div className="small text-body-secondary mt-2">
         Confidence {Math.round(Number(item.confidence ?? 0.5) * 100)}% · Importance {Math.round(Number(item.importance ?? 0.5) * 100)}% · Recalled {recallCount} times
         {item.sensitive && " · Sensitive"}
+        {retention !== "persistent" && ` · ${retention.replace("_", " ")}`}
+        {expiresAt && ` · Expires ${formatRuntimeTime(expiresAt)}`}
       </div>
+      {(sourceTask || sourceSession || sourceMessages.length) && (
+        <div className="small text-body-secondary mt-1">
+          Source: {sourceTask ? `task ${sourceTask}` : "manual"}
+          {sourceSession ? ` · session ${sourceSession}` : ""}
+          {sourceMessages.length ? ` · ${sourceMessages.length} message${sourceMessages.length === 1 ? "" : "s"}` : ""}
+        </div>
+      )}
     </div>
   );
 }

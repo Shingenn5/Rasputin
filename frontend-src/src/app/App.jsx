@@ -143,6 +143,7 @@ export function App() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [approvals, setApprovals] = useState({ approvals: [] });
   const [memoryItems, setMemoryItems] = useState({ items: [] });
+  const [memoryExpiredItems, setMemoryExpiredItems] = useState({ items: [] });
   const [memoryReview, setMemoryReview] = useState({ items: [] });
   const [memorySearchResults, setMemorySearchResults] = useState({ items: [] });
   const [skillRegistry, setSkillRegistry] = useState({ skills: [] });
@@ -470,6 +471,7 @@ export function App() {
     setChatFolders(data.chatFolders || { folders: [], unfiledCount: 0 });
     setApprovals(data.approvals || { approvals: [] });
     setMemoryItems(data.memoryItems || { items: [] });
+    setMemoryExpiredItems(data.memoryExpiredItems || { items: [] });
     setMemoryReview(data.memoryReview || { items: [] });
     setSkillRegistry(data.skillRegistry || { skills: [] });
     setTelegramConfig(data.telegram || null);
@@ -1444,11 +1446,12 @@ export function App() {
   }
 
   async function loadRuntimeData() {
-    const [nextSessions, nextChatFolders, nextApprovals, nextMemoryItems, nextMemoryReview, nextSkills, nextTelegram, nextSchedules] = await Promise.all([
+    const [nextSessions, nextChatFolders, nextApprovals, nextMemoryItems, nextMemoryExpiredItems, nextMemoryReview, nextSkills, nextTelegram, nextSchedules] = await Promise.all([
       api("/api/sessions"),
       api("/api/chat-folders"),
       api("/api/approvals"),
       api("/api/memory/items?status=saved&limit=200"),
+      api("/api/memory/items?status=expired&limit=200"),
       api("/api/memory/review"),
       api("/api/skills"),
       api("/api/integrations/telegram"),
@@ -1458,6 +1461,7 @@ export function App() {
     setChatFolders(nextChatFolders);
     setApprovals(nextApprovals);
     setMemoryItems(nextMemoryItems);
+    setMemoryExpiredItems(nextMemoryExpiredItems);
     setMemoryReview(nextMemoryReview);
     setSkillRegistry(nextSkills);
     setTelegramConfig(nextTelegram);
@@ -1849,16 +1853,25 @@ export function App() {
     setMemorySearchResults(await postJson("/api/memory/search", { query, limit: 10 }));
   }
 
+  async function refreshMemoryItems() {
+    const [saved, expired] = await Promise.all([
+      api("/api/memory/items?status=saved&limit=200"),
+      api("/api/memory/items?status=expired&limit=200"),
+    ]);
+    setMemoryItems(saved);
+    setMemoryExpiredItems(expired);
+  }
+
   async function addMemory(payload) {
     const result = await postJson("/api/memory", payload);
-    setMemoryItems(await api("/api/memory/items?status=saved&limit=200"));
+    await refreshMemoryItems();
     setGlobalStatus("Memory saved.");
     return result;
   }
 
   async function updateMemory(id, payload) {
     const result = await api(`/api/memory/items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    setMemoryItems(await api("/api/memory/items?status=saved&limit=200"));
+    await refreshMemoryItems();
     setMemorySearchResults((current) => ({
       ...current,
       items: (current.items || []).map((item) => item.id === id ? result : item),
@@ -1869,7 +1882,7 @@ export function App() {
 
   async function deleteMemory(id) {
     await api(`/api/memory/items/${id}`, { method: "DELETE" });
-    setMemoryItems(await api("/api/memory/items?status=saved&limit=200"));
+    await refreshMemoryItems();
     setMemorySearchResults((current) => ({ ...current, items: (current.items || []).filter((item) => item.id !== id) }));
     setGlobalStatus("Memory deleted.");
   }
@@ -2355,6 +2368,7 @@ export function App() {
         view={view}
         workspace={workspace}
         memoryItems={memoryItems}
+        memoryExpiredItems={memoryExpiredItems}
         memoryReview={memoryReview}
         memorySearchResults={memorySearchResults}
         addMemory={addMemory}
