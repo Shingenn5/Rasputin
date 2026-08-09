@@ -643,7 +643,12 @@ def public_tool(tool, server):
         "mcpToolName": tool_name,
         "classified": classified,
     }
-    return tool_relay.public_definition(definition) if classified else definition
+    return tool_relay.public_definition(
+        definition,
+        cfg=security.load(),
+        external=True,
+        reason_override=disabled_reason or None,
+    )
 
 
 def encode_tool_id(server_id, tool_name):

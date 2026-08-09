@@ -747,13 +747,22 @@ class BackendSmokeTests(unittest.TestCase):
         catalog = self.assertOk(self.client.get("/api/tools"))
         self.assertIn("groups", catalog)
         self.assertIn("tools", catalog)
+        self.assertEqual(catalog["contract"]["name"], "rasputin.mcp.capabilities")
+        self.assertEqual(catalog["contract"]["version"], "1.0")
+        self.assertEqual(catalog["contract"]["discoveryMode"], "fail_closed")
+        self.assertTrue(catalog["callableTools"])
         ids = {item["id"] for item in catalog["tools"]}
         for tool_id in ["rag_search", "graph_search", "graph_relations", "workspace_browse", "file_preview", "fs_search", "workspace_mutation_preview", "memory_search", "model_health", "fs_write", "web_search"]:
             self.assertIn(tool_id, ids)
+        for item in catalog["tools"]:
+            for field in ["contractVersion", "schemaVersion", "source", "discoverable", "callable", "availability"]:
+                self.assertIn(field, item)
         shell = next(item for item in catalog["tools"] if item["id"] == "shell_exec")
         self.assertTrue(shell["implemented"])
         self.assertFalse(shell["available"])
+        self.assertFalse(shell["callable"])
         self.assertIn("allow_shell_execution", shell["disabledReason"])
+        self.assertNotIn("shell_exec", {item["id"] for item in catalog["callableTools"]})
 
         task_id = runtime_store.new_id("toolsmoke")
         result = asyncio.run(McpLayer().call_tool("fs_read", {
@@ -912,6 +921,10 @@ class BackendSmokeTests(unittest.TestCase):
             self.assertIn("lastDiscoveredAt", stdio["server"])
             tool_id = stdio["tools"][0]["id"]
             self.assertFalse(stdio["tools"][0]["available"])
+            self.assertFalse(stdio["tools"][0]["callable"])
+            self.assertEqual(stdio["tools"][0]["contract_version"], "1.0")
+            self.assertEqual(stdio["tools"][0]["source"], "external_mcp")
+            self.assertEqual(stdio["tools"][0]["disabled_reason"], "Tool classification required.")
             server_tools = self.assertOk(self.client.get(f"/api/mcp/servers/{relay_id}/tools"))
             self.assertEqual(server_tools["tools"][0]["id"], tool_id)
             self.assertEqual(server_tools["resources"], [])
@@ -923,6 +936,8 @@ class BackendSmokeTests(unittest.TestCase):
                 "enabled": True,
             }))
             self.assertTrue(classified["available"])
+            self.assertTrue(classified["callable"])
+            self.assertEqual(classified["contractVersion"], "1.0")
             result = await McpLayer().call_tool(tool_id, {"message": "mcp ok"})
             self.assertEqual(result["structuredContent"]["echo"], "mcp ok")
             stopped = await mcp_relay.stop(relay_id)
@@ -4706,6 +4721,37 @@ class BackendSmokeTests(unittest.TestCase):
             for entry in task.trace
         ))
 
+    def testModelToolSurfaceOnlyAdvertisesCallableDefinitions(self):
+        cfg = {
+            "allow_file_read": True,
+            "allow_file_write": False,
+            "allow_file_reorganize": False,
+            "allow_shell_execution": False,
+            "allow_web_search": True,
+            "allow_model_tests": True,
+            "unattended_mode": False,
+        }
+        with patch.dict(os.environ, {"RASPUTIN_UNATTENDED": "0"}, clear=False):
+            with patch("backend.core.security.load", return_value=cfg):
+                task = agent.AgentTask(
+                    "callable surface fixture",
+                    "dry-run",
+                    "general",
+                    workspace_path=".",
+                    mode="code",
+                    task_id="callable-surface",
+                )
+                surface = hub._agent_tools(task, "execution")
+
+        ids = {item["id"] for item in surface}
+        self.assertIn("fs_read", ids)
+        self.assertNotIn("fs_write", ids)
+        self.assertNotIn("shell_exec", ids)
+        self.assertNotIn("docker_control", ids)
+        self.assertTrue(surface)
+        self.assertTrue(all(item["callable"] and item["available"] for item in surface))
+        self.assertTrue(all(item["contract_version"] == "1.0" for item in surface))
+
     def testAgentHubRejectsInvalidIsolatedTaskConfigurations(self):
         with self.assertRaisesRegex(ValueError, "only for a Code task"):
             hub.start("fixture", mode="chat", isolate_workspace=True)
@@ -4828,7 +4874,7 @@ class BackendSmokeTests(unittest.TestCase):
         async def scripted_chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
             call_count["n"] += 1
             if call_count["n"] <= 5:
-                return "", [{"id": f"call-{call_count['n']}", "name": "shell_exec", "args": {"command": "echo hi"}}]
+                return "", [{"id": f"call-{call_count['n']}", "name": "fs_read", "args": {"path": "README.md"}}]
             return "final answer", []
 
         async def fake_call_tool(name, args, on_log=None):

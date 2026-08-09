@@ -3,6 +3,21 @@ from copy import deepcopy
 from backend.core import security as security
 from backend.core import unattended as unattended
 
+CAPABILITY_CONTRACT_NAME = "rasputin.mcp.capabilities"
+CAPABILITY_CONTRACT_VERSION = "1.0"
+CAPABILITY_SCHEMA_VERSION = "json-schema-2020-12"
+
+
+def capability_contract():
+    """Return the stable contract advertised by tool discovery endpoints."""
+
+    return {
+        "name": CAPABILITY_CONTRACT_NAME,
+        "version": CAPABILITY_CONTRACT_VERSION,
+        "schema_version": CAPABILITY_SCHEMA_VERSION,
+        "discovery_mode": "fail_closed",
+    }
+
 SENSITIVE_KEYS = {
     "content",
     "diff",
@@ -604,12 +619,16 @@ def permission_allowed(definition, cfg=None):
     return bool((cfg or security.load()).get(flag))
 
 
-def disabled_reason(definition, cfg=None):
+def disabled_reason(definition, cfg=None, args=None, external=None):
+    if external is None:
+        external = bool(definition.get("external"))
     if not definition.get("implemented", False):
         return "Not implemented in Tool Relay V1."
     if not definition.get("enabled", True):
         return "Disabled by Tool Relay policy."
-    unattended_reason = unattended.disabled_reason(definition.get("id"), cfg=cfg)
+    unattended_reason = unattended.disabled_reason(
+        definition.get("id"), cfg=cfg, external=external, args=args,
+    )
     if unattended_reason:
         return unattended_reason
     flag = definition.get("permission_flag")
@@ -618,13 +637,46 @@ def disabled_reason(definition, cfg=None):
     return ""
 
 
-def public_definition(definition, cfg=None):
-    cfg = cfg or security.load()
+def public_definition(definition, cfg=None, args=None, external=None, reason_override=None):
+    cfg = cfg if cfg is not None else security.load()
+    if external is None:
+        external = bool(definition.get("external"))
     item = deepcopy(definition)
-    reason = disabled_reason(item, cfg)
+    reason = reason_override if reason_override is not None else disabled_reason(
+        item, cfg, args=args, external=external,
+    )
+    schema_valid = isinstance(item.get("input_schema"), dict)
+    if not schema_valid and not reason:
+        reason = "Tool input schema is invalid."
     item["available"] = not bool(reason)
     item["disabled_reason"] = reason
+    item["callable"] = item["available"]
+    item["discoverable"] = True
+    item["contract_version"] = CAPABILITY_CONTRACT_VERSION
+    item["schema_version"] = CAPABILITY_SCHEMA_VERSION
+    item["source"] = "external_mcp" if external else "internal_tool_relay"
+    item["availability"] = "callable" if item["callable"] else "blocked"
     return item
+
+
+def callable_definitions(definitions=None, cfg=None, args=None):
+    """Return only definitions that are callable under the current policy.
+
+    The full catalog intentionally retains blocked entries and their reasons
+    for operator visibility. Model-facing schemas use this fail-closed view so
+    a model is not offered a tool that the runtime will reject immediately.
+    """
+
+    cfg = cfg if cfg is not None else security.load()
+    source = TOOL_DEFINITIONS if definitions is None else definitions
+    return [
+        item
+        for item in (
+            public_definition(definition, cfg, args=args)
+            for definition in source
+        )
+        if item.get("callable")
+    ]
 
 
 def catalog(include_external=True):
@@ -641,7 +693,9 @@ def catalog(include_external=True):
         if item["category"] not in categories:
             categories.append(item["category"])
     return {
+        "contract": capability_contract(),
         "tools": tools,
+        "callable_tools": [item for item in tools if item.get("callable")],
         "groups": [
             {
                 "category": category,

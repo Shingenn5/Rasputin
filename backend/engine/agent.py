@@ -43,7 +43,6 @@ from backend.rag import memory as memory
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
 from backend.core import security as security
-from backend.core import unattended as unattended
 from backend.core import audit as audit
 from backend.mcp import tools as tool_relay
 from backend.core import workspace
@@ -1315,7 +1314,15 @@ class AgentHub:
         else:
             blocked = ISOLATED_PLANNING_BLOCKED_TOOLS if phase == "planning" else ISOLATED_EXECUTION_BLOCKED_TOOLS
             tools = [item for item in tool_relay.TOOL_DEFINITIONS if item.get("id") not in blocked]
-        return unattended.filter_definitions(tools)
+        # The model-facing surface must contain only tools that the current
+        # permission and unattended policies will actually allow. The full
+        # catalog remains available to operators with blocked reasons, but a
+        # model should not be offered a schema that will fail at invocation.
+        return tool_relay.callable_definitions(
+            tools,
+            cfg=getattr(task, "permission_snapshot", None),
+            args={"workspace_path": task.execution_workspace or task.workspace},
+        )
 
     def _pin_execution_workspace(self, task, phase, tool_name, args):
         """Ignore model-supplied workspace roots during isolated execution."""
