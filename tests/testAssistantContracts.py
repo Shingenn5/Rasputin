@@ -16,6 +16,7 @@ from backend import main
 from backend.api.core import current_user, hub
 from backend.assistant import contracts
 from backend.assistant import runtime
+from backend.assistant import voice
 from backend.core import runtime_store
 from backend.core import security
 from backend.core import workspace
@@ -284,6 +285,109 @@ class AssistantContractTests(unittest.TestCase):
         self.assertFalse(data["execution"]["started"])
         self.assertFalse(data["execution"]["modelsStarted"])
         self.assertFalse(data["execution"]["audioIoStarted"])
+
+    def test_local_voice_http_adapters_are_bounded_role_checked_and_device_free(self):
+        stt_model = {
+            "key": "stt-local",
+            "model": "whisper-local",
+            "role": "speech_to_text",
+            "base_url": "http://127.0.0.1:9911/v1",
+            "enabled": True,
+        }
+        tts_model = {
+            "key": "tts-local",
+            "model": "piper-local",
+            "role": "text_to_speech",
+            "base_url": "http://127.0.0.1:9912/v1",
+            "enabled": True,
+        }
+
+        with patch("backend.api.assistant.voice.resolve_model", return_value=stt_model), patch(
+            "backend.api.assistant.voice.transcribe",
+            return_value={
+                "contract_version": "0.1",
+                "operation": "transcribe",
+                "model_key": "stt-local",
+                "text": "hello from local audio",
+                "stage": "transcribed",
+                "audio_io_started": False,
+            },
+        ) as transcriber:
+            response = self.client.post(
+                "/api/assistant/voice/transcribe?modelKey=stt-local",
+                content=b"RIFF fixture audio",
+                headers={"content-type": "audio/wav", "x-filename": "fixture.wav"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        transcript = response.json()["data"]
+        self.assertEqual(transcript["contractVersion"], "0.1")
+        self.assertEqual(transcript["text"], "hello from local audio")
+        self.assertFalse(transcript["audioIoStarted"])
+        transcriber.assert_called_once()
+        self.assertEqual(transcriber.call_args.args[1], b"RIFF fixture audio")
+
+        with patch("backend.api.assistant.voice.resolve_model", return_value=tts_model), patch(
+            "backend.api.assistant.voice.synthesize",
+            return_value={
+                "contract_version": "0.1",
+                "operation": "synthesize",
+                "model_key": "tts-local",
+                "response_format": "wav",
+                "content_type": "audio/wav",
+                "audio": b"RIFF synthesized audio",
+            },
+        ) as synthesizer:
+            response = self.client.post(
+                "/api/assistant/voice/synthesize",
+                json={"modelKey": "tts-local", "text": "hello back", "responseFormat": "wav"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["content-type"], "audio/wav")
+        self.assertEqual(response.headers["x-rasputin-voice-contract"], "0.1")
+        self.assertEqual(response.content, b"RIFF synthesized audio")
+        synthesizer.assert_called_once()
+
+        with self.assertRaisesRegex(Exception, "only support local"):
+            voice._base_url({"base_url": "https://example.invalid/v1"})
+
+        class FakeHeaders:
+            def get_content_type(self):
+                return "audio/wav"
+
+        class FakeResponse:
+            def __init__(self, content):
+                self._content = content
+                self.headers = FakeHeaders()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, *_args):
+                return self._content
+
+        with patch(
+            "backend.assistant.voice.urllib.request.urlopen",
+            return_value=FakeResponse(b'{"text":"captured locally"}'),
+        ) as opened:
+            adapter_result = voice.transcribe(stt_model, b"RIFF audio", "sample.wav", "audio/wav")
+        self.assertEqual(adapter_result["text"], "captured locally")
+        request = opened.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/audio/transcriptions"))
+        self.assertIn(b"whisper-local", request.data)
+        self.assertIn(b"sample.wav", request.data)
+
+        with patch(
+            "backend.assistant.voice.urllib.request.urlopen",
+            return_value=FakeResponse(b"RIFF synthesized"),
+        ) as opened:
+            audio_result = voice.synthesize(tts_model, "speak locally", response_format="wav")
+        self.assertEqual(audio_result["audio"], b"RIFF synthesized")
+        speech_request = opened.call_args.args[0]
+        self.assertTrue(speech_request.full_url.endswith("/audio/speech"))
+        self.assertIn(b"speak locally", speech_request.data)
 
     def test_context_preview_exposes_owner_scoped_cross_workspace_contract(self):
         response = self.client.post(

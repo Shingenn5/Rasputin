@@ -28,6 +28,9 @@ These are the documents to consult before starting implementation work.
 | [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md) | Native versus Docker runtime behavior | Runtime contract |
 | [`REMAINING_WORK.md`](REMAINING_WORK.md) | Dual-mode/security residuals and packaging track | Track-specific status; not a replacement for the checklist |
 | [`LASTING_MEMORY.md`](LASTING_MEMORY.md) | Owner/workspace-scoped durable memory contract and current API/UI | Implemented foundation; follow-up slices remain |
+| [`MCP_CAPABILITY_CONTRACT.md`](MCP_CAPABILITY_CONTRACT.md) | Versioned MCP tool discovery and callable-only model surface | Implemented capability contract |
+| [`ASSISTANT_COMMAND_ROUTING.md`](ASSISTANT_COMMAND_ROUTING.md) | Deterministic assistant command previews and approval states | Implemented preview boundary |
+| [`LOCAL_VOICE_ADAPTER.md`](LOCAL_VOICE_ADAPTER.md) | Local speech-to-text and text-to-speech transport contract | Implemented device-free vertical slice |
 
 ## Product direction and design records
 

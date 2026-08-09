@@ -1,10 +1,13 @@
 """HTTP surface for Rasputin identity and approval-aware orchestration."""
 
-from fastapi import APIRouter, Depends
+import asyncio
+
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
 
 from backend.api.core import CamelModel, current_user, require_member
 from backend.assistant import runtime
+from backend.assistant import voice
 from backend.core import audit
 from backend.core import workspace
 from backend.core.response import ok
@@ -61,6 +64,13 @@ class VoicePreviewIn(CamelModel):
     conversation_id: str | None = None
 
 
+class VoiceSynthesisIn(CamelModel):
+    text: str
+    model_key: str | None = None
+    voice: str | None = None
+    response_format: str = "wav"
+
+
 class ContextPreviewIn(CamelModel):
     objective: str = ""
     workspace_path: str | None = None
@@ -106,6 +116,48 @@ async def assistant_voice_preview(req: VoicePreviewIn, _user=Depends(require_mem
             output_model_key=req.output_model_key,
             conversation_id=req.conversation_id,
         )
+    )
+
+
+@router.post("/voice/transcribe")
+async def assistant_voice_transcribe(request: Request, model_key: str | None = None, _user=Depends(require_member)):
+    content_length = int(request.headers.get("content-length") or 0)
+    if content_length > voice.MAX_AUDIO_BYTES:
+        raise ValueError(f"Audio input is limited to {voice.MAX_AUDIO_BYTES} bytes.")
+    audio = await request.body()
+    if not audio:
+        raise ValueError("Audio input is required.")
+    if len(audio) > voice.MAX_AUDIO_BYTES:
+        raise ValueError(f"Audio input is limited to {voice.MAX_AUDIO_BYTES} bytes.")
+    model = voice.resolve_model(model_key, "speech_to_text")
+    result = await asyncio.to_thread(
+        voice.transcribe,
+        model,
+        audio,
+        request.headers.get("x-filename") or "audio.wav",
+        request.headers.get("content-type") or "audio/wav",
+    )
+    return ok(result)
+
+
+@router.post("/voice/synthesize")
+async def assistant_voice_synthesize(req: VoiceSynthesisIn, _user=Depends(require_member)):
+    model = voice.resolve_model(req.model_key, "text_to_speech")
+    result = await asyncio.to_thread(
+        voice.synthesize,
+        model,
+        req.text,
+        req.voice,
+        req.response_format,
+    )
+    return Response(
+        content=result["audio"],
+        media_type=result["content_type"],
+        headers={
+            "X-Rasputin-Voice-Contract": result["contract_version"],
+            "X-Rasputin-Voice-Model": str(result.get("model_key") or ""),
+            "Content-Disposition": f'inline; filename="rasputin-speech.{result["response_format"]}"',
+        },
     )
 
 
