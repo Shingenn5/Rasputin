@@ -107,6 +107,7 @@ class TaskIn(CamelModel):
     model: str = "dry-run"
     skill: str = "general"
     mode: str = "chat"
+    memory_mode: str = "auto"
     reasoning: str = "auto"
     subagents: int = 0
     workspace_path: str | None = None
@@ -203,6 +204,7 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
         resolved_mode,
         req.session_id,
         reasoning=req.reasoning,
+        memory_mode=req.memory_mode,
         owner_id=_user["username"],
         priority=req.priority,
         scheduled_for=req.scheduled_for,

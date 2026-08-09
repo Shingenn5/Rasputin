@@ -69,16 +69,23 @@ FILE_SNIPPET_TERMS = (
     "read", "inspect", "scan", "analyze", "summarize", "review", "look through",
     "file base", "filebase", "codebase", "repo", "repository", "project",
 )
+MEMORY_MODES = {"auto", "include", "suppress"}
+
+
+def normalize_memory_mode(value):
+    mode = str(value or "auto").strip().lower()
+    return mode if mode in MEMORY_MODES else "auto"
 
 
 class AgentTask:
-    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None, isolate_workspace=False, isolation_state="none", execution_workspace="", isolation_metadata=None, context_capsule_id=None):
+    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None, isolate_workspace=False, isolation_state="none", execution_workspace="", isolation_metadata=None, context_capsule_id=None, memory_mode="auto"):
         self.id = task_id or str(uuid.uuid4())[:8]
         self.session_id = session_id or store.new_id("sess")
         self.objective = objective
         self.model = model
         self.skill = skill or "general"
         self.mode = mode or "chat"
+        self.memory_mode = normalize_memory_mode(memory_mode)
         self.reasoning = reasoning if reasoning in {"auto", "off", "low", "medium", "high"} else "auto"
         self.priority = max(-10, min(int(priority or 0), 10))
         self.scheduled_for = float(scheduled_for) if scheduled_for else None
@@ -298,6 +305,7 @@ class AgentHub:
             task_id=row["id"],
             session_id=row["session_id"],
             reasoning=row["reasoning"] or "auto",
+            memory_mode=row["memory_mode"] or "auto",
             priority=row["priority"],
             scheduled_for=row["scheduled_for"],
             subagents=row["subagents"],
@@ -488,8 +496,8 @@ class AgentHub:
                   workspace,permission_snapshot,isolation_requested,isolation_state,execution_workspace,isolation_metadata,
                   paused,created_at,updated_at,owner_id,reasoning,
                   subagents,priority,queue_order,scheduled_for,started_at,completed_at,attempt_count,
-                  max_attempts,source_task_id,context_capsule_id
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  max_attempts,source_task_id,context_capsule_id,memory_mode
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                   status=excluded.status,
                   progress=excluded.progress,
@@ -506,6 +514,7 @@ class AgentHub:
                   completed_at=excluded.completed_at,
                   attempt_count=excluded.attempt_count,
                   context_capsule_id=excluded.context_capsule_id,
+                  memory_mode=excluded.memory_mode,
                   updated_at=excluded.updated_at
                 """,
                 (
@@ -540,6 +549,7 @@ class AgentHub:
                     task.max_attempts,
                     task.source_task_id,
                     task.context_capsule_id,
+                    task.memory_mode,
                 ),
             )
             conn.commit()
@@ -584,6 +594,7 @@ class AgentHub:
             "model": task.model,
             "skill": task.skill,
             "mode": task.mode,
+            "memoryMode": getattr(task, "memory_mode", "auto"),
             "reasoning": getattr(task, "reasoning", "auto"),
             "subagents": getattr(task, "subagents", 0),
             "priority": getattr(task, "priority", 0),
@@ -627,6 +638,7 @@ class AgentHub:
             "model": task["model"],
             "skill": task["skill"],
             "mode": task["mode"],
+            "memoryMode": task.get("memory_mode") or "auto",
             "status": task["status"],
             "progress": task["progress"],
             "logs": [],
@@ -1009,6 +1021,7 @@ class AgentHub:
         source_task_id=None,
         isolate_workspace=False,
         context_capsule_id=None,
+        memory_mode="auto",
     ):
         if context_capsule_id:
             capsule = store.get_assistant_context_capsule(owner_id, context_capsule_id)
@@ -1059,6 +1072,7 @@ class AgentHub:
             source_task_id=source_task_id,
             isolate_workspace=isolate_workspace,
             context_capsule_id=context_capsule_id,
+            memory_mode=memory_mode,
         )
         if mode != requested_mode:
             task.log("Selected model does not support tool execution; switched to Chat mode before starting.")
@@ -1206,6 +1220,7 @@ class AgentHub:
             source_task_id=task_id,
             isolate_workspace=original.get("isolateWorkspace", False),
             context_capsule_id=original.get("contextCapsuleId"),
+            memory_mode=original.get("memoryMode", "auto"),
         )
 
     async def set_priority(self, task_id, priority, owner_id="admin"):
@@ -1793,6 +1808,32 @@ class AgentHub:
         finally:
             task.stream_text = ""
 
+    def _recall_memory(self, task, query, limit, owner_id, token_budget, phase):
+        mode = normalize_memory_mode(getattr(task, "memory_mode", "auto"))
+        if mode == "suppress":
+            task.seen("memory_recall", {
+                "status": "suppressed",
+                "mode": mode,
+                "reason": "task_memory_mode",
+                "items": 0,
+                "tokenBudget": token_budget,
+                "workspace": task.workspace,
+                "phase": phase,
+            })
+            task.log("memory recall suppressed by task setting")
+            return None
+        recall = memory.search(query, limit, owner_id, task.workspace) or {"items": []}
+        task.seen("memory_recall", {
+            "status": "included",
+            "mode": mode,
+            "forced": mode == "include",
+            "items": len(recall.get("items", [])),
+            "tokenBudget": token_budget,
+            "workspace": task.workspace,
+            "phase": phase,
+        })
+        return recall
+
     async def chat_reply(self, task):
         owner_id = getattr(task, "owner_id", "admin")
         try:
@@ -1806,11 +1847,13 @@ class AgentHub:
         light_context = prompt_profile in {"light", "minimal"}
         previous_messages = self.recent_messages(task.session_id, 4 if light_context else 10)
         memory_tokens = context_governor.memory_budget(model_key)
-        recall = memory.search(
+        recall = self._recall_memory(
+            task,
             task.objective,
             3 if light_context else 5,
             owner_id,
-            task.workspace,
+            memory_tokens,
+            "chat",
         )
         if light_context:
             context = {"hits": []}
@@ -1821,6 +1864,7 @@ class AgentHub:
                 "profile": "light",
                 "workspaceRetrievalSkipped": True,
                 "memoryTokenBudget": memory_tokens,
+                "memoryMode": getattr(task, "memory_mode", "auto"),
             })
             task.log("lightweight Chat context selected from the model compatibility profile")
         else:
@@ -1829,17 +1873,22 @@ class AgentHub:
             workspace_context = await self.workspace_context(task)
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = self.compact_graph_edges(graph)
-        task.seen("memory_recall", {
-            "items": len(recall.get("items", [])),
-            "tokenBudget": memory_tokens,
-            "workspace": task.workspace,
-        })
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
         if task.sources:
             task.log(f"rag hits: {len(task.sources)}")
         if task.graph:
             task.log(f"graph hits: {len(task.graph)}")
+        memory_sections = []
+        if recall is not None:
+            memory_sections.append(context_governor.section(
+                "memory_recall",
+                "Relevant memory recall",
+                self.format_memory(recall, memory_tokens),
+                required=normalize_memory_mode(getattr(task, "memory_mode", "auto")) == "include",
+                priority=20,
+                min_chars=120 if light_context else 180,
+            ))
         sections = [
             context_governor.section(
                 "assistant_identity",
@@ -1852,13 +1901,7 @@ class AgentHub:
             context_governor.section("compacted_history", "Compacted earlier history", session_summary, priority=5, min_chars=180),
             context_governor.section("previous_conversation", "Previous conversation", self.format_conversation(previous_messages, task.id), priority=10, min_chars=220),
             context_governor.section("workspace", "Workspace", "" if light_context else task.workspace, required=not light_context, priority=0),
-            context_governor.section(
-                "memory_recall",
-                "Relevant memory recall",
-                self.format_memory(recall, memory_tokens),
-                priority=20,
-                min_chars=120 if light_context else 180,
-            ),
+            *memory_sections,
             context_governor.section("rag_sources", "Actual local RAG context", "" if light_context else self.format_context(context), priority=25, min_chars=240),
             context_governor.section("graph_evidence", "Actual local graph context", "" if light_context else self.format_graph(graph), priority=30, min_chars=180),
             context_governor.section("file_snippets", "Approved workspace file snippets", "" if light_context else self.format_workspace_snippets(workspace_context), priority=35, min_chars=260),
@@ -1902,24 +1945,29 @@ class AgentHub:
         owner_id = getattr(task, "owner_id", "admin")
         model_key = self.phase_model(task, "planner")
         memory_tokens = context_governor.memory_budget(model_key)
-        recall = memory.search(task.objective, 5, owner_id, task.workspace)
+        recall = self._recall_memory(task, task.objective, 5, owner_id, memory_tokens, "planning")
         context = await self.mcp.call_tool("rag_search", {"query": task.objective, "limit": 3, "workspace_path": task.workspace, "_task_id": task.id})
         graph = await self.mcp.call_tool("graph_search", {"query": task.objective, "limit": 4, "_task_id": task.id})
         task.sources = [{"source": h["source"], "score": h["score"], "chunk": h["chunk"]} for h in context.get("hits", [])]
         task.graph = self.compact_graph_edges(graph)
-        task.seen("memory_recall", {
-            "items": len(recall.get("items", [])),
-            "tokenBudget": memory_tokens,
-            "workspace": task.workspace,
-        })
         task.seen("rag_context", {"hits": len(context.get("hits", [])), "workspace": task.workspace})
         task.seen("graph_context", {"edges": len(graph.get("edges", []))})
+        memory_sections = []
+        if recall is not None:
+            memory_sections.append(context_governor.section(
+                "memory_recall",
+                "Relevant memory recall",
+                self.format_memory(recall, memory_tokens),
+                required=normalize_memory_mode(getattr(task, "memory_mode", "auto")) == "include",
+                priority=20,
+                min_chars=180,
+            ))
         sections = [
             context_governor.section("planner_instruction", "Instruction", "Plan this task in 3-6 steps.", required=True, priority=0),
             context_governor.section("mode", "Mode", task.mode, required=True, priority=0),
             context_governor.section("current_user_message", "Task", task.objective, required=True, priority=0, min_chars=500),
             context_governor.section("workspace", "Workspace", task.workspace, required=True, priority=0),
-            context_governor.section("memory_recall", "Relevant memory recall", self.format_memory(recall, memory_tokens), priority=20, min_chars=180),
+            *memory_sections,
             context_governor.section("rag_sources", "Local RAG context", self.format_context(context), priority=25, min_chars=240),
             context_governor.section("graph_evidence", "Local graph context", self.format_graph(graph), priority=30, min_chars=180),
             context_governor.section(
@@ -2386,6 +2434,7 @@ class AgentHub:
                 parent.workspace,
                 parent.mode,
                 context_capsule_id=getattr(parent, "context_capsule_id", None),
+                memory_mode=getattr(parent, "memory_mode", "auto"),
             )
             child.owner_id = getattr(parent, "owner_id", "admin")
             self._wire(child)

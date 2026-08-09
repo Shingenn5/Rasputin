@@ -105,6 +105,12 @@ const reasoningOptions = [
   { value: "high", label: "High", description: "Deep reasoning for hard problems." },
 ];
 
+const memoryModeOptions = [
+  { value: "auto", label: "Memory: Auto", description: "Recall relevant saved memory when the task context allows it." },
+  { value: "include", label: "Memory: Include", description: "Explicitly include owner-scoped saved memory for this task." },
+  { value: "suppress", label: "Memory: Suppress", description: "Do not search or inject saved memory for this task." },
+];
+
 const modePlaceholders = {
   chat: "Message Rasputin...  ( / for commands )",
   analyze: "Ask about your documents or draft new ones...",
@@ -141,6 +147,8 @@ export function HomeView(props) {
     resumeTask,
     taskMode,
     setTaskMode,
+    memoryMode,
+    setMemoryMode,
     reasoningMode,
     setReasoningMode,
     queuedMessages,
@@ -938,6 +946,20 @@ export function HomeView(props) {
                       <span>{activeReasoning.label}</span>
                       <ChevronDown size={12} />
                     </button>
+                    <label className="composer-chip" title={(memoryModeOptions.find((item) => item.value === memoryMode) || memoryModeOptions[0]).description}>
+                      <Brain size={14} aria-hidden="true" />
+                      <span>{(memoryModeOptions.find((item) => item.value === memoryMode) || memoryModeOptions[0]).label}</span>
+                      <select
+                        data-testid="task-memory-mode-selector"
+                        aria-label="Task memory mode"
+                        value={memoryMode || "auto"}
+                        onChange={(event) => setMemoryMode?.(event.target.value)}
+                      >
+                        {memoryModeOptions.map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
                     {taskMode === "code" && (
                       <label
                         className="composer-chip"
@@ -1296,6 +1318,7 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           <dl className="detail-grid">
             <dt>Model</dt><dd>{displayModelName(task.model, models)}</dd>
             <dt>Mode</dt><dd>{task.mode || "chat"}</dd>
+            <dt>Memory</dt><dd>{labelize(task.memoryMode || "auto")}</dd>
             {task.reasoning && task.reasoning !== "auto" && (
               <>
                 <dt>Reasoning</dt><dd>{labelize(task.reasoning)}</dd>

@@ -43,6 +43,24 @@ the owner explicitly opts into sensitive context. Retrieved memory is wrapped
 as untrusted evidence before it reaches a model, so saved text cannot become a
 policy instruction by itself.
 
+## Per-task recall controls
+
+Every task carries a `memoryMode` (`auto`, `include`, or `suppress`) and the
+setting is persisted with the task so it survives queueing and restarts:
+
+- `auto` is the backwards-compatible default and recalls owner/workspace-safe
+  memory using the normal context budget;
+- `include` records that recall was explicitly requested and keeps the memory
+  section available even when a task is otherwise using a reduced context
+  profile;
+- `suppress` skips the memory search entirely and omits the memory section from
+  the model prompt. The task trace records the suppression reason without
+  exposing saved memory contents.
+
+The Chat composer exposes this as a per-task selector. The selected default is
+stored in user preferences, while the value sent with each task remains visible
+in task details and can be audited alongside the `memory_recall` trace.
+
 ## User workflow
 
 The Memory view supports:
@@ -80,7 +98,6 @@ memory slices should add:
 - visible source/session links and a “why was this recalled?” explanation;
 - richer conflict explanations and correction history in the UI;
 - export/delete-all workflows;
-- explicit per-task memory inclusion/suppression controls;
 - measured consolidation from completed conversations, with suggestions kept
   pending until reviewed;
 - semantic/hybrid recall only after the owner-controlled lifecycle is stable.

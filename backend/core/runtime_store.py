@@ -340,6 +340,7 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''")
         task_migrations = {
             "reasoning": "TEXT NOT NULL DEFAULT 'auto'",
+            "memory_mode": "TEXT NOT NULL DEFAULT 'auto'",
             "subagents": "INTEGER NOT NULL DEFAULT 0",
             "priority": "INTEGER NOT NULL DEFAULT 0",
             "queue_order": "REAL NOT NULL DEFAULT 0",

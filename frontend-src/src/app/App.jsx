@@ -113,6 +113,7 @@ export function App() {
   const [selectedModel, setSelectedModel] = useState(null);
   const [testingMode, setTestingMode] = useState(false);
   const [taskMode, setTaskMode] = useState("chat");
+  const [memoryMode, setMemoryMode] = useState("auto");
   const [reasoningMode, setReasoningMode] = useState("auto");
   const [modeModelOverrides, setModeModelOverrides] = useState({});
   const [subagentCount, setSubagentCount] = useState(0);
@@ -410,6 +411,7 @@ export function App() {
         activeWorkspace: workspace.activePath || ".",
         skill: "general",
         taskMode,
+        memoryMode,
         reasoning: reasoningMode,
         modeModelOverrides: modeModelOverridesRef.current,
         subagents: subagentCount,
@@ -421,7 +423,7 @@ export function App() {
       }).catch(() => {});
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, motionMode, session, ready]);
+  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, memoryMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, motionMode, session, ready]);
 
   async function boot() {
     const markReady = () => {
@@ -492,6 +494,7 @@ export function App() {
     setTestingMode(!!prefs.testingMode);
     setSelectedModel(pickBootModel(data.models || [], prefs));
     setTaskMode(prefs.taskMode || "chat");
+    setMemoryMode(prefs.memoryMode || "auto");
     setReasoningMode(prefs.reasoning || "auto");
     setModeModelOverrides(prefs.modeModelOverrides || {});
     setSubagentCount(Math.max(0, Math.min(Number(prefs.subagents || 0), 4)));
@@ -915,6 +918,7 @@ export function App() {
     if (event) event.preventDefault();
     const message = customMessage || objective.trim();
     const mode = options.mode || taskMode;
+    const requestedMemoryMode = options.memoryMode || memoryMode;
     const reasoning = options.reasoning || reasoningMode;
     const modelKey = options.model || selectedModel;
     const contextCapsuleId = options.contextCapsuleId || selectedTaskContextCapsuleId || undefined;
@@ -939,6 +943,7 @@ export function App() {
       model: modelKey,
       skill: "general",
       mode,
+      memoryMode: requestedMemoryMode,
       reasoning,
       isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
       contextCapsuleId,
@@ -964,6 +969,7 @@ export function App() {
         model: modelKey,
         skill: "general",
         mode,
+        memoryMode: requestedMemoryMode,
         reasoning,
         subagents: subagentCount,
         workspacePath: workspace.activePath || ".",
@@ -1006,6 +1012,7 @@ export function App() {
     const sent = await sendTask(null, trimmed, {
       ...options,
       mode: options.mode || taskMode,
+      memoryMode: options.memoryMode || memoryMode,
       reasoning: options.reasoning || reasoningMode,
       fromQueue: true,
     });
@@ -2275,6 +2282,8 @@ export function App() {
         approvalCount={approvalCount}
         taskMode={taskMode}
         setTaskMode={chooseTaskMode}
+        memoryMode={memoryMode}
+        setMemoryMode={setMemoryMode}
         reasoningMode={reasoningMode}
         setReasoningMode={setReasoningMode}
         queuedMessages={queuedMessages}

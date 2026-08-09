@@ -34,6 +34,7 @@ def defaults():
         "activeWorkspace": ".",
         "skill": "general",
         "taskMode": "chat",
+        "memoryMode": "auto",
         "reasoning": "auto",
         "modeModelOverrides": {},
         "subagents": 0,
@@ -68,6 +69,8 @@ def _coerce(data):
         merged["activeChatFolder"] = "all"
     if merged.get("reasoning") not in {"auto", "off", "low", "medium", "high"}:
         merged["reasoning"] = "auto"
+    if merged.get("memoryMode") not in {"auto", "include", "suppress"}:
+        merged["memoryMode"] = "auto"
     merged["sidebarCollapsed"] = bool(merged["sidebarCollapsed"])
     # The dry-run mock model is only selectable while testing mode is on;
     # never resurrect it from stored preferences otherwise.

@@ -619,6 +619,64 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(by_key["workspace_tree"], "")
         self.assertTrue(any(item["kind"] == "adaptive_context" for item in task.trace))
 
+    def testTaskMemoryModeSuppressesRecallAndPersists(self):
+        hub = agent.AgentHub()
+        suppressed = agent.AgentTask(
+            "private task",
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path=".",
+            memory_mode="suppress",
+        )
+        with patch("backend.engine.agent.memory.search", side_effect=AssertionError("suppressed task must not search memory")):
+            self.assertIsNone(hub._recall_memory(suppressed, suppressed.objective, 5, "admin", 128, "chat"))
+        suppressed_snapshot = hub.snapshot_task(suppressed)
+        self.assertEqual(suppressed_snapshot["memoryMode"], "suppress")
+        recall_trace = [item for item in suppressed.trace if item["kind"] == "memory_recall"][-1]
+        self.assertEqual(recall_trace["detail"]["status"], "suppressed")
+        self.assertEqual(recall_trace["detail"]["reason"], "task_memory_mode")
+
+        included = agent.AgentTask(
+            "remembered task",
+            "dry-run",
+            "general",
+            mode="chat",
+            workspace_path=".",
+            memory_mode="include",
+        )
+        with patch("backend.engine.agent.memory.search", return_value={"items": [{"content": "local preference"}]}) as search:
+            recall = hub._recall_memory(included, included.objective, 5, "admin", 128, "chat")
+        search.assert_called_once_with("remembered task", 5, "admin", ".")
+        self.assertEqual(recall["items"][0]["content"], "local preference")
+        self.assertTrue([item for item in included.trace if item["kind"] == "memory_recall"][-1]["detail"]["forced"])
+
+        persisted = agent.AgentTask("persist memory mode", "dry-run", "general", workspace_path=".", memory_mode="suppress")
+        persisted.owner_id = "admin"
+        hub._persist_task(persisted)
+        self.assertEqual(persisted.memory_mode, "suppress")
+        with runtime_store._lock, runtime_store.connect() as conn:
+            row = conn.execute("SELECT memory_mode FROM tasks WHERE id=?", (persisted.id,)).fetchone()
+        self.assertEqual(row["memory_mode"], "suppress")
+
+    def testSuppressedMemoryIsOmittedFromChatPrompt(self):
+        hub = agent.AgentHub()
+        task = agent.AgentTask("keep this out of memory", "small-certified", "general", mode="chat", workspace_path=".", memory_mode="suppress")
+        hub.phase_model = lambda _task, _role: "small-certified"
+        captured = {}
+
+        async def capture_governed(_task, _phase, _role, sections, tools=None):
+            captured["sections"] = sections
+            return "ok"
+
+        hub.governed_chat = capture_governed
+        model = {"key": "small-certified", "compatibility": {"promptProfile": "light"}}
+        with patch("backend.engine.agent.model_registry.get_model", return_value=model), \
+             patch("backend.engine.agent.memory.search", side_effect=AssertionError("suppressed chat must not search memory")):
+            self.assertEqual(asyncio.run(hub.chat_reply(task)), "ok")
+        self.assertNotIn("memory_recall", {item["key"] for item in captured["sections"]})
+        self.assertEqual([item for item in task.trace if item["kind"] == "memory_recall"][-1]["detail"]["status"], "suppressed")
+
     def testGovernedChatRecoversFromPromptEcho(self):
         local_hub = agent.AgentHub()
         task = agent.AgentTask("generate a list", "echo-model", "general", mode="chat", workspace_path=".")
@@ -1635,6 +1693,18 @@ class BackendSmokeTests(unittest.TestCase):
         for key in ["task", "session", "events", "trace", "outputs", "children", "approvals", "toolCalls"]:
             self.assertIn(key, detail)
         self.assertEqual(detail["task"]["id"], task["id"])
+        self.assertEqual(task["memoryMode"], "auto")
+        suppressed = self.assertOk(self.client.post("/api/tasks", json={
+            "objective": "Suppress memory for this task from the API smoke test.",
+            "model": "dry-run",
+            "skill": "general",
+            "mode": "chat",
+            "memoryMode": "suppress",
+            "workspacePath": ".",
+        }))
+        self.assertEqual(suppressed["memoryMode"], "suppress")
+        suppressed_detail = self.assertOk(self.client.get(f"/api/tasks/{suppressed['id']}"))
+        self.assertEqual(suppressed_detail["task"]["memoryMode"], "suppress")
         missing = self.client.get("/api/tasks/definitely-missing-task")
         body = missing.json()
         self.assertEqual(missing.status_code, 404)
