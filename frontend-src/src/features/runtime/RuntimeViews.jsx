@@ -1602,10 +1602,12 @@ function MemoryItem({ item }) {
   const sourceTask = item.sourceTaskId || item.source_task_id;
   const sourceSession = item.sourceSessionId || item.source_session_id;
   const sourceMessages = item.sourceMessageIds || item.source_message_ids || [];
-  const statusTone = item.status === "pending" ? "warning" : item.status === "expired" ? "danger" : "secondary";
+  const supersedes = item.supersedesId || item.supersedes_id;
+  const statusTone = item.status === "pending" ? "warning" : item.status === "expired" ? "danger" : item.status === "superseded" ? "dark" : "secondary";
+  const badgeLabel = item.status === "expired" || item.status === "superseded" ? item.status : item.kind;
   return (
     <div>
-      <Badge bg={statusTone}>{item.status === "expired" ? "expired" : item.kind}</Badge>
+      <Badge bg={statusTone}>{badgeLabel}</Badge>
       <span className="small text-body-secondary ms-2">{scope}</span>
       <p className="mb-0 mt-2">{formatMemoryContent(item.content)}</p>
       <div className="small text-body-secondary mt-2">
@@ -1619,6 +1621,11 @@ function MemoryItem({ item }) {
           Source: {sourceTask ? `task ${sourceTask}` : "manual"}
           {sourceSession ? ` · session ${sourceSession}` : ""}
           {sourceMessages.length ? ` · ${sourceMessages.length} message${sourceMessages.length === 1 ? "" : "s"}` : ""}
+        </div>
+      )}
+      {supersedes && (
+        <div className="small text-body-secondary mt-1">
+          Correction of memory {supersedes}
         </div>
       )}
     </div>

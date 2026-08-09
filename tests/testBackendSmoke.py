@@ -1944,6 +1944,93 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(restored["source_session_id"], "session-retention")
         self.assertEqual(restored["source_message_ids"], ["msg-retention"])
 
+    def testMemoryDeduplicatesAndResolvesCanonicalConflicts(self):
+        canonical_key = f"preference:summary-style-{runtime_store.new_id('key')}"
+        original = memory_store.add_item(
+            "preference",
+            {"key": "summary_style", "value": "concise"},
+            canonical_key=canonical_key,
+            owner_id="test",
+            export=False,
+        )
+        duplicate = memory_store.add_item(
+            "preference",
+            {"key": "summary_style", "value": "concise"},
+            canonical_key=canonical_key,
+            owner_id="test",
+            export=False,
+        )
+        self.assertEqual(duplicate["id"], original["id"])
+        self.assertTrue(duplicate["deduplicated"])
+        self.assertEqual(duplicate["duplicate_of_id"], original["id"])
+
+        conflict = memory_store.add_item(
+            "preference",
+            {"key": "summary_style", "value": "detailed"},
+            canonical_key=canonical_key,
+            owner_id="test",
+            export=False,
+        )
+        self.assertEqual(conflict["status"], "pending")
+        self.assertEqual(conflict["supersedes_id"], original["id"])
+        self.assertTrue(any(item["id"] == conflict["id"] for item in memory_store.list_items("pending", owner_id="test")))
+
+        approved = memory_store.approve_item(conflict["id"], "test")
+        self.assertEqual(approved["status"], "saved")
+        self.assertEqual(memory_store.get_item(original["id"], "test")["status"], "superseded")
+        saved_ids = {item["id"] for item in memory_store.list_items("saved", owner_id="test")}
+        self.assertIn(conflict["id"], saved_ids)
+        self.assertNotIn(original["id"], saved_ids)
+
+        explicit_key = f"fact:explicit-correction-{runtime_store.new_id('key')}"
+        old_fact = memory_store.add_item(
+            "fact",
+            "The local assistant uses the first rule.",
+            canonical_key=explicit_key,
+            owner_id="test",
+            export=False,
+        )
+        new_fact = memory_store.add_item(
+            "fact",
+            "The local assistant uses the reviewed rule.",
+            canonical_key=explicit_key,
+            supersedes_id=old_fact["id"],
+            owner_id="test",
+            export=False,
+        )
+        self.assertEqual(new_fact["status"], "saved")
+        self.assertEqual(memory_store.get_item(old_fact["id"], "test")["status"], "superseded")
+
+        other_owner = memory_store.add_item(
+            "fact",
+            "This belongs to another owner.",
+            owner_id="someone-else",
+            export=False,
+        )
+        with self.assertRaises(ValueError):
+            memory_store.add_item(
+                "fact",
+                "Cross-owner correction must fail closed.",
+                supersedes_id=other_owner["id"],
+                owner_id="test",
+                export=False,
+            )
+
+        api_key = f"fact:api-correction-{runtime_store.new_id('key')}"
+        api_old = self.assertOk(self.client.post("/api/memory", json={
+            "kind": "fact",
+            "value": "API memory before correction.",
+            "canonicalKey": api_key,
+        }))["item"]
+        api_new = self.assertOk(self.client.post("/api/memory", json={
+            "kind": "fact",
+            "value": "API memory after correction.",
+            "canonicalKey": api_key,
+            "supersedesId": api_old["id"],
+        }))["item"]
+        self.assertEqual(api_new["status"], "saved")
+        self.assertEqual(memory_store.get_item(api_old["id"], "test")["status"], "superseded")
+
     def testMemoryToolUsesPersistedTaskOwnerAndWorkspace(self):
         unique_term = f"taskscopedmemory{runtime_store.new_id('term')}"
         memory_store.add_item(

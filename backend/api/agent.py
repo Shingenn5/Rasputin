@@ -459,6 +459,7 @@ class MemoryIn(CamelModel):
     source_task_id: str | None = None
     source_session_id: str | None = None
     source_message_ids: list[str] = Field(default_factory=list)
+    supersedes_id: str | None = None
 
 
 class MemoryUpdateIn(CamelModel):
@@ -502,6 +503,7 @@ async def add_memory(req: MemoryIn, _user=Depends(current_user)):
         source_task_id=req.source_task_id,
         source_session_id=req.source_session_id,
         source_message_ids=req.source_message_ids,
+        supersedes_id=req.supersedes_id,
         owner_id=_user["username"],
     )
     # Preserve the legacy summary response while exposing the durable record

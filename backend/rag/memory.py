@@ -38,7 +38,8 @@ KINDS = {
 }
 
 MEMORY_SCOPES = {"global", "workspace"}
-MEMORY_STATUSES = {"saved", "pending", "rejected", "expired"}
+MEMORY_STATUSES = {"saved", "pending", "rejected", "expired", "superseded"}
+ACTIVE_MEMORY_STATUSES = ("saved", "pending")
 RETENTION_POLICIES = {
     "persistent": None,
     "7_days": 7 * 24 * 60 * 60,
@@ -117,6 +118,89 @@ def _retention_expiry(retention, stamp=None):
     if duration is None:
         return retention, None
     return retention, (stamp if stamp is not None else store.now()) + duration
+
+
+def _same_scope(row, scope, workspace_id):
+    return (
+        row["scope"] == scope
+        and (row["workspace_id"] or "") == (workspace_id or "")
+    )
+
+
+def _memory_match(conn, owner_id, scope, workspace_id, column, value, exclude_id=None):
+    if not value:
+        return None
+    if column not in {"content_hash", "canonical_key"}:
+        raise ValueError("unsupported memory match column")
+    exclude_clause = " AND id<>?" if exclude_id else ""
+    params = [owner_id, scope, workspace_id, value]
+    if exclude_id:
+        params.append(exclude_id)
+    return conn.execute(
+        f"""
+        SELECT * FROM memory_items
+        WHERE owner_id=? AND scope=? AND COALESCE(workspace_id,'')=COALESCE(?, '')
+          AND {column}=? AND status IN ('saved', 'pending'){exclude_clause}
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """,
+        params,
+    ).fetchone()
+
+
+def _validate_supersession_target(conn, item_id, owner_id, scope, workspace_id):
+    item_id = str(item_id or "").strip() or None
+    if not item_id:
+        return None
+    row = conn.execute(
+        "SELECT * FROM memory_items WHERE id=? AND owner_id=?",
+        (item_id, owner_id),
+    ).fetchone()
+    if not row:
+        raise ValueError("supersedes_id must reference an existing memory owned by this user")
+    if row["status"] not in ACTIVE_MEMORY_STATUSES:
+        raise ValueError("only saved or pending memory can be superseded")
+    if not _same_scope(row, scope, workspace_id):
+        raise ValueError("a superseded memory must share the new memory scope and workspace")
+    return row
+
+
+def _remove_from_search(conn, item_id):
+    try:
+        conn.execute("DELETE FROM memory_fts WHERE id=?", (item_id,))
+    except Exception:
+        pass
+
+
+def _apply_supersession(conn, item_id, target_id, owner_id, stamp):
+    if not target_id:
+        return None
+    target = conn.execute(
+        "SELECT id,status FROM memory_items WHERE id=? AND owner_id=?",
+        (target_id, owner_id),
+    ).fetchone()
+    if not target:
+        return None
+    if target["status"] in ACTIVE_MEMORY_STATUSES:
+        conn.execute(
+            "UPDATE memory_items SET status='superseded', updated_at=? WHERE id=? AND owner_id=?",
+            (stamp, target_id, owner_id),
+        )
+        _remove_from_search(conn, target_id)
+    # A canonical key can have several pending suggestions. Once one is
+    # approved, the others are rejected rather than remaining competing facts.
+    competing = conn.execute(
+        "SELECT id FROM memory_items WHERE owner_id=? AND supersedes_id=? AND id<>? AND status='pending'",
+        (owner_id, target_id, item_id),
+    ).fetchall()
+    if competing:
+        conn.executemany(
+            "UPDATE memory_items SET status='rejected', updated_at=? WHERE id=? AND owner_id=?",
+            [(stamp, row["id"], owner_id) for row in competing],
+        )
+        for row in competing:
+            _remove_from_search(conn, row["id"])
+    return target_id
 
 
 def _content_hash(kind, scope, workspace_id, content):
@@ -250,6 +334,7 @@ def add_item(
     importance=0.5,
     canonical_key=None,
     retention="persistent",
+    supersedes_id=None,
 ):
     store.init_db()
     kind = _normalize_kind(kind)
@@ -264,18 +349,48 @@ def add_item(
     confidence = _score(confidence)
     importance = _score(importance)
     canonical_key = _canonical_key(kind, content, canonical_key)
+    supersedes_id = str(supersedes_id or "").strip() or None
     item_id = store.new_id("mem")
     stamp = store.now()
     retention, expires_at = _retention_expiry(retention, stamp)
     content_hash = _content_hash(kind, scope, workspace_id, content)
+    duplicate_of = None
+    conflict_with = None
+    superseded_target = None
     with store._lock, store.connect() as conn:
+        duplicate_of = _memory_match(conn, owner_id, scope, workspace_id, "content_hash", content_hash)
+        if duplicate_of:
+            duplicate_item = _public(duplicate_of)
+            duplicate_item["deduplicated"] = True
+            duplicate_item["duplicate_of_id"] = duplicate_of["id"]
+            conn.commit()
+            audit.log("memory_item_duplicate", {
+                "owner_id": owner_id,
+                "duplicate_of_id": duplicate_of["id"],
+                "content_hash": content_hash,
+            })
+            return duplicate_item
+
+        superseded_target = _validate_supersession_target(
+            conn, supersedes_id, owner_id, scope, workspace_id,
+        )
+        if not supersedes_id and canonical_key:
+            conflict_with = _memory_match(
+                conn, owner_id, scope, workspace_id, "canonical_key", canonical_key,
+            )
+            if conflict_with and conflict_with["content_hash"] != content_hash:
+                supersedes_id = conflict_with["id"]
+                superseded_target = conflict_with
+                if status == "saved":
+                    status = "pending"
+
         conn.execute(
             """
             INSERT INTO memory_items(
               id,kind,scope,workspace_id,content,sensitive,status,source_task_id,
               created_at,updated_at,owner_id,canonical_key,confidence,importance,
-              source_session_id,source_message_ids,content_hash,retention,expires_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              source_session_id,source_message_ids,supersedes_id,content_hash,retention,expires_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 item_id,
@@ -294,6 +409,7 @@ def add_item(
                 importance,
                 source_session_id,
                 json.dumps(source_message_ids),
+                supersedes_id,
                 content_hash,
                 retention,
                 expires_at,
@@ -306,6 +422,8 @@ def add_item(
             )
         except Exception:
             pass
+        if status == "saved" and superseded_target:
+            _apply_supersession(conn, item_id, supersedes_id, owner_id, stamp)
         conn.commit()
     audit.log("memory_item_saved" if status == "saved" else "memory_item_suggested", {
         "id": item_id,
@@ -318,6 +436,8 @@ def add_item(
         "expires_at": expires_at,
         "source_task_id": source_task_id,
         "source_session_id": source_session_id,
+        "supersedes_id": supersedes_id,
+        "conflict_with_id": conflict_with["id"] if conflict_with else None,
     })
     if status == "saved" and export:
         export_markdown(owner_id)
@@ -422,13 +542,23 @@ def pending_review(owner_id="admin"):
 def approve_item(item_id, owner_id="admin"):
     owner_id = _normalize_owner(owner_id)
     stamp = store.now()
+    supersedes_id = None
     with store._lock, store.connect() as conn:
         row = conn.execute("SELECT * FROM memory_items WHERE id=? AND owner_id=?", (item_id, owner_id)).fetchone()
         if not row:
             raise ValueError("memory item missing")
+        supersedes_id = row["supersedes_id"]
         conn.execute("UPDATE memory_items SET status='saved', updated_at=? WHERE id=? AND owner_id=?", (stamp, item_id, owner_id))
+        if supersedes_id:
+            _apply_supersession(conn, item_id, supersedes_id, owner_id, stamp)
         conn.commit()
     audit.log("memory_item_approved", {"id": item_id, "owner_id": owner_id})
+    if supersedes_id:
+        audit.log("memory_item_superseded", {
+            "id": supersedes_id,
+            "by_id": item_id,
+            "owner_id": owner_id,
+        })
     export_markdown(owner_id)
     return get_item(item_id, owner_id)
 
@@ -474,6 +604,28 @@ def update_item(item_id, updates, owner_id="admin"):
         canonical_key = _canonical_key(kind, content, updates.get("canonical_key", current.get("canonical_key")))
         retention = _normalize_retention(updates.get("retention", current.get("retention")))
         content_hash = _content_hash(kind, scope, workspace_id, content)
+        duplicate = _memory_match(
+            conn, owner_id, scope, workspace_id, "content_hash", content_hash, exclude_id=item_id,
+        )
+        if duplicate:
+            duplicate_item = _public(duplicate)
+            duplicate_item["deduplicated"] = True
+            duplicate_item["duplicate_of_id"] = duplicate["id"]
+            conn.commit()
+            audit.log("memory_item_duplicate", {
+                "owner_id": owner_id,
+                "duplicate_of_id": duplicate["id"],
+                "source_item_id": item_id,
+                "content_hash": content_hash,
+            })
+            return duplicate_item
+        conflict = _memory_match(
+            conn, owner_id, scope, workspace_id, "canonical_key", canonical_key, exclude_id=item_id,
+        )
+        if conflict and conflict["content_hash"] != content_hash:
+            raise ValueError(
+                "memory update conflicts with an active canonical key; submit a reviewed correction instead"
+            )
         stamp = store.now()
         expires_at = current.get("expires_at")
         if "retention" in updates:

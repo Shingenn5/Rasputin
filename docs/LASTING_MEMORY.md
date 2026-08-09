@@ -1,7 +1,7 @@
 # Lasting memory contract
 
 **Status:** implemented foundation (owner/workspace-safe memory lifecycle,
-provenance, and retention controls)
+provenance, retention, duplicate, and reviewed supersession controls)
 
 Rasputin's name is temporary, but this memory contract is intended to survive a
 future product rename. It defines what the assistant may retain across chats
@@ -18,15 +18,18 @@ separate from short-lived task context. Each item carries:
 - sensitivity, confidence, and importance metadata;
 - source task/session/message provenance when available;
 - a content hash and recall counters;
-- a review status (`saved`, `pending`, `rejected`, or `expired`);
+- a review status (`saved`, `pending`, `rejected`, `expired`, or `superseded`);
 - an explicit retention policy (`persistent`, `7_days`, `30_days`, or `90_days`)
-  and computed expiry timestamp when applicable.
+  and computed expiry timestamp when applicable;
+- an optional supersession link for a reviewed correction;
+- deterministic duplicate and canonical-key conflict handling.
 
 Persistent and active retained items survive process restarts and are searchable
 through the local FTS index. Search updates `last_used_at` and `recall_count` so
 the UI can show how often an item has influenced recall. Expiration changes an
 item to `expired` and removes it from normal search/context; the record remains
-visible to the owner for audit, restoration, or deletion.
+visible to the owner for audit, restoration, or deletion. An approved correction
+changes the prior item to `superseded` instead of deleting it.
 
 ## Owner and workspace boundary
 
@@ -62,13 +65,20 @@ The HTTP surface is:
 - `DELETE /api/memory/items/{id}` — delete the item and its FTS entry;
 - `GET /api/memory/review` and `POST /api/memory/review` — approve or reject suggestions.
 
+Exact repeats are idempotent: the existing active item is returned with
+`deduplicated=true` and no second record is created. A different value using
+the same non-empty canonical key is stored as `pending` and links to the prior
+item through `supersedesId`; approval promotes the correction and marks the
+older item `superseded`. Explicit corrections can provide `supersedesId` on
+`POST /api/memory` when the owner has already reviewed the change.
+
 ## Deliberate next steps
 
 This is the durable foundation, not the final memory intelligence. The next
 memory slices should add:
 
 - visible source/session links and a “why was this recalled?” explanation;
-- correction, supersession, conflict resolution, and duplicate detection;
+- richer conflict explanations and correction history in the UI;
 - export/delete-all workflows;
 - explicit per-task memory inclusion/suppression controls;
 - measured consolidation from completed conversations, with suggestions kept
