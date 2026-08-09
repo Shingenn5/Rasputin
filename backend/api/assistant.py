@@ -33,6 +33,11 @@ class PlanPreviewIn(CamelModel):
     include_sensitive: bool = False
 
 
+class CommandPreviewIn(CamelModel):
+    command: str
+    workspace_path: str | None = None
+
+
 class PlanReviewIn(CamelModel):
     note: str | None = ""
 
@@ -81,6 +86,12 @@ def _assert_sensitive_allowed(req: PlanPreviewIn, user: dict) -> None:
 @router.get("/capabilities")
 async def assistant_capabilities(_user=Depends(current_user)):
     return ok(runtime.capabilities())
+
+
+@router.post("/command-preview")
+async def assistant_command_preview(req: CommandPreviewIn, _user=Depends(require_member)):
+    workspace_ref = _workspace_for_request(req, _user)
+    return ok(runtime.route_command_preview(req.command, workspace_ref=workspace_ref))
 
 
 @router.post("/voice-preview")

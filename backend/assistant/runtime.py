@@ -39,6 +39,59 @@ from backend.rag import memory as memory_store
 
 PROFILE_KEY_PREFIX = "assistant_profile:"
 BROKER_CONTRACT_VERSION = "0.1"
+COMMAND_ROUTER_CONTRACT_VERSION = "0.1"
+
+# Natural-language routing is deterministic and allowlisted. It produces a
+# preview; it never turns user text into a shell command or starts a host
+# process. New aliases must map to an existing CONTROL_OPERATIONS entry and
+# receive a regression test before they become routable.
+COMMAND_ALIASES = {
+    "docker_status": (
+        "docker status",
+        "check docker status",
+        "show docker status",
+        "inspect docker status",
+    ),
+    "open_vscode": (
+        "open vscode",
+        "open vs code",
+        "open visual studio code",
+        "launch vscode",
+        "launch vs code",
+    ),
+    "start_coding_task": (
+        "start coding task",
+        "begin coding task",
+        "start a coding task",
+        "begin a coding task",
+    ),
+    "run_test": (
+        "run test",
+        "run tests",
+        "run the tests",
+        "execute tests",
+        "test the project",
+    ),
+    "run_build": (
+        "run build",
+        "run the build",
+        "build the project",
+        "build project",
+    ),
+    "transcribe": (
+        "transcribe",
+        "transcribe audio",
+        "speech to text",
+    ),
+    "synthesize": (
+        "synthesize speech",
+        "text to speech",
+        "read this aloud",
+        "speak the response",
+    ),
+}
+COMMAND_ROUTER_PREFIXES = ("please ", "can you ", "could you ", "would you ")
+COMMAND_ROUTER_UNSAFE_MARKERS = ("&&", "||", ";", "|", ">", "<")
 
 
 def _owner(owner_id: str | None) -> str:
@@ -106,6 +159,14 @@ def capabilities() -> dict[str, Any]:
                 {"operation": name, **metadata}
                 for name, metadata in broker.operation_metadata().items()
             ],
+        },
+        "command_router": {
+            "contract_version": COMMAND_ROUTER_CONTRACT_VERSION,
+            "preview_endpoint": "/api/assistant/command-preview",
+            "execution_mode": "preview_only",
+            "approval_before_handoff": True,
+            "supported_operations": broker.supported_operations(),
+            "aliases": {operation: list(aliases) for operation, aliases in COMMAND_ALIASES.items()},
         },
     }
 
@@ -592,6 +653,118 @@ def build_agent_preview(objective: str, raw_agents: Any, model_pack: dict[str, A
             for dependency in agent["depends_on"]
         ],
         "execution": {"started": False, "side_effects": False, "requires_broker": True},
+    }
+
+
+def _normalize_command_text(value: Any) -> str:
+    text = " ".join(str(value or "").strip().lower().split())
+    return text.strip(" .!?\t\r\n")[:500]
+
+
+def _match_command_alias(normalized: str) -> tuple[str | None, str | None]:
+    for operation, aliases in COMMAND_ALIASES.items():
+        for alias in aliases:
+            if normalized == alias:
+                return operation, alias
+            for prefix in COMMAND_ROUTER_PREFIXES:
+                if normalized == f"{prefix}{alias}":
+                    return operation, alias
+    return None, None
+
+
+def route_command_preview(command: Any, workspace_ref: str | None = None) -> dict[str, Any]:
+    """Map one explicit assistant command to a side-effect-free broker preview.
+
+    This is intentionally a small deterministic router. It accepts only known
+    aliases, never accepts arbitrary command text, and does not create an
+    approval or handoff. The existing plan/handoff endpoints remain the only
+    path from this preview to execution.
+    """
+
+    raw_command = str(command or "").strip()[:500]
+    normalized = _normalize_command_text(raw_command)
+    base = {
+        "contract_version": COMMAND_ROUTER_CONTRACT_VERSION,
+        "command": raw_command,
+        "normalized_command": normalized,
+        "execution": {
+            "mode": "preview_only",
+            "started": False,
+            "side_effects": False,
+            "host_actions_started": False,
+        },
+        "policy": {
+            "broker_only": True,
+            "direct_model_host_access": False,
+            "approval_before_handoff": True,
+        },
+    }
+    if not normalized:
+        return {
+            **base,
+            "route": {
+                "status": "needs_clarification",
+                "operation": None,
+                "matched_alias": None,
+                "reason": "command is empty",
+            },
+            "approval": {"required": False, "state": "not_requested"},
+            "operation_preview": None,
+        }
+    if any(marker in normalized or marker in raw_command for marker in COMMAND_ROUTER_UNSAFE_MARKERS) or chr(96) in raw_command:
+        return {
+            **base,
+            "route": {
+                "status": "rejected",
+                "operation": None,
+                "matched_alias": None,
+                "reason": "shell-like command syntax is not accepted by the assistant router",
+            },
+            "approval": {"required": False, "state": "blocked"},
+            "operation_preview": None,
+        }
+
+    operation, alias = _match_command_alias(normalized)
+    if not operation:
+        return {
+            **base,
+            "route": {
+                "status": "needs_clarification",
+                "operation": None,
+                "matched_alias": None,
+                "reason": "no allowlisted assistant operation matched",
+                "suggested_operations": sorted(COMMAND_ALIASES),
+            },
+            "approval": {"required": False, "state": "not_requested"},
+            "operation_preview": None,
+        }
+
+    preview = build_control_preview([operation], workspace_ref=workspace_ref)
+    planned = (preview.get("operations") or [None])[0]
+    supported = bool((planned or {}).get("dispatch", {}).get("supported"))
+    blocked = bool((planned or {}).get("blocked_reasons")) or not supported
+    blocked_reasons = list((planned or {}).get("blocked_reasons") or [])
+    if not supported and "operation_not_supported_by_broker" not in blocked_reasons:
+        blocked_reasons.append("operation_not_supported_by_broker")
+    route_status = "blocked" if blocked else "recognized"
+    approval_required = bool((planned or {}).get("requires_approval", False))
+    approval_state = "blocked" if blocked else "review_required" if approval_required else "not_required"
+    return {
+        **base,
+        "route": {
+            "status": route_status,
+            "operation": operation,
+            "matched_alias": alias,
+            "reason": "allowlisted operation matched" if not blocked else "operation cannot proceed under current broker or security policy",
+            "supported_by_broker": supported,
+            "blocked_reasons": blocked_reasons,
+        },
+        "approval": {
+            "required": approval_required,
+            "state": approval_state,
+            "created": False,
+        },
+        "operation_preview": planned,
     }
 
 

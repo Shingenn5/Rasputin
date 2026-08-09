@@ -109,6 +109,69 @@ class AssistantContractTests(unittest.TestCase):
         self.assertEqual(patched.status_code, 200, patched.text)
         self.assertEqual(patched.json()["data"]["displayName"], "Rasputin Prime")
 
+    def test_command_router_is_allowlisted_preview_only_and_approval_explicit(self):
+        original_security = security.load()
+        security.save({**original_security, "allow_docker_control": True, "allow_shell_execution": False})
+        try:
+            recognized = self.client.post(
+                "/api/assistant/command-preview",
+                json={"command": "Please check Docker status"},
+            )
+            self.assertEqual(recognized.status_code, 200, recognized.text)
+            data = recognized.json()["data"]
+            self.assertEqual(data["contractVersion"], "0.1")
+            self.assertEqual(data["route"]["status"], "recognized")
+            self.assertEqual(data["route"]["operation"], "docker_status")
+            self.assertEqual(data["route"]["matchedAlias"], "check docker status")
+            self.assertTrue(data["route"]["supportedByBroker"])
+            self.assertTrue(data["approval"]["required"])
+            self.assertEqual(data["approval"]["state"], "review_required")
+            self.assertFalse(data["approval"]["created"])
+            self.assertEqual(data["execution"]["mode"], "preview_only")
+            self.assertFalse(data["execution"]["started"])
+            self.assertFalse(data["execution"]["sideEffects"])
+
+            blocked = self.client.post(
+                "/api/assistant/command-preview",
+                json={"command": "open VS Code", "workspacePath": "."},
+            )
+            self.assertEqual(blocked.status_code, 200, blocked.text)
+            blocked_data = blocked.json()["data"]
+            self.assertEqual(blocked_data["route"]["status"], "blocked")
+            self.assertIn("security_flag_disabled:allow_shell_execution", blocked_data["route"]["blockedReasons"])
+            self.assertEqual(blocked_data["approval"]["state"], "blocked")
+
+            unsupported = self.client.post(
+                "/api/assistant/command-preview",
+                json={"command": "run the tests"},
+            )
+            self.assertEqual(unsupported.status_code, 200, unsupported.text)
+            unsupported_data = unsupported.json()["data"]
+            self.assertEqual(unsupported_data["route"]["status"], "blocked")
+            self.assertEqual(unsupported_data["route"]["operation"], "run_test")
+            self.assertIn("operation_not_supported_by_broker", unsupported_data["route"]["blockedReasons"])
+
+            unknown = self.client.post(
+                "/api/assistant/command-preview",
+                json={"command": "send an email to my friend"},
+            )
+            self.assertEqual(unknown.status_code, 200, unknown.text)
+            unknown_data = unknown.json()["data"]
+            self.assertEqual(unknown_data["route"]["status"], "needs_clarification")
+            self.assertIsNone(unknown_data["operationPreview"])
+            self.assertIn("docker_status", unknown_data["route"]["suggestedOperations"])
+
+            unsafe = self.client.post(
+                "/api/assistant/command-preview",
+                json={"command": "docker status; rm -rf /"},
+            )
+            self.assertEqual(unsafe.status_code, 200, unsafe.text)
+            unsafe_data = unsafe.json()["data"]
+            self.assertEqual(unsafe_data["route"]["status"], "rejected")
+            self.assertFalse(unsafe_data["execution"]["started"])
+        finally:
+            security.save(original_security)
+
     def test_approved_plan_can_start_one_governed_code_task_with_capsule_receipt(self):
         capsule = runtime.create_context_capsule(
             owner_id="contract-test",
