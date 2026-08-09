@@ -294,3 +294,15 @@ Not a penetration-test report, not exhaustive, and not a substitute for
 re-reading the code before relying on any specific claim here — see the
 per-section file:line citations and verify them directly. Update this file
 when the boundaries it describes change, especially §6.1.
+
+## Unattended mode (implemented)
+
+Setting `unattended_mode` in Security, or `RASPUTIN_UNATTENDED=1` for a
+dedicated process, applies a server-side deny-by-default tool allowlist. Local
+read/search, memory, graph/RAG, bounded workspace inspection, local Git
+inspection, and approved file edits remain available. Shell execution, web
+search, external MCP tools, workspace reorganization, Git staging/commit/
+restore, and newly registered tools are blocked before their implementation
+receives model-authored arguments. File edits additionally require a Trusted
+Dev workspace. Rejected calls are not retried by changing syntax, and blocked
+tools are removed from model capability schemas.

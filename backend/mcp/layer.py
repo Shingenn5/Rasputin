@@ -17,6 +17,7 @@ from backend.core import sandbox_exec
 from backend.core import audit as audit
 from backend.core import security as security
 from backend.core import leak_guard as leak_guard
+from backend.core import unattended as unattended
 from backend.core import approvals as approvals
 from backend.rag import memory as memory
 from backend.models import registry as model_registry
@@ -314,6 +315,7 @@ class McpLayer:
         task_owner, task_workspace = self._task_memory_context(task_id)
         self._record_tool(tool_call_id, task_id, name, definition.get("risk", "safe"), "running", args)
         try:
+            unattended.enforce(name, args=args, external=external)
             if not tool_relay.permission_allowed(definition):
                 flag = definition.get("permission_flag") or "tool"
                 raise PermissionError(f"{flag} is disabled")

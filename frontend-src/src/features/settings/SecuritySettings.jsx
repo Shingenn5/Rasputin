@@ -164,6 +164,18 @@ export function SecuritySettings() {
                       <Form.Check type="switch" id="allow-shell-execution" checked={!!security?.allow_shell_execution} onChange={() => handleToggle("allow_shell_execution")} />
                     </td>
                   </tr>
+                  <tr data-testid="unattended-mode-row">
+                    <td className="ps-4">
+                      <div className="fw-medium"><Lock size={16} className="me-2 text-danger"/>Unattended Execution</div>
+                      <div className="text-muted small">Deny shell, web, Docker, external MCP, and unreviewed capabilities while you are away.</div>
+                    </td>
+                    <td>
+                      {security?.unattended_mode ? <Badge bg="danger">Locked down</Badge> : <Badge bg="secondary">Interactive</Badge>}
+                    </td>
+                    <td className="text-end pe-4">
+                      <Form.Check type="switch" id="unattended-mode" checked={!!security?.unattended_mode} onChange={() => handleToggle("unattended_mode")} />
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>

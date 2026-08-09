@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from backend.core import security as security
+from backend.core import unattended as unattended
 
 SENSITIVE_KEYS = {
     "content",
@@ -608,6 +609,9 @@ def disabled_reason(definition, cfg=None):
         return "Not implemented in Tool Relay V1."
     if not definition.get("enabled", True):
         return "Disabled by Tool Relay policy."
+    unattended_reason = unattended.disabled_reason(definition.get("id"), cfg=cfg)
+    if unattended_reason:
+        return unattended_reason
     flag = definition.get("permission_flag")
     if flag and not permission_allowed(definition, cfg):
         return f"{flag} is disabled."

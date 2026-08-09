@@ -35,6 +35,7 @@ from backend.rag import vector as rag
 from backend.rag import memory as memory_store
 from backend.core import runtime_store as runtime_store
 from backend.core import security as security
+from backend.core import unattended as unattended
 from backend.core import telegram as telegram
 from backend.mcp.layer import McpLayer
 from backend.core.response import AppError
@@ -4327,6 +4328,39 @@ class BackendSmokeTests(unittest.TestCase):
                 )
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
+
+    def testUnattendedModeUsesDenyByDefaultToolAllowlist(self):
+        cfg = {
+            "unattended_mode": True,
+            "allow_file_read": True,
+            "allow_file_write": True,
+            "allow_shell_execution": True,
+            "allow_web_search": True,
+        }
+        with patch("backend.core.security.load", return_value=cfg):
+            self.assertTrue(security.unattended_enabled())
+            filtered = {item["id"] for item in unattended.filter_definitions(agent.tool_relay.TOOL_DEFINITIONS)}
+            self.assertNotIn("shell_exec", filtered)
+            self.assertNotIn("web_search", filtered)
+            self.assertNotIn("git_commit", filtered)
+            self.assertIn("fs_read", filtered)
+            self.assertIn("fs_patch", filtered)
+            with self.assertRaises(PermissionError):
+                asyncio.run(McpLayer().call_tool("shell_exec", {
+                    "command": "echo this must never run unattended",
+                    "workspace_path": ".",
+                }))
+            with self.assertRaises(PermissionError):
+                asyncio.run(McpLayer().call_tool("web_search", {
+                    "query": "this must never leave the appliance unattended",
+                }))
+
+        with patch.dict(os.environ, {"RASPUTIN_UNATTENDED": "1"}, clear=False):
+            with patch("backend.core.security.load", return_value={}):
+                self.assertTrue(security.unattended_enabled())
+        with patch.dict(os.environ, {"RASPUTIN_UNATTENDED": "0"}, clear=False):
+            with patch("backend.core.security.load", return_value={"unattended_mode": True}):
+                self.assertFalse(security.unattended_enabled())
 
     def testTaskWorktreeIsolatesCleanGitWorkspaceAndFailsClosed(self):
         from backend.core import task_worktree

@@ -43,6 +43,7 @@ from backend.rag import memory as memory
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
 from backend.core import security as security
+from backend.core import unattended as unattended
 from backend.core import audit as audit
 from backend.mcp import tools as tool_relay
 from backend.core import workspace
@@ -1295,9 +1296,11 @@ class AgentHub:
 
     def _agent_tools(self, task, phase):
         if not task.isolate_workspace:
-            return tool_relay.TOOL_DEFINITIONS
-        blocked = ISOLATED_PLANNING_BLOCKED_TOOLS if phase == "planning" else ISOLATED_EXECUTION_BLOCKED_TOOLS
-        return [item for item in tool_relay.TOOL_DEFINITIONS if item.get("id") not in blocked]
+            tools = tool_relay.TOOL_DEFINITIONS
+        else:
+            blocked = ISOLATED_PLANNING_BLOCKED_TOOLS if phase == "planning" else ISOLATED_EXECUTION_BLOCKED_TOOLS
+            tools = [item for item in tool_relay.TOOL_DEFINITIONS if item.get("id") not in blocked]
+        return unattended.filter_definitions(tools)
 
     def _pin_execution_workspace(self, task, phase, tool_name, args):
         """Ignore model-supplied workspace roots during isolated execution."""

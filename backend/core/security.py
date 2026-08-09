@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from threading import Lock
 from urllib.parse import urlparse
@@ -42,6 +43,7 @@ def defaults():
         "allow_model_tests": True,
         "allow_model_registry_edit": True,
         "allow_remote_models": False,
+        "unattended_mode": False,
         "approval_required_file_write": True,
         "approval_required_file_move": True,
         "approval_required_web_search": True,
@@ -85,6 +87,21 @@ def require(flag):
     return True
 
 
+def unattended_enabled(cfg=None):
+    """Return whether the runtime is operating without a human in the loop.
+
+    An explicit environment override is useful for a dedicated unattended
+    process; otherwise the persisted administrator setting is authoritative.
+    The default remains off so existing interactive installations keep their
+    current behavior until the operator opts in.
+    """
+
+    raw = os.environ.get("RASPUTIN_UNATTENDED")
+    if raw is not None:
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    return bool((cfg or load()).get("unattended_mode", False))
+
+
 def is_local_url(url):
     if not url:
         return True
@@ -110,4 +127,5 @@ def offline_status():
         "web_search_blocked": not cfg.get("allow_web_search", False),
         "remote_models_blocked": not cfg.get("allow_remote_models", False),
         "docker_control_blocked": not cfg.get("allow_docker_control", False),
+        "unattended_mode": unattended_enabled(cfg),
     }
