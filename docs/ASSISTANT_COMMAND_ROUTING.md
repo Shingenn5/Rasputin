@@ -38,3 +38,9 @@ The available aliases and the router contract version are published by
 `GET /api/assistant/capabilities` under `commandRouter`. Adding an alias must
 map to an existing `CONTROL_OPERATIONS` entry, remain broker-only, and include
 a regression test for recognized, blocked, and non-executing behavior.
+
+The Assistant view exposes this router alongside the local voice transport and
+MCP capability catalog. This is an operator-facing readiness summary: it shows
+contract versions, preview-only state, local audio paths, callable versus
+blocked tools, and relay health without executing any command or opening an
+audio device.

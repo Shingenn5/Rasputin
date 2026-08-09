@@ -37,6 +37,8 @@ export function AssistantView({
   contextCapsules = { capsules: [] },
   modelPacks,
   handoffs,
+  tools = { tools: [], callableTools: [] },
+  mcpRelays = { servers: [] },
   voicePreview,
   contextPreview,
   sessions = { sessions: [] },
@@ -73,6 +75,19 @@ export function AssistantView({
   const packItems = modelPacks?.packs || [];
   const handoffItems = handoffs?.handoffs || [];
   const voiceRoles = capabilities?.voiceRoles || [];
+  const commandRouter = capabilities?.commandRouter || {};
+  const voiceContract = capabilities?.voice || {};
+  const toolItems = Array.isArray(tools?.tools) ? tools.tools : [];
+  const callableToolItems = Array.isArray(tools?.callableTools)
+    ? tools.callableTools
+    : toolItems.filter((tool) => tool.callable !== false);
+  const blockedToolCount = Math.max(0, toolItems.length - callableToolItems.length);
+  const mcpServerItems = Array.isArray(mcpRelays?.servers) ? mcpRelays.servers : [];
+  const runningMcpCount = mcpServerItems.filter((server) => server.status === "running" || server.health === "running").length;
+  const commandOperations = Array.isArray(commandRouter.supportedOperations) ? commandRouter.supportedOperations : [];
+  const commandReady = Boolean(commandRouter.previewEndpoint && commandRouter.executionMode === "preview_only");
+  const voiceReady = Boolean(voiceContract.localOnly && voiceContract.transport);
+  const mcpReady = Boolean(tools?.contract?.discoveryMode === "fail_closed" || tools?.contract?.discovery_mode === "fail_closed");
   const workflows = Array.isArray(capabilities?.workflows) ? capabilities.workflows : [];
   const sessionItems = (sessions?.sessions || []).slice(0, 30);
   const policy = profile?.localControlPolicy || {};
@@ -131,6 +146,52 @@ export function AssistantView({
                   </Col>
                 );
               })}
+            </Row>
+          </Card.Body>
+        </Card>
+
+        <Card className="settings-card shadow-sm mb-3" data-testid="assistant-capability-contracts">
+          <Card.Body>
+            <SectionHeader
+              title="Assistant readiness"
+              text="The contracts below show what Rasputin can discover and preview locally. They do not start commands, audio devices, or model processes."
+              action={<Badge bg={commandReady && voiceReady && mcpReady ? "success" : "secondary"}>{commandReady && voiceReady && mcpReady ? "Contracts ready" : "Contracts partial"}</Badge>}
+            />
+            <Row className="g-3">
+              <Col md={4} data-testid="assistant-command-contract">
+                <div className="border rounded p-3 h-100">
+                  <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+                    <strong><ShieldCheck size={16} className="me-1 text-primary" aria-hidden="true" />Command router</strong>
+                    <Badge bg={commandReady ? "success" : "secondary"}>{commandRouter.contractVersion || "Not advertised"}</Badge>
+                  </div>
+                  <p className="small text-body-secondary mb-2">{titleize(commandRouter.executionMode || "unavailable")} with approval before broker handoff.</p>
+                  <div className="small"><span className="text-body-secondary">Preview endpoint:</span> <code>{commandRouter.previewEndpoint || "—"}</code></div>
+                  <div className="small mt-1"><span className="text-body-secondary">Allowlisted operations:</span> {commandOperations.length}</div>
+                </div>
+              </Col>
+              <Col md={4} data-testid="assistant-voice-contract">
+                <div className="border rounded p-3 h-100">
+                  <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+                    <strong><Mic size={16} className="me-1 text-primary" aria-hidden="true" />Voice transport</strong>
+                    <Badge bg={voiceReady ? "success" : "secondary"}>{voiceContract.contractVersion || "Not advertised"}</Badge>
+                  </div>
+                  <p className="small text-body-secondary mb-2">{voiceContract.localOnly ? "Local-only adapter" : "Local policy not confirmed"}; device-free until an explicit audio layer is approved.</p>
+                  <div className="small"><span className="text-body-secondary">Transcribe:</span> <code>{voiceContract.transcriptionPath || "—"}</code></div>
+                  <div className="small mt-1"><span className="text-body-secondary">Synthesize:</span> <code>{voiceContract.synthesisPath || "—"}</code></div>
+                </div>
+              </Col>
+              <Col md={4} data-testid="assistant-mcp-contract">
+                <div className="border rounded p-3 h-100">
+                  <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+                    <strong><Link2 size={16} className="me-1 text-primary" aria-hidden="true" />MCP capability catalog</strong>
+                    <Badge bg={mcpReady ? "success" : "secondary"}>{tools?.contract?.version || "Not advertised"}</Badge>
+                  </div>
+                  <p className="small text-body-secondary mb-2">Fail-closed discovery keeps blocked tools visible to operators but unavailable to models.</p>
+                  <div className="small"><span className="text-body-secondary">Callable tools:</span> {callableToolItems.length} / {toolItems.length}</div>
+                  <div className="small mt-1"><span className="text-body-secondary">Blocked by policy:</span> {blockedToolCount}</div>
+                  <div className="small mt-1"><span className="text-body-secondary">MCP relays running:</span> {runningMcpCount} / {mcpServerItems.length}</div>
+                </div>
+              </Col>
             </Row>
           </Card.Body>
         </Card>

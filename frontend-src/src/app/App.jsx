@@ -2501,6 +2501,8 @@ export function App() {
         contextCapsules={assistantContextCapsules}
         modelPacks={assistantModelPacks}
         handoffs={assistantHandoffs}
+        tools={tools}
+        mcpRelays={mcpRelays}
         voicePreview={assistantVoicePreview}
         contextPreview={assistantContextPreview}
         loading={assistantLoading}
