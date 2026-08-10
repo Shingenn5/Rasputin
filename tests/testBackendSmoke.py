@@ -5261,6 +5261,45 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(preview.get("approvalId") or preview.get("approval_id"))
         self.assertEqual((target / "note.txt").read_text(encoding="utf-8"), "hello")
 
+    def testGitRestoreHandlesExplicitUntrackedFileWithApprovalAndTrust(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "restore@example.com"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Restore Smoke"], cwd=root, check=True)
+            (root / "tracked.txt").write_text("original\n", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=root, check=True)
+            (root / "new.txt").write_text("uncommitted\n", encoding="utf-8")
+            approved = self.assertOk(self.client.post("/api/workspace/approve", json={
+                "path": str(root), "name": "Git Restore Untracked Smoke", "readOnly": False,
+            }))
+            try:
+                with patch("backend.core.security.load", return_value={
+                    "allow_file_write": True,
+                    "approval_required_file_write": True,
+                }):
+                    preview = asyncio.run(McpLayer().git_restore(
+                        "new.txt", workspace_path=str(root),
+                    ))
+                self.assertTrue(preview.get("preview"))
+                self.assertTrue((root / "new.txt").exists())
+
+                from backend.core import workspace as workspace_mod
+                workspace_mod.set_trusted(approved["id"], True)
+                with patch("backend.core.security.load", return_value={
+                    "allow_file_write": True,
+                    "approval_required_file_write": True,
+                }):
+                    restored = asyncio.run(McpLayer().git_restore(
+                        "new.txt", workspace_path=str(root),
+                    ))
+                self.assertEqual(restored["exit_code"], 0)
+                self.assertEqual(restored["removed_untracked"], ["new.txt"])
+                self.assertFalse((root / "new.txt").exists())
+            finally:
+                self.client.post("/api/workspace/remove", json={"workspaceId": approved["id"]})
+
     def testGovernedChatPrependsUntrustedContentPolicyToEveryPhase(self):
         hub = agent.AgentHub()
         seen_prompts = []

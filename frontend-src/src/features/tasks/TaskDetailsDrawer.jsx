@@ -210,6 +210,7 @@ export function TaskDetailsDrawer({
                       <p className="empty-inline">Host Shell and automatic test commands are intentionally unavailable in this safety mode.</p>
                     </article>
                   )}
+                  <TaskOutcomePanel task={task} detail={detail} />
                   <article className="drawer-result-block">
                     <h2>Result</h2>
                     <div className="markdown-body">
@@ -350,6 +351,54 @@ export function TaskDetailsDrawer({
           </>
         )}
     </Drawer>
+  );
+}
+
+function TaskOutcomePanel({ task, detail }) {
+  const traces = detail?.trace || task?.trace || [];
+  const toolCalls = detail?.toolCalls || [];
+  const mutationTools = new Set(["fs_patch", "fs_write", "fs_move", "fs_mkdir"]);
+  const edits = toolCalls.filter((tool) => mutationTools.has(tool.name) && tool.status === "done");
+  const tests = traces
+    .filter((item) => item.kind === "test_run")
+    .map((item) => item.detail || {});
+  const latestTest = tests[tests.length - 1] || null;
+  const hasFailedTest = tests.some((test) => test.passed === false);
+  const active = ["queued", "running", "paused"].includes(task?.status);
+  let headline = "No completion evidence yet.";
+  let tone = "neutral";
+  if (active) {
+    headline = "Task is still running; completion has not been claimed.";
+    tone = "pending";
+  } else if (hasFailedTest) {
+    headline = "Workspace tests failed; review the terminal output or retry the task.";
+    tone = "error";
+  } else if (task?.status === "error") {
+    headline = "Task stopped with an error; inspect the trace before retrying.";
+    tone = "error";
+  } else if (task?.status === "done" && edits.length) {
+    headline = "Edits completed; review Changes before committing anything.";
+    tone = "success";
+  } else if (task?.status === "done") {
+    headline = "Model response completed; no file mutation is recorded.";
+    tone = "success";
+  }
+  return (
+    <article className={`drawer-result-block task-outcome-panel is-${tone}`} data-testid="task-outcome">
+      <div className="section-row">
+        <div>
+          <h2>Completion evidence</h2>
+          <p>{headline}</p>
+        </div>
+        <span className={`status-pill status-${tone}`}>{tone === "success" ? "Review" : tone}</span>
+      </div>
+      <dl className="detail-grid">
+        <dt>Model response</dt><dd>{task?.result ? "Recorded" : "Not recorded"}</dd>
+        <dt>File edits</dt><dd>{edits.length ? `${edits.length} mutation tool${edits.length === 1 ? "" : "s"} completed` : "None recorded"}</dd>
+        <dt>Workspace tests</dt><dd>{latestTest ? (latestTest.passed ? "Latest run passed" : "Latest run failed") : "Not run or not configured"}</dd>
+        <dt>Review action</dt><dd>{edits.length ? "Open Changes tab" : "Inspect Trace tab"}</dd>
+      </dl>
+    </article>
   );
 }
 
@@ -513,7 +562,7 @@ function ChangesPanel({ workspace, active }) {
         <div className="changes-workbench">
           <ul className="changes-file-list" aria-label="Changed files">
             {files.map((entry) => {
-              const isModified = /[MR]/.test(entry.status || "");
+              const isRevertable = /[AMRD?]/.test(entry.status || "");
               return (
                 <li key={entry.path} className="changes-file-row">
                   <button
@@ -526,7 +575,7 @@ function ChangesPanel({ workspace, active }) {
                     <span aria-hidden="true" className={`changes-file-status ${statusClass(entry.status)}`}>{entry.status || "?"}</span>
                     <span className="changes-file-path">{entry.path}</span>
                   </button>
-                  {isModified && (
+                  {isRevertable && (
                     <button type="button" data-testid="changes-revert" className="tiny-action danger" aria-label={`Revert ${entry.path}`} onClick={() => revert(entry.path)}>
                       Revert
                     </button>

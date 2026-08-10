@@ -985,9 +985,9 @@ class McpLayer:
         return {"cwd": str(base), "message": message, **result}
 
     async def git_restore(self, paths, workspace_path=None, approved=False, approval_id=None, _task_id=None, _tool_call_id=None):
-        # Discard local changes to tracked files (git checkout -- <path>). This
-        # is destructive (uncommitted edits are lost), so it carries the same
-        # write + trust + approval gating as git_add / git_commit.
+        # Discard local changes to tracked files and remove explicitly selected
+        # untracked files. This is destructive (uncommitted edits are lost), so
+        # it carries the same write + trust + approval gating as git_add / git_commit.
         security.require("allow_file_write")
         base = workspace.resolve_path(workspace_path or workspace.get_active()["active_path"])
         item = workspace.require_path_permission(base, "write")
@@ -1000,7 +1000,19 @@ class McpLayer:
         for p in raw_paths:
             target = self._safe(p, workspace_path)
             self._protect_task_git_metadata(target)
-            rel_paths.append(str(target.relative_to(base)) if target != base else ".")
+            if target == base:
+                raise ValueError("git restore requires an explicit file or directory path")
+            rel_paths.append(str(target.relative_to(base)))
+        status = await self._run_git(base, ["status", "--porcelain=v1", "--untracked-files=all", "--"] + rel_paths)
+        untracked = []
+        for line in (status.get("stdout") or "").splitlines():
+            if line.startswith("?? "):
+                untracked.append(line[3:].replace("\\", "/"))
+        untracked_targets = [
+            rel for rel in rel_paths
+            if any(item == rel.replace("\\", "/") or item.startswith(rel.replace("\\", "/").rstrip("/") + "/") for item in untracked)
+        ]
+        tracked_targets = [rel for rel in rel_paths if rel not in untracked_targets]
         cfg = security.load()
         if cfg.get("approval_required_file_write", True) and not trusted and approval_id:
             approvals.require_approved(approval_id, "git_restore")
@@ -1008,14 +1020,36 @@ class McpLayer:
         if cfg.get("approval_required_file_write", True) and not trusted and not approved:
             preview = approvals.mutation_preview("git_restore", {
                 "paths": rel_paths,
+                "untrackedPaths": untracked_targets,
                 "workspace": workspace_path or workspace.get_active()["active_path"],
             }, task_id=_task_id, tool_call_id=_tool_call_id)
             approved = await self._wait_for_approval(preview, "git_restore", _task_id)
             if not approved:
                 return preview
-        result = await self._run_git(base, ["checkout", "--"] + rel_paths)
-        audit.log("git_restore", {"cwd": str(base), "paths": rel_paths, "trusted": trusted})
-        return {"cwd": str(base), "paths": rel_paths, **result}
+        results = []
+        if tracked_targets:
+            results.append(await self._run_git(base, ["checkout", "--"] + tracked_targets))
+        if untracked_targets:
+            # `git clean` is path-scoped and never receives `.` here. It removes
+            # only the explicitly selected untracked path(s), while preserving
+            # ignored files and all other untracked work.
+            results.append(await self._run_git(base, ["clean", "-fd", "--"] + untracked_targets))
+        exit_codes = [item.get("exit_code") for item in results]
+        output = "\n".join(item.get("stdout", "") for item in results if item.get("stdout"))
+        stderr = "\n".join(item.get("stderr", "") for item in results if item.get("stderr"))
+        result = {
+            "exit_code": next((code for code in exit_codes if code not in (0, None)), 0),
+            "timed_out": any(item.get("timed_out") for item in results),
+            "stdout": output,
+            "stderr": stderr,
+        }
+        audit.log("git_restore", {
+            "cwd": str(base),
+            "paths": rel_paths,
+            "untracked_paths": untracked_targets,
+            "trusted": trusted,
+        })
+        return {"cwd": str(base), "paths": rel_paths, "removed_untracked": untracked_targets, **result}
 
 
 async def demo_tool_call():

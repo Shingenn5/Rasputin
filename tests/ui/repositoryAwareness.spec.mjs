@@ -100,6 +100,8 @@ test("task Changes shows repository state and keeps Revert approval-gated", asyn
   await page.getByRole("textbox", { name: "Search by ID, agent, status, or error text…" }).fill(objective);
   await page.getByRole("button", { name: "Inspect" }).click();
   await page.getByRole("button", { name: "Open Full Details View" }).click();
+  await expect(page.locator("[data-testid='task-outcome']")).toContainText("Completion evidence");
+  await expect(page.locator("[data-testid='task-outcome']")).toContainText("Model response");
   await page.getByRole("tab", { name: "Changes" }).click();
 
   const summary = page.locator("[data-testid='repository-summary']");
