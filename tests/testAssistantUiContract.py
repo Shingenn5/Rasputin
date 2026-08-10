@@ -1,0 +1,21 @@
+import unittest
+from pathlib import Path
+
+
+class AssistantUiContractTests(unittest.TestCase):
+    def test_push_to_talk_is_explicit_bounded_and_local_adapter_wired(self):
+        source = (Path(__file__).resolve().parents[1] / "frontend-src" / "src" / "features" / "assistant" / "AssistantView.jsx").read_text(encoding="utf-8")
+        self.assertIn("navigator.mediaDevices?.getUserMedia", source)
+        self.assertIn("getUserMedia({ audio: true })", source)
+        self.assertIn("new MediaRecorder(stream)", source)
+        self.assertIn("/api/assistant/voice/transcribe", source)
+        self.assertIn("/api/assistant/voice/synthesize", source)
+        self.assertIn("MAX_RECORDING_MS = 60 * 1000", source)
+        self.assertIn('data-testid="assistant-voice-console"', source)
+        self.assertIn('data-testid="assistant-voice-toggle"', source)
+        self.assertIn('data-testid="assistant-voice-audio"', source)
+        self.assertIn("aria-pressed={active}", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

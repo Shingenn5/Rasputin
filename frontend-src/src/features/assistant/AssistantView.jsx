@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Col, Form, Row, Stack } from "react-bootstrap";
 import { ArrowRight, Bot, CheckCircle2, Clock3, Code2, Link2, MessageSquare, Mic, RefreshCw, ShieldCheck, Volume2, XCircle } from "lucide-react";
 
@@ -25,6 +25,145 @@ function SectionHeader({ title, text, action }) {
         {text && <p className="text-body-secondary mb-0 small">{text}</p>}
       </div>
       {action}
+    </div>
+  );
+}
+
+function VoiceConsole() {
+  const MAX_RECORDING_MS = 60 * 1000;
+  const [state, setState] = useState("idle");
+  const [transcript, setTranscript] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
+  const [error, setError] = useState("");
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const stopTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+    streamRef.current?.getTracks?.().forEach((track) => track.stop());
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+  }, [audioUrl]);
+
+  const finishTurn = async (blob) => {
+    setState("transcribing");
+    setError("");
+    try {
+      const transcribeResponse = await fetch("/api/assistant/voice/transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": blob.type || "audio/webm",
+          "X-Filename": blob.type.includes("wav") ? "rasputin-recording.wav" : "rasputin-recording.webm",
+        },
+        body: blob,
+      });
+      const transcriptPayload = await transcribeResponse.json().catch(() => ({}));
+      if (!transcribeResponse.ok || transcriptPayload.ok === false) {
+        throw new Error(transcriptPayload.error?.message || `Transcription failed (${transcribeResponse.status}).`);
+      }
+      const text = transcriptPayload.data?.text || "";
+      if (!text) throw new Error("The local speech adapter returned an empty transcript.");
+      setTranscript(text);
+      setState("synthesizing");
+      const synthesisResponse = await fetch("/api/assistant/voice/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, responseFormat: "wav" }),
+      });
+      if (!synthesisResponse.ok) {
+        const payload = await synthesisResponse.json().catch(() => ({}));
+        throw new Error(payload.error?.message || `Speech synthesis failed (${synthesisResponse.status}).`);
+      }
+      const audio = await synthesisResponse.blob();
+      const nextUrl = URL.createObjectURL(audio);
+      setAudioUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return nextUrl;
+      });
+      setState("ready");
+    } catch (turnError) {
+      setState("error");
+      setError(String(turnError.message || turnError));
+    }
+  };
+
+  const startRecording = async () => {
+    setError("");
+    setTranscript("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setState("error");
+      setError("This browser does not expose a microphone recorder. Use a modern browser on localhost.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+        stopTimerRef.current = null;
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        recorderRef.current = null;
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        if (!blob.size) {
+          setState("error");
+          setError("The microphone returned no audio.");
+          return;
+        }
+        finishTurn(blob);
+      };
+      recorder.start();
+      stopTimerRef.current = setTimeout(() => {
+        if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      }, MAX_RECORDING_MS);
+      setState("recording");
+    } catch (recordError) {
+      streamRef.current?.getTracks?.().forEach((track) => track.stop());
+      streamRef.current = null;
+      setState("error");
+      setError(recordError?.name === "NotAllowedError" ? "Microphone permission was not granted." : String(recordError.message || recordError));
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current?.state === "recording") {
+      if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+      recorderRef.current.stop();
+      setState("stopped");
+    }
+  };
+
+  const active = state === "recording";
+  const busy = ["stopped", "transcribing", "synthesizing"].includes(state);
+  return (
+    <div className="border-top mt-3 pt-3" data-testid="assistant-voice-console">
+      <SectionHeader title="Push-to-talk" text="Microphone access starts only after you press the button. The captured audio is sent to the authenticated local adapter, then returned as a playable response." />
+      <div className="d-flex flex-wrap align-items-center gap-2">
+        <Button
+          type="button"
+          variant={active ? "danger" : "outline-primary"}
+          onClick={active ? stopRecording : startRecording}
+          disabled={busy}
+          aria-pressed={active}
+          aria-label={active ? "Stop recording" : "Start push to talk"}
+          data-testid="assistant-voice-toggle"
+        >
+          <Mic size={14} className="me-1" aria-hidden="true" />{active ? "Stop recording" : "Start push to talk"}
+        </Button>
+        <Badge bg={state === "ready" ? "success" : state === "error" ? "danger" : "secondary"}>{titleize(state)}</Badge>
+        {state === "recording" && <span className="small text-body-secondary">Recording locally until you stop.</span>}
+      </div>
+      {error && <Alert variant="danger" className="mt-2 mb-0" data-testid="assistant-voice-error">{error}</Alert>}
+      {transcript && <div className="small mt-2" data-testid="assistant-voice-transcript"><strong>Transcript:</strong> {transcript}</div>}
+      {audioUrl && <audio className="w-100 mt-2" controls preload="metadata" src={audioUrl} data-testid="assistant-voice-audio">Your browser cannot play the local speech response.</audio>}
     </div>
   );
 }
@@ -494,6 +633,7 @@ export function AssistantView({
                       <div className="text-body-secondary mt-2"><ShieldCheck size={13} className="me-1" />Audio I/O started: {voicePreview.execution?.audioIoStarted ? "yes" : "no"}</div>
                     </div>
                   )}
+                  <VoiceConsole />
                 </div>
               </Card.Body>
             </Card>

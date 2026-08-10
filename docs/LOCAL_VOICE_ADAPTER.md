@@ -42,3 +42,14 @@ executes a command, creates an approval, or starts a model container. The
 existing `POST /api/assistant/voice-preview` endpoint remains the place to
 validate a complete speech-to-text → main model → text-to-speech model pack
 before a voice turn is attempted.
+
+## Browser push-to-talk
+
+The Assistant view now includes a push-to-talk console. It requests
+`getUserMedia({audio:true})` only after the operator presses **Start push to
+talk**, records at most 60 seconds with `MediaRecorder`, and sends the caller
+supplied blob to the authenticated transcription route. The returned
+transcript is sent to the local synthesis route and exposed in an HTML audio
+player; no microphone is opened on page load and no host command is started by
+the voice turn. Browser permission prompts, microphone hardware, registered
+speech models, and speaker output still require a live operator verification.
