@@ -47,6 +47,28 @@ class AssistantContractTests(unittest.TestCase):
         self.assertTrue(profile["local_control_policy"]["broker_only"])
         self.assertFalse(profile["local_control_policy"]["model_containers_have_host_access"])
 
+    def test_profile_defaults_to_bounded_sarcasm_and_preserves_partial_style_updates(self):
+        profile = contracts.default_profile("contract-test")
+        self.assertIn("sarcastic", profile["persona"]["summary"].lower())
+        self.assertEqual(profile["persona"]["style"], {"tone": "dry", "sarcasm": "light", "respectful": True})
+
+        updated = contracts.merge_profile(
+            profile,
+            {"persona": {"style": {"tone": "warm", "sarcasm": "moderate", "respectful": False}}},
+            "contract-test",
+        )
+        self.assertEqual(updated["persona"]["style"]["tone"], "warm")
+        self.assertEqual(updated["persona"]["style"]["sarcasm"], "moderate")
+        self.assertTrue(updated["persona"]["style"]["respectful"])
+        self.assertIn("sarcastic", updated["persona"]["summary"].lower())
+
+        invalid = contracts.merge_profile(
+            profile,
+            {"persona": {"style": {"tone": "hostile", "sarcasm": "unlimited"}}},
+            "contract-test",
+        )
+        self.assertEqual(invalid["persona"]["style"], profile["persona"]["style"])
+
     def test_agent_graph_rejects_cycles(self):
         with self.assertRaisesRegex(ValueError, "acyclic"):
             contracts.normalize_agents(
@@ -109,6 +131,16 @@ class AssistantContractTests(unittest.TestCase):
         patched = self.client.patch("/api/assistant/profile", json={"displayName": "Rasputin Prime"})
         self.assertEqual(patched.status_code, 200, patched.text)
         self.assertEqual(patched.json()["data"]["displayName"], "Rasputin Prime")
+
+        styled = self.client.patch(
+            "/api/assistant/profile",
+            json={"persona": {"style": {"tone": "warm", "sarcasm": "off"}}},
+        )
+        self.assertEqual(styled.status_code, 200, styled.text)
+        styled_data = styled.json()["data"]
+        self.assertEqual(styled_data["persona"]["style"]["tone"], "warm")
+        self.assertEqual(styled_data["persona"]["style"]["sarcasm"], "off")
+        self.assertTrue(styled_data["persona"]["style"]["respectful"])
 
     def test_command_router_is_allowlisted_preview_only_and_approval_explicit(self):
         original_security = security.load()

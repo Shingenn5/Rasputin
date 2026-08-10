@@ -175,6 +175,7 @@ export function App() {
   const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
   const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
   const [assistantVoicePreview, setAssistantVoicePreview] = useState(null);
+  const [assistantCommandPreview, setAssistantCommandPreview] = useState(null);
   const [assistantContextPreview, setAssistantContextPreview] = useState(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState("");
@@ -1551,6 +1552,29 @@ export function App() {
     }
   }
 
+  async function saveAssistantProfile(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const profile = await postJson("/api/assistant/profile", {
+        displayName: String(form.get("displayName") || "Rasputin").trim() || "Rasputin",
+        persona: {
+          summary: String(form.get("personaSummary") || "").trim(),
+          style: {
+            tone: String(form.get("personaTone") || "dry"),
+            sarcasm: String(form.get("personaSarcasm") || "light"),
+            respectful: true,
+          },
+        },
+      });
+      setAssistantProfile(profile);
+      setGlobalStatus("Assistant personality saved. Safety policy remains broker-only.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+    }
+  }
+
   async function reviewAssistantPlan(planId, status) {
     try {
       await postJson(`/api/assistant/plans/${encodeURIComponent(planId)}/${status === "approved" ? "approve" : "reject"}`, {});
@@ -1609,6 +1633,26 @@ export function App() {
       setAssistantError(error.message);
       setGlobalStatus(error.message);
       return null;
+    }
+  }
+
+  async function previewAssistantCommand(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const command = String(form.get("assistantCommand") || "").trim();
+    if (!command) return;
+    try {
+      const preview = await postJson("/api/assistant/command-preview", {
+        command,
+        workspacePath: workspace.activePath || ".",
+      });
+      setAssistantCommandPreview(preview);
+      setGlobalStatus(preview.route?.status === "recognized"
+        ? "Command recognized; review is required before any broker handoff."
+        : "Command stayed in preview and was not executed.");
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
     }
   }
 
@@ -2504,6 +2548,7 @@ export function App() {
         tools={tools}
         mcpRelays={mcpRelays}
         voicePreview={assistantVoicePreview}
+        commandPreview={assistantCommandPreview}
         contextPreview={assistantContextPreview}
         loading={assistantLoading}
         error={assistantError}
@@ -2515,7 +2560,9 @@ export function App() {
         prepareHandoff={prepareAssistantHandoff}
         dispatchHandoff={dispatchAssistantHandoff}
         previewVoice={previewAssistantVoice}
+        previewCommand={previewAssistantCommand}
         previewContext={previewAssistantContext}
+        saveProfile={saveAssistantProfile}
         createContextCapsule={createAssistantContextCapsule}
         reviewContextCapsule={reviewAssistantContextCapsule}
         openWorkflow={openAssistantWorkflow}

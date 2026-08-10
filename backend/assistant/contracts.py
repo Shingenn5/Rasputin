@@ -32,6 +32,9 @@ AGENT_MODES = {"chat", "plan", "research", "code", "test"}
 
 VOICE_ROLES = {"speech_to_text", "text_to_speech"}
 
+PERSONA_TONES = {"direct", "warm", "dry"}
+SARCASM_LEVELS = {"off", "light", "moderate"}
+
 # The personal-assistant surface and the coding surface are intentionally
 # separate entrypoints.  They share Rasputin's identity, context authority,
 # model registry, and safety broker, but each can be opened and used on its
@@ -81,8 +84,9 @@ DEFAULT_PROFILE = {
     "display_name": "Rasputin",
     "contract_version": "0.1",
     "persona": {
-        "summary": "A calm, direct local systems partner that keeps the user's intent and context coherent.",
-        "traits": ["context-aware", "transparent", "practical", "privacy-first"],
+        "summary": "A dryly sarcastic, respectful local systems partner that keeps the user's intent and context coherent.",
+        "traits": ["dryly sarcastic", "context-aware", "transparent", "privacy-first"],
+        "style": {"tone": "dry", "sarcasm": "light", "respectful": True},
     },
     "mission": "Coordinate local models and agents as one dependable workstation assistant.",
     "context_authority": {
@@ -257,6 +261,17 @@ def sanitize_profile(value: Any, owner_id: str = "admin") -> dict[str, Any]:
         traits = _list_of_text(persona.get("traits"), limit=12, item_limit=60)
         if traits:
             profile["persona"]["traits"] = traits
+        style = persona.get("style")
+        if isinstance(style, dict):
+            tone = _key(style.get("tone"))
+            sarcasm = _key(style.get("sarcasm"))
+            if tone in PERSONA_TONES:
+                profile["persona"]["style"]["tone"] = tone
+            if sarcasm in SARCASM_LEVELS:
+                profile["persona"]["style"]["sarcasm"] = sarcasm
+            # Respect is a safety invariant, not a user-toggleable personality
+            # setting. Sarcasm must stay subordinate to it.
+            profile["persona"]["style"]["respectful"] = True
     voice = value.get("voice_policy")
     if isinstance(voice, dict):
         input_role = _key(voice.get("input_role"))
@@ -277,7 +292,12 @@ def merge_profile(current: Any, updates: Any, owner_id: str = "admin") -> dict[s
         return base
     for field in PROFILE_MUTABLE_FIELDS:
         if field in updates:
-            base[field] = updates[field]
+            if field in {"persona", "voice_policy"} and isinstance(updates[field], dict):
+                base[field] = {**base[field], **updates[field]}
+                if field == "persona" and isinstance(updates[field].get("style"), dict):
+                    base[field]["style"] = {**base[field].get("style", {}), **updates[field]["style"]}
+            else:
+                base[field] = updates[field]
     return sanitize_profile(base, owner_id)
 
 

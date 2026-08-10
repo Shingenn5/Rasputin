@@ -31,6 +31,7 @@ These are the documents to consult before starting implementation work.
 | [`LASTING_MEMORY.md`](LASTING_MEMORY.md) | Owner/workspace-scoped durable memory contract and current API/UI | Implemented foundation; follow-up slices remain |
 | [`MCP_CAPABILITY_CONTRACT.md`](MCP_CAPABILITY_CONTRACT.md) | Versioned MCP tool discovery and callable-only model surface | Implemented capability contract |
 | [`ASSISTANT_COMMAND_ROUTING.md`](ASSISTANT_COMMAND_ROUTING.md) | Deterministic assistant command previews and approval states | Implemented preview boundary |
+| [`ASSISTANT_PERSONALITY_PROFILE.md`](ASSISTANT_PERSONALITY_PROFILE.md) | Bounded sarcastic-but-respectful identity controls and safety invariants | Implemented profile contract |
 | [`LOCAL_VOICE_ADAPTER.md`](LOCAL_VOICE_ADAPTER.md) | Local speech-to-text and text-to-speech transport contract | Implemented device-free vertical slice |
 
 ## Product direction and design records

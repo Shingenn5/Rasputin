@@ -40,6 +40,7 @@ export function AssistantView({
   tools = { tools: [], callableTools: [] },
   mcpRelays = { servers: [] },
   voicePreview,
+  commandPreview,
   contextPreview,
   sessions = { sessions: [] },
   loading = false,
@@ -52,7 +53,9 @@ export function AssistantView({
   prepareHandoff,
   dispatchHandoff,
   previewVoice,
+  previewCommand,
   previewContext,
+  saveProfile,
   createContextCapsule,
   reviewContextCapsule,
   openWorkflow,
@@ -77,6 +80,7 @@ export function AssistantView({
   const voiceRoles = capabilities?.voiceRoles || [];
   const commandRouter = capabilities?.commandRouter || {};
   const voiceContract = capabilities?.voice || {};
+  const personaStyle = profile?.persona?.style || {};
   const toolItems = Array.isArray(tools?.tools) ? tools.tools : [];
   const callableToolItems = Array.isArray(tools?.callableTools)
     ? tools.callableTools
@@ -196,6 +200,43 @@ export function AssistantView({
           </Card.Body>
         </Card>
 
+        <Card className="settings-card shadow-sm mb-3" data-testid="assistant-command-preview">
+          <Card.Body>
+            <SectionHeader
+              title="Speak a governed command"
+              text="Type an intent in plain language. Rasputin only matches allowlisted operations and keeps execution in preview until you review the handoff."
+              action={<Badge bg="secondary">Preview only</Badge>}
+            />
+            <Form onSubmit={previewCommand}>
+              <Row className="g-2 align-items-end">
+                <Col md={9}>
+                  <Form.Label htmlFor="assistantCommand">Command or intent</Form.Label>
+                  <Form.Control id="assistantCommand" name="assistantCommand" required maxLength={500} placeholder="Check Docker status or open VS Code" />
+                </Col>
+                <Col md={3}>
+                  <Button type="submit" className="w-100" variant="outline-primary">Preview route</Button>
+                </Col>
+              </Row>
+            </Form>
+            {commandPreview && (
+              <Alert
+                className="mt-3 mb-0"
+                variant={commandPreview.route?.status === "recognized" ? "success" : commandPreview.route?.status === "blocked" || commandPreview.route?.status === "rejected" ? "danger" : "warning"}
+                data-testid="assistant-command-result"
+              >
+                <div className="d-flex flex-wrap justify-content-between gap-2">
+                  <strong>{titleize(commandPreview.route?.status || "unknown")}</strong>
+                  <Badge bg="light" text="dark">{titleize(commandPreview.approval?.state || "not requested")}</Badge>
+                </div>
+                <div className="small mt-1">{commandPreview.route?.reason || "No route explanation available."}</div>
+                {commandPreview.route?.operation && <div className="small mt-1">Operation: <code>{commandPreview.route.operation}</code></div>}
+                {(commandPreview.route?.blockedReasons || []).length > 0 && <div className="small text-danger mt-1">Blocked by: {commandPreview.route.blockedReasons.join(", ")}</div>}
+                <div className="small text-body-secondary mt-2">Started: {commandPreview.execution?.started ? "yes" : "no"} · Side effects: {commandPreview.execution?.sideEffects ? "yes" : "no"}</div>
+              </Alert>
+            )}
+          </Card.Body>
+        </Card>
+
         <Row className="g-3">
           <Col xl={5}>
             <Card className="settings-card shadow-sm h-100" data-testid="assistant-identity-card">
@@ -222,6 +263,41 @@ export function AssistantView({
                 <div className="border-top mt-3 pt-3 small text-body-secondary">
                   <ShieldCheck size={14} className="me-1 text-success" aria-hidden="true" />
                   Model containers have no direct host access.
+                </div>
+                <div className="border-top mt-3 pt-3" data-testid="assistant-profile-editor">
+                  <SectionHeader title="Personality controls" text="Adjust presentation without changing the safety broker or context authority." />
+                  <Form onSubmit={saveProfile}>
+                    <Row className="g-2">
+                      <Col md={6}>
+                        <Form.Label htmlFor="assistantDisplayName">Display name</Form.Label>
+                        <Form.Control id="assistantDisplayName" name="displayName" defaultValue={profile?.displayName || "Rasputin"} maxLength={80} />
+                      </Col>
+                      <Col md={3}>
+                        <Form.Label htmlFor="assistantPersonaTone">Tone</Form.Label>
+                        <Form.Select id="assistantPersonaTone" name="personaTone" defaultValue={personaStyle.tone || "dry"}>
+                          <option value="dry">Dry</option>
+                          <option value="direct">Direct</option>
+                          <option value="warm">Warm</option>
+                        </Form.Select>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Label htmlFor="assistantPersonaSarcasm">Sarcasm</Form.Label>
+                        <Form.Select id="assistantPersonaSarcasm" name="personaSarcasm" defaultValue={personaStyle.sarcasm || "light"}>
+                          <option value="off">Off</option>
+                          <option value="light">Light</option>
+                          <option value="moderate">Moderate</option>
+                        </Form.Select>
+                      </Col>
+                      <Col md={12}>
+                        <Form.Label htmlFor="assistantPersonaSummary">Personality summary</Form.Label>
+                        <Form.Control as="textarea" rows={2} id="assistantPersonaSummary" name="personaSummary" defaultValue={profile?.persona?.summary || ""} maxLength={500} />
+                      </Col>
+                    </Row>
+                    <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+                      <Form.Text>Respectful behavior is always enforced; sarcasm cannot authorize a host action.</Form.Text>
+                      <Button type="submit" size="sm" variant="outline-primary">Save personality</Button>
+                    </div>
+                  </Form>
                 </div>
                 <div className="border-top mt-3 pt-3" data-testid="assistant-context-preview">
                   <SectionHeader title="Context surface" text="Inspect owner-scoped memory and history before Rasputin builds a plan." />
