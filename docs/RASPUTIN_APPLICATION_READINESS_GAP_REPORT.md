@@ -1,7 +1,7 @@
 # Rasputin Application Readiness Gap Report
 
-**Assessment date:** 2026-07-28
-**Basis:** current repository at `d02c50b` (`Improve Models Library recommendations`), implementation inspection, existing backend/UI tests, and the project’s current operational documents.
+**Assessment date:** 2026-08-10
+**Basis:** current repository at `e910871` (`Reconcile coding readiness checklist`), implementation inspection, focused backend/UI tests, deployment verification, and the project’s current operational documents. The compact source/test map is `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md`.
 
 ## Executive conclusion
 
@@ -22,7 +22,8 @@ These are foundations to preserve, not rewrite:
 - Agent modes with bounded execution, token/tool-event streaming, patch-based edits, shell execution, Git status/diff/commit tools, and a test/fix loop.
 - Workspace browsing, RAG/knowledge-graph tools, artifact/archive/inbox surfaces, memory review/job APIs, and bounded conversation summaries.
 - WarSat planning/deployment for local model runtimes, including GPU probing, model health, and multi-GPU planning tests.
-- Task-change review endpoints and UI surfaces; workspace test/build/lint settings are now visibly implemented and covered by the smoke UI test.
+- Persisted model capability probes, conservative mode preflight/fallback, per-deploy parser contracts, Assistant readiness/command-preview contracts, and device-free local voice adapters.
+- Task-change review endpoints and UI surfaces; workspace test/build/lint settings are visibly implemented and covered by the smoke UI test.
 
 This means proposed work should complete user journeys and tighten guarantees. It should not replace these systems with a parallel app.
 
@@ -32,7 +33,7 @@ This means proposed work should complete user journeys and tighten guarantees. I
 | --- | --- | --- |
 | Ask, receive, and manage ordinary AI work | Functional | Secondary views and user-facing lifecycle polish remain uneven. |
 | Safely perform coding work in a trusted workspace | Substantially implemented | A real coder-model, multi-file edit → test → repair → review → commit run is not yet the release-grade proof. |
-| Deploy and route local models | Functional but operator-heavy | Model capability/certification and deploy ergonomics need to make safe choices obvious. |
+| Deploy and route local models | Functional but operator-heavy | Persisted capability certification and conservative preflight now exist; live mission evidence, certificate freshness, and deploy ergonomics still need to make safe choices obvious. |
 | Run a dependable personal desktop app | Partial | Clean-machine install/upgrade evidence, signing, update channel, and production release identity are missing. |
 | Operate a shared/local appliance | Functional for a knowledgeable owner | Backup/restore, diagnostics, and support-grade operations are not yet a coherent workflow. |
 | Evaluate models and make routing decisions | Partial | Trials scorecards contain placeholder reasoning, safety, and usability scores; they must not be presented as measured truth. |
@@ -60,9 +61,11 @@ The proof should be an isolated, recorded acceptance scenario, not a mocked test
 
 **Done when:** this scenario passes against at least one live, locally hosted coder model on the intended hardware and is repeatable in CI where practical (with the live-model portion separately labeled as hardware acceptance).
 
-#### 2. Model readiness and capability contracts
+#### 2. Model readiness and capability contracts — foundation implemented, release proof open
 
-WarSat has substantial planning and runtime coverage, but a downloaded/deployed model is not automatically a reliable agent model. Rasputin needs a first-class certification state per model/runtime combination:
+WarSat has substantial planning and runtime coverage, and Rasputin now has a first-class persisted certification profile per model/runtime combination. `backend/models/compatibility.py` probes bounded chat, context retention, ordinary response, and tool calling; `backend/models/registry.py` stores the result; and task creation falls back before execution when the requested mode is not certified or tools are unavailable.
+
+The remaining release-proof requirements are:
 
 - ordinary chat returns non-empty answers;
 - streaming works;
@@ -73,7 +76,7 @@ WarSat has substantial planning and runtime coverage, but a downloaded/deployed 
 
 This is especially important because local OpenAI-compatible runtimes vary by tool parser, chat template, context behavior, and hidden-reasoning behavior.
 
-**Done when:** model cards/routing use a persisted certification result rather than only static catalog hints, and unsupported modes cannot silently start an execution task.
+**Foundation done when:** model cards/routing use persisted capability results rather than only static catalog hints, and unsupported modes cannot silently start an execution task. **Release proof remains open until:** at least one live coder-capable local model completes the file-editing acceptance mission, certification inputs are refreshed when runtime identity changes, and the UI explains the evidence and freshness boundary.
 
 ### P1 — make the core trustworthy and operable
 
@@ -204,14 +207,14 @@ Local multi-user roles are implemented, but a broader team product would still n
 
 #### 14. Documentation and release discipline
 
-Several roadmap claims have drifted as implementation moved forward (for example, workspace validation settings are now in the UI). Establish a lightweight release-readiness ledger that is updated only after verification and records:
+Roadmap claims have drifted as implementation moved forward (for example, workspace validation settings and parser configuration are now in the UI/API). The implementation ledger now provides the lightweight release-readiness checkpoint. Keep it updated only after verification and record:
 
 - feature status: implemented, automated-tested, live-verified, or planned;
 - supported environments and known exclusions;
 - owner-facing runbooks and recovery steps;
 - release acceptance evidence.
 
-This keeps the onboarding document and product claims aligned with source of truth.
+This keeps the onboarding document, checklist, roadmap, and product claims aligned with source of truth.
 
 ## Recommended execution sequence
 
@@ -235,6 +238,7 @@ This keeps the onboarding document and product claims aligned with source of tru
 
 - `docs/CODEX_ONBOARDING.md` — project contract and current coding-agent status.
 - `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` — implementation/verification history and remaining coding workflow proof.
+- `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md` — current source/test evidence and explicit status boundaries.
 - `docs/REMAINING_WORK.md`, `docs/DEPLOYMENT_MATRIX.md`, and `docs/DESKTOP_ARCHITECTURE.md` — deployment, security, and packaging status.
 - `backend/mcp/tools.py` — the intentional `docker_control` policy stub.
 - `backend/trials/scorecards.py` — current unmeasured scorecard dimensions.

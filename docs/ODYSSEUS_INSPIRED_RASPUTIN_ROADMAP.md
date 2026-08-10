@@ -299,13 +299,19 @@ public?”**
 
 ## Phase 2 — WarSat Advisor and model fitness
 
+**Current foundation (implemented):** WarSat exposes hardware/model fit
+recommendations, parser-aware plans, role routing, and persisted compatibility
+profiles. The remaining work below is about mission evidence and freshness, not
+creating a second model registry.
+
 ### Work
 
-- Convert hardware discovery into explicit usable memory envelopes.
-- Recommend model, quantization, runtime, parser, context, and GPU strategy.
-- Explain why a model fits and what capability remains unproven.
-- Turn Trials into job-specific fitness certificates.
-- Feed certificate and live-health results into capability routing.
+- Complete hardware-specific memory-envelope evidence for each deployment.
+- Keep recommendations explicit about model, quantization, runtime, parser, context, and GPU strategy.
+- Explain why a model fits and what capability remains unproven or stale.
+- Extend existing Trials and compatibility probes into job-specific fitness certificates.
+- Feed certificate freshness and live-health results into capability routing.
+- Record a live coding certificate separately from synthetic or search-only task evidence.
 
 ### Better-than-Odysseus target
 
@@ -316,13 +322,19 @@ fits this hardware and is certified for this mission.”
 
 - Recommendations are reproducible and explainable.
 - Parser/runtime mismatches are blocked before launch.
-- At least one chat, coding, and research certificate can be produced.
+- At least one chat certificate can be produced by the current compatibility flow.
+- Coding and research certificates are backed by real mission fixtures, with live hardware evidence labeled separately.
 
 ## Phase 3 — Blind Compare and evidence-based routing
 
+**Current foundation (implemented in part):** the Trials subsystem supports
+blind comparisons and coding-oriented scoring, and a revealed winner can be
+pinned to a role. Generalized datasets, measured dimensions, and routing
+explanations still need release-grade evidence.
+
 ### Work
 
-- Add blind side-by-side responses.
+- Extend blind side-by-side responses beyond the existing coding comparison.
 - Support repeatable datasets, judges, rubrics, and synthesis.
 - Normalize latency and memory measurements.
 - Promote successful results into fitness certificates.
