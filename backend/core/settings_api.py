@@ -5,6 +5,7 @@ import logging
 
 from backend.core import runtime_store as store
 from backend.core import security as core_security
+from backend.core import diagnostics
 from backend.api.core import require_admin
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -164,7 +165,7 @@ def restore_defaults(data: dict, _user=Depends(require_admin)):
 
 @router.get("/diagnostics")
 def run_diagnostics(category: str = "all", _user=Depends(require_admin)):
-    return {"status": "ok", "category": category}
+    return diagnostics.run(category, _user.get("username", "admin"), _user.get("role") == "admin")
 
 @router.post("/integrations/test")
 def test_integration(data: dict, _user=Depends(require_admin)):

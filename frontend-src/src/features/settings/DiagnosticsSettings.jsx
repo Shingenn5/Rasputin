@@ -1,25 +1,24 @@
 import React, { useState } from "react";
 import { Card, Button, Row, Col, Spinner, Alert } from "react-bootstrap";
 import { ActivitySquare, HeartPulse, Terminal, AlertCircle, CheckCircle2 } from "lucide-react";
+import { api } from "../../api/client.js";
 
 export function DiagnosticsSettings() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
+  const [error, setError] = useState("");
 
-  const runDiagnostics = () => {
+  const runDiagnostics = async () => {
     setRunning(true);
     setResults(null);
-    // Simulate a diagnostic run
-    setTimeout(() => {
-      setResults({
-        api: "healthy",
-        relay: "connected",
-        database: "healthy",
-        docker: "unreachable",
-        disk: "warning"
-      });
+    setError("");
+    try {
+      setResults(await api("/api/settings/diagnostics?category=all"));
+    } catch (err) {
+      setError(String(err.message || err));
+    } finally {
       setRunning(false);
-    }, 2000);
+    }
   };
 
   return (
@@ -48,49 +47,51 @@ export function DiagnosticsSettings() {
         </Card.Body>
       </Card>
 
+      {error && <Alert variant="danger" role="alert" data-testid="diagnostic-error">{error}</Alert>}
+
       {results && (
+        <div data-testid="diagnostic-results">
         <Row className="g-3 animate-fade-in">
           <Col md={12}>
-            <h6 className="fw-bold mb-3 text-uppercase tracking-wide text-muted">Diagnostic Results</h6>
-          </Col>
-          <Col md={6}>
-            <Alert variant="success" className="d-flex align-items-center m-0">
-              <CheckCircle2 className="me-3" size={24} />
+            <Alert variant={overallVariant(results.status)} className="d-flex align-items-start m-0">
+              {results.status === "healthy" ? <CheckCircle2 className="me-3" size={24} /> : <AlertCircle className="me-3" size={24} />}
               <div>
-                <strong>Core API</strong><br/>
-                <span className="small">Responding normally (12ms)</span>
+                <strong>Diagnostic status: {titleize(results.status)}</strong><br />
+                <span className="small">Rasputin {results.app?.version || "unknown"} · {results.app?.runtime || "runtime unknown"} · {results.app?.platform || "platform unknown"}</span>
               </div>
             </Alert>
           </Col>
-          <Col md={6}>
-            <Alert variant="success" className="d-flex align-items-center m-0">
-              <CheckCircle2 className="me-3" size={24} />
-              <div>
-                <strong>Relay Connection</strong><br/>
-                <span className="small">Authenticated via WebSocket</span>
-              </div>
-            </Alert>
-          </Col>
-          <Col md={6}>
-            <Alert variant="danger" className="d-flex align-items-center m-0">
-              <AlertCircle className="me-3" size={24} />
-              <div>
-                <strong>Docker Daemon</strong><br/>
-                <span className="small">Cannot connect to docker.sock. WarSat will fail to deploy.</span>
-              </div>
-            </Alert>
-          </Col>
-          <Col md={6}>
-            <Alert variant="warning" className="d-flex align-items-center m-0 text-dark">
-              <Terminal className="me-3" size={24} />
-              <div>
-                <strong>Disk Space</strong><br/>
-                <span className="small">Only 4GB remaining on model partition.</span>
-              </div>
-            </Alert>
-          </Col>
+          {(results.checks || []).map((check) => (
+            <Col md={6} key={check.id || check.label}>
+              <Alert variant={statusVariant(check.status)} className="d-flex align-items-start m-0 h-100">
+                {check.status === "pass" ? <CheckCircle2 className="me-3" size={24} /> : check.status === "warn" ? <Terminal className="me-3" size={24} /> : <AlertCircle className="me-3" size={24} />}
+                <div>
+                  <strong>{check.label}</strong><br />
+                  <span className="small">{check.detail}</span>
+                  {check.nextAction && <div className="small mt-2"><strong>Next:</strong> {check.nextAction}</div>}
+                </div>
+              </Alert>
+            </Col>
+          ))}
         </Row>
+        </div>
       )}
     </section>
   );
+}
+
+function statusVariant(status) {
+  if (status === "pass") return "success";
+  if (status === "warn") return "warning";
+  return "danger";
+}
+
+function overallVariant(status) {
+  if (status === "healthy") return "success";
+  if (status === "attention") return "warning";
+  return "danger";
+}
+
+function titleize(value) {
+  return String(value || "unknown").replace(/[-_]/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
 }
