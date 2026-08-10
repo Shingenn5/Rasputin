@@ -3,7 +3,7 @@
 This is the actionable, checkable source of truth for the coding-agent competitiveness track.
 
 Last derived from plan doc: 2026-07-01.
-**Last verified against actual repo code: 2026-07-01** (see "Verification notes" callouts below — this pass re-read the source files themselves, not just commit messages/plan-doc claims, and found the plan understates two things: Stage 7 already has a real partial implementation, and Stage 4b has a hidden prerequisite the plan doc didn't call out).
+**Last reconciled against actual repo code: 2026-08-10** (see `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md` for the compact source/test evidence map). This pass corrected stale claims about the WarSat parser flow and the workspace validation-command form; the live file-editing coder mission remains open.
 
 Scope note: this checklist stays scoped to the coding-agent competitiveness track. It does not absorb unrelated backlog items (UI-upgrade track, deferred Mail Relay/Timeline Sync/etc.) — those live in their own docs.
 
@@ -43,7 +43,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Per-file syntax-highlighted diff viewer (Stage 5) — done 2026-07-12
 - [x] Live terminal/log pane for shell output (Stage 5) — done 2026-07-12
 - [x] Revert-file quick action (Stage 5) — done 2026-07-12
-- [x] Per-workspace test/build/lint command settings (Stage 6) — backend + API done 2026-07-12 (settings-UI form pending)
+- [x] Per-workspace test/build/lint command settings (Stage 6) — backend, API, and admin UI form verified 2026-08-10 (`WorkspacesView.jsx` plus `tests/ui/rasputinSmoke.spec.mjs`)
 - [x] Run configured test command after an edit (Stage 6) — done 2026-07-12
 - [x] Feed test failures back into next iteration (Stage 6) — done 2026-07-12
 - [x] Expose dedicated code-structure query tool to `code` mode with citations (Stage 7) — done 2026-07-01
@@ -57,7 +57,7 @@ Stage order still matters for *when* to do these (Stage 4b gates 5/6 in spirit, 
 - [x] Test: reconnect/resume mid-stream doesn't duplicate/drop events (Stage 4b) — done 2026-07-02 (full-snapshot design makes this structural)
 - [x] Add dedicated relation-query verbs ("what calls X" / "where used" / "what imports") (Stage 7) — done 2026-07-01
 - [x] Extend Warsat fit-scoring to flag coding-capable local models for `coder` role (Stage 8) — done 2026-07-01
-- [x] Test: local-routed `code` mode completes a real task **(env-block RESOLVED 2026-07-12)** (Stage 8) — a `mode=code` agentic task ran end-to-end on the local Qwen model with 2 real `rag_search` tool executions (plan + execute phases); a *file-editing* coding task specifically is the remaining validation
+- [~] Test: local-routed `code` mode completes a real task **(environment block resolved 2026-07-12)** (Stage 8) — a `mode=code` agentic search/summarize task ran end-to-end on the local Qwen model with 2 real `rag_search` tool executions; a *file-editing* coding task specifically remains the release acceptance validation
 - [x] Blind-compare models on a real coding subtask (Stage 9) — done 2026-07-01
 
 ### Very Hard
@@ -239,7 +239,7 @@ around `execute()`), so the reopens share its one wall-clock budget rather than 
 `fs_move`), and skips loudly + inspectably (`task.log` + `task.seen("test_skipped", …)`) when no
 command is set or shell isn't permitted.
 
-- [x] Per-workspace settings for test/build/lint commands (operator-configured once per repo) — **backend + API done** (`workspace.set_workspace_commands`/`get_workspace_commands`, `POST /api/workspace/commands`, surfaced in `_public_item`); **settings-UI form still pending** (belongs to the UI/UX pass, under the dual-input a11y bar)
+- [x] Per-workspace settings for test/build/lint commands (operator-configured once per repo) — **backend + API + admin UI form done** (`workspace.set_workspace_commands`/`get_workspace_commands`, `POST /api/workspace/commands`, surfaced in `_public_item`, and `WorkspacesView.jsx`); UI persistence is covered by `tests/ui/rasputinSmoke.spec.mjs` (the broader keyboard/mouse review pass remains separate)
 - [x] In `code` mode, execution runs the configured test command after an edit — done (`governed_chat`, gated on an actual file mutation)
 - [x] Parse pass/fail result from test command output — done (`_parse_test_result`, exit code; no fragile scraping)
 - [x] Feed failures back into the next iteration within Stage 4 budget — done (reopen injects the test output as a message and `continue`s the same loop)
@@ -251,8 +251,8 @@ command is set or shell isn't permitted.
 
 **Definition of done:** "fix this bug" can mean edit → test → see it fail → fix → test → pass,
 autonomously, inside one task. **Backend mechanics complete + tested;** a real end-to-end run needs
-the settings-UI form (or an API call) to set the command + a file-editing coder model (the open
-Stage 4a/8 validation).
+an explicitly configured workspace command (now available through the API and admin UI form) + a
+file-editing coder model (the open Stage 4a/8 validation).
 
 ---
 
@@ -283,6 +283,10 @@ What's actually still missing (the real remaining gap):
 ## Stage 8 (Differentiator): Local-Model Coding Routes via WarSat — ◐ FUNCTIONALLY IMPLEMENTED (file-edit validation pending)
 
 Branch: extends existing Warsat fit-scoring work
+
+Status reconciliation 2026-08-10: the local `code` search/summarize run is
+verified, but the file-editing acceptance remains open; this is intentionally
+not treated as release-grade coder evidence.
 
 **Verification note:** `backend/models/registry.py:23` already lists `"coder"` as a first-class entry in `MODEL_ROLES`, and `key_for_role()` (`:334`) already does role-based model lookup with fallback — so the routing plumbing Stage 8 needs already exists. What's missing is the actual capability-flagging logic: no `fit`/`score`/`coder`-detection logic exists anywhere in `backend/warsat/` today (checked `__init__.py`, `protocols/`, `providers/`).
 
@@ -442,19 +446,21 @@ Pointer Gestures.)
   the keyboard pass.
 
 ### A. Coding-agent / WarSat deploy UI (from Session 2026-07-12)
-- [ ] **Deploy-form tool-call-parser field** — the backend/API accept `toolCallParser` now, but the
-  Warsat deploy form has no field for it, so enabling tool-calling for a model is currently API-only.
-  Add a parser input (with a "none / disable tools" option) to the deploy UI. **(Easy–Medium)**
-- [~] **Per-catalog-model parser hint** — backend catalog metadata now emits the conservative,
+- [x] **Deploy-form tool-call-parser field** — the backend/API accept `toolCallParser`, and the
+  Warsat deploy form exposes a bounded parser input with model-specific guidance and a no-parser
+  placeholder. The field is manually overridable; catalog launch uses the catalog hint path above.
+- [x] **Per-catalog-model parser hint** — backend catalog metadata emits the conservative,
   non-binding `toolCallParserHint=hermes` for the proven Qwen2.5/vLLM family (including cached
-  catalog entries). The deploy GUI still needs to prefill its parser field from that hint. **(GUI pending)**
+  catalog entries), and `App.jsx:prepareCatalogModelForWarsat` consumes the hint when creating a
+  catalog-to-plan request. The manual deploy-form field remains available for explicit overrides;
+  separately populating that text field is not required for the catalog launch path.
 - [x] **Surface tool-unavailable state** — done in the engine: when a local runtime rejects tools,
   conversational chat may still degrade, but an execution phase records `tools_unavailable`, marks
   the phase step errored, and stops the task instead of accepting tool-less prose as completed work.
   Regression coverage verifies both provider fallback and the agentic fail-visible path.
-- [ ] **Per-workspace test/build/lint command settings form** — Stage 6's backend + `POST
-  /api/workspace/commands` are done; add a UI (per-workspace settings) to set these commands so
-  the edit→test→fix loop is configurable without an API call. **(Medium)**
+- [x] **Per-workspace test/build/lint command settings form** — Stage 6's backend + `POST
+  /api/workspace/commands` and the admin UI form are implemented and covered by the workspace
+  persistence smoke test. Broader keyboard/mouse review remains in the UI quality track.
 - [~] Stage 5 (*Coding-Oriented Task UX* above) is implemented (diff viewer, touched-files list,
   live terminal pane); frontend render/interaction plus keyboard-only/mouse-only Playwright passes remain.
 
