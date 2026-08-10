@@ -6,6 +6,7 @@ from backend.core import workspace
 from backend.core import approvals
 from backend.core import audit
 from backend.core import auth
+from backend.core import backup
 from backend.core import preferences
 from backend.core import schedules
 from backend.core import security
@@ -27,6 +28,7 @@ from backend.rag.memory import load_memory
 from pydantic import BaseModel, ConfigDict
 import asyncio
 import os
+from pathlib import Path
 
 router = APIRouter()
 
@@ -162,6 +164,17 @@ class TelegramConfigIn(CamelModel):
 class ExportTaskIn(CamelModel):
     task_id: str
     folder: str | None = None
+
+class RecoveryBackupIn(CamelModel):
+    dry_run: bool = False
+    include_workspace: bool = False
+
+class RecoveryPathIn(CamelModel):
+    path: str
+
+class RecoveryDeleteIn(CamelModel):
+    confirmation: str = ""
+    dry_run: bool = True
 
 def _ui_preview_enabled():
     return str(os.environ.get("RASPUTIN_UI_PREVIEW", "")).strip().lower() in {"1", "true", "yes", "on"}
@@ -412,6 +425,41 @@ async def output_export_task(req: ExportTaskIn, _user=Depends(require_member)):
     if not task:
         raise AppError("task_not_found", "Task was not found.", 404)
     return ok(output.export_markdown(task, req.folder))
+
+def _approved_recovery_path(path):
+    target = Path(path).expanduser().resolve()
+    if not target.is_relative_to(backup.DATA_DIR.resolve()):
+        raise PermissionError("recovery archives must be inside Rasputin application data")
+    return target
+
+@system_router.get("/recovery/status")
+async def recovery_status(_user=Depends(require_admin)):
+    latest = max(backup.BACKUP_DIR.glob("*.zip"), key=lambda item: item.stat().st_mtime, default=None) if backup.BACKUP_DIR.exists() else None
+    return ok({"dataDir": str(backup.DATA_DIR), "backupDirectory": str(backup.BACKUP_DIR), "latest": str(latest) if latest else None, "scope": "application", "restoreMode": "dry-run only while the service is running"})
+
+@system_router.post("/recovery/backup")
+async def recovery_backup(req: RecoveryBackupIn, _user=Depends(require_admin)):
+    security.require("allow_file_write")
+    return ok(backup.create_backup(dry_run=req.dry_run, include_workspace=req.include_workspace))
+
+@system_router.post("/recovery/restore/verify")
+async def recovery_restore_verify(req: RecoveryPathIn, _user=Depends(require_admin)):
+    target = _approved_recovery_path(req.path)
+    return ok(backup.restore_dry_run(target))
+
+@system_router.post("/recovery/export")
+async def recovery_export(_user=Depends(current_user)):
+    security.require("allow_file_write")
+    return ok(backup.export_owner_data(_user.get("username", "admin")))
+
+@system_router.post("/recovery/delete-preview")
+async def recovery_delete_preview(_user=Depends(current_user)):
+    return ok(backup.delete_owner_data(_user.get("username", "admin"), dry_run=True))
+
+@system_router.post("/recovery/delete")
+async def recovery_delete(req: RecoveryDeleteIn, _user=Depends(current_user)):
+    security.require("allow_file_write")
+    return ok(backup.delete_owner_data(_user.get("username", "admin"), req.confirmation, req.dry_run))
 
 @system_router.get("/events")
 

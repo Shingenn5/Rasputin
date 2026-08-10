@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Card, Button, Row, Col, Spinner, Alert } from "react-bootstrap";
 import { ActivitySquare, HeartPulse, Terminal, AlertCircle, CheckCircle2 } from "lucide-react";
-import { api } from "../../api/client.js";
+import { api, postJson } from "../../api/client.js";
 
 export function DiagnosticsSettings() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState("");
+  const [recovery, setRecovery] = useState(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   const runDiagnostics = async () => {
     setRunning(true);
@@ -18,6 +20,31 @@ export function DiagnosticsSettings() {
       setError(String(err.message || err));
     } finally {
       setRunning(false);
+    }
+  };
+
+  const runRecovery = async (action, body = {}) => {
+    setRecoveryBusy(true);
+    setError("");
+    try {
+      const path = action === "backup" ? "/api/recovery/backup" : action === "export" ? "/api/recovery/export" : "/api/recovery/delete-preview";
+      setRecovery({ action, data: await postJson(path, body) });
+    } catch (err) {
+      setError(String(err.message || err));
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const deleteMyData = async () => {
+    if (!window.confirm("Delete your Rasputin sessions, tasks, memory, and assistant records? This cannot be undone.")) return;
+    setRecoveryBusy(true);
+    try {
+      setRecovery({ action: "delete", data: await postJson("/api/recovery/delete", { confirmation: "DELETE MY RASPUTIN DATA", dryRun: false }) });
+    } catch (err) {
+      setError(String(err.message || err));
+    } finally {
+      setRecoveryBusy(false);
     }
   };
 
@@ -44,6 +71,32 @@ export function DiagnosticsSettings() {
           >
             {running ? <><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />Running Diagnostics...</> : "Start Diagnostic Run"}
           </Button>
+        </Card.Body>
+      </Card>
+
+      <Card className="shadow-sm border-0 mb-4" data-testid="recovery-panel">
+        <Card.Body className="p-4">
+          <div className="d-flex flex-wrap align-items-start justify-content-between gap-3">
+            <div>
+              <h5>Recovery and ownership</h5>
+              <p className="text-muted mb-0">Create a hashed, manifest-backed application backup, export owner-safe metadata, or preview deletion of your records.</p>
+            </div>
+            <div className="d-flex flex-wrap gap-2">
+              <Button variant="outline-primary" size="sm" disabled={recoveryBusy} onClick={() => runRecovery("backup", { dryRun: true })}>Preview backup</Button>
+              <Button variant="primary" size="sm" disabled={recoveryBusy} onClick={() => runRecovery("backup", { dryRun: false })}>Create backup</Button>
+              <Button variant="outline-secondary" size="sm" disabled={recoveryBusy} onClick={() => runRecovery("export")}>Export my data</Button>
+              <Button variant="outline-danger" size="sm" disabled={recoveryBusy} onClick={() => runRecovery("delete")}>Preview deletion</Button>
+            </div>
+          </div>
+          {recovery && (
+            <Alert variant={recovery.action === "delete" ? "warning" : "info"} className="mt-3 mb-0" data-testid="recovery-result">
+              <strong>{titleize(recovery.action)} result</strong>
+              {recovery.data?.path && <div className="small mt-1">Artifact: <code>{recovery.data.path}</code></div>}
+              {recovery.data?.fileCount !== undefined && <div className="small mt-1">{recovery.data.fileCount} file(s) included; {recovery.data.excludedCount || 0} excluded by policy.</div>}
+              {recovery.data?.counts && <div className="small mt-1">Owner records: {Object.entries(recovery.data.counts).map(([key, value]) => `${key} ${value}`).join(" · ") || "none"}</div>}
+              {recovery.action === "delete" && recovery.data?.dryRun && <Button variant="danger" size="sm" className="mt-2" onClick={deleteMyData}>Confirm permanent deletion</Button>}
+            </Alert>
+          )}
         </Card.Body>
       </Card>
 
