@@ -1,7 +1,7 @@
 # Rasputin Application Readiness Gap Report
 
 **Assessment date:** 2026-08-10
-**Basis:** current repository at `e910871` (`Reconcile coding readiness checklist`), implementation inspection, focused backend/UI tests, deployment verification, and the project’s current operational documents. The compact source/test map is `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md`.
+**Basis:** the current repository, implementation inspection, focused backend/UI tests, release-candidate certification, deployment verification, and the project’s current operational documents. The compact source/test map is `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md`.
 
 ## Executive conclusion
 
@@ -23,6 +23,9 @@ These are foundations to preserve, not rewrite:
 - Workspace browsing, RAG/knowledge-graph tools, artifact/archive/inbox surfaces, memory review/job APIs, and bounded conversation summaries.
 - WarSat planning/deployment for local model runtimes, including GPU probing, model health, and multi-GPU planning tests.
 - Persisted model capability probes, conservative mode preflight/fallback, per-deploy parser contracts, Assistant readiness/command-preview contracts, and device-free local voice adapters.
+- Bounded application backup/integrity verification, owner metadata export/deletion confirmation,
+  live operational diagnostics, a sarcastic-but-respectful Assistant profile contract, and a
+  browser push-to-talk/local playback console layered over the device-free voice adapters.
 - Task-change review endpoints and UI surfaces; workspace test/build/lint settings are visibly implemented and covered by the smoke UI test.
 
 This means proposed work should complete user journeys and tighten guarantees. It should not replace these systems with a parallel app.
@@ -35,7 +38,7 @@ This means proposed work should complete user journeys and tighten guarantees. I
 | Safely perform coding work in a trusted workspace | Substantially implemented | A real coder-model, multi-file edit → test → repair → review → commit run is not yet the release-grade proof. |
 | Deploy and route local models | Functional but operator-heavy | Persisted capability certification and conservative preflight now exist; live mission evidence, certificate freshness, and deploy ergonomics still need to make safe choices obvious. |
 | Run a dependable personal desktop app | Partial | Clean-machine install/upgrade evidence, signing, update channel, and production release identity are missing. |
-| Operate a shared/local appliance | Functional for a knowledgeable owner | Backup/restore, diagnostics, and support-grade operations are not yet a coherent workflow. |
+| Operate a shared/local appliance | Functional for a knowledgeable owner | Diagnostics and bounded backup/export/delete flows exist; clean-instance restore, upgrade rehearsal, and support-grade recovery are still open. |
 | Evaluate models and make routing decisions | Partial | Trials scorecards contain placeholder reasoning, safety, and usability scores; they must not be presented as measured truth. |
 | Connect outside services into governed workflows | Partial | Connector setup exists, but the product needs complete, visible, reliable workflows rather than configuration screens alone. |
 
@@ -82,11 +85,11 @@ This is especially important because local OpenAI-compatible runtimes vary by to
 
 #### 3. Product-grade recovery: backup, restore, export, and repair
 
-Rasputin stores the owner’s chats, tasks, approvals, memory, credentials/configuration metadata, workspaces, and model runtime state across local files, SQLite, and (in Docker) volumes. A fully working local-first application needs an explicit recovery story:
+Rasputin stores the owner’s chats, tasks, approvals, memory, credentials/configuration metadata, workspaces, and model runtime state across local files, SQLite, and (in Docker) volumes. The first recovery slice now exists, but a fully working local-first application still needs a complete recovery story:
 
-- one supported backup command/UI flow with scope and secret-handling disclosure;
-- restore into a clean instance, with version/migration checks and a non-destructive dry-run;
-- export/delete controls for user-owned data;
+- one supported backup command/UI flow with scope and secret-handling disclosure (implemented);
+- restore into a clean instance, with version/migration checks and a non-destructive dry-run (dry-run implemented; clean restore open);
+- export/delete controls for user-owned data (owner-safe metadata export and explicit deletion confirmation implemented);
 - disaster-recovery instructions for Docker volumes and native data;
 - a tested upgrade/rollback strategy.
 
@@ -108,7 +111,7 @@ Required work:
 
 #### 5. Operational health and diagnostics
 
-Health endpoints exist, but an owner needs an actionable “why is this not working?” surface. Add a consolidated diagnostics view/command that reports:
+Health endpoints exist, and the first consolidated diagnostics view/command is now implemented. The remaining work is to make it complete across clean-machine and authenticated browser verification. It reports:
 
 - app version, storage location, migration status, and backup freshness;
 - server/desktop ownership and port conflicts;
@@ -222,7 +225,7 @@ This keeps the onboarding document, checklist, roadmap, and product claims align
 | --- | --- | --- | --- |
 | 1. Core proof | Live local coder-model task edits, tests, repairs, and presents reviewable changes | certified model, isolated fixture workspace | recorded acceptance run + targeted automated tests |
 | 2. Reliability UX | Model/readiness warnings, task terminal outcomes, review a11y, diagnostics | Phase 1 failure modes | live browser pass in light/dark and keyboard/mouse paths |
-| 3. Operability | Backup/restore, data export/delete, upgrade/recovery procedure | stable data schema + versioning | clean-store restore and upgrade rehearsal |
+| 3. Operability | Backup/restore, data export/delete, diagnostics, upgrade/recovery procedure | stable data schema + versioning | clean-store restore and upgrade rehearsal |
 | 4. Productization | signed installer, update channel, clean-machine matrix | Phase 3 recovery plan | independent install/upgrade/uninstall acceptance |
 | 5. Workflow depth | two complete governed connectors; controlled memory workflow | permissions/audit conventions | end-to-end user journeys with revocation |
 | 6. Expansion | measured Trials, collaboration, optional Docker-control decision, broader integrations | trusted base and support model | published measurement/policy contracts |

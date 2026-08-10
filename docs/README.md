@@ -13,7 +13,7 @@ competing "current" roadmaps from forming.
 | Join the project as a coding agent | [`CODEX_ONBOARDING.md`](CODEX_ONBOARDING.md) | Repository map, test workflow, and agent gotchas |
 | Understand the architecture | [`RASPUTIN_ARCHITECTURE_GUIDE.md`](RASPUTIN_ARCHITECTURE_GUIDE.md) | Runtime and frontend architecture reference |
 | Deploy or troubleshoot a runtime | [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) | Docker, native, desktop, and remote-access matrix |
-| Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md) and [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md) | Operational release steps and audit evidence |
+| Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md), [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md), and `scripts/verify_release_candidate.py` | Operational release steps, automated evidence, and explicit remaining boundaries |
 | Change security-sensitive behavior | [`THREAT_MODEL.md`](../THREAT_MODEL.md), [`SECURITY.md`](../SECURITY.md) | Security boundaries and reporting policy |
 
 ## Current engineering work

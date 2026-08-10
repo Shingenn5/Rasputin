@@ -413,6 +413,25 @@ Validate an active Docker instance with:
 The verifier checks /api/health, frontend serving, and baseline security headers. Add the native
 endpoint on Windows when it is running.
 
+For a release-candidate evidence bundle (isolated backend data, docs, frontend build, and both
+runtime probes), run:
+
+~~~bash
+./.venv/bin/python scripts/verify_release_candidate.py \
+  --endpoint native=http://127.0.0.1:8788 \
+  --endpoint docker=http://127.0.0.1:8787
+~~~
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\verify_release_candidate.py `
+  --endpoint native=http://127.0.0.1:8788 `
+  --endpoint docker=http://127.0.0.1:8787
+~~~
+
+The command exits successfully when the automated gates pass, but its JSON still reports known
+boundaries such as a missing live coder-model mission, dry-run-only restore, or unverified audio
+hardware. Do not interpret `passed` as permission to skip those boundaries.
+
 Common fixes:
 
 | Symptom | What to check |

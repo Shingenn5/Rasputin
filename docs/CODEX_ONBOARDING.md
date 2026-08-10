@@ -1,6 +1,6 @@
 # Codex Onboarding — Rasputin
 
-*Written 2026-07-13 for a cold Codex session joining this project alongside Elliott (the
+*Written 2026-08-10 for a cold Codex session joining this project alongside Elliott (the
 operator/owner) and Claude Code sessions. If anything here drifts from the code, trust the
 code and fix this doc.*
 
@@ -60,6 +60,9 @@ npm run build                                     # vite build → frontend/
 # Documentation contract check (from repo root):
 C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_docs.py
 
+# Release-candidate evidence (isolated tests plus native/Docker probes):
+C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788 --endpoint docker=http://127.0.0.1:8787
+
 # Run an isolated dev instance (never point at real data):
 RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
 # App: http://127.0.0.1:8899/#chat   (hash routes: #home, #chat, #models, #settings/...)
@@ -107,14 +110,16 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
    the primary action before calling something done.
 8. Temp/scratch files go outside the repo (session temp dir), never in the repo or `/tmp`.
 
-## 5. Current state (as of 2026-07-13)
+## 5. Current state (as of 2026-08-10)
 
 The active effort is making Rasputin a **competitive coding agent**, tracked in
 `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` (the working plan — read it before picking up
 work). Position:
 
 - **App baseline is healthy:** the isolated running-app audit covered 15+ views in light and dark
-  with zero console/HTTP errors; remaining polish gaps are cosmetic, not structural.
+  with zero console/HTTP errors; the current source also includes live diagnostics, bounded
+  backup/export/delete workflows, an Assistant personality editor, an allowlisted command preview,
+  and an explicit push-to-talk/local playback console.
 - **Real local-model inference works end-to-end.** Qwen2.5-3B-Instruct deployed through WarSat
   (vLLM, `toolCallParser=hermes`) ran real chat and a `mode=code` agentic task with genuine
   tool calls. Two fixes made this work: `chat_sync` drops tools + retries once on a
@@ -136,11 +141,10 @@ work). Position:
   conservative, non-binding `toolCallParserHint=hermes` for the proven Qwen2.5/vLLM family; parser
   selection remains opt-in per deploy.
 
-**Open queue (roughly in order):** Stage 5 render/a11y Playwright tests → Stage 6 settings-UI
-form (per-workspace command entry) → daily-driver UI fixes (theme-picker init bug
-`GeneralSettings.jsx:85`, save toast, Button dedup `ModelsView.jsx:43-44`, mode-switch→STOPPED
-foot-gun) → deploy-form `tool_call_parser` field consuming the catalog hint → real file-editing
-coding task on a coder model (e.g. Qwen2.5-Coder).
+**Open queue (roughly in order):** a live local coder-model edit → test → repair → review mission;
+  a clean-instance restore/upgrade rehearsal; registered speech models plus browser microphone and
+  speaker verification; daily-driver UI polish and the remaining keyboard/mouse review pass; and
+  signed desktop installation/update evidence.
 
 ## 6. Doc freshness map
 
