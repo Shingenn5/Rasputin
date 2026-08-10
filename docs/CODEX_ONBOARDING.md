@@ -57,6 +57,9 @@ python -m unittest tests.testBackendSmoke        # or: python tests/testBackendS
 # Frontend: edit frontend-src/, then build (from repo root):
 npm run build                                     # vite build → frontend/
 
+# Documentation contract check (from repo root):
+C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_docs.py
+
 # Run an isolated dev instance (never point at real data):
 RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
 # App: http://127.0.0.1:8899/#chat   (hash routes: #home, #chat, #models, #settings/...)

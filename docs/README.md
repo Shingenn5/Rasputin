@@ -79,6 +79,9 @@ implemented behavior or security policy.
    when the collection grows; update this index in the same change.
 6. Do not commit generated frontend output, runtime state, model weights,
    credentials, or test reports.
+7. Run `C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_docs.py`
+   after documentation changes to catch broken local links, stale generated-frontend instructions,
+   missing onboarding commands, and incomplete ledger statuses.
 
 If a document and the application disagree, fix the document or record the
 known gap; do not silently widen the implementation to match stale prose.
