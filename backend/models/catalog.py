@@ -10,6 +10,7 @@ import httpx
 
 from backend.core import audit as audit
 from backend.core.datadir import data_dir
+from backend.models import resource_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
@@ -260,7 +261,7 @@ def _normalize_item(provider_id, provider, model_id, model, source="models.dev")
     if isinstance(limit, dict):
         context = limit.get("context") or limit.get("input")
     recommended_protocol = runtime_options[0]["protocolId"]
-    return {
+    item = {
         "id": f"{provider_id}/{model_id}" if provider_id and "/" not in str(model_id) else str(model_id),
         "modelId": str(model_id),
         "name": str(name),
@@ -280,7 +281,11 @@ def _normalize_item(provider_id, provider, model_id, model, source="models.dev")
         "source": source,
         "sourceUrl": MODELS_DEV_URL,
         "summary": model.get("description") or "Model metadata imported from the public models.dev catalog.",
+        "license": model.get("license") or model.get("license_id") or "",
+        "checksum": model.get("checksum") or model.get("sha") or "",
     }
+    item["resourceManifest"] = resource_manifest.build_manifest(item)
+    return item
 
 
 def _curated_items():
@@ -298,6 +303,7 @@ def _curated_items():
             "sourceUrl": "",
             "toolCallParserHint": _tool_call_parser_hint(model["id"], protocol),
         }
+        item["resourceManifest"] = resource_manifest.build_manifest(item)
         items.append(item)
     return items
 
@@ -384,6 +390,16 @@ def _fit_item(item, hardware=None):
         "fitReasons": reasons[:4],
         "blockedReasons": blocked,
     })
+    manifest = item.get("resourceManifest") or resource_manifest.build_manifest(item)
+    item["resourceManifest"] = resource_manifest.attach_fit(
+        manifest,
+        score=score,
+        label=label,
+        available_vram_gb=available,
+        headroom_gb=(available - float(vram)) if available and vram else None,
+        basis="catalog-estimate",
+        blocked_reasons=blocked,
+    )
     return item
 
 
@@ -890,7 +906,7 @@ def _normalize_hf_model(hf_model):
         runtime_options.append({"protocolId": "apiOnly", "label": "Register as provider API"})
 
     recommended_protocol = runtime_options[0]["protocolId"]
-    return {
+    item = {
         "id": model_id,
         "modelId": model_id,
         "name": model_id.split("/")[-1] if "/" in model_id else model_id,
@@ -917,7 +933,10 @@ def _normalize_hf_model(hf_model):
         "architecture": architecture,
         "pipelineTag": pipeline_tag,
         "lastModified": hf_model.get("lastModified") or "",
+        "checksum": hf_model.get("sha") or hf_model.get("checksum") or "",
     }
+    item["resourceManifest"] = resource_manifest.build_manifest(item)
+    return item
 
 
 def search_hf(
