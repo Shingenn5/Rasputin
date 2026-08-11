@@ -441,6 +441,28 @@ export function MemoryView({
                 <Col xs="auto"><Button type="submit">Search</Button></Col>
               </Row>
             </Form>
+            {memorySearchResults?.query && (
+              <div className="border rounded p-3 mt-3" data-testid="memory-recall-explainer">
+                <div className="section-row">
+                  <div>
+                    <h2 className="h5 mb-1">Why these memories were returned</h2>
+                    <p className="text-body-secondary mb-0">
+                      Query: <code>{memorySearchResults.query}</code>
+                    </p>
+                  </div>
+                  <Badge bg="secondary">{memorySearchResults.items?.length || 0} eligible</Badge>
+                </div>
+                <p className="small text-body-secondary mt-2 mb-0">
+                  Results are limited to your owner-scoped memory. Global items are eligible everywhere;
+                  workspace items are eligible only when they match the active workspace
+                  {memorySearchResults.workspaceId ? ` (${memorySearchResults.workspaceId})` : ""}.
+                  Open “Why was this recalled?” on a result for matched terms and ranking factors.
+                </p>
+                {!memorySearchResults.items?.length && (
+                  <p className="small text-body-secondary mt-2 mb-0">No saved memory matched the query and workspace policy.</p>
+                )}
+              </div>
+            )}
             <Stack gap={2} className="mt-3">
               {(memorySearchResults?.items || []).map((item) => <MemoryItem key={item.id} item={item} />)}
             </Stack>
@@ -1624,17 +1646,34 @@ function MemoryItem({ item }) {
           {sourceMessages.length ? ` · ${sourceMessages.length} message${sourceMessages.length === 1 ? "" : "s"}` : ""}
         </div>
       )}
-      {recallExplanation?.summary && (
-        <div className="small text-body-secondary mt-1" data-testid="memory-recall-explanation">
-          Why recalled: {recallExplanation.summary}
-        </div>
-      )}
+      {recallExplanation && <MemoryRecallExplanation item={item} explanation={recallExplanation} />}
       {supersedes && (
         <div className="small text-body-secondary mt-1">
           Correction of memory {supersedes}
         </div>
       )}
     </div>
+  );
+}
+
+function MemoryRecallExplanation({ item, explanation }) {
+  const matchedTerms = explanation.matchedTerms || explanation.matched_terms || [];
+  const scopeReason = explanation.scopeReason || explanation.scope_reason;
+  const score = explanation.score;
+  const importance = explanation.importance;
+  return (
+    <details className="small mt-2" data-testid={`memory-recall-details-${item.id}`}>
+      <summary className="text-body-secondary">Why was this recalled?</summary>
+      <div className="border rounded p-2 mt-2" data-testid="memory-recall-explanation">
+        <p className="mb-2">{explanation.summary || "Matched the query and passed the owner/workspace policy."}</p>
+        <dl className="detail-grid mb-0">
+          <dt>Matched terms</dt><dd>{matchedTerms.length ? matchedTerms.join(", ") : "Query match"}</dd>
+          <dt>Scope rule</dt><dd>{scopeReason || "Owner/workspace policy allowed this memory."}</dd>
+          <dt>Relevance score</dt><dd>{score == null ? "Unavailable" : Number(score).toFixed(3)}</dd>
+          <dt>Importance</dt><dd>{importance == null ? "Unavailable" : `${Math.round(Number(importance) * 100)}%`}</dd>
+        </dl>
+      </div>
+    </details>
   );
 }
 

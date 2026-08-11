@@ -65,8 +65,11 @@ When memory is included, each search result carries a transient explanation:
 matched query terms, the global or same-workspace eligibility reason, and the
 ranking factors used by local search. The task inspector renders these details
 under “Why memory was recalled?” without sending the explanation back into the
-model prompt. Workspace-scoped records from another workspace are excluded;
-only global records and records matching the active workspace can be recalled.
+model prompt. The Memory view also renders a dedicated recall explainer for each
+search, with the query, eligible-result count, workspace boundary, matched terms,
+scope rule, relevance score, and importance. Workspace-scoped records from
+another workspace are excluded; only global records and records matching the
+active workspace can be recalled.
 
 ## User workflow
 
@@ -78,8 +81,9 @@ The Memory view supports:
 4. editing saved content;
 5. choosing persistent or time-bounded retention;
 6. inspecting provenance (task/session/message ids) and expiry;
-7. restoring an expired item as persistent memory;
-8. permanently deleting an item after confirmation.
+7. expanding a recall explanation without exposing memory to a model;
+8. restoring an expired item as persistent memory;
+9. permanently deleting an item after confirmation.
 
 The HTTP surface is:
 
@@ -100,7 +104,7 @@ older item `superseded`. Explicit corrections can provide `supersedesId` on
 ## Deliberate next steps
 
 This is the durable foundation, not the final memory intelligence. The next
-memory slices should add (the recall-explanation item is implemented above):
+memory slices should add:
 
 - richer visible source/session links and correction history in the UI;
 - richer conflict explanations and correction history in the UI;
