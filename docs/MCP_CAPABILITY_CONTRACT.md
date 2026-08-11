@@ -56,3 +56,19 @@ unattended mode, external MCP tools remain blocked by default.
 When the contract changes incompatibly, increment `CAPABILITY_CONTRACT_VERSION`
 in `backend/mcp/tools.py` and update this document and the regression tests in
 `tests/testBackendSmoke.py`.
+
+## Local safety certification
+
+Run the isolated certification command before changing MCP policy or routing:
+
+```powershell
+C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\certify_mcp_safety.py
+```
+
+The report proves callable-only discovery, an allowlisted read-only route, a
+shell-like command rejection, a dry-run mutation preview, a file-write
+approval preview, and the corresponding redacted audit events. It uses a
+temporary data directory and fixture workspace; it does not start an external
+MCP server, execute a host command, write a fixture file, or contact a remote
+endpoint. A passing report is policy-boundary evidence, not permission to
+remove the approval gate.
