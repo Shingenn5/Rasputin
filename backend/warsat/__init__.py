@@ -18,6 +18,7 @@ from backend.models import registry as model_registry
 from backend.core import security
 from backend.core.response import AppError
 from backend.core.datadir import data_dir
+from backend.warsat.capabilities import build_capability_profile
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PROTOCOL_DIR = ROOT / "backend" / "warsat" / "protocols"
@@ -492,6 +493,7 @@ def hardware_probe():
         gpus = _gpu_probe_via_docker()
         probed_via_docker = bool(gpus)
     detected["gpus"] = gpus
+    detected["gpuProbeSource"] = "nvidia-smi" if nvidia_smi and gpus else "docker-nvidia-smi" if probed_via_docker else "unknown"
     if gpus:
         checks.append(_check(
             "hostGpu",
@@ -533,6 +535,7 @@ def hardware_probe():
         "blockedReasons": [item["message"] for item in blocked],
         "recommendations": recommendations,
         "detectedHardware": detected,
+        "capabilityProfile": build_capability_profile(detected),
         "generatedAt": time.time(),
     }
 

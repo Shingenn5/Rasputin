@@ -42,6 +42,18 @@ stdio RPC. Phase 4 removed the former `RASPUTIN_API_URL` / `--network host` topo
 
 ## Verification
 
+### Hardware capability profile
+
+`GET /api/warsat/hardware` now includes a versioned `capabilityProfile` alongside
+the legacy `detectedHardware` payload. The profile keeps device identity and
+installed capacity under `devices[].static`, volatile memory/utilization under
+`devices[].volatile`, and backend evidence under `backends`. Backend status is
+`available`, `observed`, or `unknown`; `observed` is not a runtime/model
+compatibility certificate. Unknown acceleration must remain unknown rather than
+being presented as supported. The placement hint is
+`largest_fitting_single_gpu_first`, and combined VRAM is explicitly marked as
+runtime-dependent.
+
 - `_discovery_hosts()` → `['127.0.0.1']`
 - `_endpoint_for('127.0.0.1', 8001)` → `http://127.0.0.1:8001/v1` (not `host.docker.internal`)
 - `gpu_live_metrics_via_docker()` → `[]` (no crash; empty when docker-control is off)

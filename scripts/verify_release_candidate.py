@@ -34,6 +34,7 @@ BACKEND_TEST_MODULES = (
     "tests.test_coder_certification_cli",
     "tests.testDiagnostics",
     "tests.testBackup",
+    "tests.testHardwareCapabilities",
     "tests.testReleaseCandidate",
 )
 DEFAULT_ENDPOINTS = (

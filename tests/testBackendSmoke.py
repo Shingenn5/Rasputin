@@ -3041,6 +3041,9 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(any(item["id"] == "dockerGpuRuntime" and item["status"] == "pass" for item in hardware["checks"]))
         self.assertEqual(hardware["detectedHardware"]["dockerServerVersion"], "27.0")
         self.assertEqual(hardware["detectedHardware"]["gpus"][0]["memoryTotalMb"], 24564)
+        self.assertEqual(hardware["capabilityProfile"]["schemaVersion"], 1)
+        self.assertEqual(hardware["capabilityProfile"]["devices"][0]["static"]["memoryTotalMb"], 24564)
+        self.assertEqual(hardware["capabilityProfile"]["backends"]["cpu"]["status"], "available")
         self.assertIn("blockedReasons", hardware)
 
     def testWarsatHardwareProbeBlocksWhenDockerIsMissingAndControlDisabled(self):
