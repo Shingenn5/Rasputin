@@ -37,6 +37,7 @@ backend from source for development, but Docker is the simplest production-like 
 - [Windows-native options](#windows-native-options)
 - [Source development on any platform](#source-development-on-any-platform)
 - [Verification and troubleshooting](#verification-and-troubleshooting)
+- [v1 release boundary](#v1-release-boundary)
 - [Documentation index](docs/README.md)
 
 ## Architecture and privacy
@@ -46,6 +47,14 @@ not receive unrestricted internet access: web search is brokered and audited, an
 in fresh networkless Docker containers. Docker control, remote models, Host Shell, risky file moves,
 and LAN publishing are opt-in capabilities. Read [THREAT_MODEL.md](THREAT_MODEL.md) before changing
 security-sensitive settings.
+
+## v1 release boundary
+
+The finite Rasputin v1 finish line is documented in
+[RASPUTIN_V1_RELEASE_CONTRACT.md](docs/RASPUTIN_V1_RELEASE_CONTRACT.md). It defines the ten
+completion slices, required evidence, supported deployment paths, explicit non-goals, and the
+maintenance-only stop rule. New capabilities belong in a post-v1 backlog once that contract is
+complete.
 
 ## What Docker runs and what it stores
 
