@@ -48,6 +48,10 @@ class WarsatPlanIn(CamelModel):
     cpu_limit: float | None = None
     shm_size_gb: int | None = None
     gpu_device: str | None = None
+    resource_manifest: dict | None = None
+    capability_profile: dict | None = None
+    vram_estimate_gb: float | None = None
+    requested_ram_mb: int | None = None
     host_port: int | None = None
     role: str | None = None
     container_name: str | None = None
@@ -146,7 +150,12 @@ async def warsat_benchmark_get(certificate_id: str, _user=Depends(current_user))
 @warsat_router.post("/plan")
 
 async def warsat_plan(req: WarsatPlanIn, _user=Depends(require_admin)):
-    return ok(await asyncio.to_thread(warsat.make_plan, req.model_dump()))
+    payload = req.model_dump()
+    # Resource admission is owner-scoped evidence, not a caller-controlled
+    # identity field.  The authenticated admin is the only owner recorded in
+    # the preview and any later lease request.
+    payload["ownerId"] = _user["username"]
+    return ok(await asyncio.to_thread(warsat.make_plan, payload))
 
 
 @warsat_router.post("/advisor")

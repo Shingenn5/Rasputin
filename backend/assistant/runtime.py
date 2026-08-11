@@ -36,6 +36,7 @@ from backend.core import workspace
 from backend.models import providers as model_providers
 from backend.models import registry as model_registry
 from backend.rag import memory as memory_store
+from backend.warsat import admission as resource_admission
 
 
 PROFILE_KEY_PREFIX = "assistant_profile:"
@@ -405,9 +406,31 @@ def _model_for_entry(entry: dict[str, Any], models: list[dict[str, Any]], by_key
     return candidates[0] if candidates else None
 
 
-def _model_status(entry: dict[str, Any], model: dict[str, Any] | None, security_cfg: dict[str, Any]) -> dict[str, Any]:
+def _model_status(
+    entry: dict[str, Any],
+    model: dict[str, Any] | None,
+    security_cfg: dict[str, Any],
+    capability_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     blockers: list[str] = []
     warnings: list[str] = []
+    resource_manifest, admission, _request = resource_admission.plan_admission(
+        model=model,
+        entry=entry,
+        supplied_manifest=entry.get("resource_manifest"),
+        capability_profile=capability_profile,
+        runtime=(model or {}).get("runtime") or (model or {}).get("provider") or "unknown",
+        protocol_id=(model or {}).get("recommended_protocol") or (model or {}).get("recommendedProtocol") or "",
+        owner_id="assistant-preview",
+        pack_id=entry.get("id") or "model-pack",
+        payload={
+            "vramEstimateGb": entry.get("vram_estimate_gb"),
+            "contextWindow": entry.get("context_window"),
+            "quantization": entry.get("quantization"),
+        },
+        explicit_combined=False,
+        allow_cpu_fallback=(model or {}).get("provider") in {"llama.cpp", "ollama"},
+    )
     if not model:
         blockers.append("model_not_registered")
         return {
@@ -421,6 +444,8 @@ def _model_status(entry: dict[str, Any], model: dict[str, Any] | None, security_
             "warnings": warnings,
             "runtime_status": "missing",
             "host_control_required": False,
+            "resource_manifest": resource_manifest,
+            "resource_admission": admission,
         }
     runtime_status = str(model.get("runtime_status") or "unknown")
     if not model.get("enabled", True):
@@ -447,14 +472,27 @@ def _model_status(entry: dict[str, Any], model: dict[str, Any] | None, security_
         "managed": managed,
         "host_control_required": managed,
         "capabilities": entry.get("capabilities", []),
+        "resource_manifest": resource_manifest,
+        "resource_admission": admission,
     }
 
 
-def build_model_pack_preview(pack: Any) -> dict[str, Any]:
+def build_model_pack_preview(pack: Any, capability_profile: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = normalize_model_pack(pack)
     models, by_key = _model_lookup()
     cfg = security.load()
-    entries = [_model_status(entry, _model_for_entry(entry, models, by_key), cfg) for entry in normalized["entries"]]
+    entries = [
+        _model_status(entry, _model_for_entry(entry, models, by_key), cfg, capability_profile)
+        for entry in normalized["entries"]
+    ]
+    admission_statuses = [str((entry.get("resource_admission") or {}).get("status") or "unmeasured") for entry in entries]
+    capacity_status = (
+        "blocked" if "blocked" in admission_statuses else
+        "queued" if "queued" in admission_statuses else
+        "degraded" if "degraded" in admission_statuses else
+        "ready" if admission_statuses and all(status == "ready" for status in admission_statuses) else
+        "unmeasured"
+    )
     return {
         **normalized,
         "entries": entries,
@@ -462,7 +500,7 @@ def build_model_pack_preview(pack: Any) -> dict[str, Any]:
             "default": "largest_fitting_single_gpu_first",
             "combined_vram": "explicit_backend_only",
             "vllm_tensor_parallel": "not_assumed",
-            "capacity_status": "not_evaluated_without_runtime_inventory",
+            "capacity_status": capacity_status,
         },
         "launch_policy": {
             "mode": "broker_only",

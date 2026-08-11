@@ -8,6 +8,8 @@ class ReleaseCandidateContractTests(unittest.TestCase):
         self.assertIn("tests.testAssistantUiContract", verify_release_candidate.BACKEND_TEST_MODULES)
         self.assertIn("tests.testMemoryUiContract", verify_release_candidate.BACKEND_TEST_MODULES)
         self.assertIn("tests.testWorkModeUiContract", verify_release_candidate.BACKEND_TEST_MODULES)
+        self.assertIn("tests.testWarsatAdmission", verify_release_candidate.BACKEND_TEST_MODULES)
+        self.assertIn("tests.testWarsatUiContract", verify_release_candidate.BACKEND_TEST_MODULES)
 
     def test_release_gate_includes_frozen_v1_contract(self):
         self.assertIn("tests.testReleaseContract", verify_release_candidate.BACKEND_TEST_MODULES)

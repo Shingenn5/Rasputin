@@ -1,0 +1,133 @@
+import unittest
+from unittest.mock import patch
+
+from backend.assistant import runtime as assistant_runtime
+from backend.core.response import AppError
+from backend.models import resource_manifest
+from backend import warsat
+from backend.warsat import admission
+
+
+def _profile(*sizes):
+    return {
+        "schemaVersion": 1,
+        "devices": [
+            {
+                "deviceId": f"gpu:{index}",
+                "static": {"index": index, "name": f"GPU {index}", "vendor": "nvidia", "memoryTotalMb": size},
+                "volatile": {"memoryFreeMb": size},
+            }
+            for index, size in enumerate(sizes)
+        ],
+    }
+
+
+class WarsatAdmissionIntegrationTests(unittest.TestCase):
+    def test_vllm_preview_blocks_model_that_exceeds_each_single_gpu(self):
+        _manifest, decision, request = admission.plan_admission(
+            model={
+                "modelId": "demo/12b",
+                "vramEstimateGb": 12,
+                "recommendedProtocol": "vllmCudaOpenai",
+                "runtimeOptions": [{"protocolId": "vllmCudaOpenai"}],
+            },
+            capability_profile=_profile(8192, 10240),
+            runtime="vllm",
+            protocol_id="vllmCudaOpenai",
+        )
+        self.assertEqual(request["requestedVramMb"], 12288)
+        self.assertEqual(decision["status"], "blocked")
+        self.assertIn("requested_vram_exceeds_observed_device_capacity", decision["reasons"])
+
+    def test_combined_vram_requires_a_runtime_manifest_and_explicit_opt_in(self):
+        vllm_manifest = resource_manifest.build_manifest({
+            "modelId": "demo/20b",
+            "vramEstimateGb": 20,
+            "recommendedProtocol": "vllmCudaOpenai",
+            "runtimeOptions": [{"protocolId": "vllmCudaOpenai"}],
+        })
+        _manifest, blocked, _request = admission.plan_admission(
+            supplied_manifest=vllm_manifest,
+            capability_profile=_profile(12288, 16384),
+            runtime="vllm",
+            protocol_id="vllmCudaOpenai",
+            payload={"gpuDevice": "all"},
+            explicit_combined=True,
+        )
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertIn("combined_vram_requires_explicit_opt_in", blocked["reasons"])
+
+        gguf_manifest = resource_manifest.build_manifest({
+            "modelId": "demo-20b-q4.gguf",
+            "vramEstimateGb": 20,
+            "recommendedProtocol": "llamaCppGgufServer",
+            "runtimeOptions": [{"protocolId": "llamaCppGgufServer"}],
+        })
+        _manifest, ready, _request = admission.plan_admission(
+            supplied_manifest=gguf_manifest,
+            capability_profile=_profile(12288, 16384),
+            runtime="llama.cpp",
+            protocol_id="llamaCppGgufServer",
+            payload={"gpuDevice": "all"},
+            explicit_combined=True,
+        )
+        self.assertEqual(ready["status"], "ready")
+        self.assertEqual(sum(item["vramMb"] for item in ready["placements"]), 20480)
+
+    def test_make_plan_exposes_ready_admission_without_starting_runtime(self):
+        with patch("backend.warsat._hf_repo_inventory", return_value=None), \
+             patch("backend.warsat._visible_gpus_for_plan", return_value=[]), \
+             patch("backend.warsat._fleet_state", return_value={"gpus": [], "runningModels": []}), \
+             patch("backend.warsat._docker_runtime_enabled", return_value={
+                 "enabled": False,
+                 "dockerControlEnabled": False,
+                 "dockerCliAvailable": False,
+                 "message": "Docker control disabled for test",
+             }), \
+             patch("backend.core.security.load", return_value={"allow_docker_control": False}):
+            plan = warsat.make_plan({
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "demo/7b",
+                "hostPort": 8099,
+                "vramEstimateGb": 6,
+                "capabilityProfile": _profile(12288),
+            })
+        self.assertEqual(plan["resourceAdmission"]["status"], "ready")
+        self.assertEqual(plan["resourceAdmission"]["placements"][0]["deviceId"], "gpu:0")
+        self.assertEqual(plan["resourceManifest"]["schemaVersion"], resource_manifest.SCHEMA_VERSION)
+        self.assertTrue(any("Docker control is disabled" in warning for warning in plan["warnings"]))
+
+    def test_model_pack_preview_exposes_unmeasured_admission_without_hardware_probe(self):
+        models = [{
+            "key": "main-local",
+            "model": "demo-7b",
+            "provider": "llama.cpp",
+            "role": "main",
+            "runtime_status": "reachable",
+            "enabled": True,
+            "managed": False,
+            "vram_estimate_gb": 6,
+        }]
+        with patch.object(assistant_runtime.model_registry, "all_models", return_value=models), \
+             patch.object(assistant_runtime.security, "load", return_value={"allow_docker_control": False}):
+            preview = assistant_runtime.build_model_pack_preview({
+                "packId": "local",
+                "entries": [{"id": "conversation", "role": "main", "modelKey": "main-local"}],
+            })
+        entry = preview["entries"][0]
+        self.assertEqual(preview["placement_policy"]["capacity_status"], "unmeasured")
+        self.assertEqual(entry["resource_admission"]["status"], "unmeasured")
+        self.assertIn("runtime_inventory_not_supplied", entry["resource_admission"]["reasons"])
+        self.assertEqual(entry["status"], "ready")
+
+    def test_deploy_rejects_a_plan_marked_blocked_before_docker_checks(self):
+        with self.assertRaises(AppError) as raised:
+            warsat._validate_deploy_plan({
+                "resourceAdmission": {"status": "blocked", "reasons": ["requested_vram_exceeds_observed_device_capacity"]},
+            })
+        self.assertEqual(raised.exception.code, "warsat_resource_admission_blocked")
+        self.assertEqual(raised.exception.status, 409)
+
+
+if __name__ == "__main__":
+    unittest.main()

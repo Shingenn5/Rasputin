@@ -18,6 +18,7 @@ from backend.models import registry as model_registry
 from backend.core import security
 from backend.core.response import AppError
 from backend.core.datadir import data_dir
+from backend.warsat import admission as resource_admission_module
 from backend.warsat.capabilities import build_capability_profile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1332,6 +1333,49 @@ def make_plan(payload):
         protocol = dict(protocol)
         protocol["image"] = protocol["imageCuda"]
 
+    # Resource admission is a preview-only decision.  It consumes an optional
+    # capability profile supplied by the caller (normally the already-loaded
+    # /api/warsat/hardware result) and never probes Docker or reserves a lease
+    # while a plan is being generated.  Without that profile the plan remains
+    # visibly unmeasured so an operator can provide current evidence before
+    # asking for approval.
+    resource_model = {
+        "modelId": model_ref or model_path or protocol["id"],
+        "recommendedProtocol": protocol["id"],
+        "runtimeOptions": [{"protocolId": protocol["id"]}],
+        "quantization": tuning.get("quantization") or _payload_get(payload, "quantization", default=""),
+        "contextWindow": tuning.get("contextWindow") or tuning.get("maxModelLen"),
+        "purpose": role,
+        "vramEstimateGb": _payload_get(payload, "vramEstimateGb", "vram_estimate_gb"),
+    }
+    multi_gpu_value = _payload_get(payload, "multiGpu", "multi_gpu", default=False)
+    if isinstance(multi_gpu_value, str):
+        multi_gpu_value = multi_gpu_value.strip().lower() in {"1", "true", "yes", "on"}
+    requested_gpu = str(limits.get("gpuDevice") or "").strip().lower()
+    explicit_combined = bool(
+        multi_gpu_value
+        or tuning.get("multiGpu")
+        or len(multi_gpu_inventory) > 1
+        or requested_gpu in {"all", "*"}
+        or ("," in requested_gpu and len([part for part in requested_gpu.split(",") if part.strip()]) > 1)
+        or int(tuning.get("tensorParallelSize") or 1) > 1
+    )
+    resource_manifest, admission_decision, resource_request = resource_admission_module.plan_admission(
+        model=resource_model,
+        supplied_manifest=_payload_get(payload, "resourceManifest", "resource_manifest"),
+        capability_profile=_payload_get(payload, "capabilityProfile", "capability_profile"),
+        runtime=protocol.get("runtime") or "unknown",
+        protocol_id=protocol["id"],
+        owner_id=_payload_get(payload, "ownerId", "owner_id", default="admin"),
+        pack_id=_slug(f"{protocol['runtime']}-{model_ref or protocol['id']}"),
+        payload={
+            **payload,
+            "deviceIds": multi_gpu_inventory and [f"gpu:{index}" for index, _item in enumerate(multi_gpu_inventory)] or payload.get("deviceIds"),
+        },
+        explicit_combined=explicit_combined,
+        allow_cpu_fallback=protocol.get("runtime") in {"llama.cpp", "ollama"} or strength == "cpu",
+    )
+
     # Fleet awareness: a second GPU deploy at the strength profile's default
     # gpuMemoryUtilization can OOM against whatever is already running, since
     # vLLM's --gpu-memory-utilization is a fraction of *total* GPU memory, not
@@ -1390,6 +1434,9 @@ def make_plan(payload):
     execution = _docker_runtime_enabled()
     docker_control_enabled = execution["dockerControlEnabled"]
     warnings = list(fleet_warnings) + list(multi_gpu_warnings)
+    admission_warning = resource_admission_module.warning_for(admission_decision)
+    if admission_warning:
+        warnings.append(admission_warning)
     if reroute_note:
         warnings.append(reroute_note)
     if hf_source:
@@ -1458,6 +1505,9 @@ def make_plan(payload):
         "resourceProfile": STRENGTH_PROFILES[strength],
         "tuning": tuning,
         "containerLimits": limits,
+        "resourceManifest": resource_manifest,
+        "resourceAdmission": admission_decision,
+        "resourceRequest": resource_request,
         "multiGpu": {
             "enabled": bool(multi_gpu_inventory),
             "gpuCount": len(multi_gpu_inventory),
@@ -1902,6 +1952,15 @@ def _streamed_pull(pull_cmd):
 def _validate_deploy_plan(plan):
     if not isinstance(plan, dict):
         raise AppError("warsat_plan_invalid", "Create a launch plan before deploying.", 400)
+    admission = plan.get("resourceAdmission") or plan.get("resource_admission") or {}
+    if isinstance(admission, dict) and admission.get("status") in {"blocked", "queued"}:
+        reasons = ", ".join(str(item) for item in (admission.get("reasons") or []))
+        raise AppError(
+            "warsat_resource_admission_blocked",
+            "Resource admission must be ready before this model can be launched"
+            + (f": {reasons}." if reasons else "."),
+            409,
+        )
     security.require("allow_docker_control")
     security.require("allow_model_registry_edit")
 

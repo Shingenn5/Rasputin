@@ -36,6 +36,8 @@ BACKEND_TEST_MODULES = (
     "tests.testBackup",
     "tests.testHardwareCapabilities",
     "tests.testResourceBroker",
+    "tests.testWarsatAdmission",
+    "tests.testWarsatUiContract",
     "tests.testWarsatAdvisor",
     "tests.testModelResourceManifest",
     "tests.testWarsatBenchmarks",

@@ -304,8 +304,12 @@ powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -EnableWarSat 
 ~~~
 
 After signing in, an administrator must also enable Docker control in Settings -> Safety. Run WarSat
-readiness before deploying a model. GPU support and model images are runtime-specific; the wrapper
-itself does not guarantee that every model image supports every host GPU.
+readiness before deploying a model. Each launch brief now shows the model resource manifest and a
+side-effect-free resource-admission decision. A blocked or queued decision locks deployment before
+Docker work; an unmeasured decision means current runtime inventory has not been supplied and is not
+a capacity certificate. GPU support and model images are runtime-specific; the wrapper itself does
+not guarantee that every model image supports every host GPU. vLLM uses the largest fitting single
+GPU by default; combined VRAM requires an explicitly certified backend such as llama.cpp GGUF.
 
 ### RAG and search profiles
 

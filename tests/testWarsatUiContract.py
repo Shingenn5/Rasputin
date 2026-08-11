@@ -1,0 +1,23 @@
+import unittest
+from pathlib import Path
+
+
+class WarsatUiContractTests(unittest.TestCase):
+    def test_launch_brief_surfaces_resource_admission_and_locks_unsafe_states(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "frontend-src"
+            / "src"
+            / "features"
+            / "warsat"
+            / "WarsatView.jsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("resourceAdmission", source)
+        self.assertIn("resourceAdmissionBlocked", source)
+        self.assertIn("data-testid=\"warsat-resource-admission\"", source)
+        self.assertIn("Resource admission blocked", source)
+        self.assertIn("Waiting for capacity", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

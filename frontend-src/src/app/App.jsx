@@ -2057,6 +2057,9 @@ export function App() {
         hostPort: port,
         role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),
         maxModelLen: item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
+        vramEstimateGb: item.vramEstimateGb || undefined,
+        resourceManifest: item.resourceManifest || undefined,
+        capabilityProfile: warsatHardware?.capabilityProfile || undefined,
         containerName: options.containerName || undefined,
         // Catalog hints are deliberately conservative. When one is present,
         // use it so a known tool-capable model is deployed agent-ready.
@@ -2150,6 +2153,7 @@ export function App() {
         role: form.get("role") || undefined,
         containerName: form.get("containerName") || undefined,
         toolCallParser: form.get("toolCallParser") || undefined,
+        capabilityProfile: warsatHardware?.capabilityProfile || undefined,
       });
       setWarsatPlan(plan);
       setWarsatDeployment(null);
@@ -2175,6 +2179,9 @@ export function App() {
           modelRef: warsatPlan.modelRef || undefined,
           modelPath: warsatPlan.modelPath || undefined,
           strengthProfile: warsatPlan.strengthProfile || undefined,
+          vramEstimateGb: warsatPlan.resourceManifest?.runtimeEnvelope?.estimatedVramGb || undefined,
+          resourceManifest: warsatPlan.resourceManifest || undefined,
+          capabilityProfile: warsatHardware?.capabilityProfile || undefined,
           hostPort: warsatPlan.hostPort || undefined,
           role: warsatPlan.role || undefined,
           containerName: warsatPlan.containerName || undefined,

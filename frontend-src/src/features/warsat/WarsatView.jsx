@@ -202,7 +202,13 @@ export function WarsatView({
   const selectedCatalogModel = warsatCatalogItems.find(i => i.id === selectedCatalogId) || warsatCatalogItems[0] || null;
 
   /* deploy state */
-  const canDeployPlan = !!plan?.executionEnabled && !!plan?.dockerControlEnabled && !!plan?.dockerCliAvailable;
+  const resourceAdmission = plan?.resourceAdmission || null;
+  const resourceAdmissionStatus = resourceAdmission?.status || "unmeasured";
+  const resourceAdmissionBlocked = ["blocked", "queued"].includes(resourceAdmissionStatus);
+  const canDeployPlan = !!plan?.executionEnabled
+    && !!plan?.dockerControlEnabled
+    && !!plan?.dockerCliAvailable
+    && !resourceAdmissionBlocked;
   // Deploy can never succeed without docker control + CLI — the backend 503s.
   // Keep the button locked and let the mission-brief banners explain why.
   const deployBlocked = !!plan && !canDeployPlan;
@@ -219,6 +225,10 @@ export function WarsatView({
   const deploymentRegistered = deployment?.status === "registered";
   const deployLabel = deploying
     ? "Deploying..."
+    : resourceAdmissionStatus === "blocked"
+      ? "Resource admission blocked"
+    : resourceAdmissionStatus === "queued"
+      ? "Waiting for capacity"
     : deployBlocked
       ? "Deploy locked"
     : deployment?.approvalRequired
@@ -928,6 +938,31 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
           </strong>
         </div>
       </div>
+
+      {resourceAdmission && (
+        <div
+          className="ws-exec-warning"
+          data-testid="warsat-resource-admission"
+          style={{ flexWrap: "wrap" }}
+        >
+          {resourceAdmissionStatus === "ready"
+            ? <ShieldCheck size={13} />
+            : <AlertTriangle size={13} />}
+          <span>
+            Resource admission: <strong>{labelize(resourceAdmissionStatus)}</strong>
+            {resourceAdmissionStatus === "unmeasured"
+              ? " — supply a current hardware profile before treating this as a capacity-certified launch."
+              : resourceAdmissionStatus === "ready"
+                ? " — " + (resourceAdmission.placements?.map(item => item.deviceId + " " + item.vramMb + " MB").join(", ") || "placement selected") + "."
+                : " — deployment remains locked until the admission decision is ready."}
+          </span>
+          {(resourceAdmission.reasons || []).length > 0 && (
+            <small style={{ width: "100%", opacity: 0.82 }}>
+              Reasons: {resourceAdmission.reasons.join(", ")}
+            </small>
+          )}
+        </div>
+      )}
 
       {/* Lifecycle progress rail */}
       {lifecycle.length > 0 && (

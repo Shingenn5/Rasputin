@@ -322,16 +322,31 @@ def normalize_model_pack(value: Any) -> dict[str, Any]:
         role = _key(item.get("role") or "helper")
         if role not in MODEL_PACK_ROLES:
             raise ValueError(f"unsupported model pack role: {role}")
-        entries.append(
-            {
-                "id": entry_id,
-                "role": role,
-                "model_key": _key(item.get("model_key") or item.get("modelKey")),
-                "required": _bool(item.get("required"), False),
-                "capabilities": _list_of_text(item.get("capabilities"), limit=16, item_limit=80),
-                "placement": _text(item.get("placement"), "automatic", 80) or "automatic",
-            }
-        )
+        normalized_entry = {
+            "id": entry_id,
+            "role": role,
+            "model_key": _key(item.get("model_key") or item.get("modelKey")),
+            "required": _bool(item.get("required"), False),
+            "capabilities": _list_of_text(item.get("capabilities"), limit=16, item_limit=80),
+            "placement": _text(item.get("placement"), "automatic", 80) or "automatic",
+        }
+        supplied_manifest = item.get("resource_manifest") or item.get("resourceManifest")
+        if isinstance(supplied_manifest, dict):
+            normalized_entry["resource_manifest"] = copy.deepcopy(supplied_manifest)
+        # Keep only the small set of optional estimates needed to build a
+        # launch preview.  Unknown entry fields must not become executable
+        # runtime options merely by being persisted in a model pack.
+        for field in (
+            "parameter_count_b",
+            "vram_estimate_gb",
+            "context_window",
+            "quantization",
+            "recommended_protocol",
+            "runtime_options",
+        ):
+            if item.get(field) not in (None, ""):
+                normalized_entry[field] = copy.deepcopy(item[field])
+        entries.append(normalized_entry)
     if not entries:
         raise ValueError("model_pack.entries must contain at least one entry")
     return {"pack_id": pack_id, "version": version, "entries": entries}
