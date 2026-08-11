@@ -436,8 +436,8 @@ Validate an active Docker instance with:
 The verifier checks /api/health, frontend serving, and baseline security headers. Add the native
 endpoint on Windows when it is running.
 
-For a release-candidate evidence bundle (isolated backend data, docs, frontend build, and both
-runtime probes), run:
+For a release-candidate evidence bundle (isolated backend/UI contract tests, docs, frontend build,
+desktop artifacts, and both runtime probes), run:
 
 ~~~bash
 ./.venv/bin/python scripts/verify_release_candidate.py \

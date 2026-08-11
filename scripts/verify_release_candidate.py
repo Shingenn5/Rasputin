@@ -28,10 +28,13 @@ BACKEND_TEST_MODULES = (
     "tests.testBackendSmoke",
     "tests.testAssistantContracts",
     "tests.testAssistantUiContract",
+    "tests.testMemoryUiContract",
+    "tests.testWorkModeUiContract",
     "tests.test_coding_acceptance",
     "tests.test_coder_certification_cli",
     "tests.testDiagnostics",
     "tests.testBackup",
+    "tests.testReleaseCandidate",
 )
 DEFAULT_ENDPOINTS = (
     "native=http://127.0.0.1:8788",
