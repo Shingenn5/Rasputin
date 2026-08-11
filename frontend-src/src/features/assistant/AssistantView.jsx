@@ -679,6 +679,13 @@ export function AssistantView({
                   <span>
                     <strong>{titleize(handoff.operation)}</strong> <span className="small text-body-secondary">· {handoff.id}</span>
                     {brokerOperationMetadata[handoff.operation]?.sideEffects && <Badge bg="warning" text="dark" className="ms-2">Host action</Badge>}
+                    {handoff.request?.executionStarted && (
+                      <div className="small text-success mt-1" data-testid={`assistant-handoff-receipt-${handoff.id}`} aria-live="polite">
+                        {handoff.request?.result?.taskId
+                          ? <>Governed Code task started: <code>{handoff.request.result.taskId}</code></>
+                          : "Approved broker action completed."}
+                      </div>
+                    )}
                   </span>
                 </div>
                 <div className="d-flex align-items-center gap-2">
