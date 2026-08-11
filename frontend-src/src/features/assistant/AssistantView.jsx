@@ -215,6 +215,13 @@ export function AssistantView({
   const voiceRoles = capabilities?.voiceRoles || [];
   const commandRouter = capabilities?.commandRouter || {};
   const voiceContract = capabilities?.voice || {};
+  const voiceModelReadiness = capabilities?.voiceModels || capabilities?.voice_models || {};
+  const voiceModelRoles = voiceModelReadiness.roles || {};
+  const voiceModelStatus = voiceModelReadiness.status || "not_checked";
+  const voiceModelRoleEntries = [
+    ["speechToText", "Speech to text"],
+    ["textToSpeech", "Text to speech"],
+  ].map(([key, label]) => [key, label, voiceModelRoles[key] || voiceModelRoles[key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)] || {}]);
   const personaStyle = profile?.persona?.style || {};
   const toolItems = Array.isArray(tools?.tools) ? tools.tools : [];
   const callableToolItems = Array.isArray(tools?.callableTools)
@@ -317,6 +324,20 @@ export function AssistantView({
                   <p className="small text-body-secondary mb-2">{voiceContract.localOnly ? "Local-only adapter" : "Local policy not confirmed"}; device-free until an explicit audio layer is approved.</p>
                   <div className="small"><span className="text-body-secondary">Transcribe:</span> <code>{voiceContract.transcriptionPath || "—"}</code></div>
                   <div className="small mt-1"><span className="text-body-secondary">Synthesize:</span> <code>{voiceContract.synthesisPath || "—"}</code></div>
+                  <div className="border-top mt-2 pt-2" data-testid="assistant-voice-model-readiness">
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                      <span className="text-body-secondary">Registered speech models</span>
+                      <Badge bg={statusVariant(voiceModelStatus)}>{titleize(voiceModelStatus)}</Badge>
+                    </div>
+                    {voiceModelRoleEntries.map(([key, label, role]) => (
+                      <div className="small mt-1" key={key} data-testid={`assistant-voice-role-${key}`}>
+                        <span className="text-body-secondary">{label}:</span>{" "}
+                        <strong>{titleize(role.status || "not_checked")}</strong>
+                        {role.selectedModelKey && <span className="text-body-secondary"> ({role.selectedModelKey})</span>}
+                      </div>
+                    ))}
+                    {voiceModelReadiness.nextActions?.[0] && <div className="small text-body-secondary mt-1">{voiceModelReadiness.nextActions[0]}</div>}
+                  </div>
                 </div>
               </Col>
               <Col md={4} data-testid="assistant-mcp-contract">
