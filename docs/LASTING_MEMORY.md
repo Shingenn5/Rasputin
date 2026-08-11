@@ -122,3 +122,19 @@ the Memory view or API. When a due timestamp is reached, the record becomes
 available to the owner for audit, restoration as persistent memory, or deletion.
 
 Use `GET /api/memory/items?status=expired` to inspect expired records.
+
+## Restart rehearsal
+
+The isolated restart rehearsal proves the persistence boundary without opening
+the active data directory:
+
+```powershell
+C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\rehearse_memory_restart.py
+```
+
+It creates a temporary SQLite store, saves a workspace-scoped preference,
+submits an exact duplicate, approves a canonical correction, and verifies the
+saved correction plus superseded original from a fresh Python process. The
+report also checks that another owner cannot recall the item. Passing this
+command is restart evidence for the memory lifecycle; it does not replace an
+authenticated browser review of the Memory view.

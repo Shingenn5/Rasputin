@@ -40,6 +40,7 @@ BACKEND_TEST_MODULES = (
     "tests.testWarsatUiContract",
     "tests.test_model_fleet_certification",
     "tests.testVoiceProfiles",
+    "tests.testMemoryRestart",
     "tests.testWarsatAdvisor",
     "tests.testModelResourceManifest",
     "tests.testWarsatBenchmarks",
