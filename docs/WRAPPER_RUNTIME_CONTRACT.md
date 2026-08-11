@@ -58,7 +58,12 @@ The resource broker in `backend/warsat/resource_broker.py` is the next safety
 boundary: it accounts for active per-device reservations with a bounded
 heartbeat/expiry, and returns `ready`, `queued`, `blocked`, `degraded`, or
 `unmeasured` without launching a worker. Launch paths must use this decision
-before creating a model container.
+before creating a model container. Runtime placement is also explicit: vLLM
+defaults to the largest Docker-visible single GPU and only enables tensor
+parallelism when `multiGpu=true`, `gpuDevice=all`, or an explicit tensor
+parallel size greater than one is supplied. llama.cpp GGUF may use its
+`--fit` layer-sharding path, but its plan still reports the selected devices
+and warnings for review.
 
 - `_discovery_hosts()` → `['127.0.0.1']`
 - `_endpoint_for('127.0.0.1', 8001)` → `http://127.0.0.1:8001/v1` (not `host.docker.internal`)

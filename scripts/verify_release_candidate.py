@@ -36,6 +36,7 @@ BACKEND_TEST_MODULES = (
     "tests.testBackup",
     "tests.testHardwareCapabilities",
     "tests.testResourceBroker",
+    "tests.testWarsatAdvisor",
     "tests.testReleaseCandidate",
 )
 DEFAULT_ENDPOINTS = (

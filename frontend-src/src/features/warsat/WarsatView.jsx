@@ -777,15 +777,19 @@ function DeployTab({
             <span className="ws-checkbox-row">
               <input
                 id="warsatMultiGpu"
-                key={(hardware?.detectedHardware?.gpus || []).length}
+                key={`${selectedProtocol?.runtime || "runtime"}-${(hardware?.detectedHardware?.gpus || []).length}`}
                 name="multiGpu"
                 type="checkbox"
-                defaultChecked={(hardware?.detectedHardware?.gpus || []).length > 1}
+                defaultChecked={selectedProtocol?.runtime === "vllm"
+                  ? false
+                  : (hardware?.detectedHardware?.gpus || []).length > 1}
               />
               Use all detected GPUs
             </span>
             <small>
-              Auto-shards across {(hardware?.detectedHardware?.gpus || []).length || "the visible"} GPUs and fits to available VRAM.
+              {selectedProtocol?.runtime === "vllm"
+                ? "vLLM uses the largest visible GPU by default; enable this only after validating tensor-parallel compatibility."
+                : `Auto-shards across ${(hardware?.detectedHardware?.gpus || []).length || "the visible"} GPUs and fits to available VRAM.`}
             </small>
           </label>
           <div className="ws-recipe-actions">

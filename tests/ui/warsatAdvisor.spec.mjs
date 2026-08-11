@@ -46,7 +46,7 @@ test("WarSat Advisor explains fit before creating an approval-gated plan", async
         ok: true,
         data: {
           status: "ready_with_assumptions",
-          planSeed: { protocolId: "vllmCudaOpenai", toolCallParser: "hermes", multiGpu: true },
+          planSeed: { protocolId: "vllmCudaOpenai", toolCallParser: "hermes", multiGpu: false },
           evidence: {
             confidence: "medium",
             observed: { aggregateVramGb: 28, gpus: [{}, {}] },
@@ -54,7 +54,7 @@ test("WarSat Advisor explains fit before creating an approval-gated plan", async
           },
           blockers: [],
           warnings: [],
-          assumptions: ["Runtime sharding must be verified."],
+          assumptions: ["Largest fitting single GPU is the safe default; runtime sharding must be verified."],
           approvalBypassed: false,
         },
         error: null,

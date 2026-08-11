@@ -4,7 +4,7 @@ from backend.warsat import advisor
 
 
 class WarSatAdvisorTests(unittest.TestCase):
-    def test_recommends_multi_gpu_plan_seed_with_evidence_classes(self):
+    def test_recommends_single_gpu_seed_with_explicit_sharding_assumption(self):
         result = advisor.recommend(
             {
                 "modelId": "Qwen/Qwen2.5-Coder-7B-Instruct",
@@ -25,9 +25,10 @@ class WarSatAdvisorTests(unittest.TestCase):
         self.assertEqual("ready_with_assumptions", result["status"])
         self.assertEqual(28, result["evidence"]["observed"]["aggregateVramGb"])
         self.assertEqual(6, result["evidence"]["estimated"]["vramMarginGb"])
-        self.assertTrue(result["planSeed"]["multiGpu"])
+        self.assertFalse(result["planSeed"]["multiGpu"])
         self.assertFalse(result["approvalBypassed"])
-        self.assertTrue(any("shard" in item for item in result["assumptions"]))
+        self.assertTrue(any("largest fitting single GPU" in item for item in result["assumptions"]))
+        self.assertTrue(any("runtime certificate" in item for item in result["assumptions"]))
 
     def test_blocks_memory_overcommit(self):
         result = advisor.recommend(

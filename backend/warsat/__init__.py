@@ -711,16 +711,35 @@ def _visible_gpus_for_plan():
 
 
 def _configure_multi_gpu(payload, protocol, tuning, limits):
-    """Prefer NVIDIA acceleration, and combine cards when not opted out.
+    """Choose a runtime-safe GPU placement for a planned model.
 
-    Catalog plans intentionally omit ``multiGpu``.  On a GPU machine that
-    means "choose the best available acceleration", not "run on the CPU".
-    Manual plans can still select one GPU with ``multiGpu=false`` or opt out
-    completely with the CPU profile, GPU layers 0, or a CPU-only device.
+    GPU visibility is not proof that a runtime can safely combine devices.
+    vLLM tensor parallelism is therefore opt-in (``multiGpu=true``,
+    ``gpuDevice=all``, or an explicit tensor-parallel size greater than one),
+    while the default is the largest visible single GPU.  llama.cpp GGUF
+    retains its conservative automatic layer-sharding path because its
+    ``--fit`` behavior is designed for heterogeneous cards.  This function
+    only plans placement; it never starts a container or process.
     """
     multi_gpu_request = _payload_get(payload, "multiGpu", "multi_gpu", default=None)
     requested_device = str(limits.get("gpuDevice") or "").strip().lower()
     explicit_gpu_layers = _payload_get(payload, "gpuLayers", "gpu_layers", default=None)
+    explicit_tp = _payload_get(payload, "tensorParallelSize", "tensor_parallel_size") is not None
+    explicit_tp_size = int(tuning.get("tensorParallelSize") or 1)
+    runtime = str(protocol.get("runtime") or "").lower()
+
+    def _bool_value(value):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"false", "0", "no", "off"}:
+                return False
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+        return bool(value)
+
+    multi_gpu_enabled = _bool_value(multi_gpu_request)
+    multi_gpu_disabled = multi_gpu_request is not None and not multi_gpu_enabled
+    explicit_all = requested_device in {"all", "*"}
     strength = _safe_strength(_payload_get(payload, "strengthProfile", "strength_profile", default="balanced"))
     cpu_only = (
         strength == "cpu"
@@ -728,8 +747,21 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
         or explicit_gpu_layers == 0
         or str(explicit_gpu_layers).strip() == "0"
     )
-    if multi_gpu_request and cpu_only:
+    if (multi_gpu_enabled or (runtime == "vllm" and explicit_tp_size > 1)) and cpu_only:
         raise AppError("warsat_multi_gpu_conflict", "Multi-GPU cannot be combined with a CPU-only GPU device setting.", 400)
+
+    if runtime == "vllm" and multi_gpu_disabled and explicit_tp_size > 1:
+        raise AppError(
+            "warsat_multi_gpu_conflict",
+            "tensorParallelSize greater than one requires multiGpu=true (or gpuDevice=all) for vLLM.",
+            400,
+        )
+    if runtime == "vllm" and multi_gpu_disabled and explicit_all:
+        raise AppError(
+            "warsat_multi_gpu_conflict",
+            "gpuDevice=all requires multiGpu=true for vLLM; leave GPU allocation unchecked for single-card placement.",
+            400,
+        )
 
     gpu_modes = {str(mode).lower() for mode in (protocol.get("gpu") or {}).get("modes", [])}
     gpu_capable = bool((protocol.get("gpu") or {}).get("required") or protocol.get("imageCuda") or "nvidia" in gpu_modes)
@@ -742,19 +774,49 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
     gpus = _visible_gpus_for_plan()
     if not gpus:
         warning = "GPU acceleration was requested, but no NVIDIA GPU is visible to Rasputin."
-        return [], [warning] if multi_gpu_request else []
+        return [], [warning] if multi_gpu_enabled or explicit_all or explicit_tp_size > 1 else []
 
     gpu_count = len(gpus)
-    use_multi_gpu = gpu_count > 1 and multi_gpu_request is not False
+    if runtime == "vllm":
+        # Never infer vLLM tensor parallelism from card count. The mixed RTX
+        # 3060/5060 Ti host has already demonstrated that this can fail before
+        # the model serves (for example, when UVA is unavailable).
+        use_multi_gpu = gpu_count > 1 and (
+            multi_gpu_enabled or explicit_all or (explicit_tp and explicit_tp_size > 1)
+        )
+    else:
+        use_multi_gpu = gpu_count > 1 and not multi_gpu_disabled
+
+    if runtime == "vllm" and use_multi_gpu and requested_device not in {"", "all", "*"}:
+        requested_device_count = len([item for item in requested_device.split(",") if item.strip()])
+        if requested_device_count < 2:
+            raise AppError(
+                "warsat_multi_gpu_conflict",
+                "vLLM tensor parallelism across multiple GPUs requires gpuDevice=all or an explicit device list.",
+                400,
+            )
+
+    largest_gpu_index = max(
+        range(gpu_count),
+        key=lambda index: int(gpus[index].get("memoryTotalMb") or 0),
+    )
     if not limits.get("gpuDevice"):
-        # An explicit unchecked multi-GPU control means one GPU, not CPU.
-        limits["gpuDevice"] = "all" if use_multi_gpu or gpu_count == 1 else "0"
+        # An explicit unchecked multi-GPU control means one GPU, not CPU. Use
+        # the largest Docker-visible card; host and container device order can
+        # differ, so this index is intentionally derived from this probe.
+        limits["gpuDevice"] = "all" if use_multi_gpu else str(largest_gpu_index)
     total_mb = sum(int(gpu.get("memoryTotalMb") or 0) for gpu in gpus)
     warnings = []
-    if protocol.get("runtime") == "vllm":
+    if runtime == "vllm":
         if not use_multi_gpu:
+            selected = gpus[largest_gpu_index]
+            warnings.append(
+                "vLLM multi-GPU is disabled by default; selected the largest visible GPU "
+                f"({selected.get('name') or f'GPU {largest_gpu_index}'}, "
+                f"{int(selected.get('memoryTotalMb') or 0) / 1024:.1f} GiB). "
+                "Set multiGpu=true only after validating a runtime certificate for this device set."
+            ) if gpu_count > 1 else None
             return [], warnings
-        explicit_tp = _payload_get(payload, "tensorParallelSize", "tensor_parallel_size") is not None
         if explicit_tp and tuning["tensorParallelSize"] > gpu_count:
             raise AppError(
                 "warsat_gpu_count",
@@ -764,9 +826,10 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
         if not explicit_tp:
             tuning["tensorParallelSize"] = gpu_count
         warnings.append(
-            f"vLLM tensor parallelism is enabled across {tuning['tensorParallelSize']} GPUs. "
+            f"vLLM tensor parallelism was explicitly enabled across {tuning['tensorParallelSize']} GPUs. "
             "It divides tensors evenly, so unequal cards are constrained by the smaller GPU; "
-            "use llama.cpp GGUF layer sharding when maximum combined-VRAM capacity matters."
+            "a runtime certificate is required before relying on this placement. "
+            "Use llama.cpp GGUF layer sharding when maximum combined-VRAM capacity matters."
         )
     elif protocol.get("modelFormat") == "gguf":
         tuning["multiGpu"] = use_multi_gpu

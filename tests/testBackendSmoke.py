@@ -2264,7 +2264,7 @@ class BackendSmokeTests(unittest.TestCase):
                 "quantization": "awq",
                 "memoryLimitGb": 24,
                 "shmSizeGb": 8,
-                "gpuDevice": "0",
+                "gpuDevice": "all",
             }))
         self.assertEqual(plan["protocolId"], "vllmCudaOpenai")
         self.assertEqual(plan["strengthProfile"], "large")
@@ -2368,6 +2368,73 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(vllm["tuning"]["tensorParallelSize"], 2)
         self.assertIn("--tensor-parallel-size", vllm["commandPreview"]["run"])
         self.assertTrue(any("constrained by the smaller GPU" in item for item in vllm["warnings"]))
+
+    def testWarsatDefaultsVllmToLargestVisibleGpu(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16384},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "hostPort": 8023,
+                "strengthProfile": "large",
+            }))
+
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "1")
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 1)
+        self.assertFalse(plan["multiGpu"]["enabled"])
+        self.assertEqual(plan["multiGpu"]["gpuCount"], 0)
+        self.assertTrue(any("disabled by default" in item for item in plan["warnings"]))
+        self.assertTrue(any("RTX 5060 Ti" in item for item in plan["warnings"]))
+
+    def testWarsatVllmMultiGpuRequiresExplicitOptIn(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16384},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "hostPort": 8024,
+                "strengthProfile": "large",
+                "multiGpu": True,
+            }))
+
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "all")
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 2)
+        self.assertEqual(plan["multiGpu"]["gpuCount"], 2)
+        self.assertTrue(any("explicitly enabled" in item for item in plan["warnings"]))
+        self.assertTrue(any("runtime certificate" in item for item in plan["warnings"]))
+
+    def testWarsatRejectsContradictoryVllmPlacementControls(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16384},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            response = self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "hostPort": 8025,
+                "strengthProfile": "large",
+                "multiGpu": False,
+                "tensorParallelSize": 2,
+            })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "warsatMultiGpuConflict")
 
     def testWarsatAutomaticallyUsesGpuForCatalogStyleGgufPlans(self):
         visible_gpus = [

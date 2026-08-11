@@ -70,7 +70,10 @@ def recommend(model, hardware, mission="chat", protocol_id="", context_window=No
     if context > 32768:
         assumptions.append("VRAM estimate may not include the full KV-cache cost of the requested context.")
     if len(facts["gpus"]) > 1:
-        assumptions.append("Aggregate VRAM is usable only when the selected runtime can shard this model across the observed devices.")
+        assumptions.append(
+            "Aggregate VRAM is not assumed: default placement uses the largest fitting single GPU. "
+            "Multi-GPU sharding requires an explicit runtime certificate for the selected devices."
+        )
 
     purpose = str(model.get("purpose") or "chat")
     if mission not in {purpose, "chat"} and mission not in (model.get("capabilities") or []):
@@ -87,14 +90,14 @@ def recommend(model, hardware, mission="chat", protocol_id="", context_window=No
             "protocolId": protocol,
             "contextWindow": context,
             "toolCallParser": parser,
-            "multiGpu": len(facts["gpus"]) > 1,
+            "multiGpu": False,
         },
         "planSeed": {
             "protocolId": protocol,
             "modelRef": model.get("modelId") or model.get("id") or "",
             "contextWindow": context,
             "toolCallParser": parser or None,
-            "multiGpu": len(facts["gpus"]) > 1,
+            "multiGpu": False,
         },
         "evidence": {
             "observed": facts,
