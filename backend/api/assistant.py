@@ -9,6 +9,7 @@ from pydantic import Field
 from backend.api.core import CamelModel, current_user, require_member
 from backend.assistant import runtime
 from backend.assistant import voice
+from backend.assistant import voice_models
 from backend.core import audit
 from backend.core import workspace
 from backend.core.response import AppError, ok
@@ -113,7 +114,16 @@ def _assert_sensitive_allowed(req: PlanPreviewIn, user: dict) -> None:
 
 @router.get("/capabilities")
 async def assistant_capabilities(_user=Depends(current_user)):
-    return ok(runtime.capabilities())
+    payload = runtime.capabilities()
+    payload["voice_models"] = voice_models.readiness()
+    return ok(payload)
+
+
+@router.get("/voice/models")
+async def assistant_voice_models(_user=Depends(require_member)):
+    """Return redacted local STT/TTS registration and readiness evidence."""
+
+    return ok(voice_models.readiness())
 
 
 @router.post("/command-preview")

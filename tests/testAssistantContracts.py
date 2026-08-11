@@ -17,6 +17,7 @@ from backend.api.core import current_user, hub
 from backend.assistant import contracts
 from backend.assistant import runtime
 from backend.assistant import voice
+from backend.assistant import voice_models
 from backend.core import runtime_store
 from backend.core import security
 from backend.core import workspace
@@ -141,6 +142,57 @@ class AssistantContractTests(unittest.TestCase):
         self.assertEqual(styled_data["persona"]["style"]["tone"], "warm")
         self.assertEqual(styled_data["persona"]["style"]["sarcasm"], "off")
         self.assertTrue(styled_data["persona"]["style"]["respectful"])
+
+    def test_voice_model_readiness_is_local_redacted_and_device_free(self):
+        report = voice_models.readiness([
+            {
+                "key": "stt-local",
+                "name": "Local STT",
+                "provider": "whisper",
+                "role": "speech_to_text",
+                "runtime": "external-local",
+                "base_url": "http://127.0.0.1:9010/v1",
+                "runtime_status": "reachable",
+                "enabled": True,
+                "api_key": "do-not-return",
+            },
+            {
+                "key": "tts-check",
+                "name": "TTS Pending",
+                "provider": "piper",
+                "role": "text_to_speech",
+                "runtime": "external-local",
+                "base_url": "http://localhost:9011/v1",
+                "runtime_status": "unknown",
+                "enabled": True,
+            },
+        ])
+        self.assertEqual(report["status"], "needs_health_check")
+        self.assertFalse(report["ready"])
+        self.assertEqual(report["roles"]["speech_to_text"]["status"], "ready")
+        self.assertEqual(report["roles"]["text_to_speech"]["status"], "needs_health_check")
+        self.assertFalse(report["execution"]["models_started"])
+        self.assertFalse(report["execution"]["network_probe_started"])
+        self.assertNotIn("api_key", str(report))
+        self.assertNotIn("9010", str(report))
+
+    def test_voice_model_readiness_blocks_remote_and_missing_roles(self):
+        report = voice_models.readiness([
+            {
+                "key": "stt-remote",
+                "role": "speech_to_text",
+                "provider": "whisper",
+                "base_url": "https://speech.example.invalid/v1",
+                "runtime_status": "reachable",
+                "enabled": True,
+            },
+        ])
+        self.assertEqual(report["status"], "blocked")
+        self.assertIn("voice:speech_to_text:remote_endpoint_blocked", report["blockers"])
+        self.assertIn("voice:text_to_speech:role_model_missing", report["blockers"])
+        response = self.client.get("/api/assistant/voice/models")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("contractVersion", response.json()["data"])
 
     def test_command_router_is_allowlisted_preview_only_and_approval_explicit(self):
         original_security = security.load()
