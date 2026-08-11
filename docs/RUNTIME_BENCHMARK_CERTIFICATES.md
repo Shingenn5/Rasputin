@@ -29,3 +29,18 @@ This slice does not make synthetic measurements or call a model. A future
 runtime adapter should collect vLLM/llama.cpp timing and memory counters,
 attach the exact manifest identity, and submit the resulting samples. Semantic
 quality remains unmeasured until an objective rubric-backed trial supplies it.
+
+## Selected-fleet certification
+
+Use the bounded fleet command after registering the local main and coder roles:
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\certify_model_fleet.py
+~~~
+
+The command performs local-only health and compatibility probes, writes a
+latency-only certificate for each reachable role, and reports missing,
+non-local, or unreachable assignments as explicit blockers. It never deploys
+containers or contacts remote providers. A ready report is still not a
+throughput or semantic-quality claim; those require runtime counters and a
+separate objective trial.
