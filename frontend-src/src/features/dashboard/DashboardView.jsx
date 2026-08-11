@@ -215,6 +215,43 @@ export function DashboardView({
           </div>
         </motion.div>
 
+        <motion.div variants={fadeUp} data-testid="work-mode-switcher" aria-labelledby="work-mode-title">
+          <Card className="glow-card p-5">
+            <div className="mb-3">
+              <h2 id="work-mode-title" className="text-base font-semibold">Choose your work mode</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Workstation execution and the Rasputin personality stay separate, while sharing the local safety and context boundaries.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="navigation" aria-label="Workstation and Assistant modes">
+              <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border bg-background/60 p-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <Boxes size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold">Workstation</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Chat, coding tasks, workspaces, models, and review.</p>
+                  </div>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={() => go("chat")} data-testid="dashboard-open-workstation">
+                  Open workstation
+                </Button>
+              </div>
+              <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border bg-background/60 p-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <Sparkles size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold">Assistant</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Personality, lasting context, voice, and reviewed handoffs.</p>
+                  </div>
+                </div>
+                <Button type="button" size="sm" onClick={() => go("assistant")} data-testid="dashboard-open-assistant">
+                  Open Assistant
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+
         {/* KPI row */}
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {kpis.map((k) => {

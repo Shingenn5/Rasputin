@@ -28,8 +28,8 @@ const NAV_GROUPS = [
     label: "Workspace",
     items: [
       { view: "home", label: "Dashboard", icon: LayoutDashboard, testId: "nav-home" },
-      { view: "chat", label: "Chat", icon: MessageSquare, testId: "nav-chat" },
-      { view: "assistant", label: "Rasputin", icon: Brain, testId: "nav-assistant" },
+      { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
+      { view: "assistant", label: "Assistant", ariaLabel: "Rasputin assistant control plane", icon: Brain, testId: "nav-assistant" },
       { view: "workspaces", label: "Workspaces", icon: FolderGit2, testId: "nav-workspaces" },
       { view: "activity", label: "Activity", icon: Activity, testId: "nav-activity" },
     ],
@@ -114,7 +114,7 @@ export function DashSidebar({
         type="button"
         data-testid={item.testId}
         aria-current={active ? "page" : undefined}
-        aria-label={item.label}
+        aria-label={item.ariaLabel || item.label}
         title={!expanded ? item.label : undefined}
         onClick={() => go(item.view, item.section)}
         className={cn(
@@ -217,14 +217,18 @@ export function DashSidebar({
         </div>}
 
         {/* Navigation participates in the sidebar's single unified scroll surface. */}
-        <nav className="flex shrink-0 flex-col gap-0.5">
+        <nav className="flex shrink-0 flex-col gap-0.5" aria-label="Workstation and assistant navigation">
           {visibleNavGroups.map((group) => (
-            <div key={group.label} className="mt-1">
-              {expanded && (
-                <div className="px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
-                  {group.label}
-                </div>
-              )}
+            <div key={group.label} className="mt-1" role="group" aria-labelledby={`nav-group-${group.label.toLowerCase()}`}>
+              <div
+                id={`nav-group-${group.label.toLowerCase()}`}
+                className={cn(
+                  "px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35",
+                  !expanded && "sr-only",
+                )}
+              >
+                {group.label}
+              </div>
               {group.items.map(navBtn)}
             </div>
           ))}
