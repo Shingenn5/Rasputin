@@ -43,6 +43,7 @@ BACKEND_TEST_MODULES = (
     "tests.testMemoryRestart",
     "tests.testMcpSafety",
     "tests.testInstallationPreflight",
+    "tests.testUiCertification",
     "tests.testWarsatAdvisor",
     "tests.testModelResourceManifest",
     "tests.testWarsatBenchmarks",
@@ -152,6 +153,11 @@ def _known_boundaries() -> list[dict[str, str]]:
             "status": "open",
             "detail": "Browser push-to-talk is wired and bounded; registered speech models, microphone permission, and speaker hardware need an operator run.",
         },
+        {
+            "id": "operatorUiBrowser",
+            "status": "open",
+            "detail": "Source-level UI contracts and automated checks pass; an authenticated keyboard-and-mouse walkthrough still needs an operator record.",
+        },
     ]
 
 
@@ -195,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         "automatedChecksPassed": automated_checks_passed,
         "checks": checks,
         "knownBoundaries": boundaries,
-        "releaseReadyReason": "The automated release gates pass, but the listed live-model, clean-restore, and voice-hardware evidence is still required before calling the product fully release-ready.",
+        "releaseReadyReason": "The automated release gates pass, but the listed live-model, clean-restore, voice-hardware, and authenticated operator-UI evidence is still required before calling the product fully release-ready.",
     }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if automated_checks_passed else 1

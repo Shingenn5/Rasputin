@@ -130,9 +130,11 @@ port-conflict handling, and isolated recovery rehearsal.
 
 ### Slice 10: Run the release gate and lock scope
 
-Complete the authenticated UI pass, run the full release-candidate gate, publish
-the operator runbook, tag the release, and move all new ideas to the post-v1
-backlog.
+Run the source-level UI contract certification and publish the authenticated
+operator evidence runbook. Run the full release-candidate gate and move all new
+ideas to the post-v1 backlog. Tag v1 only after the human evidence rows are
+green; an automated candidate with open boundaries must remain explicitly
+untagged.
 
 ## Explicit non-goals
 

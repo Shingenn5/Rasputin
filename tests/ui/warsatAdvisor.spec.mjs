@@ -92,9 +92,11 @@ test("WarSat Advisor explains fit before creating an approval-gated plan", async
   const result = page.locator("[data-testid='warsat-advisor-result']");
   await expect(result).toContainText("28 GB VRAM");
   await expect(result).toContainText("12 GB demand");
-  await expect(result).toContainText("Runtime sharding must be verified.");
+  await expect(result).toContainText("runtime sharding must be verified.");
 
   await page.getByRole("button", { name: "Create approval-gated plan" }).click();
   await expect.poll(() => planRequest?.toolCallParser).toBe("hermes");
-  await expect(page.getByText("Deploy locked")).toBeVisible();
+  const missionBrief = page.locator(".ws-mission-brief");
+  await expect(missionBrief).toBeVisible();
+  await expect(missionBrief).toContainText("Docker control is off");
 });

@@ -772,6 +772,20 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
             tuning["splitMode"] = ""
         return [], []
 
+    # A concrete single-device selection is already an operator-supplied
+    # placement decision.  Do not start the disposable Docker GPU probe just
+    # to rediscover that one device; probing remains necessary for automatic
+    # placement and explicit combined-device validation.
+    needs_gpu_inventory = (
+        not requested_device
+        or requested_device in {"all", "*"}
+        or "," in requested_device
+        or multi_gpu_enabled
+        or (runtime == "vllm" and explicit_tp_size > 1)
+    )
+    if not needs_gpu_inventory:
+        return [], []
+
     gpus = _visible_gpus_for_plan()
     if not gpus:
         warning = "GPU acceleration was requested, but no NVIDIA GPU is visible to Rasputin."

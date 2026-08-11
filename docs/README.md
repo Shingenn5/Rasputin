@@ -13,7 +13,7 @@ competing "current" roadmaps from forming.
 | Join the project as a coding agent | [`CODEX_ONBOARDING.md`](CODEX_ONBOARDING.md) | Repository map, test workflow, and agent gotchas |
 | Understand the architecture | [`RASPUTIN_ARCHITECTURE_GUIDE.md`](RASPUTIN_ARCHITECTURE_GUIDE.md) | Runtime and frontend architecture reference |
 | Deploy or troubleshoot a runtime | [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) | Docker, native, desktop, and remote-access matrix |
-| Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md), [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md), and `scripts/verify_release_candidate.py` | Operational release steps, automated evidence, and explicit remaining boundaries |
+| Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md), [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md), [`RASPUTIN_V1_OPERATOR_RUNBOOK.md`](RASPUTIN_V1_OPERATOR_RUNBOOK.md), and `scripts/verify_release_candidate.py` | Operational release steps, human evidence checklist, automated evidence, and explicit remaining boundaries |
 | Change security-sensitive behavior | [`THREAT_MODEL.md`](../THREAT_MODEL.md), [`SECURITY.md`](../SECURITY.md) | Security boundaries and reporting policy |
 
 ## Current engineering work
@@ -36,6 +36,7 @@ These are the documents to consult before starting implementation work.
 | [`LOCAL_VOICE_ADAPTER.md`](LOCAL_VOICE_ADAPTER.md) | Local speech-to-text and text-to-speech transport contract | Implemented device-free vertical slice |
 | [`LOCAL_VOICE_MODEL_READINESS.md`](LOCAL_VOICE_MODEL_READINESS.md) | Supported local STT/TTS pair profile and redacted readiness boundary | Implemented profile contract; model and hardware setup remain operator work |
 | [`RUNTIME_BENCHMARK_CERTIFICATES.md`](RUNTIME_BENCHMARK_CERTIFICATES.md) | Owner-scoped runtime measurements and selected-fleet certification | Implemented latency-only evidence path; throughput and live model evidence remain bounded gaps |
+| [`RASPUTIN_V1_POST_RELEASE_BACKLOG.md`](RASPUTIN_V1_POST_RELEASE_BACKLOG.md) | Finite parking lot for release boundaries and deferred capabilities | Scope-locked v1 follow-up list |
 
 ## Product direction and design records
 

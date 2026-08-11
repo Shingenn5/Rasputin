@@ -93,7 +93,7 @@ export function ArchiveView({ view, openTaskDetails }) {
           </div>
         </header>
 
-        <div className="grid min-h-[68vh] grid-cols-1 gap-4 lg:grid-cols-[210px_minmax(300px,0.8fr)_minmax(420px,1.2fr)]">
+        <div className="grid min-h-[68vh] grid-cols-1 gap-4 lg:grid-cols-[180px_minmax(220px,0.8fr)_minmax(300px,1.2fr)]">
           <nav className="rounded-2xl border border-border bg-card p-3" aria-label="Artifact filters">
             <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</div>
             {FILTERS.map((item) => (

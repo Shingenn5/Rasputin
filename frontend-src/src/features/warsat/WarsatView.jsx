@@ -264,14 +264,14 @@ export function WarsatView({
       <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* ── Commander Dashboard ── */}
-      <div className="flex items-start justify-between gap-5">
-        <div>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-5">
+        <div className="min-w-0">
           <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
             <Satellite size={26} className="text-primary" /> WarSat <span className="text-muted-foreground">Command</span>
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">Mission control for local AI operations.</p>
         </div>
-        <div className="flex flex-wrap justify-end gap-3">
+        <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-3">
           {[
             { v: defaultEngineLabel, l: "Default Engine", c: "text-primary" },
             { v: runningTasks.length, l: "Running", c: "text-primary" },
@@ -883,7 +883,13 @@ function EnableDockerButton({ enableDockerControl }) {
 /* ═══════════════════════════════════════════
    PLAN PREVIEW (Mission Brief)
    ═══════════════════════════════════════════ */
-function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl }) {
+function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl, resourceAdmission, resourceAdmissionStatus }) {
+  // Keep this component safe when a plan comes from an older backend response
+  // or an embedded preview that does not include the derived admission props.
+  // The plan is the source of truth; the props remain available for callers
+  // that already derive the values in the parent.
+  const admittedResource = resourceAdmission || plan?.resourceAdmission || null;
+  const admittedResourceStatus = resourceAdmissionStatus || admittedResource?.status || "unmeasured";
   const isLocalhost = plan.securityChecks?.localhostOnly;
   const deployFailed = deployment?.status === "failed";
   const deployDone = deployment?.status === "registered";
@@ -939,26 +945,26 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
         </div>
       </div>
 
-      {resourceAdmission && (
+      {admittedResource && (
         <div
           className="ws-exec-warning"
           data-testid="warsat-resource-admission"
           style={{ flexWrap: "wrap" }}
         >
-          {resourceAdmissionStatus === "ready"
+          {admittedResourceStatus === "ready"
             ? <ShieldCheck size={13} />
             : <AlertTriangle size={13} />}
           <span>
-            Resource admission: <strong>{labelize(resourceAdmissionStatus)}</strong>
-            {resourceAdmissionStatus === "unmeasured"
+            Resource admission: <strong>{labelize(admittedResourceStatus)}</strong>
+            {admittedResourceStatus === "unmeasured"
               ? " — supply a current hardware profile before treating this as a capacity-certified launch."
-              : resourceAdmissionStatus === "ready"
-                ? " — " + (resourceAdmission.placements?.map(item => item.deviceId + " " + item.vramMb + " MB").join(", ") || "placement selected") + "."
+              : admittedResourceStatus === "ready"
+                ? " — " + (admittedResource.placements?.map(item => item.deviceId + " " + item.vramMb + " MB").join(", ") || "placement selected") + "."
                 : " — deployment remains locked until the admission decision is ready."}
           </span>
-          {(resourceAdmission.reasons || []).length > 0 && (
+          {(admittedResource.reasons || []).length > 0 && (
             <small style={{ width: "100%", opacity: 0.82 }}>
-              Reasons: {resourceAdmission.reasons.join(", ")}
+              Reasons: {admittedResource.reasons.join(", ")}
             </small>
           )}
         </div>

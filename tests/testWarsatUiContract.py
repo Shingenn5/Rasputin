@@ -15,6 +15,8 @@ class WarsatUiContractTests(unittest.TestCase):
         self.assertIn("resourceAdmission", source)
         self.assertIn("resourceAdmissionBlocked", source)
         self.assertIn("data-testid=\"warsat-resource-admission\"", source)
+        self.assertIn("const admittedResource = resourceAdmission || plan?.resourceAdmission || null;", source)
+        self.assertIn("const admittedResourceStatus = resourceAdmissionStatus || admittedResource?.status || \"unmeasured\";", source)
         self.assertIn("Resource admission blocked", source)
         self.assertIn("Waiting for capacity", source)
 

@@ -15,6 +15,7 @@ class ReleaseCandidateContractTests(unittest.TestCase):
         self.assertIn("tests.testMemoryRestart", verify_release_candidate.BACKEND_TEST_MODULES)
         self.assertIn("tests.testMcpSafety", verify_release_candidate.BACKEND_TEST_MODULES)
         self.assertIn("tests.testInstallationPreflight", verify_release_candidate.BACKEND_TEST_MODULES)
+        self.assertIn("tests.testUiCertification", verify_release_candidate.BACKEND_TEST_MODULES)
 
     def test_release_gate_includes_frozen_v1_contract(self):
         self.assertIn("tests.testReleaseContract", verify_release_candidate.BACKEND_TEST_MODULES)

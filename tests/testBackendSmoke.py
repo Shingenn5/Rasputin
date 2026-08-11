@@ -3148,6 +3148,10 @@ class BackendSmokeTests(unittest.TestCase):
             docker_calls.append(args)
             if args[:3] == ["docker", "image", "inspect"]:
                 return {"returnCode": 0, "stdout": "[{}]", "stderr": ""}
+            if args[:2] == ["docker", "run"] and "--entrypoint" in args:
+                # The automatic follow-up plan may run the bounded GPU
+                # visibility probe; this fixture has no visible GPU rows.
+                return {"returnCode": 0, "stdout": "", "stderr": ""}
             if args[:2] == ["docker", "pull"]:
                 return {"returnCode": 0, "stdout": "pulled", "stderr": ""}
             if args[:3] == ["docker", "rm", "-f"]:
@@ -3464,6 +3468,10 @@ class BackendSmokeTests(unittest.TestCase):
             def fake_run(args, timeout=120, check=True):
                 if args[:2] == ["docker", "ps"]:
                     return {"returnCode": 0, "stdout": ports_stdout, "stderr": ""}
+                if args[:3] == ["docker", "image", "inspect"]:
+                    # Automatic placement may check whether the wrapper image
+                    # is available before attempting its bounded GPU probe.
+                    return {"returnCode": 1, "stdout": "", "stderr": "No such image"}
                 raise AssertionError(f"unexpected docker command: {args}")
             return fake_run
 

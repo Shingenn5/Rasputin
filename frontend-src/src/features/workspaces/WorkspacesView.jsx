@@ -162,8 +162,11 @@ export function WorkspacesView({
       build: activeCommands.build || "",
       lint: activeCommands.lint || "",
     });
-    setCommandsStatus("");
   }, [activeId, activeCommands.test, activeCommands.build, activeCommands.lint]);
+
+  useEffect(() => {
+    setCommandsStatus("");
+  }, [activeId]);
 
   async function submitWorkspaceCommands(event) {
     event.preventDefault();

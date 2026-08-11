@@ -301,7 +301,7 @@ export function ModelsView({
           <h1 className="text-3xl font-bold tracking-tight">Models <span className="text-muted-foreground">Center</span></h1>
           <p className="mt-1.5 text-sm text-muted-foreground">Discover, deploy, and manage AI models.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex min-w-0 flex-wrap justify-end gap-3">
           {[
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Reachable now", c: "text-primary" },

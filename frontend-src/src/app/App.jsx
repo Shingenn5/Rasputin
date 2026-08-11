@@ -296,6 +296,13 @@ export function App() {
     queryKey: ["tasks"],
     queryFn: () => api("/api/tasks"),
     enabled: authenticated,
+    // SSE normally keeps task cards live, but reconnects can be delayed by a
+    // browser/proxy. Poll only while work is active so a completed task cannot
+    // remain visually stuck at its initial queued snapshot.
+    refetchInterval: (query) => {
+      const active = (query.state.data || []).some((task) => ["queued", "running", "paused"].includes(task?.status));
+      return active ? 1000 : false;
+    },
   });
   const inboxQuery = useQuery({
     queryKey: ["inbox"],
@@ -1332,7 +1339,10 @@ export function App() {
         build: commands.build,
         lint: commands.lint,
       });
-      setWorkspace(await api("/api/workspace"));
+      // The command save is complete once its own endpoint returns. Refresh
+      // the workspace snapshot in the background so a slow browse/scan cannot
+      // leave the settings form stuck on "Saving...".
+      api("/api/workspace").then(setWorkspace).catch(() => {});
       setGlobalStatus("Workspace validation commands saved.");
       return result;
     } catch (error) {
