@@ -119,7 +119,7 @@ work). Position:
 - **App baseline is healthy:** the isolated running-app audit covered 15+ views in light and dark
   with zero console/HTTP errors; the current source also includes live diagnostics, bounded
   backup/export/delete workflows, a separate-target restore rehearsal, an Assistant personality
-  editor, an allowlisted command preview, and an explicit push-to-talk/local playback console.
+  editor, an allowlisted command preview, and an explicit push-to-talk/local conversation/playback console.
 - **Real local-model inference works end-to-end.** Qwen2.5-3B-Instruct deployed through WarSat
   (vLLM, `toolCallParser=hermes`) ran real chat and a `mode=code` agentic task with genuine
   tool calls. Two fixes made this work: `chat_sync` drops tools + retries once on a

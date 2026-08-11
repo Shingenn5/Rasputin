@@ -421,6 +421,47 @@ class AssistantContractTests(unittest.TestCase):
         self.assertTrue(speech_request.full_url.endswith("/audio/speech"))
         self.assertIn(b"speak locally", speech_request.data)
 
+    def test_voice_turn_runs_local_transcribe_reason_synthesize_without_host_actions(self):
+        models = {
+            "speech_to_text": {"key": "stt-local", "model": "whisper-local", "role": "speech_to_text", "enabled": True, "runtime_status": "reachable"},
+            "main": {"key": "main-local", "model": "assistant-local", "role": "main", "enabled": True, "runtime_status": "reachable", "context_window": 4096},
+            "text_to_speech": {"key": "tts-local", "model": "piper-local", "role": "text_to_speech", "enabled": True, "runtime_status": "reachable"},
+        }
+
+        def resolve_model(_key, role):
+            return models[role]
+
+        async def fake_chat(*_args, **_kwargs):
+            return "The local voice loop is online.", []
+
+        with patch("backend.api.assistant.voice.resolve_model", side_effect=resolve_model), patch(
+            "backend.api.assistant.voice.transcribe",
+            return_value={"text": "Give me a local status update."},
+        ) as transcriber, patch(
+            "backend.api.assistant.voice.synthesize",
+            return_value={"audio": b"RIFF voice response", "content_type": "audio/wav"},
+        ) as synthesizer, patch("backend.api.assistant.model_providers.chat", new=fake_chat):
+            response = self.client.post(
+                "/api/assistant/voice/turn",
+                content=b"RIFF fixture audio",
+                headers={"content-type": "audio/wav", "x-filename": "fixture.wav"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["contractVersion"], "0.2")
+        self.assertEqual(data["transcript"], "Give me a local status update.")
+        self.assertEqual(data["response"], "The local voice loop is online.")
+        self.assertEqual(data["contentType"], "audio/wav")
+        self.assertTrue(data["audioBase64"])
+        self.assertFalse(data["execution"]["sideEffects"])
+        self.assertFalse(data["execution"]["hostMutation"])
+        self.assertEqual(data["policy"]["hostActions"], "not_started")
+        transcriber.assert_called_once()
+        synthesizer.assert_called_once()
+        session = hub.session(data["conversationId"], "contract-test")
+        self.assertEqual([item["role"] for item in session["messages"][-2:]], ["user", "assistant"])
+
     def test_context_preview_exposes_owner_scoped_cross_workspace_contract(self):
         response = self.client.post(
             "/api/assistant/context-preview",

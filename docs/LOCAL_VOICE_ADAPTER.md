@@ -29,6 +29,22 @@ Content-Type: application/json
 The response body is the audio stream. `X-Rasputin-Voice-Contract` and
 `X-Rasputin-Voice-Model` identify the adapter and selected model.
 
+For one complete local conversation turn, the authenticated caller can send
+the same caller-supplied audio to:
+
+```text
+POST /api/assistant/voice/turn
+Content-Type: audio/wav
+X-Filename: sample.wav
+<audio bytes>
+```
+
+The JSON response contains the bounded `transcript`, Rasputin `response`, a
+`conversationId`, and base64-encoded `audioBase64` with its `contentType`.
+This route uses registered `speech_to_text`, `main`, and `text_to_speech`
+models, persists the turn to an owner-scoped Assistant chat, and advertises
+contract version `0.2`. It never starts host actions or mutates a workspace.
+
 ## Model contract and safety
 
 Models must be registered with role `speech_to_text` or `text_to_speech`, be
@@ -49,7 +65,8 @@ The Assistant view now includes a push-to-talk console. It requests
 `getUserMedia({audio:true})` only after the operator presses **Start push to
 talk**, records at most 60 seconds with `MediaRecorder`, and sends the caller
 supplied blob to the authenticated transcription route. The returned
-transcript is sent to the local synthesis route and exposed in an HTML audio
+blob to the authenticated voice-turn route. The local Assistant response and
+returned audio are shown in the transcript/response view and HTML audio
 player; no microphone is opened on page load and no host command is started by
 the voice turn. Browser permission prompts, microphone hardware, registered
 speech models, and speaker output still require a live operator verification.

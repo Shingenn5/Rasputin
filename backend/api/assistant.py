@@ -1,6 +1,7 @@
 """HTTP surface for Rasputin identity and approval-aware orchestration."""
 
 import asyncio
+import base64
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import Field
@@ -10,7 +11,9 @@ from backend.assistant import runtime
 from backend.assistant import voice
 from backend.core import audit
 from backend.core import workspace
-from backend.core.response import ok
+from backend.core.response import AppError, ok
+from backend.engine import context as context_governor
+from backend.models import providers as model_providers
 
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
@@ -69,6 +72,21 @@ class VoiceSynthesisIn(CamelModel):
     model_key: str | None = None
     voice: str | None = None
     response_format: str = "wav"
+
+
+VOICE_TURN_CONTRACT_VERSION = "0.2"
+
+
+def _voice_system_prompt(profile: dict) -> str:
+    persona = profile.get("persona") or {}
+    summary = str(persona.get("summary") or "A local, respectful assistant.").strip()[:1000]
+    display_name = str(profile.get("display_name") or "Rasputin").strip()[:80]
+    return (
+        f"You are {display_name}, a local voice conversation layer. {summary} "
+        "Answer clearly and briefly for spoken playback. Do not execute commands, change files, "
+        "open applications, or start model containers from a voice turn. If the user asks for "
+        "an action, explain that it must be converted into an explicit reviewed plan first."
+    )
 
 
 class ContextPreviewIn(CamelModel):
@@ -159,6 +177,119 @@ async def assistant_voice_synthesize(req: VoiceSynthesisIn, _user=Depends(requir
             "Content-Disposition": f'inline; filename="rasputin-speech.{result["response_format"]}"',
         },
     )
+
+
+@router.post("/voice/turn")
+async def assistant_voice_turn(
+    request: Request,
+    input_model_key: str | None = None,
+    main_model_key: str | None = None,
+    output_model_key: str | None = None,
+    conversation_id: str | None = None,
+    _user=Depends(require_member),
+):
+    """Run one local STT -> Assistant -> TTS turn without host actions."""
+
+    content_length = int(request.headers.get("content-length") or 0)
+    if content_length > voice.MAX_AUDIO_BYTES:
+        raise ValueError(f"Audio input is limited to {voice.MAX_AUDIO_BYTES} bytes.")
+    audio = await request.body()
+    if not audio:
+        raise ValueError("Audio input is required.")
+    if len(audio) > voice.MAX_AUDIO_BYTES:
+        raise ValueError(f"Audio input is limited to {voice.MAX_AUDIO_BYTES} bytes.")
+
+    stt_model = voice.resolve_model(input_model_key, "speech_to_text")
+    main_model = voice.resolve_model(main_model_key, "main")
+    tts_model = voice.resolve_model(output_model_key, "text_to_speech")
+    transcript = await asyncio.to_thread(
+        voice.transcribe,
+        stt_model,
+        audio,
+        request.headers.get("x-filename") or "audio.wav",
+        request.headers.get("content-type") or "audio/wav",
+    )
+    transcript_text = str(transcript.get("text") or "").strip()[:voice.MAX_TEXT_CHARS]
+    if not transcript_text:
+        raise ValueError("The local speech adapter returned an empty transcript.")
+
+    from backend.api.core import hub
+
+    owner_id = _user["username"]
+    if conversation_id:
+        session = hub.session(conversation_id, owner_id)
+        if str(session["session"].get("mode") or "chat") != "chat":
+            raise AppError("voice_conversation_mode_invalid", "Voice turns can only continue an Assistant chat session.", 409)
+        session_id = conversation_id
+    else:
+        session = hub.create_session(
+            title="Rasputin voice conversation",
+            workspace=".",
+            model=str(main_model.get("key") or ""),
+            mode="chat",
+            skill="general",
+            owner_id=owner_id,
+        )
+        session_id = session["session"]["id"]
+    history = hub.recent_messages(session_id, limit=12)
+    messages = [{"role": item["role"], "content": item["content"]} for item in history if item.get("role") in {"user", "assistant"}]
+    messages.append({"role": "user", "content": transcript_text})
+    hub._add_message(session_id, None, "user", transcript_text)
+
+    try:
+        max_tokens = min(voice.MAX_TEXT_CHARS, context_governor.output_budget(main_model, messages))
+        response_text, _tool_calls = await model_providers.chat(
+            main_model,
+            [{"role": "system", "content": _voice_system_prompt(runtime.get_profile(owner_id))}, *messages],
+            max_tokens=max_tokens,
+            temperature=0.2,
+            tools=None,
+            reasoning="off",
+        )
+    except Exception as exc:
+        audit.log("assistant_voice_turn_failed", {"conversation_id": session_id, "stage": "reason"}, actor=owner_id)
+        raise AppError("voice_conversation_failed", "The local Assistant model could not complete this voice turn.", 502) from exc
+
+    response_text = str(response_text or "").strip()[:voice.MAX_TEXT_CHARS]
+    if not response_text:
+        raise AppError("voice_conversation_empty", "The local Assistant model returned no spoken response.", 502)
+    hub._add_message(session_id, None, "assistant", response_text)
+    synthesized = await asyncio.to_thread(
+        voice.synthesize,
+        tts_model,
+        response_text,
+        None,
+        "wav",
+    )
+    audit.log("assistant_voice_turn_completed", {"conversation_id": session_id}, actor=owner_id)
+    return ok({
+        "contract_version": VOICE_TURN_CONTRACT_VERSION,
+        "operation": "voice_turn",
+        "stage": "conversation",
+        "conversation_id": session_id,
+        "transcript": transcript_text,
+        "response": response_text,
+        "audio_base64": base64.b64encode(synthesized["audio"]).decode("ascii"),
+        "content_type": synthesized["content_type"],
+        "models": {
+            "speech_to_text": stt_model.get("key"),
+            "main": main_model.get("key"),
+            "text_to_speech": tts_model.get("key"),
+        },
+        "execution": {
+            "started": True,
+            "audio_io_started": False,
+            "models_started": False,
+            "side_effects": False,
+            "host_mutation": False,
+        },
+        "policy": {
+            "owner_scoped": True,
+            "local_only": True,
+            "assistant_conversation_only": True,
+            "host_actions": "not_started",
+        },
+    })
 
 
 @router.post("/context-preview")

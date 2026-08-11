@@ -33,6 +33,7 @@ function VoiceConsole() {
   const MAX_RECORDING_MS = 60 * 1000;
   const [state, setState] = useState("idle");
   const [transcript, setTranscript] = useState("");
+  const [responseText, setResponseText] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
   const [error, setError] = useState("");
   const recorderRef = useRef(null);
@@ -47,10 +48,10 @@ function VoiceConsole() {
   }, [audioUrl]);
 
   const finishTurn = async (blob) => {
-    setState("transcribing");
+    setState("processing");
     setError("");
     try {
-      const transcribeResponse = await fetch("/api/assistant/voice/transcribe", {
+      const turnResponse = await fetch("/api/assistant/voice/turn", {
         method: "POST",
         headers: {
           "Content-Type": blob.type || "audio/webm",
@@ -58,25 +59,17 @@ function VoiceConsole() {
         },
         body: blob,
       });
-      const transcriptPayload = await transcribeResponse.json().catch(() => ({}));
-      if (!transcribeResponse.ok || transcriptPayload.ok === false) {
-        throw new Error(transcriptPayload.error?.message || `Transcription failed (${transcribeResponse.status}).`);
+      const payload = await turnResponse.json().catch(() => ({}));
+      if (!turnResponse.ok || payload.ok === false) {
+        throw new Error(payload.error?.message || `Voice turn failed (${turnResponse.status}).`);
       }
-      const text = transcriptPayload.data?.text || "";
-      if (!text) throw new Error("The local speech adapter returned an empty transcript.");
-      setTranscript(text);
-      setState("synthesizing");
-      const synthesisResponse = await fetch("/api/assistant/voice/synthesize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, responseFormat: "wav" }),
-      });
-      if (!synthesisResponse.ok) {
-        const payload = await synthesisResponse.json().catch(() => ({}));
-        throw new Error(payload.error?.message || `Speech synthesis failed (${synthesisResponse.status}).`);
-      }
-      const audio = await synthesisResponse.blob();
-      const nextUrl = URL.createObjectURL(audio);
+      const data = payload.data || {};
+      if (!data.transcript || !data.response || !data.audioBase64) throw new Error("The local voice turn returned incomplete conversation evidence.");
+      setTranscript(data.transcript);
+      setResponseText(data.response);
+      const rawAudio = atob(data.audioBase64);
+      const audioBytes = Uint8Array.from(rawAudio, (character) => character.charCodeAt(0));
+      const nextUrl = URL.createObjectURL(new Blob([audioBytes], { type: data.contentType || "audio/wav" }));
       setAudioUrl((current) => {
         if (current) URL.revokeObjectURL(current);
         return nextUrl;
@@ -91,6 +84,7 @@ function VoiceConsole() {
   const startRecording = async () => {
     setError("");
     setTranscript("");
+    setResponseText("");
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setState("error");
       setError("This browser does not expose a microphone recorder. Use a modern browser on localhost.");
@@ -142,10 +136,10 @@ function VoiceConsole() {
   };
 
   const active = state === "recording";
-  const busy = ["stopped", "transcribing", "synthesizing"].includes(state);
+  const busy = ["stopped", "processing"].includes(state);
   return (
     <div className="border-top mt-3 pt-3" data-testid="assistant-voice-console">
-      <SectionHeader title="Push-to-talk" text="Microphone access starts only after you press the button. The captured audio is sent to the authenticated local adapter, then returned as a playable response." />
+      <SectionHeader title="Push-to-talk conversation" text="Microphone access starts only after you press the button. Local speech-to-text, Rasputin, and text-to-speech complete one bounded turn; host actions never start here." />
       <div className="d-flex flex-wrap align-items-center gap-2">
         <Button
           type="button"
@@ -160,9 +154,11 @@ function VoiceConsole() {
         </Button>
         <Badge bg={state === "ready" ? "success" : state === "error" ? "danger" : "secondary"}>{titleize(state)}</Badge>
         {state === "recording" && <span className="small text-body-secondary">Recording locally until you stop.</span>}
+        {state === "processing" && <span className="small text-body-secondary">Local voice turn in progress.</span>}
       </div>
       {error && <Alert variant="danger" className="mt-2 mb-0" data-testid="assistant-voice-error">{error}</Alert>}
       {transcript && <div className="small mt-2" data-testid="assistant-voice-transcript"><strong>Transcript:</strong> {transcript}</div>}
+      {responseText && <div className="small mt-2" data-testid="assistant-voice-response"><strong>Rasputin:</strong> {responseText}</div>}
       {audioUrl && <audio className="w-100 mt-2" controls preload="metadata" src={audioUrl} data-testid="assistant-voice-audio">Your browser cannot play the local speech response.</audio>}
     </div>
   );

@@ -128,7 +128,7 @@ def _known_boundaries() -> list[dict[str, str]]:
         {
             "id": "cleanInstanceRestore",
             "status": "open",
-            "detail": "Backup integrity and restore dry-run are verified; live restore into a stopped clean instance remains open.",
+            "detail": "Separate-target restore and isolated SQLite migration rehearsal are verified; stopped active-data upgrade remains open.",
         },
         {
             "id": "voiceHardware",

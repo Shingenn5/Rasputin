@@ -8,12 +8,13 @@ class AssistantUiContractTests(unittest.TestCase):
         self.assertIn("navigator.mediaDevices?.getUserMedia", source)
         self.assertIn("getUserMedia({ audio: true })", source)
         self.assertIn("new MediaRecorder(stream)", source)
-        self.assertIn("/api/assistant/voice/transcribe", source)
-        self.assertIn("/api/assistant/voice/synthesize", source)
+        self.assertIn("/api/assistant/voice/turn", source)
+        self.assertIn("atob(data.audioBase64)", source)
         self.assertIn("MAX_RECORDING_MS = 60 * 1000", source)
         self.assertIn('data-testid="assistant-voice-console"', source)
         self.assertIn('data-testid="assistant-voice-toggle"', source)
         self.assertIn('data-testid="assistant-voice-audio"', source)
+        self.assertIn('data-testid="assistant-voice-response"', source)
         self.assertIn("aria-pressed={active}", source)
 
 

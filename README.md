@@ -452,8 +452,8 @@ runtime probes), run:
 ~~~
 
 The command exits successfully when the automated gates pass, but its JSON still reports known
-boundaries such as a missing live coder-model mission, dry-run-only restore, or unverified audio
-hardware. Do not interpret `passed` as permission to skip those boundaries.
+boundaries such as a missing live coder-model mission, an unverified stopped active-data upgrade,
+or unverified audio hardware. Do not interpret `passed` as permission to skip those boundaries.
 
 Common fixes:
 

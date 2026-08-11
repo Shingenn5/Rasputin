@@ -25,7 +25,7 @@ These are foundations to preserve, not rewrite:
 - Persisted model capability probes, conservative mode preflight/fallback, per-deploy parser contracts, Assistant readiness/command-preview contracts, and device-free local voice adapters.
 - Bounded application backup/integrity verification, owner metadata export/deletion confirmation,
   live operational diagnostics, a sarcastic-but-respectful Assistant profile contract, and a
-  browser push-to-talk/local playback console layered over the device-free voice adapters.
+  browser push-to-talk/local conversation/playback console layered over the device-free voice adapters.
 - Task-change review endpoints and UI surfaces; workspace test/build/lint settings are visibly implemented and covered by the smoke UI test.
 
 This means proposed work should complete user journeys and tighten guarantees. It should not replace these systems with a parallel app.
