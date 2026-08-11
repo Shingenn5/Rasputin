@@ -4,6 +4,7 @@ from backend import archive
 from backend import trials
 from backend import warsat
 from backend.warsat import advisor as warsat_advisor
+from backend.warsat import benchmarks as warsat_benchmarks
 from backend.core import workspace
 from backend.core import github_read
 from backend.core import host_fs
@@ -64,6 +65,21 @@ class WarsatAdvisorIn(CamelModel):
     context_window: int | None = None
     tool_call_parser: str | None = ""
 
+
+class WarsatBenchmarkIn(CamelModel):
+    model_id: str
+    runtime: str
+    protocol_id: str
+    samples: list[dict] = []
+    model_revision: str | None = ""
+    device_ids: list[str] = []
+    context_window: int | None = None
+    concurrency: int = 1
+    quantization: str | None = ""
+    placement_mode: str = "single-gpu"
+    max_model_len: int | None = None
+    batch_size: int | None = None
+
 class WarsatContainerIn(CamelModel):
     container_name: str
     approval_id: str | None = None
@@ -88,6 +104,44 @@ async def warsat_runtimes(_user=Depends(current_user)):
 
 async def warsat_hardware(_user=Depends(current_user)):
     return ok(await asyncio.to_thread(warsat.hardware_probe))
+
+
+@warsat_router.get("/benchmarks")
+async def warsat_benchmark_list(model_id: str | None = None, _user=Depends(current_user)):
+    certificates = warsat_benchmarks.list_certificates(owner=_user["username"], model_id=model_id)
+    return ok({
+        "items": [
+            {**certificate, "fresh": warsat_benchmarks.is_fresh(certificate)}
+            for certificate in certificates
+        ],
+        "count": len(certificates),
+        "schemaVersion": warsat_benchmarks.SCHEMA_VERSION,
+    })
+
+
+@warsat_router.post("/benchmarks")
+async def warsat_benchmark_create(req: WarsatBenchmarkIn, _user=Depends(require_admin)):
+    try:
+        payload = req.model_dump()
+        samples = payload.pop("samples", [])
+        certificate = warsat_benchmarks.build_certificate(payload, samples, owner=_user["username"])
+        saved = warsat_benchmarks.save_certificate(certificate)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit.log("warsat_runtime_benchmark_recorded", {
+        "certificateId": saved["certificateId"],
+        "modelId": saved["spec"]["modelId"],
+        "owner": _user["username"],
+    })
+    return ok({**saved, "fresh": warsat_benchmarks.is_fresh(saved)})
+
+
+@warsat_router.get("/benchmarks/{certificate_id}")
+async def warsat_benchmark_get(certificate_id: str, _user=Depends(current_user)):
+    certificate = warsat_benchmarks.get_certificate(certificate_id, owner=_user["username"])
+    if not certificate:
+        raise HTTPException(status_code=404, detail="Runtime benchmark certificate not found")
+    return ok({**certificate, "fresh": warsat_benchmarks.is_fresh(certificate)})
 
 @warsat_router.post("/plan")
 

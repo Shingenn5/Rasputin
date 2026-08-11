@@ -30,6 +30,7 @@ stable sections before future persistence or broker admission uses them.
 
 The manifest does not claim that a model has been loaded successfully. A
 catalog estimate is heuristic, and `kvCache.status=unmeasured` is intentional.
-Slice 5 will add measured runtime certificates; only those certificates should
+Runtime benchmark certificates now provide the measured evidence; only fresh
+certificates should
 upgrade the manifest's confidence or authorize runtime-specific multi-GPU
 placement.
