@@ -42,6 +42,7 @@ BACKEND_TEST_MODULES = (
     "tests.testVoiceProfiles",
     "tests.testMemoryRestart",
     "tests.testMcpSafety",
+    "tests.testInstallationPreflight",
     "tests.testWarsatAdvisor",
     "tests.testModelResourceManifest",
     "tests.testWarsatBenchmarks",

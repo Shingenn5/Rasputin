@@ -29,6 +29,7 @@ backend from source for development, but Docker is the simplest production-like 
 
 - [Choose the right installation](#choose-the-right-installation)
 - [Quick start: Docker Server](#quick-start-docker-server)
+- [Installation preflight](#installation-preflight)
 - [Docker lifecycle commands](#docker-lifecycle-commands)
 - [First login and safe setup](#first-login-and-safe-setup)
 - [Upgrades, backup, and restore](#upgrades-backup-and-restore)
@@ -91,6 +92,29 @@ group grants root-equivalent control of the machine; use your distribution's doc
 installation procedure and log in again after changing group membership.
 
 The convenience installers also need curl and unzip on macOS/Linux. A manual Git clone avoids unzip.
+
+### Installation preflight
+
+After cloning, run the read-only preflight when you want a machine-specific checklist before the
+first launch. It checks the repository assets, local CLI availability, Docker Compose client, and
+whether ports 8787/8788 are already occupied. It does not read credentials, change `.env`, stop a
+process, or touch Rasputin runtime data. An `in_use` port is informational when an instance is
+already running; choose `WRAPPER_PORT` for a second Docker instance.
+
+Windows PowerShell (source/native development):
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\check_installation.py
+~~~
+
+macOS/Linux (source development):
+
+~~~bash
+python3 scripts/check_installation.py
+~~~
+
+Docker-only users do not need Python or Node; start Docker and use the deployment verifier after
+launch instead.
 
 ### Option A: convenience installer
 

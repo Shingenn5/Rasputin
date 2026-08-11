@@ -169,6 +169,17 @@ requires real DNS, a trusted certificate, hardened firewall rules, and a securit
 The verifier checks health, frontend serving, and baseline security headers. Run it against every
 active endpoint:
 
+Before the first launch, the optional read-only installation preflight reports missing checkout
+assets, local CLI prerequisites, and occupied default ports without changing the machine:
+
+~~~bash
+python3 scripts/check_installation.py
+~~~
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\check_installation.py
+~~~
+
 macOS/Linux:
 
 ~~~bash
