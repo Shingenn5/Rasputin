@@ -54,6 +54,12 @@ being presented as supported. The placement hint is
 `largest_fitting_single_gpu_first`, and combined VRAM is explicitly marked as
 runtime-dependent.
 
+The resource broker in `backend/warsat/resource_broker.py` is the next safety
+boundary: it accounts for active per-device reservations with a bounded
+heartbeat/expiry, and returns `ready`, `queued`, `blocked`, `degraded`, or
+`unmeasured` without launching a worker. Launch paths must use this decision
+before creating a model container.
+
 - `_discovery_hosts()` → `['127.0.0.1']`
 - `_endpoint_for('127.0.0.1', 8001)` → `http://127.0.0.1:8001/v1` (not `host.docker.internal`)
 - `gpu_live_metrics_via_docker()` → `[]` (no crash; empty when docker-control is off)
