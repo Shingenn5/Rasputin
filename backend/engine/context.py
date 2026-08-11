@@ -1,4 +1,5 @@
 import math
+import time
 
 from backend.models import registry as model_registry
 
@@ -14,6 +15,8 @@ MEMORY_CONTEXT_FRACTION = 0.08
 MAX_SESSION_SUMMARY_TOKENS = 1200
 MIN_SESSION_SUMMARY_TOKENS = 256
 SESSION_SUMMARY_CONTEXT_FRACTION = 0.12
+MAX_ADAPTIVE_SUBAGENTS = 4
+MAX_ADAPTIVE_CONTEXT_WINDOW = 262144
 
 
 def _as_int(value, fallback):
@@ -35,13 +38,111 @@ def normalize_limits(cfg=None):
     return {"contextWindow": context_window, "maxTokens": max_tokens}
 
 
+def adaptive_profile(cfg=None, role="chat"):
+    """Derive bounded context/output/child budgets from explicit evidence.
+
+    Catalog estimates and stale certificates are deliberately ignored. A
+    caller may attach a fresh ``benchmarkCertificate`` and/or a
+    ``resourceManifest`` to a registry model. The hard limits remain in force
+    even when the evidence recommends a larger budget.
+    """
+
+    cfg = dict(cfg or {})
+    limits = normalize_limits(cfg)
+    reasons = []
+    evidence = []
+    max_subagents = max(0, min(MAX_ADAPTIVE_SUBAGENTS, _as_int(
+        cfg.get("max_subagents") or cfg.get("maxSubagents"), MAX_ADAPTIVE_SUBAGENTS,
+    )))
+    manifest = cfg.get("resourceManifest") or cfg.get("resource_manifest") or {}
+    if isinstance(manifest, dict):
+        kv_cache = manifest.get("kvCache") or manifest.get("kv_cache") or {}
+        fit = manifest.get("fit") or {}
+        weights = manifest.get("weights") or {}
+        status = str(kv_cache.get("status") or "unmeasured").lower()
+        per_token_mb = _as_int(kv_cache.get("perTokenMb") or kv_cache.get("per_token_mb"), 0)
+        # _as_int is intentionally conservative for sub-megabyte/token values;
+        # preserve the fractional measurement when one is present.
+        try:
+            per_token_mb = float(kv_cache.get("perTokenMb") or kv_cache.get("per_token_mb") or 0)
+        except (TypeError, ValueError):
+            per_token_mb = 0.0
+        available_gb = cfg.get("availableVramGb") or cfg.get("available_vram_gb") or fit.get("availableVramGb")
+        try:
+            available_gb = float(available_gb) if available_gb not in (None, "") else None
+        except (TypeError, ValueError):
+            available_gb = None
+        try:
+            weight_gb = float(weights.get("estimatedVramGb") or 0)
+        except (TypeError, ValueError):
+            weight_gb = 0.0
+        if status == "measured" and per_token_mb > 0 and available_gb is not None:
+            kv_budget_tokens = int(max(0.0, available_gb - weight_gb - 1.0) * 1024 / per_token_mb)
+            if kv_budget_tokens >= MIN_CONTEXT_WINDOW:
+                before = limits["contextWindow"]
+                limits["contextWindow"] = min(before, kv_budget_tokens, MAX_ADAPTIVE_CONTEXT_WINDOW)
+                reasons.append(f"measured KV-cache budget caps context at {limits['contextWindow']} tokens")
+                evidence.append("resourceManifest.kvCache")
+        elif status not in {"measured"}:
+            reasons.append("KV-cache envelope is unmeasured; static context limits remain")
+
+    certificate = cfg.get("benchmarkCertificate") or cfg.get("benchmark_certificate") or {}
+    certificate_fresh = False
+    if isinstance(certificate, dict):
+        try:
+            age = time.time() - float(certificate.get("createdAt") or 0)
+            certificate_fresh = certificate.get("status") in {"measured", "partial"} and 0 <= age <= 30 * 24 * 60 * 60
+        except (TypeError, ValueError):
+            certificate_fresh = False
+        if certificate_fresh:
+            spec = certificate.get("spec") or {}
+            summary = certificate.get("summary") or {}
+            measured_context = _as_int(spec.get("contextWindow") or spec.get("maxModelLen"), 0)
+            if measured_context:
+                limits["contextWindow"] = min(limits["contextWindow"], measured_context, MAX_ADAPTIVE_CONTEXT_WINDOW)
+                reasons.append(f"fresh benchmark certificate caps context at {limits['contextWindow']} tokens")
+                evidence.append("benchmarkCertificate.spec.contextWindow")
+            measured_concurrency = _as_int(spec.get("concurrency"), 0)
+            if measured_concurrency:
+                max_subagents = max(0, min(MAX_ADAPTIVE_SUBAGENTS, measured_concurrency - 1))
+                reasons.append(f"child work is capped at {max_subagents} for measured concurrency {measured_concurrency}")
+                evidence.append("benchmarkCertificate.spec.concurrency")
+            success_rate = summary.get("successRate")
+            try:
+                p95_ttft = float((summary.get("ttftMs") or {}).get("p95") or 0)
+            except (TypeError, ValueError):
+                p95_ttft = 0.0
+            try:
+                success_rate = float(success_rate)
+            except (TypeError, ValueError):
+                success_rate = 1.0
+            if success_rate < 1.0 or p95_ttft > 5000:
+                limits["maxTokens"] = min(limits["maxTokens"], max(256, limits["contextWindow"] // 8))
+                reasons.append("partial/slow benchmark evidence lowers the output ceiling")
+                evidence.append("benchmarkCertificate.summary")
+        elif certificate:
+            reasons.append("benchmark certificate is stale or invalid; it is not used for adaptation")
+
+    # Re-run the hard context/output relationship after an evidence-based cap.
+    if limits["contextWindow"] - limits["maxTokens"] - SAFETY_TOKENS < 128:
+        limits["maxTokens"] = max(1, min(DEFAULT_MAX_TOKENS, limits["contextWindow"] // 4))
+    return {
+        "limits": limits,
+        "maxSubagents": max_subagents,
+        "role": str(role or "chat"),
+        "evidence": evidence,
+        "reasons": reasons,
+        "certificateFresh": certificate_fresh,
+    }
+
+
 def limits_for_model(model_key):
     cfg = model_registry.get_model(model_key) or {}
     compatibility = cfg.get("compatibility") or {}
     reliable = compatibility.get("reliableContextWindow")
     if reliable:
         cfg = {**cfg, "context_window": min(int(cfg.get("context_window") or cfg.get("context") or reliable), int(reliable))}
-    return normalize_limits(cfg)
+    return adaptive_profile(cfg, role=cfg.get("role") or "chat")["limits"]
 
 
 def estimate_tokens(text):
@@ -57,7 +158,7 @@ def output_budget(cfg, messages):
     response cutoff.
     """
     cfg = cfg or {}
-    limits = normalize_limits(cfg)
+    limits = adaptive_profile(cfg)["limits"]
     estimated_input = 8
     for message in messages or []:
         estimated_input += 4

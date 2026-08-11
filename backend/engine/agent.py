@@ -1036,6 +1036,12 @@ class AgentHub:
         selected = model_registry.get_model(model)
         if mode != "chat" and selected and not model_providers.supports_agentic_tools(selected):
             mode = "chat"
+        try:
+            requested_subagents = max(0, min(4, int(subagents or 0)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("subagent count must be a whole number") from exc
+        adaptive_budget = context_governor.adaptive_profile(selected or {}, role=mode)
+        resolved_subagents = min(requested_subagents, adaptive_budget["maxSubagents"])
         if isolate_workspace:
             # Keep the invariant at the execution boundary as well as the API
             # boundary. Future/internal callers must not accidentally launch
@@ -1050,10 +1056,6 @@ class AgentHub:
                 raise ValueError("workspace isolation is available only for a Code task")
             if str(skill or "general") != "general":
                 raise ValueError("workspace isolation does not support skill-based execution yet")
-            try:
-                requested_subagents = max(0, int(subagents or 0))
-            except (TypeError, ValueError) as exc:
-                raise ValueError("subagent count must be a whole number") from exc
             if requested_subagents:
                 raise ValueError("workspace isolation does not support sub-agents yet")
         task = AgentTask(
@@ -1066,7 +1068,7 @@ class AgentHub:
             reasoning=reasoning,
             priority=priority,
             scheduled_for=scheduled_for,
-            subagents=subagents,
+            subagents=resolved_subagents,
             max_attempts=max_attempts,
             source_task_id=source_task_id,
             isolate_workspace=isolate_workspace,
@@ -1077,9 +1079,21 @@ class AgentHub:
             task.log("Selected model does not support tool execution; switched to Chat mode before starting.")
             task.seen("tool_mode_fallback", {"model": model, "requestedMode": requested_mode, "resolvedMode": "chat"})
         task.owner_id = owner_id
-        self._wire(task)
+        task.adaptive_budget = adaptive_budget
         self.tasks[task.id] = task
         self._persist_task(task)
+        self._wire(task)
+        task.seen("adaptive_budget", {
+            "requestedSubagents": requested_subagents,
+            "resolvedSubagents": resolved_subagents,
+            "maxSubagents": adaptive_budget["maxSubagents"],
+            "evidence": adaptive_budget["evidence"],
+            "reasons": adaptive_budget["reasons"],
+        })
+        if resolved_subagents != requested_subagents:
+            task.log(
+                f"adaptive budget capped child work from {requested_subagents} to {resolved_subagents}"
+            )
         self._add_message(task.session_id, task.id, "user", objective)
         self._schedule_queued_task(task)
         return task
