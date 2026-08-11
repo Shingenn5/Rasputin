@@ -218,6 +218,7 @@ export function AssistantView({
   const voiceModelReadiness = capabilities?.voiceModels || capabilities?.voice_models || {};
   const voiceModelRoles = voiceModelReadiness.roles || {};
   const voiceModelStatus = voiceModelReadiness.status || "not_checked";
+  const voiceProfiles = capabilities?.voiceProfiles || capabilities?.voice_profiles || {};
   const voiceModelRoleEntries = [
     ["speechToText", "Speech to text"],
     ["textToSpeech", "Text to speech"],
@@ -635,6 +636,11 @@ export function AssistantView({
                 )}
                 <div className="border-top mt-3 pt-3" data-testid="assistant-voice-loop">
                   <SectionHeader title="Voice loop readiness" text="Preview transcribe → reason → synthesize routing without opening a microphone or speaker." />
+                  {(voiceProfiles.profiles || []).map((profile) => (
+                    <div key={profile.id} className="small text-body-secondary mb-2" data-testid="assistant-voice-profile">
+                      Supported local pair: <strong>{profile.label}</strong>. Register one local STT and one local TTS endpoint, then run both health checks.
+                    </div>
+                  ))}
                   <div className="d-flex align-items-center justify-content-between gap-2">
                     <Badge bg={voicePreview ? (voicePreview.ready ? "success" : "warning") : "secondary"}>
                       {voicePreview ? (voicePreview.ready ? "Ready for adapter" : "Models needed") : "Not checked"}

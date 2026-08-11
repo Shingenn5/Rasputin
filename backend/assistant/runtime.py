@@ -27,6 +27,7 @@ from backend.assistant.contracts import (
 )
 from backend.assistant import broker
 from backend.assistant import voice as voice_adapter
+from backend.assistant import voice_profiles
 from backend.core import audit
 from backend.core import approvals
 from backend.core import runtime_store as store
@@ -126,6 +127,7 @@ def capabilities() -> dict[str, Any]:
         "model_roles": sorted(MODEL_PACK_ROLES),
         "voice_roles": sorted(VOICE_ROLES),
         "voice": voice_adapter.capabilities(),
+        "voice_profiles": voice_profiles.list_profiles(),
         "workflows": [dict(workflow) for workflow in WORKFLOW_DEFINITIONS],
         "model_pack_storage": "owner_scoped",
         "context_capsules": {

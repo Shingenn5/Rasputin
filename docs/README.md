@@ -34,6 +34,7 @@ These are the documents to consult before starting implementation work.
 | [`ASSISTANT_COMMAND_ROUTING.md`](ASSISTANT_COMMAND_ROUTING.md) | Deterministic assistant command previews and approval states | Implemented preview boundary |
 | [`ASSISTANT_PERSONALITY_PROFILE.md`](ASSISTANT_PERSONALITY_PROFILE.md) | Bounded sarcastic-but-respectful identity controls and safety invariants | Implemented profile contract |
 | [`LOCAL_VOICE_ADAPTER.md`](LOCAL_VOICE_ADAPTER.md) | Local speech-to-text and text-to-speech transport contract | Implemented device-free vertical slice |
+| [`LOCAL_VOICE_MODEL_READINESS.md`](LOCAL_VOICE_MODEL_READINESS.md) | Supported local STT/TTS pair profile and redacted readiness boundary | Implemented profile contract; model and hardware setup remain operator work |
 | [`RUNTIME_BENCHMARK_CERTIFICATES.md`](RUNTIME_BENCHMARK_CERTIFICATES.md) | Owner-scoped runtime measurements and selected-fleet certification | Implemented latency-only evidence path; throughput and live model evidence remain bounded gaps |
 
 ## Product direction and design records

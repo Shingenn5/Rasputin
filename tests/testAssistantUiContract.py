@@ -16,6 +16,8 @@ class AssistantUiContractTests(unittest.TestCase):
         self.assertIn('data-testid="assistant-voice-audio"', source)
         self.assertIn('data-testid="assistant-voice-response"', source)
         self.assertIn('data-testid="assistant-voice-model-readiness"', source)
+        self.assertIn("voiceProfiles.profiles", source)
+        self.assertIn('data-testid="assistant-voice-profile"', source)
         self.assertIn('data-testid={`assistant-voice-role-${key}`}', source)
         self.assertIn("voiceModelReadiness.nextActions", source)
         self.assertIn("assistant-handoff-receipt-", source)

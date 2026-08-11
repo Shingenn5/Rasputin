@@ -29,3 +29,21 @@ changed; voice adapters do not permit remote endpoints.
 This is model registration evidence, not hardware certification. Browser
 microphone permission, speaker playback, and a real end-to-end voice turn are
 still separate acceptance checks.
+
+## Supported local pair profile
+
+The Assistant capabilities response and GET /api/assistant/voice/profiles
+expose one supported transport profile: a local Whisper-compatible
+speech-to-text gateway plus a local Piper-compatible text-to-speech gateway.
+The profile fixes the request contract without forcing a particular model
+weight or container image:
+
+- STT registration uses role speech_to_text and a loopback base URL. The
+  adapter sends multipart POST /audio/transcriptions with file and model.
+- TTS registration uses role text_to_speech and a loopback base URL. The
+  adapter sends JSON POST /audio/speech with model, input, and response_format.
+- Both roles must pass the normal model health check before a voice turn.
+
+The profile is onboarding metadata, not an automatic installer. Rasputin does
+not download voice weights, start either gateway, or permit remote endpoints
+as part of this flow.

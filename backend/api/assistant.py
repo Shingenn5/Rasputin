@@ -10,6 +10,7 @@ from backend.api.core import CamelModel, current_user, require_member
 from backend.assistant import runtime
 from backend.assistant import voice
 from backend.assistant import voice_models
+from backend.assistant import voice_profiles
 from backend.core import audit
 from backend.core import workspace
 from backend.core.response import AppError, ok
@@ -117,6 +118,11 @@ async def assistant_capabilities(_user=Depends(current_user)):
     payload = runtime.capabilities()
     payload["voice_models"] = voice_models.readiness()
     return ok(payload)
+
+
+@router.get("/voice/profiles")
+async def assistant_voice_profiles(_user=Depends(current_user)):
+    return ok(voice_profiles.list_profiles())
 
 
 @router.get("/voice/models")
