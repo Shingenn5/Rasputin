@@ -1,4 +1,7 @@
 import os
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -36,6 +39,19 @@ class BackupTests(unittest.TestCase):
             dry_run = backup.restore_dry_run(created["path"])
             self.assertTrue(dry_run["dryRun"])
             self.assertTrue(dry_run["wouldRestore"])
+
+            with tempfile.TemporaryDirectory(prefix="rasputin-restore-target-") as target_parent:
+                target = Path(target_parent) / "restored"
+                separate = backup.restore_to_directory(created["path"], target, dry_run=True)
+                self.assertTrue(separate["wouldRestore"])
+                applied = backup.restore_to_directory(created["path"], target, dry_run=False)
+                self.assertTrue(applied["restored"])
+                self.assertEqual(applied["restoredCount"], applied["verifiedCount"])
+                self.assertEqual((target / "operator-note.json").read_text(encoding="utf-8"), '{"safe": true}\n')
+                with self.assertRaises(ValueError):
+                    backup.restore_to_directory(created["path"], target, dry_run=True)
+                with self.assertRaises(ValueError):
+                    backup.restore_to_directory(created["path"], backup.DATA_DIR, dry_run=True)
 
             with zipfile.ZipFile(created["path"], "a") as archive:
                 archive.writestr("unexpected.txt", "not in manifest")
@@ -84,6 +100,22 @@ class BackupTests(unittest.TestCase):
             self.assertEqual(unsupported.status_code, 400)
         finally:
             main.app.dependency_overrides.clear()
+
+    def test_restore_rehearsal_cli_initializes_a_clean_instance(self):
+        completed = subprocess.run(
+            [sys.executable, "scripts/rehearse_restore.py", "--rehearse"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+        report = json.loads(completed.stdout)
+        self.assertTrue(report["passed"])
+        self.assertTrue(report["dryRun"]["valid"])
+        self.assertTrue(report["restore"]["restoredCount"] > 0)
+        self.assertTrue(report["verification"]["adminPresent"])
 
 
 if __name__ == "__main__":

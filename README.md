@@ -250,6 +250,29 @@ archives private: they can contain accounts, task history, memory, configuration
 Restore only after stopping Rasputin and confirming the target volume. A volume restore is
 deliberately not automated by the launcher because replacing application state is destructive.
 
+The bounded application backup format can be rehearsed without touching the active instance:
+
+~~~bash
+./.venv/bin/python scripts/rehearse_restore.py --rehearse
+~~~
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\rehearse_restore.py --rehearse
+~~~
+
+To inspect or apply a specific application backup, provide an absent or empty target directory.
+Inspection is the default; `--apply` is required to materialize the archive, and the target must
+not be the running instance's data directory:
+
+~~~powershell
+.\.venv\Scripts\python.exe scripts\rehearse_restore.py C:\path\to\backup.zip C:\path\to\clean-data
+.\.venv\Scripts\python.exe scripts\rehearse_restore.py C:\path\to\backup.zip C:\path\to\clean-data --apply
+~~~
+
+After applying, start Rasputin with `RASPUTIN_DATA_DIR` pointed at the restored target and run the
+health, login, workspace, and model-readiness checks. Workspace source, model caches, TLS keys,
+and other excluded material still require separate backups.
+
 ## Optional Docker integrations
 
 ### WarSat model deployment

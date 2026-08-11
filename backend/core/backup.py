@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -17,6 +19,7 @@ BACKUP_DIR = DATA_DIR / "backups"
 EXPORT_DIR = DATA_DIR / "exports"
 EXCLUDED_DIRS = {"backups", "exports", "models", "cache", "tls"}
 EXCLUDED_SUFFIXES = {".pem", ".key"}
+SQLITE_TRANSIENT_SUFFIXES = {"-wal", "-shm"}
 
 
 def _sha256(path: Path) -> str:
@@ -42,11 +45,20 @@ def _files():
             continue
         relative = path.relative_to(DATA_DIR)
         parts = set(relative.parts)
-        if parts & EXCLUDED_DIRS or path.suffix.lower() in EXCLUDED_SUFFIXES:
+        if parts & EXCLUDED_DIRS or path.suffix.lower() in EXCLUDED_SUFFIXES or any(path.name.endswith(suffix) for suffix in SQLITE_TRANSIENT_SUFFIXES):
             excluded.append({"path": str(relative), "reason": "cache_or_private_key"})
             continue
         files.append(path)
     return files, excluded
+
+
+def _checkpoint_database():
+    """Move SQLite WAL contents into the main database before archiving it."""
+
+    if not store.DB_FILE.exists():
+        return
+    with store._lock, store.connect() as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def _manifest(files, excluded, scope="application"):
@@ -69,6 +81,7 @@ def _manifest(files, excluded, scope="application"):
 def create_backup(destination=None, dry_run=False, include_workspace=False):
     if include_workspace:
         raise ValueError("workspace source backup is not enabled in the application backup scope")
+    _checkpoint_database()
     files, excluded = _files()
     manifest = _manifest(files, excluded)
     target = Path(destination) if destination else BACKUP_DIR / f"rasputin-{time.strftime('%Y%m%d-%H%M%S')}.zip"
@@ -148,6 +161,67 @@ def restore_dry_run(path):
         "dryRun": True,
         "wouldRestore": report["valid"],
         "nextAction": "Run restore from a stopped/clean instance after reviewing this report." if report["valid"] else "Create a new backup; this archive cannot be restored safely.",
+    })
+    return report
+
+
+def restore_to_directory(path, destination, dry_run=True):
+    """Restore application files into a separate empty data directory.
+
+    The running service must never restore over ``DATA_DIR``.  Callers must
+    provide an absent or empty destination; extraction happens in a sibling
+    staging directory before files are moved into place.  This keeps a failed
+    archive or interrupted extraction from leaving a partially restored target.
+    """
+
+    target = Path(destination).expanduser().resolve()
+    active = DATA_DIR.resolve()
+    if target == active:
+        raise ValueError("restore destination must be separate from the active data directory")
+    if target.exists() and not target.is_dir():
+        raise ValueError("restore destination must be a directory")
+    if target.exists() and any(target.iterdir()):
+        raise ValueError("restore destination must be absent or empty")
+
+    report = inspect_backup(path)
+    if not report["valid"]:
+        raise ValueError("backup archive failed manifest verification")
+    report.update({
+        "destination": str(target),
+        "dryRun": bool(dry_run),
+        "wouldRestore": True,
+        "nextAction": "Use --apply against this clean target, then start Rasputin with RASPUTIN_DATA_DIR pointing to it." if dry_run else "Start Rasputin with RASPUTIN_DATA_DIR pointing to this restored target.",
+    })
+    if dry_run:
+        return report
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".rasputin-restore-", dir=str(target.parent)))
+    restored_count = 0
+    try:
+        with zipfile.ZipFile(Path(path).expanduser().resolve(), "r") as archive:
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+            for entry in manifest.get("entries") or []:
+                name = str(entry.get("path") or "")
+                if not name or name.startswith("/") or ".." in Path(name).parts:
+                    raise ValueError("backup contains an unsafe manifest path")
+                destination_file = (staging / name).resolve()
+                if not destination_file.is_relative_to(staging):
+                    raise ValueError("backup contains an unsafe manifest path")
+                destination_file.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(name, "r") as source, destination_file.open("xb") as output:
+                    shutil.copyfileobj(source, output, length=1024 * 1024)
+                restored_count += 1
+        target.mkdir(parents=True, exist_ok=True)
+        for child in staging.iterdir():
+            child.replace(target / child.name)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    report.update({
+        "dryRun": False,
+        "restoredCount": restored_count,
+        "restored": True,
     })
     return report
 

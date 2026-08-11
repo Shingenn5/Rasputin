@@ -38,7 +38,7 @@ This means proposed work should complete user journeys and tighten guarantees. I
 | Safely perform coding work in a trusted workspace | Substantially implemented | A real coder-model, multi-file edit → test → repair → review → commit run is not yet the release-grade proof. |
 | Deploy and route local models | Functional but operator-heavy | Persisted capability certification and conservative preflight now exist; live mission evidence, certificate freshness, and deploy ergonomics still need to make safe choices obvious. |
 | Run a dependable personal desktop app | Partial | Clean-machine install/upgrade evidence, signing, update channel, and production release identity are missing. |
-| Operate a shared/local appliance | Functional for a knowledgeable owner | Diagnostics and bounded backup/export/delete flows exist; clean-instance restore, upgrade rehearsal, and support-grade recovery are still open. |
+| Operate a shared/local appliance | Functional for a knowledgeable owner | Diagnostics and bounded backup/export/delete flows exist; isolated clean-instance restore is rehearsed, while active-data upgrade and support-grade recovery remain open. |
 | Evaluate models and make routing decisions | Partial | Trials scorecards contain placeholder reasoning, safety, and usability scores; they must not be presented as measured truth. |
 | Connect outside services into governed workflows | Partial | Connector setup exists, but the product needs complete, visible, reliable workflows rather than configuration screens alone. |
 
@@ -88,12 +88,12 @@ This is especially important because local OpenAI-compatible runtimes vary by to
 Rasputin stores the owner’s chats, tasks, approvals, memory, credentials/configuration metadata, workspaces, and model runtime state across local files, SQLite, and (in Docker) volumes. The first recovery slice now exists, but a fully working local-first application still needs a complete recovery story:
 
 - one supported backup command/UI flow with scope and secret-handling disclosure (implemented);
-- restore into a clean instance, with version/migration checks and a non-destructive dry-run (dry-run implemented; clean restore open);
+- restore into a clean instance, with version/migration checks and a non-destructive dry-run (isolated restore and migration rehearsal implemented; active-data upgrade rehearsal remains open);
 - export/delete controls for user-owned data (owner-safe metadata export and explicit deletion confirmation implemented);
 - disaster-recovery instructions for Docker volumes and native data;
 - a tested upgrade/rollback strategy.
 
-**Done when:** a fresh machine or data directory can restore a representative backup and pass health, login, workspace, and model-configuration checks.
+**Done when:** a fresh machine or data directory can restore a representative backup and pass health, login, workspace, and model-configuration checks. `scripts/rehearse_restore.py --rehearse` now proves the isolated archive, clean target, SQLite initialization, and restored admin state; a stopped active-instance rehearsal is still required.
 
 #### 4. Installation, updates, and identity
 
