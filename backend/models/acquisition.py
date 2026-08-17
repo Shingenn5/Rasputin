@@ -15,12 +15,30 @@ _ACTIVE_DOWNLOADS = {}
 def _get_directory_size(path):
     total = 0
     try:
-        for p in Path(path).rglob('*'):
+        root = Path(path)
+        # Count the content-addressed blobs only. Snapshot symlinks and cache
+        # metadata would otherwise double-count weights and make the percent
+        # bar look complete before the requested model is actually present.
+        blob_root = root / "blobs"
+        scan_root = blob_root if blob_root.exists() else root
+        for p in scan_root.rglob('*'):
             if p.is_file():
                 total += p.stat().st_size
     except Exception:
         pass
     return total
+
+
+def _trusted_progress(downloaded_bytes, total_bytes):
+    """Return a percentage only when the byte bounds make it trustworthy."""
+    try:
+        downloaded = float(downloaded_bytes)
+        total = float(total_bytes)
+    except (TypeError, ValueError):
+        return None
+    if total <= 0 or downloaded < 0 or downloaded > total:
+        return None
+    return round(downloaded / total * 100.0, 2)
 
 def _download_thread(dl_id: str, model_id: str):
     state = _ACTIVE_DOWNLOADS.get(dl_id)
@@ -35,6 +53,8 @@ def _download_thread(dl_id: str, model_id: str):
         total_size = sum(sibling.size for sibling in info.siblings if sibling.size is not None)
         state["totalBytes"] = total_size
         state["status"] = "downloading"
+        state["progress"] = None
+        state["progressTrusted"] = False
         
         # We start a background thread to poll progress
         stop_polling = threading.Event()
@@ -48,8 +68,8 @@ def _download_thread(dl_id: str, model_id: str):
             while not stop_polling.is_set():
                 current_size = _get_directory_size(cache_path)
                 state["downloadedBytes"] = current_size
-                if total_size > 0:
-                    state["progress"] = min(100.0, (current_size / total_size) * 100.0)
+                state["progress"] = _trusted_progress(current_size, total_size)
+                state["progressTrusted"] = state["progress"] is not None
                 time.sleep(1.0)
                 
         poller = threading.Thread(target=poll_progress, daemon=True)
@@ -64,6 +84,7 @@ def _download_thread(dl_id: str, model_id: str):
             )
             state["status"] = "completed"
             state["progress"] = 100.0
+            state["progressTrusted"] = True
             if total_size > 0:
                 state["downloadedBytes"] = total_size
             
@@ -119,6 +140,7 @@ def start_download(model_id: str):
         "progress": 0.0,
         "downloadedBytes": 0,
         "totalBytes": 0,
+        "progressTrusted": False,
         "error": None
     }
     _ACTIVE_DOWNLOADS[dl_id] = state

@@ -67,6 +67,54 @@ function statusColor(st) {
   return "var(--cc-muted)";
 }
 
+function trustedDownloadProgress(download) {
+  const downloaded = Number(download?.downloadedBytes);
+  const total = Number(download?.totalBytes);
+  const percent = Number(download?.progress);
+  return Boolean(
+    download?.progressTrusted === true
+    && Number.isFinite(downloaded)
+    && Number.isFinite(total)
+    && total > 0
+    && downloaded >= 0
+    && downloaded <= total
+    && Number.isFinite(percent)
+    && percent >= 0
+    && percent <= 100
+  );
+}
+
+function ModelDownloadProgress({ download }) {
+  const hasTrustedProgress = trustedDownloadProgress(download);
+  const downloaded = Number(download?.downloadedBytes) || 0;
+  const total = Number(download?.totalBytes) || 0;
+  const percent = Number(download?.progress);
+  return (
+    <div className="w2-card" data-testid="model-download-progress" style={{ padding: "8px 12px", gap: "4px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
+        <strong>{download?.modelId}</strong>
+        <span style={{ color: "var(--cc-muted)" }}>{download?.status}</span>
+      </div>
+      {hasTrustedProgress && (
+        <div
+          role="progressbar"
+          aria-label={`Download progress for ${download?.modelId}`}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={percent}
+          style={{ height: "4px", background: "var(--cc-border)", borderRadius: "2px", overflow: "hidden" }}
+        >
+          <div style={{ height: "100%", width: `${percent}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
+        <span>{(downloaded / 1024 / 1024 / 1024).toFixed(2)} GB / {total > 0 ? `${(total / 1024 / 1024 / 1024).toFixed(2)} GB` : "size unavailable"}</span>
+        <span>{hasTrustedProgress ? `${percent.toFixed(1)}%` : "percentage unavailable"}</span>
+      </div>
+    </div>
+  );
+}
+
 function CompatibilitySummary({ model }) {
   const profile = model?.compatibility;
   if (!profile) {
@@ -477,21 +525,7 @@ export function ModelsView({
               {/* Active Downloads */}
               {activeDownloads.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
-                  {activeDownloads.map(dl => (
-                    <div key={dl.id} className="w2-card" style={{ padding: "8px 12px", gap: "4px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
-                        <strong>{dl.modelId}</strong>
-                        <span style={{ color: "var(--cc-muted)" }}>{dl.status}</span>
-                      </div>
-                      <div style={{ height: "4px", background: "var(--cc-border)", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${dl.progress || 0}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
-                        <span>{(dl.downloadedBytes / 1024 / 1024 / 1024).toFixed(2)} GB / {dl.totalBytes > 0 ? (dl.totalBytes / 1024 / 1024 / 1024).toFixed(2) + " GB" : "?"}</span>
-                        <span>{dl.progress.toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  ))}
+                  {activeDownloads.map(dl => <ModelDownloadProgress key={dl.id} download={dl} />)}
                 </div>
               )}
 

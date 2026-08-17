@@ -71,6 +71,27 @@ FILE_SNIPPET_TERMS = (
 MEMORY_MODES = {"auto", "include", "suppress"}
 
 
+def _empty_generation_metrics():
+    return {
+        "outputTokens": 0,
+        "generationSeconds": 0.0,
+        "tokensPerSecond": None,
+        "tokenCountSource": "estimated",
+        "turns": 0,
+        "lastPhase": None,
+        "lastOutputTokens": 0,
+        "lastGenerationSeconds": 0.0,
+        "lastTokensPerSecond": None,
+    }
+
+
+def _normalize_generation_metrics(value):
+    metrics = _empty_generation_metrics()
+    if isinstance(value, dict):
+        metrics.update({key: value[key] for key in metrics if key in value})
+    return metrics
+
+
 def normalize_memory_mode(value):
     mode = str(value or "auto").strip().lower()
     return mode if mode in MEMORY_MODES else "auto"
@@ -112,6 +133,7 @@ class AgentTask:
         # worker thread; plain field assignment keeps it GIL-safe.
         self.stream_text = ""
         self.steps = []
+        self.generation_metrics = _empty_generation_metrics()
         self.cancel_requested = False
         self.paused_requested = False
         self.workspace = workspace_path or workspace.get_active()["active_path"]
@@ -326,6 +348,7 @@ class AgentHub:
         task.completed_at = row["completed_at"]
         task.status = row["status"]
         task.paused_requested = bool(row["paused"])
+        task.generation_metrics = _normalize_generation_metrics(store._loads(row["generation_metrics"], {}))
         self._wire(task)
         return task
 
@@ -495,8 +518,8 @@ class AgentHub:
                   workspace,permission_snapshot,isolation_requested,isolation_state,execution_workspace,isolation_metadata,
                   paused,created_at,updated_at,owner_id,reasoning,
                   subagents,priority,queue_order,scheduled_for,started_at,completed_at,attempt_count,
-                  max_attempts,source_task_id,context_capsule_id,memory_mode
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                  max_attempts,source_task_id,context_capsule_id,memory_mode,generation_metrics
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                   status=excluded.status,
                   progress=excluded.progress,
@@ -514,6 +537,7 @@ class AgentHub:
                   attempt_count=excluded.attempt_count,
                   context_capsule_id=excluded.context_capsule_id,
                   memory_mode=excluded.memory_mode,
+                  generation_metrics=excluded.generation_metrics,
                   updated_at=excluded.updated_at
                 """,
                 (
@@ -549,6 +573,7 @@ class AgentHub:
                     task.source_task_id,
                     task.context_capsule_id,
                     task.memory_mode,
+                    json.dumps(_normalize_generation_metrics(task.generation_metrics)),
                 ),
             )
             conn.commit()
@@ -616,6 +641,7 @@ class AgentHub:
             "trace": task.trace[-80:],
             "streamText": task.stream_text[-4000:],
             "steps": task.steps[-40:],
+            "generationMetrics": _normalize_generation_metrics(task.generation_metrics),
             "permissionSnapshot": task.permission_snapshot,
             "workspace": task.workspace,
             "isolateWorkspace": task.isolate_workspace,
@@ -648,6 +674,7 @@ class AgentHub:
             "trace": [],
             "streamText": "",
             "steps": [],
+            "generationMetrics": _normalize_generation_metrics(store._loads(task.get("generation_metrics"), {})),
             "permissionSnapshot": store._loads(task["permission_snapshot"], {}),
             "workspace": task["workspace"],
             "isolateWorkspace": bool(task.get("isolation_requested")),
@@ -1558,6 +1585,32 @@ class AgentHub:
 
         return on_delta
 
+    def _record_generation_metrics(self, task, phase, text, elapsed_seconds):
+        """Record honest, task-scoped output throughput for message details.
+
+        Provider responses do not consistently expose token usage across local
+        runtimes, so the current count is explicitly estimated from response
+        text. The elapsed time is measured around the model request, which
+        makes the displayed value useful for comparing runs without implying
+        runtime-reported tokenizer precision.
+        """
+        metrics = _normalize_generation_metrics(getattr(task, "generation_metrics", None))
+        output_tokens = max(0, context_governor.estimate_tokens(text))
+        duration = max(0.0, float(elapsed_seconds or 0.0))
+        metrics["outputTokens"] += output_tokens
+        metrics["generationSeconds"] = round(metrics["generationSeconds"] + duration, 3)
+        metrics["turns"] += 1
+        metrics["lastPhase"] = phase
+        metrics["lastOutputTokens"] = output_tokens
+        metrics["lastGenerationSeconds"] = round(duration, 3)
+        metrics["lastTokensPerSecond"] = round(output_tokens / duration, 2) if output_tokens and duration > 0 else None
+        metrics["tokensPerSecond"] = (
+            round(metrics["outputTokens"] / metrics["generationSeconds"], 2)
+            if metrics["outputTokens"] and metrics["generationSeconds"] > 0 else None
+        )
+        task.generation_metrics = metrics
+        self._trigger_broadcast(task.id)
+
     async def governed_chat(self, task, phase, role, sections, tools=None):
         model_key = self.phase_model(task, role)
         model = model_registry.get_model(model_key) or {}
@@ -1682,8 +1735,15 @@ class AgentHub:
 
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
+                generation_started = time.perf_counter()
                 text, tool_calls = await _chat(
                     model_key, messages, tools=tools, on_delta=on_delta, reasoning=effective_reasoning,
+                )
+                self._record_generation_metrics(
+                    task,
+                    phase,
+                    text,
+                    time.perf_counter() - generation_started,
                 )
 
                 if minimal_inference and not tool_calls:

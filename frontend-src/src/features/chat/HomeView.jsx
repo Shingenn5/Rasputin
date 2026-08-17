@@ -906,12 +906,17 @@ export function HomeView(props) {
                 />
                 <div className="composer-toolbar">
                   <div className="composer-tools">
-                    <button type="button" className="composer-icon-button" aria-label="Attach files" title="Attach files" onClick={openFilePicker}>
+                    <div className="composer-tool-group composer-message-tools" role="group" aria-label="Message tools">
+                    <button type="button" className="composer-icon-button composer-labeled-button" data-testid="composer-attach-button" aria-label="Attach files" title="Attach files" onClick={openFilePicker}>
                       <Paperclip size={16} />
+                      <span className="composer-control-text">Attach</span>
                     </button>
-                    <button type="button" className="composer-icon-button" aria-label="Open command menu" title="Commands ( / )" onClick={() => (cmd ? closeCmd(true) : openCmd(null))}>
+                    <button type="button" className="composer-icon-button composer-labeled-button" data-testid="composer-command-button" aria-label="Open command menu" title="Commands ( / )" onClick={() => (cmd ? closeCmd(true) : openCmd(null))}>
                       <SquareSlash size={16} />
+                      <span className="composer-control-text">Commands</span>
                     </button>
+                    </div>
+                    <div className="composer-tool-group composer-settings-tools" role="group" aria-label="Response settings">
                     <button
                       type="button"
                       ref={recipeButtonRef}
@@ -998,11 +1003,13 @@ export function HomeView(props) {
                         </select>
                       </label>
                     )}
+                    </div>
                   </div>
                   <div className="composer-actions">
                     {latestActiveTask && (
-                      <button type="button" className="composer-icon-button composer-stop-round" aria-label="Stop latest task" title="Stop the running task" onClick={() => handleCancelTask(latestActiveTask.id)}>
+                      <button type="button" className="composer-icon-button composer-labeled-button composer-stop-round" aria-label="Stop latest task" title="Stop the running task" onClick={() => handleCancelTask(latestActiveTask.id)}>
                         <Square size={14} />
+                        <span className="composer-control-text">Stop</span>
                       </button>
                     )}
                     <button
@@ -1295,7 +1302,7 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           <span className={`status-pill status-${status}`}>{status}</span>
           {active && (
             <span className="status-pill status-running">
-              {streaming ? "Generating…" : `${Number(task.progress || 0)}%`}
+              {streaming ? "Generating…" : status === "queued" ? "Queued" : status === "paused" ? "Paused" : "Working…"}
             </span>
           )}
         </div>
@@ -1326,6 +1333,14 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
             )}
             <dt>Workspace</dt><dd>{displayWorkspaceName(task.workspace)}</dd>
             <dt>Status</dt><dd>{status}</dd>
+            <dt>Output TPS</dt>
+            <dd data-testid="message-generation-tps">
+              {Number(task.generationMetrics?.tokensPerSecond) > 0
+                ? `${Number(task.generationMetrics.tokensPerSecond).toFixed(1)} tok/s (${task.generationMetrics.tokenCountSource || "estimated"})`
+                : "Unavailable"}
+            </dd>
+            <dt>Output tokens</dt>
+            <dd>{Number(task.generationMetrics?.outputTokens) > 0 ? `~${Number(task.generationMetrics.outputTokens).toLocaleString()}` : "Unavailable"}</dd>
           </dl>
           <div className="task-inline-actions" aria-label="Task details">
             <button type="button" className="tiny-action" data-testid="activity-task-details" onClick={() => openTaskDetails(task.id)}>

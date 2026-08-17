@@ -993,6 +993,19 @@ html[data-theme="rasputin-dark"] .login-submit {
   gap: 5px;
 }
 
+.composer-tool-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.composer-tool-group + .composer-tool-group {
+  margin-left: 3px;
+  border-left: 1px solid var(--dash-border);
+  padding-left: 8px;
+}
+
 .composer-icon-button,
 .composer-chip {
   min-width: 36px;
@@ -1005,6 +1018,19 @@ html[data-theme="rasputin-dark"] .login-submit {
 .composer-icon-button {
   width: 36px;
   height: 36px;
+}
+
+.composer-labeled-button {
+  width: auto;
+  gap: 6px;
+  padding: 0 9px;
+  color: var(--dash-muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.composer-control-text {
+  white-space: nowrap;
 }
 
 .composer-chip {
@@ -1905,6 +1931,10 @@ button.workspace-add-folder:focus-visible {
   }
 
   .composer-tools::-webkit-scrollbar { display: none; }
+
+  .composer-tool-group {
+    flex: 0 0 auto;
+  }
 
   .composer-chip { flex: 0 0 auto; }
 

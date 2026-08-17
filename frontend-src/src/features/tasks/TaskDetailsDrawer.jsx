@@ -146,7 +146,17 @@ export function TaskDetailsDrawer({
                 <section id="task-detail-panel-overview" role="tabpanel" aria-labelledby="task-detail-tab-overview" data-testid="task-details-overview">
                   <div className="task-detail-grid">
                     <Metric label="Status" value={task.status || "queued"} tone={task.status} />
-                    <Metric label="Progress" value={`${Number(task.progress || 0)}%`} />
+                    <Metric label="Activity" value={active ? (task.status === "running" ? "Generating" : labelize(task.status)) : "Complete"} />
+                    <Metric
+                      label="Output TPS"
+                      value={Number(task.generationMetrics?.tokensPerSecond) > 0
+                        ? `${Number(task.generationMetrics.tokensPerSecond).toFixed(1)} tok/s (${task.generationMetrics.tokenCountSource || "estimated"})`
+                        : "Unavailable"}
+                    />
+                    <Metric
+                      label="Output tokens"
+                      value={Number(task.generationMetrics?.outputTokens) > 0 ? `~${Number(task.generationMetrics.outputTokens).toLocaleString()}` : "Unavailable"}
+                    />
                     <Metric label="Workspace" value={displayWorkspaceName(task.workspace)} />
                     {task.isolateWorkspace && <Metric label="Isolation" value={["ready", "retained"].includes(task.isolationState) ? "Git worktree" : task.isolationState || "requested"} />}
                     <Metric label="Model" value={displayModelName(task.model, models)} />
@@ -315,7 +325,7 @@ export function TaskDetailsDrawer({
                       <button className="subagent-card" type="button" key={child.id} onClick={() => openTaskDetails(child.id)}>
                         <span className={`status-pill status-${child.status}`}>{child.status}</span>
                         <strong>{child.objective}</strong>
-                        <small>{displayModelName(child.model, models)} / {Number(child.progress || 0)}%</small>
+                        <small>{displayModelName(child.model, models)} / {labelize(child.status || "queued")}</small>
                       </button>
                     ))}
                     {!(detail.children || []).length && <EmptyInline text="No sub-agents were spawned for this task." />}

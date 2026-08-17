@@ -5091,6 +5091,41 @@ class BackendSmokeTests(unittest.TestCase):
             self.assertIn("streamText", item["task"])
             self.assertIn("steps", item["task"])
 
+    def testGovernedChatRecordsEstimatedGenerationMetricsAndPersistsThem(self):
+        hub = agent.AgentHub()
+
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            await asyncio.sleep(0.01)
+            if on_delta:
+                on_delta({"type": "text", "text": "Generated answer"})
+            return "Generated answer", []
+
+        sections = [context_governor.section("task", "Task", "answer this", required=True, priority=0)]
+        task = agent.AgentTask("answer this", "dry-run", "general", mode="chat", workspace_path=".")
+        task.owner_id = "test"
+        hub.tasks[task.id] = task
+
+        with patch("backend.engine.agent._chat", scripted_chat), \
+             patch("backend.engine.agent.model_registry.get_model", return_value={
+                 "key": "dry-run",
+                 "provider": "mock",
+                 "compatibility": {"promptProfile": "standard"},
+             }):
+            result = asyncio.run(hub.governed_chat(task, "chat", "main", sections))
+
+        self.assertEqual(result, "Generated answer")
+        metrics = hub.snapshot_task(task)["generationMetrics"]
+        self.assertGreater(metrics["outputTokens"], 0)
+        self.assertGreater(metrics["generationSeconds"], 0)
+        self.assertGreater(metrics["tokensPerSecond"], 0)
+        self.assertEqual(metrics["tokenCountSource"], "estimated")
+
+        hub._persist_task(task)
+        hub.tasks.pop(task.id, None)
+        persisted = hub.get_task(task.id, "test")
+        self.assertEqual(persisted["generationMetrics"]["outputTokens"], metrics["outputTokens"])
+        self.assertEqual(persisted["generationMetrics"]["tokenCountSource"], "estimated")
+
     def testGovernedChatStopsOnTimeBudgetWithoutHanging(self):
         hub = agent.AgentHub()
 
