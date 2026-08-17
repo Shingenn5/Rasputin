@@ -97,6 +97,30 @@ def build_manifest(model: dict[str, Any] | None = None, entry: dict[str, Any] | 
     return manifest_builder.build_manifest(_manifest_source(model, entry))
 
 
+def _reconcile_selected_protocol(manifest: dict[str, Any], protocol_id: str) -> dict[str, Any]:
+    """Keep supplied catalog evidence aligned with the runtime being planned.
+
+    A catalog manifest can be built before Warsat inspects the repository.  A
+    vLLM-first catalog entry that turns out to contain only GGUF weights is
+    then rerouted to llama.cpp, but its valid old manifest would otherwise
+    still say that combined VRAM is not allowed.  Preserve the measured/model
+    evidence while making the selected runtime's placement capability explicit.
+    """
+
+    selected = _text(protocol_id)
+    if not selected:
+        return manifest
+    result = deepcopy(manifest)
+    placement = dict(result.get("placement") or {})
+    placement["combinedVramAllowed"] = selected == "llamaCppGgufServer"
+    result["placement"] = placement
+    backends = [dict(item) for item in (result.get("backends") or []) if isinstance(item, dict)]
+    if not any(_text(item.get("protocolId") or item.get("protocol_id")) == selected for item in backends):
+        backends.append({"protocolId": selected, "label": selected, "support": "selected"})
+    result["backends"] = backends
+    return result
+
+
 def _estimated_vram_gb(manifest: dict[str, Any], model: dict[str, Any] | None, payload: dict[str, Any] | None) -> float | None:
     payload = payload or {}
     envelope = manifest.get("runtimeEnvelope") or {}
@@ -167,7 +191,10 @@ def plan_admission(
     """Return ``(manifest, decision, normalized_request)`` for a preview."""
 
     payload = dict(payload or {})
-    manifest = build_manifest(model, entry, supplied_manifest)
+    manifest = _reconcile_selected_protocol(
+        build_manifest(model, entry, supplied_manifest),
+        protocol_id,
+    )
     estimate_gb = _estimated_vram_gb(manifest, model, payload)
     profile = _capability_profile(capability_profile)
     device_value = payload.get("deviceIds") or payload.get("device_ids") or payload.get("gpuDevice") or payload.get("gpu_device")

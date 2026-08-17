@@ -159,6 +159,26 @@ class WarsatAdmissionIntegrationTests(unittest.TestCase):
         self.assertEqual(ready["status"], "ready")
         self.assertEqual(sum(item["vramMb"] for item in ready["placements"]), 20480)
 
+    def test_rerouted_gguf_plan_reconciles_stale_vllm_manifest(self):
+        stale_manifest = resource_manifest.build_manifest({
+            "modelId": "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+            "vramEstimateGb": 19,
+            "recommendedProtocol": "vllmCudaOpenai",
+            "runtimeOptions": [{"protocolId": "vllmCudaOpenai"}],
+        })
+        manifest, decision, request = admission.plan_admission(
+            supplied_manifest=stale_manifest,
+            capability_profile=_profile(12288, 16384),
+            runtime="llama.cpp",
+            protocol_id="llamaCppGgufServer",
+            payload={"gpuDevice": "all"},
+            explicit_combined=True,
+        )
+        self.assertTrue(manifest["placement"]["combinedVramAllowed"])
+        self.assertTrue(any(item["protocolId"] == "llamaCppGgufServer" for item in manifest["backends"]))
+        self.assertTrue(request["allowCombined"])
+        self.assertEqual(decision["status"], "ready")
+
     def test_qwen_gguf_combined_admission_needs_measured_free_vram(self):
         """Installed totals alone must not unlock an unsafe combined launch."""
         manifest = resource_manifest.build_manifest({

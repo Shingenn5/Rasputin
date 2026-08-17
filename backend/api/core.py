@@ -305,7 +305,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
     return ok({
         "models": model_registry.all_models(),
         "model_providers": model_providers.public_provider_options(),
-        "model_catalog": model_catalog.local_catalog(),
+        "model_catalog": model_catalog.local_catalog(include_runtime_cache=False),
         "skills": skill_store.enabled_names(),
         "tasks": hub.all_tasks(limit=80, include_details=False, owner_id=username),
         "memory": load_memory(username),

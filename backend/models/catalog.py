@@ -819,17 +819,20 @@ def _warsat_cache_items():
     return items
 
 
-def local_catalog(hardware=None):
+def local_catalog(hardware=None, include_runtime_cache=True):
     """Catalog of complete local weights, with running models marked ready now."""
     # A complete cache snapshot is safe to expose as locally deployable even
     # when it is not running. Running health-checked models replace the cache
     # entry for the same model and carry readyWithinThreeMinutes=True.
     # Shared cache entries intentionally win over legacy container-backed
     # entries with the same model id because they are safely redeployable.
-    unfiltered = _native_managed_container_items() + _local_items() + _native_docker_cache_items()
+    unfiltered = _local_items()
+    if include_runtime_cache:
+        unfiltered = _native_managed_container_items() + unfiltered + _native_docker_cache_items()
     deduped = {item["modelId"]: item for item in unfiltered}
-    for item in _warsat_cache_items():
-        deduped[item["modelId"]] = item
+    if include_runtime_cache:
+        for item in _warsat_cache_items():
+            deduped[item["modelId"]] = item
     items = _apply_fit(list(deduped.values()), hardware)
     return {
         "items": items, "count": len(items), "deployableCount": len(items),
