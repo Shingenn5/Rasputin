@@ -485,7 +485,7 @@ def hardware_probe():
     if nvidia_smi:
         gpu_raw = _probe_command([
             "nvidia-smi",
-            "--query-gpu=name,memory.total",
+            "--query-gpu=index,name,memory.used,memory.total,memory.free",
             "--format=csv,noheader,nounits",
         ], timeout=10)
         if gpu_raw.get("ok"):
@@ -703,7 +703,7 @@ def _visible_gpus_for_plan():
     if nvidia_smi:
         result = _probe_command([
             "nvidia-smi",
-            "--query-gpu=name,memory.total",
+            "--query-gpu=index,name,memory.used,memory.total,memory.free",
             "--format=csv,noheader,nounits",
         ], timeout=10)
         if result.get("ok"):
@@ -1705,14 +1705,44 @@ _DOCKER_GPU_CACHE = {"at": 0.0, "gpus": None}
 
 
 def _parse_gpu_csv(text):
+    """Parse the stable nvidia-smi GPU inventory/telemetry format.
+
+    New probes request ``index,name,memory.used,memory.total,memory.free`` so
+    the admission broker can distinguish installed VRAM from currently safe
+    capacity.  Keep accepting the older ``name,memory.total`` shape because
+    cached/test probes and older Docker images may still return it; those
+    records remain safe but deliberately have unknown volatile capacity.
+    """
+
+    def _mb(value):
+        try:
+            parsed = float(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+        return int(parsed) if parsed.is_integer() else parsed
+
     gpus = []
     for line in (text or "").splitlines():
         parts = [part.strip() for part in line.split(",")]
-        if parts and parts[0]:
-            gpus.append({
+        if not parts or not parts[0]:
+            continue
+
+        # Current query: index,name,memory.used,memory.total,memory.free.
+        if len(parts) >= 5 and parts[0].lstrip("-").isdigit():
+            gpu = {
+                "index": int(parts[0]),
+                "name": parts[1],
+                "memoryUsedMb": _mb(parts[2]),
+                "memoryTotalMb": _mb(parts[3]),
+                "memoryFreeMb": _mb(parts[4]),
+            }
+        else:
+            # Backward-compatible inventory-only shape.
+            gpu = {
                 "name": parts[0],
-                "memoryTotalMb": int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None,
-            })
+                "memoryTotalMb": _mb(parts[1]) if len(parts) > 1 else None,
+            }
+        gpus.append(gpu)
     return gpus
 
 
@@ -1736,7 +1766,7 @@ def _gpu_probe_via_docker():
         if _image_exists_locally(image):
             result = _run_command([
                 "docker", "run", "--rm", "--gpus", "all", "--entrypoint", "nvidia-smi", image,
-                "--query-gpu=name,memory.total", "--format=csv,noheader,nounits",
+                "--query-gpu=index,name,memory.used,memory.total,memory.free", "--format=csv,noheader,nounits",
             ], timeout=45, check=False)
             if result["returnCode"] == 0:
                 gpus = _parse_gpu_csv(result["stdout"])
@@ -1808,11 +1838,10 @@ def _fleet_state():
     are actually running, GPU headroom -- so make_plan can avoid
     overcommitting VRAM across simultaneous deploys.
 
-    Neither hardware_probe()'s nvidia-smi query nor _gpu_probe_via_docker()
-    report memory.used (both only ask for name/memory.total), so live used
-    memory comes from gpu_live_metrics_via_docker() instead -- it execs
-    nvidia-smi inside a running managed container and already reports
-    memory_used_mb/memory_total_mb per GPU.
+    The hardware probes now report memory.used/memory.free when the NVIDIA
+    tooling exposes them.  Live metrics are still refreshed separately when
+    models are already running because the admission profile should describe
+    the current fleet rather than a stale startup snapshot.
 
     The GPU probe only runs when at least one managed model is already
     running: with nothing running there is no VRAM contention to guard

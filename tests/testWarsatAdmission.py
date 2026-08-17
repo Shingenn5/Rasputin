@@ -74,6 +74,44 @@ class WarsatAdmissionIntegrationTests(unittest.TestCase):
         self.assertEqual(ready["status"], "ready")
         self.assertEqual(sum(item["vramMb"] for item in ready["placements"]), 20480)
 
+    def test_qwen_gguf_combined_admission_needs_measured_free_vram(self):
+        """Installed totals alone must not unlock an unsafe combined launch."""
+        manifest = resource_manifest.build_manifest({
+            "modelId": "Qwen3.8-27B-Q4_K_M.gguf",
+            "vramEstimateGb": 19,
+            "recommendedProtocol": "llamaCppGgufServer",
+            "runtimeOptions": [{"protocolId": "llamaCppGgufServer"}],
+        })
+        totals_only = {
+            "schemaVersion": 1,
+            "devices": [
+                {"deviceId": "gpu:0", "static": {"memoryTotalMb": 12288}},
+                {"deviceId": "gpu:1", "static": {"memoryTotalMb": 16384}},
+            ],
+        }
+        _manifest, blocked, _request = admission.plan_admission(
+            supplied_manifest=manifest,
+            capability_profile=totals_only,
+            runtime="llama.cpp",
+            protocol_id="llamaCppGgufServer",
+            payload={"gpuDevice": "all"},
+            explicit_combined=True,
+        )
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertIsNone(blocked["capacity"]["devices"][0]["freeMb"])
+
+        _manifest, ready, request = admission.plan_admission(
+            supplied_manifest=manifest,
+            capability_profile=_profile(12288, 16384),
+            runtime="llama.cpp",
+            protocol_id="llamaCppGgufServer",
+            payload={"gpuDevice": "all"},
+            explicit_combined=True,
+        )
+        self.assertEqual(request["requestedVramMb"], 19456)
+        self.assertEqual(ready["status"], "ready")
+        self.assertEqual(sum(item["vramMb"] for item in ready["placements"]), 19456)
+
     def test_make_plan_exposes_ready_admission_without_starting_runtime(self):
         with patch("backend.warsat._hf_repo_inventory", return_value=None), \
              patch("backend.warsat._visible_gpus_for_plan", return_value=[]), \

@@ -3082,7 +3082,7 @@ class BackendSmokeTests(unittest.TestCase):
                     "available": True,
                     "ok": True,
                     "returnCode": 0,
-                    "stdout": "RTX 4090, 24564",
+                    "stdout": "0, RTX 4090, 2048, 24564, 22516",
                     "stderr": "",
                     "latencyMs": 5,
                 }
@@ -3108,8 +3108,10 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(any(item["id"] == "dockerGpuRuntime" and item["status"] == "pass" for item in hardware["checks"]))
         self.assertEqual(hardware["detectedHardware"]["dockerServerVersion"], "27.0")
         self.assertEqual(hardware["detectedHardware"]["gpus"][0]["memoryTotalMb"], 24564)
+        self.assertEqual(hardware["detectedHardware"]["gpus"][0]["memoryFreeMb"], 22516)
         self.assertEqual(hardware["capabilityProfile"]["schemaVersion"], 1)
         self.assertEqual(hardware["capabilityProfile"]["devices"][0]["static"]["memoryTotalMb"], 24564)
+        self.assertEqual(hardware["capabilityProfile"]["devices"][0]["volatile"]["memoryFreeMb"], 22516.0)
         self.assertEqual(hardware["capabilityProfile"]["backends"]["cpu"]["status"], "available")
         self.assertIn("blockedReasons", hardware)
 
@@ -3508,7 +3510,7 @@ class BackendSmokeTests(unittest.TestCase):
             if args[:3] == ["docker", "image", "inspect"]:
                 return {"returnCode": 0, "stdout": "[{}]", "stderr": ""}
             if args[:2] == ["docker", "run"] and "--entrypoint" in args:
-                return {"returnCode": 0, "stdout": "NVIDIA GeForce RTX 5060 Ti, 16311", "stderr": ""}
+                return {"returnCode": 0, "stdout": "0, NVIDIA GeForce RTX 5060 Ti, 1024, 16311, 15287", "stderr": ""}
             raise AssertionError(f"unexpected docker command: {args}")
 
         try:
@@ -3517,7 +3519,13 @@ class BackendSmokeTests(unittest.TestCase):
                  patch("backend.warsat._fake_deploy_enabled", return_value=False), \
                  patch("backend.warsat._run_command", side_effect=fake_run):
                 gpus = warsat_module._gpu_probe_via_docker()
-            self.assertEqual(gpus, [{"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16311}])
+            self.assertEqual(gpus, [{
+                "index": 0,
+                "name": "NVIDIA GeForce RTX 5060 Ti",
+                "memoryUsedMb": 1024,
+                "memoryTotalMb": 16311,
+                "memoryFreeMb": 15287,
+            }])
         finally:
             warsat_module._DOCKER_GPU_CACHE.update({"at": 0.0, "gpus": None})
 

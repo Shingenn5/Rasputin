@@ -2027,14 +2027,14 @@ export function App() {
   }
 
   async function loadWarsat() {
-    const [nextWarsat, runtimes] = await Promise.all([
+    const [nextWarsat, runtimes, hardware] = await Promise.all([
       api("/api/warsat/protocols"),
       api("/api/warsat/runtimes"),
       loadWarsatHardware(),
     ]);
     setWarsat(nextWarsat);
     setWarsatRuntimes(runtimes);
-    return nextWarsat;
+    return { warsat: nextWarsat, runtimes, hardware };
   }
 
   async function prepareCatalogModelForWarsat(item, options = {}) {
@@ -2056,7 +2056,7 @@ export function App() {
     const toolCallParser = options.toolCallParser || item.toolCallParserHint || undefined;
     setWarsatError("");
     try {
-      await loadWarsat();
+      const loaded = await loadWarsat();
       const plan = await postJson("/api/warsat/plan", {
         protocolId,
         modelRef,
@@ -2069,7 +2069,7 @@ export function App() {
         maxModelLen: item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
         vramEstimateGb: item.vramEstimateGb || undefined,
         resourceManifest: item.resourceManifest || undefined,
-        capabilityProfile: warsatHardware?.capabilityProfile || undefined,
+        capabilityProfile: loaded?.hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
         containerName: options.containerName || undefined,
         // Catalog hints are deliberately conservative. When one is present,
         // use it so a known tool-capable model is deployed agent-ready.
@@ -2137,6 +2137,7 @@ export function App() {
     const gpuLayers = form.get("gpuLayers");
     setWarsatError("");
     try {
+      const hardware = await loadWarsatHardware();
       const plan = await postJson("/api/warsat/plan", {
         protocolId: form.get("protocolId"),
         modelRef: form.get("modelRef") || undefined,
@@ -2163,7 +2164,7 @@ export function App() {
         role: form.get("role") || undefined,
         containerName: form.get("containerName") || undefined,
         toolCallParser: form.get("toolCallParser") || undefined,
-        capabilityProfile: warsatHardware?.capabilityProfile || undefined,
+        capabilityProfile: hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
       });
       setWarsatPlan(plan);
       setWarsatDeployment(null);
@@ -2180,7 +2181,7 @@ export function App() {
     try {
       const saved = await postJson("/api/security", { ...security, allowDockerControl: true });
       setSecurity(saved);
-      await loadWarsat();
+      const loaded = await loadWarsat();
       // Plans snapshot the docker flags at creation time, so refresh the
       // active plan or the deploy button stays locked on stale data.
       if (warsatPlan) {
@@ -2191,7 +2192,7 @@ export function App() {
           strengthProfile: warsatPlan.strengthProfile || undefined,
           vramEstimateGb: warsatPlan.resourceManifest?.runtimeEnvelope?.estimatedVramGb || undefined,
           resourceManifest: warsatPlan.resourceManifest || undefined,
-          capabilityProfile: warsatHardware?.capabilityProfile || undefined,
+          capabilityProfile: loaded?.hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
           hostPort: warsatPlan.hostPort || undefined,
           role: warsatPlan.role || undefined,
           containerName: warsatPlan.containerName || undefined,

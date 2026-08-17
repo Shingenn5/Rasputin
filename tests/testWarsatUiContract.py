@@ -20,6 +20,19 @@ class WarsatUiContractTests(unittest.TestCase):
         self.assertIn("Resource admission blocked", source)
         self.assertIn("Waiting for capacity", source)
 
+    def test_plan_paths_submit_fresh_hardware_capacity_evidence(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "frontend-src"
+            / "src"
+            / "app"
+            / "App.jsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("const [nextWarsat, runtimes, hardware]", source)
+        self.assertIn("loaded?.hardware?.capabilityProfile", source)
+        self.assertIn("const hardware = await loadWarsatHardware();", source)
+        self.assertIn("hardware?.capabilityProfile || warsatHardware?.capabilityProfile", source)
+
 
 if __name__ == "__main__":
     unittest.main()
