@@ -1006,13 +1006,13 @@ html[data-theme="rasputin-dark"] .login-submit {
 
 .composer-tools {
   flex: 1 1 auto;
-  overflow-x: auto;
-  flex-wrap: nowrap;
-  scrollbar-width: none;
+  overflow: visible;
+  flex-wrap: wrap;
+  row-gap: 3px;
 }
 
-.composer-tools::-webkit-scrollbar {
-  display: none;
+.composer-settings-tools {
+  flex-wrap: wrap;
 }
 
 .composer-actions {
@@ -1027,6 +1027,11 @@ html[data-theme="rasputin-dark"] .login-submit {
   flex: 0 0 auto;
   min-width: 0;
   gap: 3px;
+}
+
+.composer-tool-group.composer-settings-tools {
+  flex: 1 1 420px;
+  max-width: 100%;
 }
 
 .composer-tool-group + .composer-tool-group {
@@ -2011,12 +2016,14 @@ button.workspace-add-folder:focus-visible {
   .composer-tools {
     width: 100%;
     max-width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 3px;
   }
 
-  .composer-tools::-webkit-scrollbar { display: none; }
+  .composer-settings-tools {
+    flex-wrap: wrap;
+  }
 
   .composer-tool-group {
     flex: 0 0 auto;
@@ -2030,7 +2037,6 @@ button.workspace-add-folder:focus-visible {
 
   .composer-actions { flex: 0 0 auto; }
 
-  .composer-actions .composer-model-chip { display: none; }
 
   .changes-workbench {
     grid-template-columns: 1fr;

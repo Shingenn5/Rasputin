@@ -33,6 +33,12 @@ class ChatUiContractTests(unittest.TestCase):
         self.assertIn("height: 32px", styles)
         self.assertIn("border-radius: 7px", styles)
         self.assertIn("flex: 0 0 32px", styles)
+        self.assertIn(".composer-tools {", styles)
+        self.assertIn("overflow: visible;", styles)
+        self.assertIn("flex-wrap: wrap;", styles)
+        self.assertIn(".composer-settings-tools {", styles)
+        self.assertIn(".composer-tool-group.composer-settings-tools", styles)
+        self.assertNotIn(".composer-actions .composer-model-chip { display: none; }", styles)
         self.assertIn(".composer-chip > select option", styles)
 
     def test_message_details_show_estimated_output_tps_without_phase_percent(self):
