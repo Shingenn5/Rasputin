@@ -4044,6 +4044,23 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(stopped["action"], "stop")
         self.assertTrue(any(call[:2] == ["docker", "stop"] for call in docker_calls))
 
+    def testWarsatDownloadProgressEndpointReturnsReadOnlyTelemetry(self):
+        expected = {
+            "containerName": "rasputin-qwen-8085",
+            "status": "downloading",
+            "bytesDownloaded": 400,
+            "totalBytes": 1000,
+            "percent": 40.0,
+        }
+        with patch("backend.warsat.download_progress", return_value=expected):
+            progress = self.assertOk(self.client.get(
+                "/api/warsat/download-progress",
+                params={"containerName": "rasputin-qwen-8085"},
+            ))
+        self.assertEqual(progress["status"], "downloading")
+        self.assertEqual(progress["bytesDownloaded"], 400)
+        self.assertEqual(progress["totalBytes"], 1000)
+
     def testWarsatHealthUrlKeepsPortEndingInOne(self):
         # str.rstrip("/v1") strips the *characters* {'/', 'v', '1'}, not the
         # literal suffix -- an endpoint on a port ending in "1" (8001 is a

@@ -42,6 +42,22 @@ class WarsatUiContractTests(unittest.TestCase):
         self.assertIn("const hardware = await loadWarsatHardware();", source)
         self.assertIn("hardware?.capabilityProfile || warsatHardware?.capabilityProfile", source)
 
+    def test_model_download_progress_is_visible_and_reload_safe(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "frontend-src"
+            / "src"
+            / "features"
+            / "warsat"
+            / "WarsatView.jsx"
+        ).read_text(encoding="utf-8")
+        self.assertIn("/api/warsat/download-progress?containerName=", source)
+        self.assertIn('data-testid={compact ? "warsat-container-download-progress" : "warsat-download-progress"}', source)
+        self.assertIn("Downloading model weights", source)
+        self.assertIn("percentage unavailable", source)
+        self.assertIn("{hasTrustedPercent && (", source)
+        self.assertIn("const runningNamesKey", source)
+
 
 if __name__ == "__main__":
     unittest.main()

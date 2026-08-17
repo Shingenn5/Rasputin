@@ -64,6 +64,65 @@ function statusColor(st) {
   return "var(--cc-muted)";
 }
 
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "Unknown size";
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value < 60) return `${Math.round(value)}s remaining`;
+  const minutes = Math.floor(value / 60);
+  const remainder = Math.round(value % 60);
+  return `${minutes}m ${remainder}s remaining`;
+}
+
+function DownloadProgressPanel({ progress, compact = false }) {
+  if (!progress || !["downloading", "loading"].includes(progress.status)) return null;
+  const percent = Number.isFinite(Number(progress.percent)) ? Number(progress.percent) : null;
+  const hasTrustedPercent = percent != null && percent >= 0 && percent <= 100;
+  const sourceFile = progress.source?.file || "model weights";
+  return (
+    <div
+      data-testid={compact ? "warsat-container-download-progress" : "warsat-download-progress"}
+      style={{
+        marginTop: compact ? "8px" : "12px",
+        padding: compact ? "8px 10px" : "10px 12px",
+        border: "1px solid var(--cc-border)",
+        borderRadius: "7px",
+        background: "var(--cc-surface)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", fontSize: "0.75rem" }}>
+        <strong>{progress.status === "loading" ? "Loading model into memory" : "Downloading model weights"}</strong>
+        <span>{hasTrustedPercent ? `${percent.toFixed(1)}%` : "percentage unavailable"}</span>
+      </div>
+      {hasTrustedPercent && (
+        <div
+          role="progressbar"
+          aria-label={`Download progress for ${sourceFile}`}
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={percent}
+          style={{ height: "6px", marginTop: "7px", overflow: "hidden", borderRadius: "999px", background: "var(--cc-border)" }}
+        >
+          <div style={{ height: "100%", width: `${percent}%`, borderRadius: "999px", background: "var(--ras-safe)", transition: "width 0.4s ease" }} />
+        </div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "6px", color: "var(--cc-muted)", fontSize: "0.6875rem" }}>
+        <span>{sourceFile}</span>
+        <span>{formatBytes(progress.bytesDownloaded)}{progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : " downloaded"}</span>
+        {progress.rateBytesPerSecond > 0 && <span>{formatBytes(progress.rateBytesPerSecond)}/s</span>}
+        {progress.etaSeconds != null && <span>{formatDuration(progress.etaSeconds)}</span>}
+      </div>
+    </div>
+  );
+}
+
 function taskStatusIcon(status) {
   if (["running"].includes(status)) return <Activity size={14} color="var(--ras-safe)" />;
   if (["queued"].includes(status)) return <Gauge size={14} color="var(--ras-warn)" />;
@@ -555,6 +614,36 @@ function DeployTab({
   const [advisorBusy, setAdvisorBusy] = React.useState(false);
   const [advisorError, setAdvisorError] = React.useState("");
   const activePhase = deployment?.phase || plan?.phase || "";
+  const modelContainerName = deployment?.containerName || plan?.containerName || "";
+  const shouldPollDownload = Boolean(
+    modelContainerName
+    && (deploying || deployment?.status === "starting" || deployment?.phase === "probing")
+  );
+  const [downloadProgress, setDownloadProgress] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!shouldPollDownload) {
+      setDownloadProgress(null);
+      return undefined;
+    }
+    let isSubscribed = true;
+    let timer = null;
+    async function poll() {
+      try {
+        const progress = await api(`/api/warsat/download-progress?containerName=${encodeURIComponent(modelContainerName)}`);
+        if (isSubscribed) setDownloadProgress(progress);
+      } catch (err) {
+        // The container may not exist during the image-pull phase. Keep the
+        // deployment stream authoritative and retry on the next interval.
+      }
+      if (isSubscribed) timer = setTimeout(poll, 5000);
+    }
+    poll();
+    return () => {
+      isSubscribed = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [modelContainerName, shouldPollDownload]);
 
   async function analyzeSelectedModel() {
     if (!selectedCatalogModel) return;
@@ -988,6 +1077,8 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
         </div>
       )}
 
+      <DownloadProgressPanel progress={downloadProgress} />
+
       {/* Docker command preview */}
       {plan.dockerRun && (
         <div className="ws-docker-cmd">
@@ -1077,12 +1168,42 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
   const [discovered, setDiscovered] = useState(null);
   const [importingKey, setImportingKey] = useState(null);
   const [importedKeys, setImportedKeys] = useState(new Set());
+  const [downloadProgress, setDownloadProgress] = useState({});
   const operationApproval = (approvals?.approvals || []).find(a => a.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
 
   // status is raw docker text ("Up 50 seconds"); state is the normalized flag.
   const isUp = (c) => ["running", "healthy", "reachable"].includes(c.state || "") || (c.status || "").toLowerCase().startsWith("up");
   const running = containers.filter(isUp);
   const stopped = containers.filter(c => !isUp(c));
+  const runningNamesKey = running.map(container => container.name).filter(Boolean).sort().join("|");
+
+  useEffect(() => {
+    const names = runningNamesKey ? runningNamesKey.split("|") : [];
+    if (!names.length) {
+      setDownloadProgress({});
+      return undefined;
+    }
+    let isSubscribed = true;
+    let timer = null;
+    async function poll() {
+      const entries = await Promise.all(names.map(async name => {
+        try {
+          return [name, await api(`/api/warsat/download-progress?containerName=${encodeURIComponent(name)}`)];
+        } catch (err) {
+          return [name, null];
+        }
+      }));
+      if (isSubscribed) {
+        setDownloadProgress(Object.fromEntries(entries.filter(([, progress]) => progress)));
+      }
+      if (isSubscribed) timer = setTimeout(poll, 5000);
+    }
+    poll();
+    return () => {
+      isSubscribed = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [runningNamesKey]);
 
   function toggleLogs(name) {
     if (activeLogContainer === name) {
@@ -1276,6 +1397,8 @@ function ContainersTab({ containers, runtimes, logs, handleLoadLogs, handleRunti
                 <span><Package size={11} /> {container.ports}</span>
               )}
             </div>
+
+            <DownloadProgressPanel progress={downloadProgress[container.name]} compact />
 
             {/* Actions */}
             <div className="ws-runtime-actions">

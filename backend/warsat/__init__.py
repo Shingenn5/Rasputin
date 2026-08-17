@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -31,6 +32,11 @@ HEALTH_PROBE_ATTEMPTS = max(1, min(int(os.environ.get("WARSAT_HEALTH_PROBE_ATTEM
 HEALTH_PROBE_INTERVAL_SECONDS = max(0.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_INTERVAL", "5")), 30.0))
 HEALTH_PROBE_TIMEOUT_SECONDS = max(1.0, min(float(os.environ.get("WARSAT_HEALTH_PROBE_TIMEOUT", "5")), 30.0))
 LOG_LIMIT_MAX = 500
+DOWNLOAD_PROGRESS_HISTORY_TTL_SECONDS = 60 * 60
+HF_FILE_SIZE_CACHE_TTL_SECONDS = 10 * 60
+
+_DOWNLOAD_PROGRESS_HISTORY = {}
+_HF_FILE_SIZE_CACHE = {}
 
 DEPLOY_PHASES = [
     ("planned", "Plan reviewed", "Launch plan generated and validated."),
@@ -2123,6 +2129,206 @@ def _sync_deployed_context(registry_entry, plan, container_name):
     if maximum:
         registry_entry["model_context_window"] = int(maximum)
     return registry_entry
+
+
+def _container_model_source(container_name):
+    """Read the model source flags from a managed container without exec-ing it."""
+    result = _run_command(
+        ["docker", "inspect", "--format", "{{json .Args}}", container_name],
+        timeout=15,
+        check=False,
+    )
+    if result["returnCode"] != 0:
+        return {}
+    try:
+        args = json.loads(result.get("stdout") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(args, list):
+        return {}
+
+    def _flag(name):
+        try:
+            index = args.index(name)
+        except ValueError:
+            return ""
+        return str(args[index + 1]).strip() if index + 1 < len(args) else ""
+
+    repo = _flag("--hf-repo")
+    filename = _flag("--hf-file")
+    if not repo:
+        model = _flag("--model")
+        # vLLM's --model can be a Hugging Face repo or a local path. Keep only
+        # the repo-shaped form so local mounts are reported as not applicable.
+        if "/" in model and not model.startswith(("/", "\\")):
+            repo = model
+    return {
+        "repo": repo,
+        "file": filename,
+        "kind": "huggingface" if repo else "local",
+    }
+
+
+def _hf_file_size(repo, filename):
+    """Return a public Hugging Face file's final size when the Hub exposes it."""
+    repo = str(repo or "").strip().strip("/")
+    filename = str(filename or "").strip().lstrip("/")
+    if not repo or not filename:
+        return None
+    cache_key = f"{repo}:{filename}".lower()
+    now = time.time()
+    cached = _HF_FILE_SIZE_CACHE.get(cache_key)
+    if cached and now - cached[0] < HF_FILE_SIZE_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    total = None
+    url = (
+        f"https://huggingface.co/{urllib.parse.quote(repo, safe='/')}"
+        f"/resolve/main/{urllib.parse.quote(filename, safe='/')}"
+    )
+    try:
+        request = urllib.request.Request(
+            url,
+            method="HEAD",
+            headers={"User-Agent": "rasputin-warsat/0.1"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            content_length = response.headers.get("Content-Length")
+            content_range = response.headers.get("Content-Range") or ""
+            if "/" in content_range:
+                content_length = content_range.rsplit("/", 1)[-1]
+            try:
+                total = max(0, int(content_length)) if content_length else None
+            except (TypeError, ValueError):
+                total = None
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        total = None
+    _HF_FILE_SIZE_CACHE[cache_key] = (now, total)
+    return total
+
+
+def _model_download_progress(container_name):
+    """Inspect a running model container's Hugging Face partial-download file.
+
+    llama.cpp and Hugging Face use the container's shared cache volume, so the
+    wrapper cannot infer progress from Docker image-pull output or the model
+    server's sparse startup logs. This read-only probe reports bytes written,
+    optional Hub size/percentage, and a short-lived transfer rate estimate.
+    """
+    source = _container_model_source(container_name)
+    find_result = _run_command(
+        [
+            "docker", "exec", container_name, "find",
+            "/root/.cache/huggingface/hub",
+            "-type", "f",
+            "(", "-name", "*.downloadInProgress", "-o", "-name", "*.incomplete", ")",
+            "-printf", "%s\t%p\n",
+        ],
+        timeout=15,
+        check=False,
+    )
+    if find_result["returnCode"] != 0:
+        return {
+            "status": "unknown",
+            "source": source,
+            "bytesDownloaded": 0,
+            "totalBytes": None,
+            "percent": None,
+            "rateBytesPerSecond": None,
+            "etaSeconds": None,
+            "message": "Download progress is unavailable from this container.",
+            "observedAt": time.time(),
+        }
+
+    repo = str(source.get("repo") or "").strip()
+    repo_cache_key = f"models--{repo.replace('/', '--')}".lower() if repo else ""
+    candidates = []
+    for line in str(find_result.get("stdout") or "").splitlines():
+        size_text, separator, path = line.partition("\t")
+        if not separator or not path.strip():
+            continue
+        if repo_cache_key and repo_cache_key not in path.lower():
+            continue
+        try:
+            size = max(0, int(size_text.strip()))
+        except (TypeError, ValueError):
+            continue
+        candidates.append((size, path.strip()))
+
+    now = time.time()
+    for history_key, history in list(_DOWNLOAD_PROGRESS_HISTORY.items()):
+        if now - history.get("at", now) > DOWNLOAD_PROGRESS_HISTORY_TTL_SECONDS:
+            _DOWNLOAD_PROGRESS_HISTORY.pop(history_key, None)
+    if not candidates:
+        prefix = f"{container_name}:"
+        for history_key in [key for key in _DOWNLOAD_PROGRESS_HISTORY if key.startswith(prefix)]:
+            _DOWNLOAD_PROGRESS_HISTORY.pop(history_key, None)
+        return {
+            "status": "not_downloading" if source.get("repo") else "not_applicable",
+            "source": source,
+            "bytesDownloaded": 0,
+            "totalBytes": None,
+            "percent": None,
+            "rateBytesPerSecond": None,
+            "etaSeconds": None,
+            "message": (
+                "No active Hugging Face partial file was found; the runtime may be loading cached weights."
+                if source.get("repo") else
+                "This container uses a local model path; Hugging Face download progress does not apply."
+            ),
+            "observedAt": now,
+        }
+
+    downloaded = sum(item[0] for item in candidates)
+    total = _hf_file_size(repo, source.get("file")) if repo else None
+    history_key = f"{container_name}:{repo}:{source.get('file') or ''}"
+    previous = _DOWNLOAD_PROGRESS_HISTORY.get(history_key)
+    rate = None
+    if previous:
+        elapsed = now - previous["at"]
+        delta = downloaded - previous["bytes"]
+        if elapsed > 0 and delta >= 0:
+            rate = round(delta / elapsed, 2)
+    _DOWNLOAD_PROGRESS_HISTORY[history_key] = {"bytes": downloaded, "at": now}
+    percent = None
+    eta = None
+    if total and total > 0 and downloaded <= total:
+        percent = round(downloaded / total * 100, 2)
+        if rate and downloaded < total:
+            eta = round((total - downloaded) / rate)
+
+    return {
+        "status": "downloading",
+        "source": source,
+        "bytesDownloaded": downloaded,
+        "totalBytes": total,
+        "percent": percent,
+        "rateBytesPerSecond": rate,
+        "etaSeconds": eta,
+        "activeFile": Path(candidates[0][1]).name,
+        "message": (
+            f"Downloading {source.get('file') or 'model weights'} inside the container."
+        ),
+        "observedAt": now,
+    }
+
+
+def download_progress(container_name):
+    """Return safe, read-only download telemetry for a managed container."""
+    execution = _docker_runtime_enabled()
+    if not execution["enabled"]:
+        return {
+            **execution,
+            "containerName": str(container_name or ""),
+            "status": "unavailable",
+            "message": execution["message"],
+        }
+    name, _labels = _managed_container(container_name)
+    return {
+        **execution,
+        "containerName": name,
+        **_model_download_progress(name),
+    }
 
 
 def _container_status(container_name):

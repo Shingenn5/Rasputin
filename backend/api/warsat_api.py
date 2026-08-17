@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from backend.api.core import CamelModel, current_user, require_admin, require_member, hub
 from backend import archive
 from backend import trials
@@ -103,6 +103,15 @@ async def warsat_protocols(_user=Depends(current_user)):
 
 async def warsat_runtimes(_user=Depends(current_user)):
     return ok(await asyncio.to_thread(warsat.containers))
+
+
+@warsat_router.get("/download-progress")
+async def warsat_download_progress(
+    container_name: str = Query(..., alias="containerName"),
+    _user=Depends(current_user),
+):
+    """Return read-only model-weight download telemetry for one managed container."""
+    return ok(await asyncio.to_thread(warsat.download_progress, container_name))
 
 @warsat_router.get("/hardware")
 
