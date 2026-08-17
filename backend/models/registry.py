@@ -406,12 +406,35 @@ def _parse_model_ids(payload):
     return ids
 
 
+def _public_model(model):
+    item = dict(model)
+    profile = item.get("compatibility")
+    if profile and not model_compatibility.certification_is_current(item, profile):
+        profile = dict(profile)
+        issues = list(profile.get("issues") or [])
+        reason = "Capability certification was invalidated because the runtime/model identity changed."
+        if reason not in issues:
+            issues.append(reason)
+        profile.update({
+            "status": "unknown",
+            "tier": "unknown",
+            "supportedModes": [],
+            "toolSupport": "chat-only",
+            "issues": issues,
+            "certificationInvalid": True,
+        })
+        item["compatibility"] = profile
+        item["tool_support"] = "chat-only"
+        item["certification_status"] = "unknown"
+    return item
+
+
 def all_models():
     data = _load()
     out = []
     docker_allowed = security.load().get("allow_docker_control", False)
     for m in data["models"]:
-        item = dict(m)
+        item = _public_model(m)
         item["url"] = chat_url(item)
         if item.get("managed"):
             if docker_allowed:
@@ -444,7 +467,7 @@ def all_models():
 def get_model(key):
     for m in _load()["models"]:
         if m.get("key") == key:
-            return m
+            return _public_model(m)
     return None
 
 
@@ -575,12 +598,16 @@ def upsert(model):
     elif model_secrets.public_state({**model, "key": key}).get("has_api_key"):
         model["secret_ref"] = f"model:{key}"
     existing = next((m for m in data["models"] if m.get("key") == key), None)
+    if existing and "compatibility" in model and not model_compatibility.certification_is_current(model, model.get("compatibility")):
+        model.pop("compatibility", None)
+        model.pop("tool_support", None)
+        model.pop("certification_status", None)
     if existing and "compatibility" not in model:
         same_runtime = all(
             str(existing.get(field) or "") == str(model.get(field) or existing.get(field) or "")
             for field in ("provider", "runtime", "model", "image", "base_url")
         )
-        if same_runtime:
+        if same_runtime and model_compatibility.certification_is_current(existing):
             for field in ("compatibility", "tool_support", "certification_status"):
                 if field in existing:
                     model[field] = existing[field]
@@ -1066,6 +1093,7 @@ def certify_model(key):
             "issues": [],
             "tests": {},
             "testedAt": time.time(),
+            "fingerprint": model_compatibility.runtime_fingerprint(model),
         }
     else:
         profile = model_compatibility.certify(model)

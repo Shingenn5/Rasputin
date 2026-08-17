@@ -7,6 +7,7 @@ from backend.models import providers as model_providers
 CERTIFICATION_VERSION = 1
 _READY_TOKEN = "RASPUTIN_READY_7319"
 _RETAINED_TOKEN = "RASPUTIN_RETAINED_4826"
+_IDENTITY_FIELDS = ("provider", "runtime", "model", "image", "base_url")
 
 
 def _clean(text):
@@ -115,6 +116,17 @@ def parameter_billions(model):
     matches = re.findall(r"(?:^|[^0-9])([0-9]+(?:\.[0-9]+)?)\s*[bB](?:[^a-zA-Z]|$)", blob)
     values = [float(value) for value in matches if 0 < float(value) < 1000]
     return min(values) if values else None
+
+
+def runtime_fingerprint(model):
+    """Return the identity a persisted capability result was measured against."""
+    model = model or {}
+    return ":".join(str(model.get(field) or "") for field in _IDENTITY_FIELDS)
+
+
+def certification_is_current(model, profile=None):
+    profile = profile if profile is not None else (model or {}).get("compatibility")
+    return isinstance(profile, dict) and profile.get("fingerprint") == runtime_fingerprint(model)
 
 
 def certify(model):
@@ -265,7 +277,7 @@ def certify(model):
         "testedAt": time.time(),
         "durationMs": round((time.perf_counter() - started) * 1000),
         "parameterBillions": size_billions,
-        "fingerprint": f"{model.get('runtime', '')}:{model.get('model', '')}:{model.get('image', '')}",
+        "fingerprint": runtime_fingerprint(model),
     }
 
 

@@ -6,18 +6,18 @@ import { api, postJson } from "../../api/client.js";
 export function DiagnosticsSettings() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
   const [recovery, setRecovery] = useState(null);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   const runDiagnostics = async () => {
     setRunning(true);
     setResults(null);
-    setError("");
+    setError(null);
     try {
       setResults(await api("/api/settings/diagnostics?category=all"));
     } catch (err) {
-      setError(String(err.message || err));
+      setError({ context: "diagnostics", message: String(err.message || err), nextAction: "Check that you are signed in and that Docker/WSL or the local runtime is available, then retry diagnostics." });
     } finally {
       setRunning(false);
     }
@@ -25,12 +25,12 @@ export function DiagnosticsSettings() {
 
   const runRecovery = async (action, body = {}) => {
     setRecoveryBusy(true);
-    setError("");
+    setError(null);
     try {
       const path = action === "backup" ? "/api/recovery/backup" : action === "export" ? "/api/recovery/export" : "/api/recovery/delete-preview";
       setRecovery({ action, data: await postJson(path, body) });
     } catch (err) {
-      setError(String(err.message || err));
+      setError({ context: "recovery", message: String(err.message || err), nextAction: "No data was changed. Check authentication, workspace permissions, and available disk space, then retry the recovery action." });
     } finally {
       setRecoveryBusy(false);
     }
@@ -39,10 +39,11 @@ export function DiagnosticsSettings() {
   const deleteMyData = async () => {
     if (!window.confirm("Delete your Rasputin sessions, tasks, memory, and assistant records? This cannot be undone.")) return;
     setRecoveryBusy(true);
+    setError(null);
     try {
       setRecovery({ action: "delete", data: await postJson("/api/recovery/delete", { confirmation: "DELETE MY RASPUTIN DATA", dryRun: false }) });
     } catch (err) {
-      setError(String(err.message || err));
+      setError({ context: "recovery", message: String(err.message || err), nextAction: "No data was deleted. Check authentication and permissions, then retry only after reviewing the deletion preview." });
     } finally {
       setRecoveryBusy(false);
     }
@@ -62,6 +63,7 @@ export function DiagnosticsSettings() {
           <ActivitySquare size={48} className="text-muted mb-3 opacity-50" />
           <h5>System Health Check</h5>
           <p className="text-muted mb-4">Run a full diagnostic suite to ensure Rasputin has all required permissions and dependencies to operate.</p>
+          {running && <Alert variant="info" role="status" aria-live="polite" data-testid="diagnostic-loading" className="text-start">Diagnostics are running. This may take a moment while runtime, Docker/WSL, tool, and workspace checks complete.</Alert>}
           <Button 
             variant="primary" 
             size="lg" 
@@ -88,8 +90,9 @@ export function DiagnosticsSettings() {
               <Button variant="outline-danger" size="sm" disabled={recoveryBusy} onClick={() => runRecovery("delete")}>Preview deletion</Button>
             </div>
           </div>
+          {recoveryBusy && <Alert variant="info" role="status" aria-live="polite" data-testid="recovery-loading" className="mt-3 mb-0">Recovery action is running. Keep this page open until the result is reported.</Alert>}
           {recovery && (
-            <Alert variant={recovery.action === "delete" ? "warning" : "info"} className="mt-3 mb-0" data-testid="recovery-result">
+            <Alert variant={recovery.action === "delete" ? "warning" : "success"} role="status" aria-live="polite" className="mt-3 mb-0" data-testid="recovery-result">
               <strong>{titleize(recovery.action)} result</strong>
               {recovery.data?.path && <div className="small mt-1">Artifact: <code>{recovery.data.path}</code></div>}
               {recovery.data?.fileCount !== undefined && <div className="small mt-1">{recovery.data.fileCount} file(s) included; {recovery.data.excludedCount || 0} excluded by policy.</div>}
@@ -100,13 +103,17 @@ export function DiagnosticsSettings() {
         </Card.Body>
       </Card>
 
-      {error && <Alert variant="danger" role="alert" data-testid="diagnostic-error">{error}</Alert>}
+      {error && <Alert variant="danger" role="alert" aria-live="assertive" data-testid={error.context === "recovery" ? "recovery-error" : "diagnostic-error"}>
+        <strong>{error.context === "recovery" ? "Recovery action failed" : "Diagnostics failed"}</strong>
+        <div>{error.message}</div>
+        <div className="small mt-2"><strong>Next:</strong> {error.nextAction}</div>
+      </Alert>}
 
       {results && (
         <div data-testid="diagnostic-results">
         <Row className="g-3 animate-fade-in">
           <Col md={12}>
-            <Alert variant={overallVariant(results.status)} className="d-flex align-items-start m-0">
+            <Alert variant={overallVariant(results.status)} role={results.status === "healthy" ? "status" : "alert"} aria-live="polite" className="d-flex align-items-start m-0" data-testid={results.status === "healthy" ? "diagnostic-success" : "diagnostic-status"}>
               {results.status === "healthy" ? <CheckCircle2 className="me-3" size={24} /> : <AlertCircle className="me-3" size={24} />}
               <div>
                 <strong>Diagnostic status: {titleize(results.status)}</strong><br />
@@ -121,7 +128,7 @@ export function DiagnosticsSettings() {
                 <div>
                   <strong>{check.label}</strong><br />
                   <span className="small">{check.detail}</span>
-                  {check.nextAction && <div className="small mt-2"><strong>Next:</strong> {check.nextAction}</div>}
+                  {nextActionFor(check) && <div className="small mt-2"><strong>Next:</strong> {nextActionFor(check)}</div>}
                 </div>
               </Alert>
             </Col>
@@ -147,4 +154,17 @@ function overallVariant(status) {
 
 function titleize(value) {
   return String(value || "unknown").replace(/[-_]/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+
+function nextActionFor(check) {
+  if (check.nextAction) return check.nextAction;
+  const text = `${check.id || ""} ${check.label || ""} ${check.detail || ""}`.toLowerCase();
+  if (/model|runtime|stopped|ownership/.test(text)) return "Open Models or Runtime, confirm the model is running, and remove or reclaim stale runtime ownership before retrying.";
+  if (/tool|mcp/.test(text)) return "Switch to chat-only mode or reconnect the unavailable tool provider, then retry the task.";
+  if (/docker|wsl|container/.test(text)) return "Start Docker Desktop and WSL, then rerun diagnostics and confirm the runtime service is reachable.";
+  if (/workspace|permission|denied|access/.test(text)) return "Verify workspace membership and approval permissions, then retry the workspace action.";
+  if (check.status === "fail") return "Review the detail above, correct the reported dependency or permission, and rerun diagnostics.";
+  if (check.status === "warn") return "Review the detail above and follow the suggested operator action before retrying.";
+  return "";
 }

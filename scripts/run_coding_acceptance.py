@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -42,7 +43,7 @@ def _test_result(root: Path) -> dict:
     for cache in root.rglob("__pycache__"):
         shutil.rmtree(cache, ignore_errors=True)
     completed = subprocess.run(
-        [os.environ.get("RASPUTIN_PYTHON", "python"), "-B", "-m", "unittest", "discover", "-s", "."],
+        [os.environ.get("RASPUTIN_PYTHON", str(VENV_PYTHON)), "-B", "-m", "unittest", "discover", "-s", "."],
         cwd=root,
         capture_output=True,
         text=True,
@@ -146,6 +147,11 @@ async def run_acceptance() -> dict:
         status = await real_mcp.git_status(workspace_path=str(root))
         diff = await real_mcp.git_diff(workspace_path=str(root))
         return {
+            "evidence_mode": "mocked",
+            "live_model": {
+                "status": "skipped",
+                "reason": "The existing harness uses a scripted model; no credentials or local model are invoked.",
+            },
             "passed": (
                 result.startswith("Implemented the fix")
                 and len(state["tests"]) >= 2
