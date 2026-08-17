@@ -936,6 +936,7 @@ function DeployTab({
             denyApproval={denyApproval}
             lifecycle={lifecycle}
             enableDockerControl={enableDockerControl}
+            downloadProgress={downloadProgress}
           />
         </div>
       )}
@@ -982,7 +983,7 @@ function EnableDockerButton({ enableDockerControl }) {
 /* ═══════════════════════════════════════════
    PLAN PREVIEW (Mission Brief)
    ═══════════════════════════════════════════ */
-function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl, resourceAdmission, resourceAdmissionStatus }) {
+function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl, downloadProgress, resourceAdmission, resourceAdmissionStatus }) {
   // Keep this component safe when a plan comes from an older backend response
   // or an embedded preview that does not include the derived admission props.
   // The plan is the source of truth; the props remain available for callers
