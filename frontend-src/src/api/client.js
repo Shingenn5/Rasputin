@@ -8,7 +8,16 @@ export async function api(path, options = {}) {
   }
   if (!response.ok || payload.ok === false) {
     const error = payload?.error;
-    throw new Error(error?.message || payload.message || payload.error || `Request failed: ${response.status}`);
+    const validation = Array.isArray(payload?.detail)
+      ? payload.detail
+        .map((item) => {
+          const location = Array.isArray(item?.loc) ? item.loc.filter((part) => part !== "body") : [];
+          return location.length && item?.msg ? `${location.join(".")}: ${item.msg}` : item?.msg;
+        })
+        .filter(Boolean)
+        .join("; ")
+      : "";
+    throw new Error(error?.message || payload.message || validation || payload.error || `Request failed: ${response.status}`);
   }
   return payload?.ok === true && Object.prototype.hasOwnProperty.call(payload, "data") ? payload.data : payload;
 }

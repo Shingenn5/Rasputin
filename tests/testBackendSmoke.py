@@ -216,6 +216,15 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("models", data)
         self.assertIsInstance(data["models"], list)
 
+    def testModelActionRequiresNonBlankRegistryKey(self):
+        missing = self.client.post("/api/model-registry/test", json={})
+        self.assertEqual(missing.status_code, 422)
+        self.assertTrue(any(item.get("loc") == ["body", "key"] for item in missing.json().get("detail", [])))
+
+        blank = self.client.post("/api/model-registry/test", json={"key": "   "})
+        self.assertEqual(blank.status_code, 422)
+        self.assertIn("key must not be blank", blank.text)
+
     def testModelCatalogSupportsWarsatPlanning(self):
         with tempfile.TemporaryDirectory() as model_dir, patch.dict(os.environ, {"CONTAINER_MODELS_DIR": model_dir, "RASPUTIN_NATIVE_DOCKER_CACHE": "0"}):
             local_file = Path(model_dir) / "demo-model.gguf"

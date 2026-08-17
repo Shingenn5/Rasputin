@@ -25,7 +25,7 @@ from backend.rag import graph as graphify
 from backend.rag import memory as memory_store
 from backend.rag import vector as rag
 from backend.rag.memory import load_memory
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 import asyncio
 import os
 from pathlib import Path
@@ -525,6 +525,14 @@ class GgufScanIn(CamelModel):
 
 class ModelKeyIn(CamelModel):
     key: str
+
+    @field_validator("key")
+    @classmethod
+    def validate_key(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("key must not be blank")
+        return value
 
 class ModelLogsIn(CamelModel):
     key: str

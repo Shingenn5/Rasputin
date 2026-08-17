@@ -1113,13 +1113,20 @@ export function App() {
     }
   }
 
-  async function runModelAction(action, key = selectedModelObject?.key || selectedModel) {
+  async function runModelAction(action, key) {
+    const resolvedKey = typeof key === "string" ? key.trim() : "";
+    if (!resolvedKey) {
+      const message = "Select a registered model before running this action.";
+      setGlobalStatus(message);
+      throw new Error(message);
+    }
     try {
-      const result = await postJson(`/api/model-registry/${action}`, { key });
+      const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey });
       setGlobalStatus(action === "repair" && result.repaired ? "Model repaired." : `${action} finished.`);
       await loadModels();
     } catch (error) {
       setGlobalStatus(error.message);
+      throw error;
     }
   }
 

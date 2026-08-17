@@ -770,7 +770,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const runAction = async (key, name, op) => {
     setBusy(key);
     try {
-      await executeAction(name, model.key, async () => runModelAction?.(op), setUiState);
+      await executeAction(name, model.key, async () => runModelAction?.(op, model.key), setUiState);
     } finally {
       setBusy(null);
     }
@@ -824,9 +824,9 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
   const mismatch = modelMismatchLine(model);
   const ctx = contextWindowFor(model);
 
-  const handleTest = () => executeAction("TestHealth", model?.key, async () => runModelAction?.("test"), setUiState);
-  const handleDiscover = () => executeAction("Discover", model?.key, async () => runModelAction?.("discover"), setUiState);
-  const handleRepair = () => executeAction("Repair", model?.key, async () => runModelAction?.("repair"), setUiState);
+  const handleTest = () => executeAction("TestHealth", model?.key, async () => runModelAction?.("test", model?.key), setUiState);
+  const handleDiscover = () => executeAction("Discover", model?.key, async () => runModelAction?.("discover", model?.key), setUiState);
+  const handleRepair = () => executeAction("Repair", model?.key, async () => runModelAction?.("repair", model?.key), setUiState);
 
   return (
     <div className="w2-card">
