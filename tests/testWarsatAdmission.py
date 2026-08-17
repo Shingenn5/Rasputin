@@ -44,6 +44,7 @@ class WarsatAdmissionIntegrationTests(unittest.TestCase):
         self.assertEqual(progress["bytesDownloaded"], 400)
         self.assertEqual(progress["totalBytes"], 1000)
         self.assertEqual(progress["percent"], 40.0)
+        self.assertTrue(progress["progressTrusted"])
         self.assertEqual(progress["source"]["repo"], "demo/Qwen")
 
     def test_model_download_progress_distinguishes_no_active_partial_file(self):
@@ -83,6 +84,29 @@ class WarsatAdmissionIntegrationTests(unittest.TestCase):
 
         self.assertEqual(progress["status"], "downloading")
         self.assertIsNone(progress["percent"])
+        self.assertFalse(progress["progressTrusted"])
+
+    def test_model_download_progress_withholds_unknown_total(self):
+        container = "rasputin-qwen-8085"
+        partial = "/root/.cache/huggingface/hub/models--demo--Qwen/blobs/weights.downloadInProgress"
+
+        def fake_run(args, timeout=120, check=True):
+            if args[:3] == ["docker", "inspect", "--format"]:
+                return {"returnCode": 0, "stdout": '["--hf-repo", "demo/Qwen", "--hf-file", "weights.gguf"]', "stderr": ""}
+            if args[:3] == ["docker", "exec", container]:
+                return {"returnCode": 0, "stdout": f"400\t{partial}\n", "stderr": ""}
+            raise AssertionError(f"unexpected docker command: {args}")
+
+        with patch("backend.warsat._docker_runtime_enabled", return_value={"enabled": True, "dockerControlEnabled": True}), \
+             patch("backend.warsat._managed_container", return_value=(container, {"rasputin.managed": "true"})), \
+             patch("backend.warsat._run_command", side_effect=fake_run), \
+             patch("backend.warsat._hf_file_size", return_value=None):
+            progress = warsat.download_progress(container)
+
+        self.assertEqual(progress["bytesDownloaded"], 400)
+        self.assertIsNone(progress["totalBytes"])
+        self.assertIsNone(progress["percent"])
+        self.assertFalse(progress["progressTrusted"])
 
     def test_vllm_preview_blocks_model_that_exceeds_each_single_gpu(self):
         _manifest, decision, request = admission.plan_admission(

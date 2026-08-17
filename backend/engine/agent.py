@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import json
+import math
 import os
 import re
 import time
@@ -69,6 +70,9 @@ FILE_SNIPPET_TERMS = (
     "file base", "filebase", "codebase", "repo", "repository", "project",
 )
 MEMORY_MODES = {"auto", "include", "suppress"}
+GENERATION_PHASES = {"chat", "planning", "execution", "reflection"}
+GENERATION_TOKEN_SOURCES = {"estimated", "exact"}
+MAX_GENERATION_TOKENS_PER_SECOND = 100_000.0
 
 
 def _empty_generation_metrics():
@@ -85,10 +89,63 @@ def _empty_generation_metrics():
     }
 
 
+def _nonnegative_metric_float(value):
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(number) or number < 0:
+        return 0.0
+    return number
+
+
+def _nonnegative_metric_int(value):
+    number = _nonnegative_metric_float(value)
+    return int(number) if number.is_integer() else 0
+
+
+def _metric_seconds(value):
+    number = _nonnegative_metric_float(value)
+    return round(number, 3) if number > 0 else 0.0
+
+
+def _metric_tokens_per_second(output_tokens, generation_seconds):
+    if output_tokens <= 0 or generation_seconds <= 0:
+        return None
+    rate = output_tokens / generation_seconds
+    if not math.isfinite(rate):
+        return None
+    rate = min(rate, MAX_GENERATION_TOKENS_PER_SECOND)
+    rounded = round(rate, 2)
+    return rounded if rounded > 0 else None
+
+
 def _normalize_generation_metrics(value):
     metrics = _empty_generation_metrics()
-    if isinstance(value, dict):
-        metrics.update({key: value[key] for key in metrics if key in value})
+    raw = value if isinstance(value, dict) else {}
+    output_tokens = _nonnegative_metric_int(raw.get("outputTokens"))
+    generation_seconds = _metric_seconds(raw.get("generationSeconds"))
+    last_output_tokens = _nonnegative_metric_int(raw.get("lastOutputTokens"))
+    last_generation_seconds = _metric_seconds(raw.get("lastGenerationSeconds"))
+    token_count_source = raw.get("tokenCountSource")
+    if token_count_source not in GENERATION_TOKEN_SOURCES:
+        token_count_source = "estimated"
+    last_phase = raw.get("lastPhase")
+    if last_phase not in GENERATION_PHASES:
+        last_phase = None
+    metrics.update({
+        "outputTokens": output_tokens,
+        "generationSeconds": generation_seconds,
+        "tokensPerSecond": _metric_tokens_per_second(output_tokens, generation_seconds),
+        "tokenCountSource": token_count_source,
+        "turns": _nonnegative_metric_int(raw.get("turns")),
+        "lastPhase": last_phase,
+        "lastOutputTokens": last_output_tokens,
+        "lastGenerationSeconds": last_generation_seconds,
+        "lastTokensPerSecond": _metric_tokens_per_second(last_output_tokens, last_generation_seconds),
+    })
     return metrics
 
 
@@ -1596,19 +1653,15 @@ class AgentHub:
         """
         metrics = _normalize_generation_metrics(getattr(task, "generation_metrics", None))
         output_tokens = max(0, context_governor.estimate_tokens(text))
-        duration = max(0.0, float(elapsed_seconds or 0.0))
+        duration = _metric_seconds(elapsed_seconds)
+        metrics["tokenCountSource"] = "estimated"
         metrics["outputTokens"] += output_tokens
         metrics["generationSeconds"] = round(metrics["generationSeconds"] + duration, 3)
         metrics["turns"] += 1
         metrics["lastPhase"] = phase
         metrics["lastOutputTokens"] = output_tokens
-        metrics["lastGenerationSeconds"] = round(duration, 3)
-        metrics["lastTokensPerSecond"] = round(output_tokens / duration, 2) if output_tokens and duration > 0 else None
-        metrics["tokensPerSecond"] = (
-            round(metrics["outputTokens"] / metrics["generationSeconds"], 2)
-            if metrics["outputTokens"] and metrics["generationSeconds"] > 0 else None
-        )
-        task.generation_metrics = metrics
+        metrics["lastGenerationSeconds"] = duration
+        task.generation_metrics = _normalize_generation_metrics(metrics)
         self._trigger_broadcast(task.id)
 
     async def governed_chat(self, task, phase, role, sections, tools=None):

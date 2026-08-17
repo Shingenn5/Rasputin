@@ -149,13 +149,11 @@ export function TaskDetailsDrawer({
                     <Metric label="Activity" value={active ? (task.status === "running" ? "Generating" : labelize(task.status)) : "Complete"} />
                     <Metric
                       label="Output TPS"
-                      value={Number(task.generationMetrics?.tokensPerSecond) > 0
-                        ? `${Number(task.generationMetrics.tokensPerSecond).toFixed(1)} tok/s (${task.generationMetrics.tokenCountSource || "estimated"})`
-                        : "Unavailable"}
+                      value={formatGenerationMetrics(task.generationMetrics).tokensPerSecond}
                     />
                     <Metric
                       label="Output tokens"
-                      value={Number(task.generationMetrics?.outputTokens) > 0 ? `~${Number(task.generationMetrics.outputTokens).toLocaleString()}` : "Unavailable"}
+                      value={formatGenerationMetrics(task.generationMetrics).outputTokens}
                     />
                     <Metric label="Workspace" value={displayWorkspaceName(task.workspace)} />
                     {task.isolateWorkspace && <Metric label="Isolation" value={["ready", "retained"].includes(task.isolationState) ? "Git worktree" : task.isolationState || "requested"} />}
@@ -681,6 +679,20 @@ function ToolCallSummary({ tool }) {
       </dl>
     </article>
   );
+}
+
+function formatGenerationMetrics(metrics) {
+  const source = metrics?.tokenCountSource === "exact" ? "exact" : "estimated";
+  const tokensPerSecond = Number(metrics?.tokensPerSecond);
+  const outputTokens = Number(metrics?.outputTokens);
+  return {
+    tokensPerSecond: Number.isFinite(tokensPerSecond) && tokensPerSecond > 0
+      ? tokensPerSecond.toFixed(1) + " tok/s (" + source + ")"
+      : "Unavailable",
+    outputTokens: Number.isFinite(outputTokens) && outputTokens > 0
+      ? (source === "estimated" ? "~" : "") + outputTokens.toLocaleString()
+      : "Unavailable",
+  };
 }
 
 function Metric({ label, value, tone }) {

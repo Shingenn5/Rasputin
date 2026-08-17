@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import threading
+import math
 from pathlib import Path
 
 from huggingface_hub import snapshot_download, model_info
@@ -13,32 +14,81 @@ MODELS_DIR = ROOT / "models"
 _ACTIVE_DOWNLOADS = {}
 
 def _get_directory_size(path):
-    total = 0
+    """Count unique downloaded bytes without counting snapshot links twice."""
+    root = Path(path)
+    if not root.exists():
+        return 0
     try:
-        root = Path(path)
-        # Count the content-addressed blobs only. Snapshot symlinks and cache
-        # metadata would otherwise double-count weights and make the percent
-        # bar look complete before the requested model is actually present.
+        # Hugging Face stores content-addressed bytes under blobs and exposes
+        # them again through snapshots. Only scan blobs when that directory
+        # exists; the fallback is useful for a simple test/cache directory and
+        # still de-duplicates hard links.
         blob_root = root / "blobs"
-        scan_root = blob_root if blob_root.exists() else root
-        for p in scan_root.rglob('*'):
-            if p.is_file():
-                total += p.stat().st_size
-    except Exception:
-        pass
-    return total
+        scan_root = blob_root if blob_root.is_dir() else root
+        total = 0
+        seen = set()
+        for item in scan_root.rglob("*"):
+            if item.is_symlink() or not item.is_file():
+                continue
+            stat = item.stat()
+            identity = (stat.st_dev, stat.st_ino) if stat.st_ino else str(item.resolve())
+            if identity in seen:
+                continue
+            seen.add(identity)
+            total += stat.st_size
+        return total
+    except (OSError, RuntimeError):
+        # A transient cache race or permission failure is not evidence of a
+        # smaller download. The caller will retain byte telemetry but withhold
+        # the percentage until a complete scan succeeds.
+        return None
 
 
 def _trusted_progress(downloaded_bytes, total_bytes):
     """Return a percentage only when the byte bounds make it trustworthy."""
+    if isinstance(downloaded_bytes, bool) or isinstance(total_bytes, bool):
+        return None
     try:
         downloaded = float(downloaded_bytes)
         total = float(total_bytes)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(downloaded) or not math.isfinite(total):
+        return None
     if total <= 0 or downloaded < 0 or downloaded > total:
         return None
     return round(downloaded / total * 100.0, 2)
+
+
+def _known_total_bytes(info):
+    """Return a positive total only when every Hub sibling has a valid size."""
+    siblings = getattr(info, "siblings", None)
+    if not siblings:
+        return None
+    total = 0
+    for sibling in siblings:
+        size = getattr(sibling, "size", None)
+        if isinstance(size, bool):
+            return None
+        try:
+            numeric_size = float(size)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(numeric_size) or numeric_size < 0 or not numeric_size.is_integer():
+            return None
+        total += int(numeric_size)
+    return total if total > 0 else None
+
+
+def _completed_progress(total_bytes, downloaded_bytes):
+    """Normalize a confirmed completion without inventing an unknown total."""
+    if _trusted_progress(0, total_bytes) is not None:
+        return total_bytes, 100.0, True
+    try:
+        observed = max(0, int(downloaded_bytes or 0))
+    except (TypeError, ValueError):
+        observed = 0
+    return observed, None, False
 
 def _download_thread(dl_id: str, model_id: str):
     state = _ACTIVE_DOWNLOADS.get(dl_id)
@@ -49,8 +99,9 @@ def _download_thread(dl_id: str, model_id: str):
         state["status"] = "fetching_metadata"
         info = model_info(model_id)
         
-        # Calculate total size roughly
-        total_size = sum(sibling.size for sibling in info.siblings if sibling.size is not None)
+        # A partial sum is not a trustworthy total: one missing sibling size
+        # means the Hub metadata is incomplete and the UI must withhold a bar.
+        total_size = _known_total_bytes(info)
         state["totalBytes"] = total_size
         state["status"] = "downloading"
         state["progress"] = None
@@ -67,7 +118,8 @@ def _download_thread(dl_id: str, model_id: str):
         def poll_progress():
             while not stop_polling.is_set():
                 current_size = _get_directory_size(cache_path)
-                state["downloadedBytes"] = current_size
+                if current_size is not None:
+                    state["downloadedBytes"] = current_size
                 state["progress"] = _trusted_progress(current_size, total_size)
                 state["progressTrusted"] = state["progress"] is not None
                 time.sleep(1.0)
@@ -83,10 +135,11 @@ def _download_thread(dl_id: str, model_id: str):
                 resume_download=True
             )
             state["status"] = "completed"
-            state["progress"] = 100.0
-            state["progressTrusted"] = True
-            if total_size > 0:
-                state["downloadedBytes"] = total_size
+            observed_size = _get_directory_size(cache_path)
+            state["downloadedBytes"], state["progress"], state["progressTrusted"] = _completed_progress(
+                total_size,
+                observed_size,
+            )
             
             # Post-Acquisition Pipeline: Auto-register model for WarSat deployment
             try:
@@ -137,9 +190,9 @@ def start_download(model_id: str):
         "id": dl_id,
         "modelId": model_id,
         "status": "starting",
-        "progress": 0.0,
+        "progress": None,
         "downloadedBytes": 0,
-        "totalBytes": 0,
+        "totalBytes": None,
         "progressTrusted": False,
         "error": None
     }

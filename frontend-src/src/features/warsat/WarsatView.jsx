@@ -83,8 +83,18 @@ function formatDuration(seconds) {
 
 function DownloadProgressPanel({ progress, compact = false }) {
   if (!progress || !["downloading", "loading"].includes(progress.status)) return null;
-  const percent = Number.isFinite(Number(progress.percent)) ? Number(progress.percent) : null;
-  const hasTrustedPercent = percent != null && percent >= 0 && percent <= 100;
+  const downloaded = Number(progress.bytesDownloaded);
+  const total = Number(progress.totalBytes);
+  const percent = Number(progress.percent);
+  const hasTrustedPercent = progress.progressTrusted === true
+    && Number.isFinite(downloaded)
+    && Number.isFinite(total)
+    && total > 0
+    && downloaded >= 0
+    && downloaded <= total
+    && Number.isFinite(percent)
+    && percent >= 0
+    && percent <= 100;
   const sourceFile = progress.source?.file || "model weights";
   return (
     <div

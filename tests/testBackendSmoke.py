@@ -5126,6 +5126,45 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(persisted["generationMetrics"]["outputTokens"], metrics["outputTokens"])
         self.assertEqual(persisted["generationMetrics"]["tokenCountSource"], "estimated")
 
+    def testGenerationMetricNormalizationWithInvalidMeasurementsReturnsUnavailable(self):
+        normalized = agent._normalize_generation_metrics({
+            "outputTokens": "not-a-number",
+            "generationSeconds": -1,
+            "tokensPerSecond": 99,
+            "tokenCountSource": "provider-guess",
+            "turns": -4,
+            "lastPhase": "unknown",
+            "lastOutputTokens": float("nan"),
+            "lastGenerationSeconds": 0,
+            "lastTokensPerSecond": 99,
+        })
+        self.assertEqual(normalized["outputTokens"], 0)
+        self.assertEqual(normalized["generationSeconds"], 0.0)
+        self.assertIsNone(normalized["tokensPerSecond"])
+        self.assertEqual(normalized["tokenCountSource"], "estimated")
+        self.assertEqual(normalized["turns"], 0)
+        self.assertIsNone(normalized["lastPhase"])
+        self.assertEqual(normalized["lastOutputTokens"], 0)
+        self.assertEqual(normalized["lastGenerationSeconds"], 0.0)
+        self.assertIsNone(normalized["lastTokensPerSecond"])
+
+    def testGenerationMetricsAccumulateTurnsAndRetainLastTurnSeparately(self):
+        hub = agent.AgentHub()
+        hub._trigger_broadcast = lambda _task_id: None
+        task = agent.AgentTask("measure turns", "dry-run", "general", mode="chat", workspace_path=".")
+        hub._record_generation_metrics(task, "chat", "1234", 0.5)
+        hub._record_generation_metrics(task, "execution", "12345678", 1.0)
+
+        metrics = hub.snapshot_task(task)["generationMetrics"]
+        self.assertEqual(metrics["turns"], 2)
+        self.assertEqual(metrics["outputTokens"], 6)
+        self.assertEqual(metrics["lastPhase"], "execution")
+        self.assertEqual(metrics["lastOutputTokens"], 4)
+        self.assertEqual(metrics["lastGenerationSeconds"], 1.0)
+        self.assertEqual(metrics["lastTokensPerSecond"], 4.0)
+        self.assertEqual(metrics["tokenCountSource"], "estimated")
+        self.assertEqual(metrics["tokensPerSecond"], 4.0)
+
     def testGovernedChatStopsOnTimeBudgetWithoutHanging(self):
         hub = agent.AgentHub()
 

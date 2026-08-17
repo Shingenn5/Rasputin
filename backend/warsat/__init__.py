@@ -2234,6 +2234,7 @@ def _model_download_progress(container_name):
             "bytesDownloaded": 0,
             "totalBytes": None,
             "percent": None,
+            "progressTrusted": False,
             "rateBytesPerSecond": None,
             "etaSeconds": None,
             "message": "Download progress is unavailable from this container.",
@@ -2269,6 +2270,7 @@ def _model_download_progress(container_name):
             "bytesDownloaded": 0,
             "totalBytes": None,
             "percent": None,
+            "progressTrusted": False,
             "rateBytesPerSecond": None,
             "etaSeconds": None,
             "message": (
@@ -2296,6 +2298,14 @@ def _model_download_progress(container_name):
         percent = round(downloaded / total * 100, 2)
         if rate and downloaded < total:
             eta = round((total - downloaded) / rate)
+    progress_trusted = (
+        total is not None
+        and total > 0
+        and downloaded >= 0
+        and downloaded <= total
+        and percent is not None
+        and 0 <= percent <= 100
+    )
 
     return {
         "status": "downloading",
@@ -2303,6 +2313,7 @@ def _model_download_progress(container_name):
         "bytesDownloaded": downloaded,
         "totalBytes": total,
         "percent": percent,
+        "progressTrusted": progress_trusted,
         "rateBytesPerSecond": rate,
         "etaSeconds": eta,
         "activeFile": Path(candidates[0][1]).name,

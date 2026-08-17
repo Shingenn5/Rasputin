@@ -20,6 +20,9 @@ class ChatUiContractTests(unittest.TestCase):
         self.assertIn('data-testid="message-generation-tps"', source)
         self.assertIn("Output TPS", source)
         self.assertIn("generationMetrics", source)
+        self.assertIn("formatGenerationMetrics", source)
+        self.assertIn('source === "estimated" ? "~" : ""', source)
+        self.assertIn("Number.isFinite(tokensPerSecond)", source)
         self.assertIn('status === "queued" ? "Queued"', source)
         self.assertNotIn('`${Number(task.progress || 0)}%`', source)
 
@@ -36,6 +39,7 @@ class ChatUiContractTests(unittest.TestCase):
         self.assertIn('label="Activity"', source)
         self.assertIn('label="Output TPS"', source)
         self.assertIn('task.generationMetrics', source)
+        self.assertIn("formatGenerationMetrics", source)
         self.assertNotIn('label="Progress" value={`${Number(task.progress || 0)}%`}', source)
 
 

@@ -1275,6 +1275,20 @@ function ModeSidePanel({
   );
 }
 
+function formatGenerationMetrics(metrics) {
+  const source = metrics?.tokenCountSource === "exact" ? "exact" : "estimated";
+  const tokensPerSecond = Number(metrics?.tokensPerSecond);
+  const outputTokens = Number(metrics?.outputTokens);
+  return {
+    tokensPerSecond: Number.isFinite(tokensPerSecond) && tokensPerSecond > 0
+      ? tokensPerSecond.toFixed(1) + " tok/s (" + source + ")"
+      : "Unavailable",
+    outputTokens: Number.isFinite(outputTokens) && outputTokens > 0
+      ? (source === "estimated" ? "~" : "") + outputTokens.toLocaleString()
+      : "Unavailable",
+  };
+}
+
 function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskDetails }) {
   const status = task.status || "queued";
   const active = ["queued", "running", "paused"].includes(status);
@@ -1286,6 +1300,7 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
   const liveText = presentsAnswer ? String(task.streamText || "") : "";
   const streaming = status === "running" && Boolean(liveText);
   const response = task.result || liveText || task.logs?.slice(-4).join("\n") || "Working...";
+  const generation = formatGenerationMetrics(task.generationMetrics);
   return (
     <article className="thread-item">
       <div className="message user-message">
@@ -1334,13 +1349,9 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
             <dt>Workspace</dt><dd>{displayWorkspaceName(task.workspace)}</dd>
             <dt>Status</dt><dd>{status}</dd>
             <dt>Output TPS</dt>
-            <dd data-testid="message-generation-tps">
-              {Number(task.generationMetrics?.tokensPerSecond) > 0
-                ? `${Number(task.generationMetrics.tokensPerSecond).toFixed(1)} tok/s (${task.generationMetrics.tokenCountSource || "estimated"})`
-                : "Unavailable"}
-            </dd>
+            <dd data-testid="message-generation-tps">{generation.tokensPerSecond}</dd>
             <dt>Output tokens</dt>
-            <dd>{Number(task.generationMetrics?.outputTokens) > 0 ? `~${Number(task.generationMetrics.outputTokens).toLocaleString()}` : "Unavailable"}</dd>
+            <dd>{generation.outputTokens}</dd>
           </dl>
           <div className="task-inline-actions" aria-label="Task details">
             <button type="button" className="tiny-action" data-testid="activity-task-details" onClick={() => openTaskDetails(task.id)}>

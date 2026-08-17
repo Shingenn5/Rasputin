@@ -56,6 +56,8 @@ class WarsatUiContractTests(unittest.TestCase):
         self.assertIn("Downloading model weights", source)
         self.assertIn("percentage unavailable", source)
         self.assertIn("{hasTrustedPercent && (", source)
+        self.assertIn("progress.progressTrusted === true", source)
+        self.assertIn("Number.isFinite(downloaded)", source)
         self.assertIn("const runningNamesKey", source)
 
 
