@@ -15,6 +15,26 @@ class ChatUiContractTests(unittest.TestCase):
         self.assertIn('<span className="composer-control-text">Attach</span>', source)
         self.assertIn('<span className="composer-control-text">Commands</span>', source)
 
+    def test_memory_selector_uses_a_contrasting_native_menu_surface(self):
+        source = (ROOT / "frontend-src" / "src" / "features" / "chat" / "HomeView.jsx").read_text(encoding="utf-8")
+        styles = (ROOT / "frontend-src" / "src" / "styles" / "interface.css").read_text(encoding="utf-8")
+        self.assertIn('className="composer-chip composer-memory-chip"', source)
+        self.assertIn(".composer-chip > select option", styles)
+        self.assertIn("background-color: var(--dash-panel-2)", styles)
+        self.assertIn("color: var(--dash-text)", styles)
+
+    def test_composer_toolbar_uses_one_shared_control_rail(self):
+        source = (ROOT / "frontend-src" / "src" / "features" / "chat" / "HomeView.jsx").read_text(encoding="utf-8")
+        styles = (ROOT / "frontend-src" / "src" / "styles" / "interface.css").read_text(encoding="utf-8")
+        self.assertIn('data-testid="composer-toolbar"', source)
+        self.assertIn('className="composer-chip composer-memory-chip"', source)
+        self.assertNotIn('(memoryModeOptions.find((item) => item.value === memoryMode) || memoryModeOptions[0]).label}</span>', source)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) auto", styles)
+        self.assertIn("height: 32px", styles)
+        self.assertIn("border-radius: 7px", styles)
+        self.assertIn("flex: 0 0 32px", styles)
+        self.assertIn(".composer-chip > select option", styles)
+
     def test_message_details_show_estimated_output_tps_without_phase_percent(self):
         source = (ROOT / "frontend-src" / "src" / "features" / "chat" / "HomeView.jsx").read_text(encoding="utf-8")
         self.assertIn('data-testid="message-generation-tps"', source)

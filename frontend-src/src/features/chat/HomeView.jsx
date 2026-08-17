@@ -904,7 +904,7 @@ export function HomeView(props) {
                   aria-controls={cmd ? "composer-command-list" : undefined}
                   aria-activedescendant={cmd && cmdItems.length ? `composer-command-${cmdIndex}` : undefined}
                 />
-                <div className="composer-toolbar">
+                <div className="composer-toolbar" data-testid="composer-toolbar">
                   <div className="composer-tools">
                     <div className="composer-tool-group composer-message-tools" role="group" aria-label="Message tools">
                     <button type="button" className="composer-icon-button composer-labeled-button" data-testid="composer-attach-button" aria-label="Attach files" title="Attach files" onClick={openFilePicker}>
@@ -951,9 +951,8 @@ export function HomeView(props) {
                       <span>{activeReasoning.label}</span>
                       <ChevronDown size={12} />
                     </button>
-                    <label className="composer-chip" title={(memoryModeOptions.find((item) => item.value === memoryMode) || memoryModeOptions[0]).description}>
+                    <label className="composer-chip composer-memory-chip" title={(memoryModeOptions.find((item) => item.value === memoryMode) || memoryModeOptions[0]).description}>
                       <Brain size={14} aria-hidden="true" />
-                      <span>{(memoryModeOptions.find((item) => item.value === memoryMode) || memoryModeOptions[0]).label}</span>
                       <select
                         data-testid="task-memory-mode-selector"
                         aria-label="Task memory mode"
