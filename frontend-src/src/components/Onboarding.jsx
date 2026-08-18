@@ -31,17 +31,39 @@ const STEPS = [
  * @param {object} props
  * @param {() => void} props.onScanModels - Navigate to WarSat (Scan for Models).
  * @param {() => void} props.onOpenRegistry - Navigate to the Models registry.
+ * @param {() => void} props.onConnectLocalEndpoint - Navigate to local endpoint setup.
+ * @param {() => void} props.onEnableTestingMode - Enable the safe dry-run route.
  * @param {() => void} props.onDismiss - Skip/complete: sets the onboarded flag.
  */
-export function Onboarding({ onScanModels, onOpenRegistry, onDismiss }) {
+export function Onboarding({
+  hasSeededModels = false,
+  onScanModels,
+  onOpenRegistry,
+  onConnectLocalEndpoint,
+  onEnableTestingMode,
+  onDismiss,
+}) {
   const [step, setStep] = useState(0);
   const primaryRef = useRef(null);
   const dialogRef = useRef(null);
+  const returnFocusRef = useRef(null);
 
   const isLastStep = step >= STEPS.length - 1;
   const current = STEPS[step] || STEPS[0];
 
-  // Focus the primary action whenever a step renders.
+  // Focus the primary action on open and when the step changes, then restore
+  // focus to the trigger when the dialog is dismissed.
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const node = primaryRef.current;
+    const frame = requestAnimationFrame(() => node?.focus?.());
+    return () => {
+      cancelAnimationFrame(frame);
+      const previous = returnFocusRef.current;
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, []);
+
   useEffect(() => {
     const node = primaryRef.current;
     if (node) requestAnimationFrame(() => node.focus?.());
@@ -50,6 +72,21 @@ export function Onboarding({ onScanModels, onOpenRegistry, onDismiss }) {
   // Escape skips the flow.
   useEffect(() => {
     function onKeyDown(event) {
+      if (event.key === "Tab") {
+        const focusable = Array.from(dialogRef.current?.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || []);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
       if (event.key === "Escape") {
         event.stopPropagation();
         onDismiss?.();
@@ -95,7 +132,11 @@ export function Onboarding({ onScanModels, onOpenRegistry, onDismiss }) {
         </div>
         <p className="ras-onboarding-kicker">{current.kicker}</p>
         <h1 id="ras-onboarding-title" className="ras-onboarding-title">{current.title}</h1>
-        <p id="ras-onboarding-body" className="ras-onboarding-body">{current.body}</p>
+        <p id="ras-onboarding-body" className="ras-onboarding-body">
+          {step === 1 && hasSeededModels
+            ? "A model is registered, but no chat runtime has passed health yet. Test or repair that route, connect a local endpoint, or use safe Testing Mode."
+            : current.body}
+        </p>
 
         {isLastStep ? (
           <div className="ras-onboarding-actions">
@@ -104,6 +145,12 @@ export function Onboarding({ onScanModels, onOpenRegistry, onDismiss }) {
             </button>
             <button type="button" className="btn btn-outline-secondary ras-onboarding-action" onClick={() => onOpenRegistry?.()}>
               Open Models registry
+            </button>
+            <button type="button" className="btn btn-outline-secondary ras-onboarding-action" onClick={() => onConnectLocalEndpoint?.()}>
+              Connect local endpoint
+            </button>
+            <button type="button" className="btn btn-outline-secondary ras-onboarding-action" onClick={() => onEnableTestingMode?.()}>
+              Enable Testing Mode
             </button>
           </div>
         ) : (

@@ -32,6 +32,21 @@ AGENT_MODES = {"chat", "plan", "research", "code", "test"}
 
 VOICE_ROLES = {"speech_to_text", "text_to_speech"}
 
+# Assistant model requests are deliberately narrower than the broader model
+# pack and voice contracts. In particular, audio routing belongs to the
+# dedicated local STT/TTS surface rather than this recommendation API.
+MODEL_REQUEST_CAPABILITIES = {
+    "chat",
+    "code",
+    "reasoning",
+    "tools",
+    "vision",
+    "summarize",
+    "embeddings",
+}
+MODEL_REQUEST_PROFILES = {"fast", "balanced", "maximum_quality"}
+MODEL_REQUEST_DEFAULT_PROFILE = "fast"
+
 PERSONA_TONES = {"direct", "warm", "dry"}
 SARCASM_LEVELS = {"off", "light", "moderate"}
 
@@ -429,3 +444,59 @@ def normalize_operations(value: Any) -> list[str]:
         seen.add(operation)
         operations.append(operation)
     return operations
+
+
+def normalize_model_request(
+    mission: Any,
+    required_capabilities: Any,
+    profile: Any = None,
+    context_window: Any = None,
+    role: Any = None,
+) -> dict[str, Any]:
+    """Normalize the side-effect-free Assistant Model Request contract."""
+
+    mission_value = _text(mission, limit=500)
+    if not mission_value:
+        raise ValueError("mission is required")
+    if not isinstance(required_capabilities, (list, tuple)) or not required_capabilities:
+        raise ValueError("required_capabilities must contain at least one capability")
+
+    capabilities = []
+    seen = set()
+    for raw in required_capabilities[:16]:
+        capability = _key(raw).replace("-", "_")
+        if not capability:
+            continue
+        if capability.startswith("audio"):
+            raise ValueError("audio.* capabilities are not accepted here; voice uses dedicated local STT/TTS")
+        if capability not in MODEL_REQUEST_CAPABILITIES:
+            allowed = ", ".join(sorted(MODEL_REQUEST_CAPABILITIES))
+            raise ValueError(f"unsupported capability '{capability}'; allowed capabilities: {allowed}")
+        if capability not in seen:
+            seen.add(capability)
+            capabilities.append(capability)
+    if not capabilities:
+        raise ValueError("required_capabilities must contain at least one capability")
+
+    profile_value = _key(profile or MODEL_REQUEST_DEFAULT_PROFILE).replace("-", "_")
+    if profile_value not in MODEL_REQUEST_PROFILES:
+        allowed = ", ".join(sorted(MODEL_REQUEST_PROFILES))
+        raise ValueError(f"profile must be one of: {allowed}")
+
+    try:
+        context = int(context_window) if context_window is not None else 8192
+    except (TypeError, ValueError) as exc:
+        raise ValueError("context_window must be an integer") from exc
+    if context < 1 or context > 262144:
+        raise ValueError("context_window must be between 1 and 262144")
+
+    role_value = _key(role or ("coder" if "code" in capabilities else "main"))
+    if role_value not in MODEL_PACK_ROLES:
+        raise ValueError(f"unsupported model request role: {role_value}")
+    return {
+        "mission": mission_value,
+        "required_capabilities": capabilities,
+        "profile": profile_value,
+        "context_window": context,
+        "role": role_value,
+    }

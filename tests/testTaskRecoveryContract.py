@@ -16,7 +16,20 @@ from backend.engine import agent  # noqa: E402
 
 class TaskRecoveryContractTests(unittest.TestCase):
     @classmethod
+    def setUpClass(cls):
+        # runtime_store captures its data paths when imported. Discovery may
+        # import it before this module, so changing the environment alone is
+        # insufficient to isolate this persistence contract.
+        cls._previous_data_dir = runtime_store.DATA_DIR
+        cls._previous_db_file = runtime_store.DB_FILE
+        runtime_store.DATA_DIR = TEST_ROOT / "data"
+        runtime_store.DB_FILE = runtime_store.DATA_DIR / "rasputin.db"
+        runtime_store.init_db()
+
+    @classmethod
     def tearDownClass(cls):
+        runtime_store.DATA_DIR = cls._previous_data_dir
+        runtime_store.DB_FILE = cls._previous_db_file
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def _persist(self, hub, status="queued", progress=0, started=False):
@@ -63,11 +76,11 @@ class TaskRecoveryContractTests(unittest.TestCase):
         async def exercise():
             hub = agent.AgentHub()
             successful = agent.AgentTask(
-                "successful fixture", "dry-run", "general",
+                "successful fixture", "recovery-fixture", "general",
                 workspace_path=str(TEST_ROOT / "success-workspace"),
             )
             failed = agent.AgentTask(
-                "failed fixture", "dry-run", "general",
+                "failed fixture", "recovery-fixture", "general",
                 workspace_path=str(TEST_ROOT / "failure-workspace"),
             )
             successful.owner_id = failed.owner_id = "contract-owner"

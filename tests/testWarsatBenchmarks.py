@@ -90,5 +90,120 @@ class WarsatBenchmarkTests(unittest.TestCase):
         self.assertEqual(detail.json()["data"]["spec"]["modelId"], "api-model")
 
 
+    def test_exact_tuple_match_reports_field_mismatches(self):
+        certificate = benchmarks.build_certificate({
+            "modelId": "tuple-model",
+            "modelRevision": "rev-a",
+            "runtime": "vllm",
+            "protocolId": "vllmCudaOpenai",
+            "deviceIds": ["1"],
+            "contextWindow": 4096,
+            "concurrency": 1,
+            "quantization": "awq",
+            "placementMode": "single-gpu",
+        }, _samples(), owner="alice", measured_at=1_700_000_000)
+        target = dict(certificate["spec"])
+        self.assertTrue(benchmarks.match_certificate(certificate, target, now=1_700_000_010)["exact"])
+        target["placementMode"] = "multi-gpu"
+        mismatch = benchmarks.match_certificate(certificate, target, now=1_700_000_010)
+        self.assertEqual(mismatch["status"], "mismatch")
+        self.assertIn("placementMode", mismatch["mismatches"])
+        self.assertFalse(mismatch["exact"])
+
+
+    def test_advisor_api_accepts_camel_profile_and_owner_scoped_certificate(self):
+        certificate = benchmarks.build_certificate({
+            "modelId": "api-advisor-model",
+            "modelRevision": "rev-a",
+            "runtime": "vllm",
+            "protocolId": "vllmCudaOpenai",
+            "deviceIds": ["1"],
+            "contextWindow": 4096,
+            "concurrency": 1,
+            "quantization": "awq",
+            "placementMode": "single-gpu",
+        }, _samples(), owner="alice")
+        benchmarks.save_certificate(certificate)
+        response = self.client.post("/api/warsat/advisor", json={
+            "model": {
+                "modelId": "api-advisor-model", "modelRevision": "rev-a",
+                "runtime": "vllm", "quantization": "awq", "vramEstimateGb": 14,
+                "recommendedProtocol": "vllmCudaOpenai",
+            },
+            "hardware": {"detectedHardware": {"gpus": [
+                {"memoryTotalMb": 12288}, {"memoryTotalMb": 16384},
+            ]}},
+            "profile": "fast",
+            "contextWindow": 4096,
+            "benchmarkCertificateId": certificate["certificateId"],
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(data["profile"], "fast")
+        self.assertEqual(data["placement"]["deviceIds"], ["1"])
+        self.assertEqual(data["benchmarkEvidence"]["status"], "exact")
+
+
+    def test_all_profiles_selects_fresh_owner_scoped_certificates_per_tuple(self):
+        model = {
+            "modelId": "all-profiles-model", "modelRevision": "rev-a",
+            "runtime": "vllm", "quantization": "awq",
+            "recommendedProtocol": "vllmCudaOpenai", "vramEstimateGb": 14,
+        }
+        stale = benchmarks.build_certificate({
+            "modelId": model["modelId"], "modelRevision": "rev-a", "runtime": "vllm",
+            "protocolId": "vllmCudaOpenai", "deviceIds": ["1"], "contextWindow": 8192,
+            "concurrency": 1, "quantization": "awq", "placementMode": "single-gpu",
+        }, _samples(), owner="alice", measured_at=1)
+        fresh = benchmarks.build_certificate({
+            **stale["spec"],
+        }, _samples(), owner="alice")
+        foreign = benchmarks.build_certificate({
+            **stale["spec"],
+        }, _samples(), owner="bob")
+        benchmarks.save_certificate(stale)
+        benchmarks.save_certificate(fresh)
+        benchmarks.save_certificate(foreign)
+
+        response = self.client.post("/api/warsat/advisor", json={
+            "model": model,
+            "hardware": {"detectedHardware": {
+                "gpus": [{"memoryTotalMb": 12288}, {"memoryTotalMb": 16384}],
+            }},
+            "allProfiles": True,
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()["data"]
+        self.assertEqual(set(data["profiles"]), {"fast", "balanced", "maximumQuality"})
+        self.assertEqual(data["profiles"]["fast"]["benchmarkEvidence"]["certificateId"], fresh["certificateId"])
+        self.assertEqual(data["profiles"]["balanced"]["benchmarkEvidence"]["status"], "exact")
+        self.assertEqual(data["profiles"]["maximumQuality"]["benchmarkEvidence"]["certificateId"], fresh["certificateId"])
+
+    def test_all_profiles_match_each_profile_placement_tuple(self):
+        model = {
+            "modelId": "all-profiles-large", "modelRevision": "rev-a",
+            "runtime": "llama.cpp", "quantization": "q4",
+            "recommendedProtocol": "llamaCppGgufServer", "vramEstimateGb": 22,
+        }
+        combined = benchmarks.build_certificate({
+            "modelId": model["modelId"], "modelRevision": "rev-a", "runtime": "llama.cpp",
+            "protocolId": "llamaCppGgufServer", "deviceIds": ["0", "1"], "contextWindow": 8192,
+            "concurrency": 1, "quantization": "q4", "placementMode": "multi-gpu",
+        }, _samples(), owner="alice")
+        benchmarks.save_certificate(combined)
+        response = self.client.post("/api/warsat/advisor/profiles", json={
+            "model": model,
+            "hardware": {"detectedHardware": {
+                "gpus": [{"memoryTotalMb": 12288}, {"memoryTotalMb": 16384}],
+            }},
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        profiles = response.json()["data"]["profiles"]
+        self.assertEqual(profiles["fast"]["benchmarkEvidence"]["status"], "mismatch")
+        self.assertEqual(profiles["balanced"]["benchmarkEvidence"]["status"], "mismatch")
+        self.assertEqual(profiles["maximumQuality"]["benchmarkEvidence"]["status"], "exact")
+        self.assertEqual(profiles["maximumQuality"]["placement"]["mode"], "multi-gpu")
+
+
 if __name__ == "__main__":
     unittest.main()

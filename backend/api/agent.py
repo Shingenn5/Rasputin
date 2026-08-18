@@ -105,6 +105,7 @@ tasks_router = APIRouter(prefix="/api", tags=["tasks", "schedules"])
 class TaskIn(CamelModel):
     objective: str
     model: str = "dry-run"
+    deployment_fingerprint: str | None = None
     skill: str = "general"
     mode: str = "chat"
     memory_mode: str = "auto"
@@ -176,18 +177,34 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
     requested_mode = req.mode
     resolved_mode = requested_mode
     selected_model = model_registry.get_model(req.model)
-    compatibility = (selected_model or {}).get("compatibility") or {}
+    if not selected_model:
+        raise AppError(
+            "task_model_missing",
+            "The selected model is no longer registered. Choose another deployment before sending.",
+            409,
+        )
+    deployment_profile = model_registry.deployment_profile(selected_model)
+    if req.deployment_fingerprint and req.deployment_fingerprint != deployment_profile["fingerprint"]:
+        raise AppError(
+            "task_model_deployment_changed",
+            "The selected model deployment changed after it was chosen. Review the current runtime and send again.",
+            409,
+        )
+    compatibility = selected_model.get("compatibility") or {}
     certified_modes = compatibility.get("supportedModes")
     if requested_mode != "chat" and (
         (isinstance(certified_modes, list) and requested_mode not in certified_modes)
         or not model_providers.supports_agentic_tools(selected_model)
     ):
-        resolved_mode = "chat"
-        audit.log("task_mode_compatibility_fallback", {
+        audit.log("task_mode_compatibility_blocked", {
             "model": req.model,
             "requested_mode": requested_mode,
-            "resolved_mode": resolved_mode,
         }, actor=_user["username"])
+        raise AppError(
+            "task_model_mode_unsupported",
+            "The selected model is not certified for this task mode. Choose a compatible deployment or switch modes.",
+            409,
+        )
     if req.isolate_workspace:
         if resolved_mode != "code":
             raise AppError("task_isolation_requires_code", "Workspace isolation is available only for a tool-capable Code task.")
@@ -211,6 +228,8 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
         max_attempts=req.max_attempts,
         isolate_workspace=req.isolate_workspace,
         context_capsule_id=req.context_capsule_id,
+        deployment_profile=deployment_profile,
+        requested_mode=requested_mode,
     )
     intake.bind_to_task(_user["username"], attachment_records, task.id)
     if attachment_records:

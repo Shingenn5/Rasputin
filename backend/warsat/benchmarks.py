@@ -19,6 +19,7 @@ SCHEMA_VERSION = "rasputin.runtime-benchmark.v1"
 STORE_KEY = "warsat_runtime_benchmark_certificates"
 MAX_CERTIFICATES = 200
 DEFAULT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+IDENTITY_FIELDS = ("modelId", "modelRevision", "runtime", "protocolId", "deviceIds", "contextWindow", "concurrency", "quantization", "placementMode")
 
 
 def _text(value, default="", limit=160):
@@ -50,6 +51,24 @@ def _alias(data, *names, default=None):
         if name in data and data.get(name) not in (None, ""):
             return data.get(name)
     return default
+
+
+def canonical_identity(spec=None):
+    spec=dict(spec or {})
+    device_ids=_alias(spec, "deviceIds", "device_ids", default=[])
+    if isinstance(device_ids, str):
+        device_ids=[item.strip() for item in device_ids.split(",") if item.strip()]
+    return {
+        "modelId": _text(_alias(spec, "modelId", "model_id", "modelRef", "model_ref")),
+        "modelRevision": _text(_alias(spec, "modelRevision", "model_revision", "revision", "checksum", "sha")),
+        "runtime": _text(spec.get("runtime")),
+        "protocolId": _text(_alias(spec, "protocolId", "protocol_id")),
+        "deviceIds": [_text(item, limit=64) for item in (device_ids or [])],
+        "contextWindow": _integer(_alias(spec, "contextWindow", "context_window"), None, 1, 262144),
+        "concurrency": _integer(_alias(spec, "concurrency"), 1, 1, 4096),
+        "quantization": _text(_alias(spec, "quantization")),
+        "placementMode": _text(_alias(spec, "placementMode", "placement_mode"), "single-gpu"),
+    }
 
 
 def _percentile(values, fraction):
@@ -122,17 +141,7 @@ def _normalize_sample(sample, index):
 
 
 def _identity_key(spec):
-    identity = {
-        "modelId": spec["modelId"],
-        "modelRevision": spec["modelRevision"],
-        "runtime": spec["runtime"],
-        "protocolId": spec["protocolId"],
-        "deviceIds": spec["deviceIds"],
-        "contextWindow": spec["contextWindow"],
-        "concurrency": spec["concurrency"],
-        "quantization": spec["quantization"],
-        "placementMode": spec["placementMode"],
-    }
+    identity = canonical_identity(spec)
     encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:24]
 
@@ -160,19 +169,11 @@ def build_certificate(spec=None, samples=None, *, owner="", certificate_id="", m
     device_ids = [_text(item, limit=64) for item in (device_ids or []) if _text(item, limit=64)][:16]
     context_window = _integer(_alias(spec, "contextWindow", "context_window"), None, 1, 262144)
     concurrency = _integer(spec.get("concurrency"), 1, 1, 4096)
-    normalized_spec = {
-        "modelId": model_id,
-        "modelRevision": _text(_alias(spec, "modelRevision", "model_revision", "checksum", "sha")),
-        "runtime": runtime,
-        "protocolId": protocol_id,
-        "deviceIds": device_ids,
-        "contextWindow": context_window,
-        "concurrency": concurrency,
-        "quantization": _text(spec.get("quantization")),
-        "placementMode": _text(_alias(spec, "placementMode", "placement_mode"), "single-gpu"),
+    normalized_spec = canonical_identity({**spec, "modelId": model_id, "runtime": runtime, "protocolId": protocol_id})
+    normalized_spec.update({
         "maxModelLen": _integer(_alias(spec, "maxModelLen", "max_model_len"), None, 1, 262144),
         "batchSize": _integer(_alias(spec, "batchSize", "batch_size"), None, 1, 65536),
-    }
+    })
     certificate = {
         "schemaVersion": SCHEMA_VERSION,
         "certificateId": _text(certificate_id) or store.new_id("runtimecert"),
@@ -272,3 +273,39 @@ def is_fresh(certificate, *, now=None, max_age_seconds=DEFAULT_MAX_AGE_SECONDS):
     except (TypeError, ValueError):
         return False
     return 0 <= age <= max(1, int(max_age_seconds))
+
+def match_certificate(certificate, target=None, *, now=None, max_age_seconds=DEFAULT_MAX_AGE_SECONDS):
+    """Classify a certificate against an exact runtime-placement tuple."""
+    certificate_id=(certificate or {}).get("certificateId") if isinstance(certificate, dict) else None
+    result={"status": "unavailable" if not certificate else "invalid", "exact": False, "certificateId": certificate_id, "fresh": False, "valid": False, "mismatches": {}, "mismatchFields": []}
+    if not certificate:
+        return result
+    validation=validate_certificate(certificate)
+    spec=certificate.get("spec")
+    missing_identity=[field for field in IDENTITY_FIELDS if not isinstance(spec, dict) or field not in spec]
+    result["valid"]=bool(validation["valid"]) and not missing_identity
+    result["validationErrors"]=list(validation.get("errors") or [])
+    if missing_identity:
+        result["validationErrors"].append("spec missing identity fields: " + ", ".join(missing_identity))
+    result["fresh"]=is_fresh(certificate, now=now, max_age_seconds=max_age_seconds)
+    actual=canonical_identity(certificate.get("spec") or {})
+    expected=canonical_identity(target or {})
+    for field in IDENTITY_FIELDS:
+        if actual.get(field)!=expected.get(field):
+            result["mismatches"][field]={"expected": expected.get(field), "actual": actual.get(field)}
+    result["mismatchFields"]=list(result["mismatches"])
+    if not result["valid"]:
+        result["status"]="invalid"
+    elif not result["fresh"]:
+        result["status"]="stale"
+    elif certificate.get("status")!="measured":
+        result["status"]="partial"
+    elif result["mismatches"]:
+        result["status"]="mismatch"
+    else:
+        result["status"]="exact"
+        result["exact"]=True
+    return result
+
+
+exact_match=match_certificate

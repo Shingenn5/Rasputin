@@ -110,9 +110,9 @@ export function ActivityView({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto">
+      <div className="activity-tabs-scroll flex items-center gap-2" role="tablist" aria-label="Activity views">
         {activityTabs.map(t => (
-          <UIButton key={t} variant={tab === t ? "default" : "outline"} size="sm" onClick={() => setTab(t)}>
+          <UIButton key={t} role="tab" aria-selected={tab === t} variant={tab === t ? "default" : "outline"} size="sm" onClick={() => setTab(t)}>
             {t}
           </UIButton>
         ))}
@@ -187,6 +187,7 @@ export function ActivityView({
                   onDetails={() => openTaskDetails?.(task.id)}
                   onRetry={() => handleRetry(task.id)}
                   onPriority={(priority) => handlePriority(task.id, priority)}
+                  onDownloadLogs={() => downloadTaskLogs(task)}
                 />
               ))}
               {queuedTasks.length === 0 && <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center text-sm text-muted-foreground">The queue is empty. Send another message while a run is active to add work here.</div>}
@@ -219,6 +220,7 @@ export function ActivityView({
                     onRetry={() => handleRetry(task.id)}
                     onPriority={(priority) => handlePriority(task.id, priority)}
                     onDetails={() => openTaskDetails?.(task.id)}
+                    onDownloadLogs={() => downloadTaskLogs(task)}
                   />
                 ))}
                 {filteredTasks.length === 0 && (
@@ -261,24 +263,24 @@ export function ActivityView({
               <h2 className="w2-section-title">System Health Panel</h2>
               <div className="w2-card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Server size={24} color="var(--ras-safe)" />
+                  <Server size={24} color="var(--cc-muted)" />
                   <div>
                     <strong>API Status</strong>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Online - 32ms ping</div>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Unknown - refresh to check</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <Database size={24} color="var(--ras-safe)" />
+                  <Database size={24} color="var(--cc-muted)" />
                   <div>
                     <strong>Database Status</strong>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Connected</div>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Unknown - refresh to check</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <HardDrive size={24} color="var(--ras-safe)" />
+                  <HardDrive size={24} color="var(--cc-muted)" />
                   <div>
                     <strong>Vector Store Status</strong>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Active - 12.4 MB</div>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>Unknown - refresh to check</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -288,6 +290,10 @@ export function ActivityView({
                     <div style={{ fontSize: '0.875rem', color: 'var(--cc-muted)' }}>{activeTasks.length} jobs running</div>
                   </div>
                 </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <UIButton variant="outline" size="sm" onClick={handleRefresh}>Refresh activity</UIButton>
+                <span className="text-xs text-muted-foreground">Health data is not included in the current activity payload.</span>
               </div>
 
               <h2 className="w2-section-title" style={{ marginTop: '16px' }}>Raw Backend Events</h2>
@@ -381,7 +387,7 @@ export function ActivityView({
 // --- Helpers ---
 
 // PHASE 4 & 5 & 8: Embedded in RunCard
-function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry, onPriority }) {
+function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry, onPriority, onDownloadLogs }) {
   const isFailed = ["failed", "error", "cancelled"].includes(task.status);
   const isActive = ["queued", "running", "paused"].includes(task.status);
   const [expanded, setExpanded] = useState(false);
@@ -445,7 +451,7 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry
               <p style={{ fontSize: '0.875rem', margin: '0 0 8px 0' }}>The agent encountered an error and could not complete the objective.</p>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="w2-button" style={{ borderColor: 'var(--ras-danger)', color: 'var(--ras-danger)' }} onClick={onRetry}>Retry Run</button>
-                <button className="w2-button">Debug Stack Trace</button>
+                <button className="w2-button" onClick={onDetails} disabled={!onDetails}>Debug Stack Trace</button>
               </div>
             </div>
           )}
@@ -454,8 +460,8 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry
           <div>
             <strong style={{ fontSize: '0.875rem' }}>Artifacts & Evidence</strong>
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button className="w2-button" style={{ fontSize: '0.75rem', padding: '6px 12px' }}><FileText size={14}/> Execution Report</button>
-              <button className="w2-button" style={{ fontSize: '0.75rem', padding: '6px 12px' }}><Download size={14}/> Download Logs</button>
+              <button className="w2-button" style={{ fontSize: '0.75rem', padding: '6px 12px' }} onClick={onDetails} disabled={!onDetails}><FileText size={14}/> Execution Report</button>
+              <button className="w2-button" style={{ fontSize: '0.75rem', padding: '6px 12px' }} onClick={onDownloadLogs} disabled={!task.logs?.length && !task.trace?.length} title={!task.logs?.length && !task.trace?.length ? "No task logs or trace are available to download." : "Download recorded task logs and trace"}><Download size={14}/> Download Logs</button>
             </div>
           </div>
           
@@ -466,4 +472,24 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry
       )}
     </div>
   );
+}
+
+function downloadTaskLogs(task) {
+  const logs = Array.isArray(task?.logs) ? task.logs : [];
+  const trace = Array.isArray(task?.trace) ? task.trace : [];
+  if (!logs.length && !trace.length) return;
+  const content = [
+    `Task: ${task.id}`,
+    `Objective: ${task.objective || "Untitled Run"}`,
+    `Status: ${task.status || "Unknown"}`,
+    "", "Logs:",
+    ...logs.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)),
+    ...(trace.length ? ["", "Trace:", ...trace.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry))] : []),
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `rasputin-task-${String(task.id).slice(0, 8)}-logs.txt`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

@@ -1706,18 +1706,34 @@ class BackendSmokeTests(unittest.TestCase):
     def testTasksRoute(self):
         data = self.assertOk(self.client.get("/api/tasks"))
         self.assertIsInstance(data, list)
+        dry_run = model_registry.get_model("dry-run")
+        self.assertTrue(dry_run["deployment_fingerprint"])
         task = self.assertOk(self.client.post("/api/tasks", json={
             "objective": "Inspect task details from the backend smoke test.",
             "model": "dry-run",
+            "deploymentFingerprint": dry_run["deployment_fingerprint"],
             "skill": "general",
             "mode": "chat",
             "workspacePath": ".",
         }))
+        self.assertEqual(task["requestedModel"], "dry-run")
+        self.assertEqual(task["resolvedModel"], "dry-run")
+        self.assertEqual(task["deploymentProfile"]["fingerprint"], dry_run["deployment_fingerprint"])
         detail = self.assertOk(self.client.get(f"/api/tasks/{task['id']}"))
         for key in ["task", "session", "events", "trace", "outputs", "children", "approvals", "toolCalls"]:
             self.assertIn(key, detail)
         self.assertEqual(detail["task"]["id"], task["id"])
+        self.assertEqual(detail["task"]["deploymentProfile"], task["deploymentProfile"])
         self.assertEqual(task["memoryMode"], "auto")
+        stale = self.client.post("/api/tasks", json={
+            "objective": "This stale deployment must not run.",
+            "model": "dry-run",
+            "deploymentFingerprint": "stale-deployment-fingerprint",
+            "mode": "chat",
+            "workspacePath": ".",
+        })
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.json()["error"]["code"], "taskModelDeploymentChanged")
         suppressed = self.assertOk(self.client.post("/api/tasks", json={
             "objective": "Suppress memory for this task from the API smoke test.",
             "model": "dry-run",
@@ -2613,6 +2629,48 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertNotIn("chat_template_kwargs", payloads[0])
         self.assertEqual(payloads[1]["chat_template_kwargs"], {"enable_thinking": False})
 
+    def testLlamaCppPayloadAddsModerateRepetitionControls(self):
+        llama_model = {
+            "key": "llama-local",
+            "provider": "openai-compatible",
+            "runtime": "warsat-llama.cpp",
+            "base_url": "http://127.0.0.1:8082/v1",
+            "model": "qwen-local",
+        }
+        payload, _headers, _parser, _streamer = model_providers._build_chat_payload(
+            "openai-compatible",
+            llama_model,
+            [{"role": "user", "content": "Reply briefly."}],
+            128,
+            0.2,
+            None,
+            False,
+            "off",
+        )
+        self.assertEqual(payload["repeat_penalty"], 1.1)
+        self.assertEqual(payload["repeat_last_n"], 256)
+        self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": False})
+
+        remote_model = {
+            "key": "remote",
+            "provider": "openai-compatible",
+            "runtime": "external-local",
+            "base_url": "http://127.0.0.1:9000/v1",
+            "model": "remote-model",
+        }
+        remote_payload, _headers, _parser, _streamer = model_providers._build_chat_payload(
+            "openai-compatible",
+            remote_model,
+            [{"role": "user", "content": "Reply briefly."}],
+            128,
+            0.2,
+            None,
+            False,
+            "off",
+        )
+        self.assertNotIn("repeat_penalty", remote_payload)
+        self.assertNotIn("repeat_last_n", remote_payload)
+
     def testGovernedLocalChatAutoReasoningSelectsDirectResponse(self):
         local_hub = agent.AgentHub()
         task = agent.AgentTask("Reply yes.", "thinking-local", "general", mode="chat", workspace_path=".")
@@ -2637,7 +2695,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(captured["reasoning"], "off")
         self.assertTrue(any(item["kind"] == "adaptive_reasoning" for item in task.trace))
 
-    def testToollessManagedModelFallsBackToChatBeforeTaskStarts(self):
+    def testToollessManagedModelBlocksUnsupportedTaskModeBeforeStart(self):
         hub = agent.AgentHub()
         model = {
             "key": "plain-local",
@@ -2646,10 +2704,9 @@ class BackendSmokeTests(unittest.TestCase):
             "tool_support": "chat",
         }
         with patch("backend.engine.agent.model_registry.get_model", return_value=model), patch.object(hub, "_schedule_queued_task"):
-            task = hub.start("Inspect this workspace", "plain-local", "general", mode="analyze")
-        self.assertEqual(task.mode, "chat")
-        self.assertTrue(any(item["kind"] == "tool_mode_fallback" for item in task.trace))
-        self.assertTrue(any("switched to Chat mode" in line for line in task.logs))
+            with self.assertRaisesRegex(ValueError, "does not support the requested task mode"):
+                hub.start("Inspect this workspace", "plain-local", "general", mode="analyze")
+        self.assertFalse(hub.tasks)
 
     def testManagedToolSupportRequiresParser(self):
         self.assertFalse(model_providers.supports_agentic_tools({"key": "plain", "provider": "vllm", "managed": True, "tool_support": "chat"}))
@@ -2944,7 +3001,7 @@ class BackendSmokeTests(unittest.TestCase):
                 model_registry.delete_model("smoke-task-selected-reachable")
                 model_registry.delete_model("smoke-task-selected-unknown")
 
-    def testKeyForTaskFallsBackToRoleRoutingWhenSelectedIsDeadOrMissing(self):
+    def testKeyForTaskKeepsExplicitSelectionEvenWhenDeploymentIsDeadOrMissing(self):
         from backend.models import registry as model_registry
 
         flags = {"allow_model_registry_edit": True}
@@ -2972,17 +3029,17 @@ class BackendSmokeTests(unittest.TestCase):
             model_registry._store_health("smoke-task-role-fallback", "reachable")
             model_registry._store_health("smoke-task-selected-unhealthy", "unhealthy", error="boom")
 
-            # Selected model is known-dead -> falls back to role routing.
+            # Explicit identity remains pinned. Task creation and inference
+            # report an unavailable deployment instead of changing models.
             self.assertEqual(
                 model_registry.key_for_task("researcher", "smoke-task-selected-unhealthy"),
-                "smoke-task-role-fallback",
+                "smoke-task-selected-unhealthy",
             )
-            # Selected key doesn't exist at all -> same fallback.
             self.assertEqual(
                 model_registry.key_for_task("researcher", "does-not-exist-anywhere"),
-                "smoke-task-role-fallback",
+                "does-not-exist-anywhere",
             )
-            # Selected key is empty -> same fallback.
+            # An empty selection still uses configured role routing.
             self.assertEqual(
                 model_registry.key_for_task("researcher", ""),
                 "smoke-task-role-fallback",
@@ -3044,7 +3101,7 @@ class BackendSmokeTests(unittest.TestCase):
             # of the same role wins instead.
             self.assertEqual(
                 model_registry.key_for_task("researcher", "smoke-health-monitor-dead"),
-                "smoke-health-monitor-fallback",
+                "smoke-health-monitor-dead",
             )
 
     def testStartHealthMonitorDisabledByZeroInterval(self):
@@ -3565,8 +3622,10 @@ class BackendSmokeTests(unittest.TestCase):
         # llama.cpp's --parallel splits the context window across that many
         # slots, unlike vLLM's paged KV cache. A GGUF protocol must default
         # maxNumSeqs to 1 so the full configured context is usable, while a
-        # non-GGUF (vLLM) protocol keeps the strength profile's own default,
-        # and an explicit payload value always wins regardless of format.
+        # non-GGUF (vLLM) protocol keeps the strength profile's own default.
+        # Automatic GGUF context remains bounded by the profile window so a
+        # model with a 256K training context does not reserve that entire KV
+        # cache for ordinary desktop chat. An explicit payload value wins.
         from backend import warsat as warsat_module
 
         gguf_protocol = {"runtime": "llama.cpp", "modelFormat": "gguf"}
@@ -3576,7 +3635,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(gguf_tuning["maxNumSeqs"], 1)
         self.assertTrue(gguf_tuning["contextAuto"])
         gguf_args = warsat_module._runtime_arguments(gguf_protocol, gguf_tuning)
-        self.assertEqual(gguf_args[gguf_args.index("-c") + 1], "0")
+        self.assertEqual(gguf_args[gguf_args.index("-c") + 1], "4096")
         self.assertIn("--fit", gguf_args)
 
         hf_tuning = warsat_module._build_tuning({}, hf_protocol, "balanced")
@@ -4126,6 +4185,49 @@ class BackendSmokeTests(unittest.TestCase):
         gguf_args = warsat_module._runtime_arguments(gguf_protocol, gguf_tuning)
         self.assertNotIn("--enable-auto-tool-choice", gguf_args)
         self.assertNotIn("--tool-call-parser", gguf_args)
+
+    def testWarsatGgufPerformanceTuningProducesExactRuntimeArguments(self):
+        from backend import warsat as warsat_module
+
+        protocol = {
+            "runtime": "llama.cpp",
+            "modelFormat": "gguf",
+            "defaultArguments": [
+                "--flash-attn", "off", "--cache-type-k", "q4_0",
+                "--cache-type-v", "q4_0", "--spec-type", "ngram-mod",
+            ],
+        }
+        tuning = warsat_module._build_tuning({
+            "contextWindow": 8192,
+            "batchSize": 1024,
+            "ubatchSize": 256,
+            "flashAttention": "on",
+            "cacheTypeK": "q8_0",
+            "speculativeMode": "ngram-simple",
+            "splitMode": "layer",
+        }, protocol, "balanced")
+        self.assertEqual(tuning["cacheTypeV"], "q8_0")
+        args = warsat_module._runtime_arguments(protocol, tuning)
+        expected = {
+            "-c": "8192",
+            "-b": "1024",
+            "-ub": "256",
+            "--flash-attn": "on",
+            "--cache-type-k": "q8_0",
+            "--cache-type-v": "q8_0",
+            "--spec-type": "ngram-simple",
+            "--split-mode": "layer",
+        }
+        for flag, value in expected.items():
+            self.assertEqual(args.count(flag), 1)
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertEqual(args.count("--fit"), 0)
+
+        auto_tuning = warsat_module._build_tuning({}, protocol, "balanced")
+        auto_args = warsat_module._runtime_arguments(protocol, auto_tuning)
+        self.assertEqual(auto_args[auto_args.index("--flash-attn") + 1], "auto")
+        self.assertNotIn("--spec-type", auto_args)
+        self.assertEqual(auto_args[auto_args.index("--fit") + 1], "on")
 
     def testWarsatDockerProviderCoversWarsatRuntimesWithoutLeakingExceptions(self):
         # WarSat registers deployed models with runtime f"warsat-{protocol

@@ -4,6 +4,7 @@ import re
 import subprocess
 import threading
 import time
+from urllib.parse import urlparse
 from pathlib import Path
 
 import httpx
@@ -942,31 +943,94 @@ def _normalize_hf_model(hf_model):
     return item
 
 
+_HF_REPO_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
+
+
+def normalize_hf_reference(value):
+    """Return a canonical Hugging Face model id, or None for non-exact text.
+
+    Accepted references are org/model and model URLs on the trusted
+    huggingface.co hosts. Collection/revision suffixes are reduced to the
+    model repository because the catalog API addresses model repositories,
+    not individual files or revisions.
+    """
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    explicit_scheme = "://" in raw
+    host_url = raw.lower().startswith(("huggingface.co/", "www.huggingface.co/"))
+    if explicit_scheme or host_url:
+        parsed = urlparse(raw if explicit_scheme else f"https://{raw}")
+        if parsed.scheme.lower() not in {"", "http", "https"}:
+            return None
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if host not in {"huggingface.co", "www.huggingface.co"}:
+            return None
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) < 2:
+            return None
+        repo_parts = parts[:2]
+        if any(not _HF_REPO_PART.fullmatch(part) for part in repo_parts):
+            return None
+        if len(parts) == 2:
+            return "/".join(repo_parts)
+        if parts[2] not in {"tree", "blob"} or len(parts) < 4:
+            return None
+        return "/".join(repo_parts)
+
+    candidate = raw.strip("/")
+    parts = candidate.split("/")
+    if len(parts) != 2 or any(not _HF_REPO_PART.fullmatch(part) for part in parts):
+        return None
+    return "/".join(parts)
+
+
+def _looks_like_url(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    return "://" in raw or raw.lower().startswith(("huggingface.co/", "www.huggingface.co/"))
+
+
 def search_hf(
     query="", model_type="", sort="popular", direction=-1, limit=100,
     hardware=None, min_vram_gb=None, max_vram_gb=None,
 ):
     """Search Hugging Face Hub API for models."""
+    original_query = "" if query is None else str(query)
+    normalized_model_id = normalize_hf_reference(original_query)
+    exact_match = bool(normalized_model_id)
+    if _looks_like_url(original_query) and not exact_match:
+        return {
+            "items": [],
+            "count": 0,
+            "query": original_query,
+            "modelType": model_type,
+            "sort": sort or "popular",
+            "source": "huggingface",
+            "exactMatch": False,
+            "normalizedModelId": "",
+            "error": "Enter a Hugging Face model URL from huggingface.co.",
+        }
+
     requested_sort = sort or "popular"
     if requested_sort == "popular":
-        # The Hub can order by one field only. Fetch the most-downloaded
-        # candidates, then make likes the deterministic tie-breaker locally.
         sort = "downloads"
     elif sort == "trending":
         sort = "trendingScore"
     elif sort in {"vram_desc", "vram_asc"}:
-        # Hugging Face cannot sort by our derived VRAM estimate. Fetch popular
-        # candidates, then sort the normalized results locally.
         sort = "downloads"
     limit = max(1, min(int(limit), 500))
     params = {
-        # The Hub API serves at most 100 per page; follow Link headers for more.
         "limit": min(limit, 100),
         "sort": sort or "downloads",
         "direction": str(direction),
     }
-    if query:
-        params["search"] = query
+    if original_query:
+        params["search"] = normalized_model_id or original_query
     if model_type:
         params["pipeline_tag"] = model_type
 
@@ -982,13 +1046,29 @@ def search_hf(
                     break
                 raw_models.extend(batch)
                 url = (response.links.get("next") or {}).get("url")
-                params = None  # the next-page URL already carries the query
+                params = None
     except Exception as exc:
-        audit.log("hf_search_failed", {"query": query, "error": str(exc)})
-        return {"items": [], "count": 0, "error": str(exc), "source": "huggingface"}
+        audit.log("hf_search_failed", {"query": original_query, "error": str(exc)})
+        return {
+            "items": [],
+            "count": 0,
+            "query": original_query,
+            "exactMatch": False,
+            "normalizedModelId": normalized_model_id or "",
+            "error": str(exc),
+            "source": "huggingface",
+        }
 
     if not isinstance(raw_models, list):
-        return {"items": [], "count": 0, "error": "Unexpected HF API response format", "source": "huggingface"}
+        return {
+            "items": [],
+            "count": 0,
+            "query": original_query,
+            "exactMatch": False,
+            "normalizedModelId": normalized_model_id or "",
+            "error": "Unexpected HF API response format",
+            "source": "huggingface",
+        }
 
     items = [_normalize_hf_model(m) for m in raw_models[:limit]]
 
@@ -1000,11 +1080,8 @@ def search_hf(
             return False
         return True
 
-    # Exact-id lookup: searching a full org/name reference must surface that
-    # model even when the Hub's fuzzy search misses it, so ANY model can be
-    # pulled by pasting its id.
-    lookup = (query or "").strip().strip("/")
-    if lookup and "/" in lookup and not any(i["id"].lower() == lookup.lower() for i in items):
+    lookup = normalized_model_id
+    if lookup and not any(i["id"].lower() == lookup.lower() for i in items):
         try:
             with httpx.Client(timeout=HF_FETCH_TIMEOUT, follow_redirects=True) as client:
                 response = client.get(f"{HF_API_URL}/{lookup}")
@@ -1027,9 +1104,6 @@ def search_hf(
             reverse=requested_sort == "vram_desc",
         )
     elif requested_sort in {"popular", "downloads"}:
-        # Fit scoring intentionally ranks suitability, but browsing results
-        # should make real-world adoption clear. Downloads are primary and
-        # likes resolve ties, so the order is stable and explainable.
         items.sort(key=lambda item: (
             -int(item.get("downloads") or 0),
             -int(item.get("likes") or 0),
@@ -1042,21 +1116,26 @@ def search_hf(
             str(item.get("name") or item.get("id") or "").lower(),
         ))
 
-    # An exact-id match belongs at the top, above fuzzy derivatives and the
-    # fit re-sort.
-    if lookup and "/" in lookup:
+    exact_not_found = False
+    if lookup:
         idx = next((i for i, item in enumerate(items) if item["id"].lower() == lookup.lower()), None)
-        if idx is not None and idx != 0:
+        if idx is None:
+            items = []
+            exact_not_found = True
+        elif idx != 0:
             items.insert(0, items.pop(idx))
-    
-    audit.log("hf_search", {"query": query, "type": model_type, "count": len(items)})
+
+    audit.log("hf_search", {"query": original_query, "type": model_type, "count": len(items)})
     return {
         "items": items,
         "count": len(items),
-        "query": query,
+        "query": original_query,
         "modelType": model_type,
         "sort": requested_sort,
         "source": "huggingface",
+        "exactMatch": bool(lookup and not exact_not_found),
+        "normalizedModelId": normalized_model_id or "",
+        **({"error": f"Hugging Face model '{lookup}' was not found."} if exact_not_found else {}),
     }
 
 

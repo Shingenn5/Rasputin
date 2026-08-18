@@ -168,6 +168,12 @@ export function HomeView(props) {
     contextCapsules,
     selectedContextCapsuleId,
     setSelectedContextCapsuleId,
+    hasHealthyRouteableChatModel,
+    onOpenModels,
+    onConnectLocalEndpoint,
+    onEnableTestingMode,
+    eventConnectionStatus,
+    modeBlocked,
   } = props;
 
   const threadScrollRef = useRef(null);
@@ -224,7 +230,18 @@ export function HomeView(props) {
   const privacyTitle = security.privacyLock ? "Local-only" : "Review mode";
   const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
   const selectedModelHealthLine = modelHealthLine(selectedModelObject, models);
-  const disabledReason = healthy ? "" : `${selectedModelHealthLine} Use Models to test or repair the local runtime, or enable Testing Mode.`;
+  const disabledReason = modeBlocked
+    ? "This mode is blocked for the selected model. Choose a compatible model or switch back to Chat."
+    : healthy
+      ? ""
+      : selectedModelHealthLine + " Use Models to test or repair the local runtime, or enable Testing Mode.";
+  const eventConnectionLabel = eventConnectionStatus === "degraded"
+    ? "Live updates delayed"
+    : eventConnectionStatus === "connecting"
+      ? "Reconnecting live updates…"
+      : eventConnectionStatus === "disconnected"
+        ? "Live updates unavailable"
+        : "Live updates";
   const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
   const activeReasoning = reasoningOptions.find((option) => option.value === reasoningMode) || reasoningOptions[0];
   const objectivePlaceholder = modePlaceholders[activeMode.value] || modePlaceholders.chat;
@@ -722,12 +739,20 @@ export function HomeView(props) {
               aria-hidden="true"
             />
             <Cpu size={14} />
-            <span className="cc-model-name">{displayModelName(selectedModelObject, models)}</span>
-            <span className={`cc-model-state state-${modelRuntimeStatus}`}>{modelStateLabel}</span>
+            <span className="cc-model-name" data-testid="chat-selected-model-key">{selectedModel || "No model selected"}</span>
+            <span className={"cc-model-state state-" + modelRuntimeStatus}>{modelStateLabel}</span>
           </button>
           <div className="cc-status-item cc-runtime-status" title={security?.native ? "Native workstation runtime" : "Docker server runtime"}>
             {security?.native ? <Laptop size={14} aria-hidden="true" /> : <Box size={14} aria-hidden="true" />}
             <span>{security?.native ? "Native" : "Docker"}</span>
+          </div>
+          <div
+            className={"cc-status-item event-connection-status status-" + eventConnectionStatus}
+            data-testid="event-connection-status"
+            role="status"
+            aria-live="polite"
+          >
+            <span>{eventConnectionLabel}</span>
           </div>
           <div className="cc-status-item" title={`${privacyTitle}: ${privacyDetail}`}>
             <ShieldCheck size={14} /> <span>{privacyTitle}</span>
@@ -752,6 +777,20 @@ export function HomeView(props) {
         {/* Content Area */}
         <div className="cc-content-area">
           <div className="cc-chat-column">
+            {!hasHealthyRouteableChatModel && (
+              <section className="chat-launch-readiness" data-testid="chat-launch-readiness" role="region" aria-labelledby="chat-launch-readiness-title">
+                <div>
+                  <p className="cc-empty-kicker">SETUP REQUIRED</p>
+                  <h2 id="chat-launch-readiness-title">Choose a working model before you send</h2>
+                  <p>No healthy chat model is available yet. Deploy one, connect an existing local endpoint, or safely explore the workflow in Testing Mode.</p>
+                </div>
+                <div className="chat-launch-readiness-actions">
+                  <button type="button" className="w2-button is-primary" onClick={onOpenModels}>Find a model</button>
+                  <button type="button" className="w2-button" onClick={onConnectLocalEndpoint}>Connect endpoint</button>
+                  <button type="button" className="w2-button" onClick={onEnableTestingMode}>Try Testing Mode</button>
+                </div>
+              </section>
+            )}
             {orderedHomeTasks.length === 0 ? (
               <div className="cc-quick-action-center">
                 <div className="cc-empty-mark" aria-hidden="true"><span>R</span><i /><b /></div>
@@ -1020,15 +1059,15 @@ export function HomeView(props) {
                       onClick={() => (cmd?.path === "model" ? closeCmd(true) : openCmd("model"))}
                     >
                       <span className={`cc-model-dot status-${modelRuntimeStatus}`} aria-hidden="true" />
-                      <span className="composer-chip-model-name">{displayModelName(selectedModelObject, models)}</span>
+                      <span className="composer-chip-model-name">{selectedModel || "No model selected"}</span>
                       <ChevronDown size={12} />
                     </button>
                     <button
                       id="sendBtn"
                       className="composer-send-round"
                       type="submit"
-                      disabled={!canSubmit || (!composerBusy && !healthy)}
-                      aria-disabled={!canSubmit || (!composerBusy && !healthy)}
+                      disabled={!canSubmit || (!composerBusy && (!healthy || modeBlocked))}
+                      aria-disabled={!canSubmit || (!composerBusy && (!healthy || modeBlocked))}
                       aria-label={composerBusy ? "Queue message" : "Send message"}
                       title={!canSubmit ? "Enter a message" : composerBusy ? "A task is running - this message will queue and send when it finishes" : (disabledReason || "Send message")}
                     >
@@ -1037,6 +1076,11 @@ export function HomeView(props) {
                   </div>
                 </div>
               </div>
+              {modeBlocked && (
+                <div className="composer-feedback is-failed" data-testid="mode-blocked" role="alert">
+                  This mode is blocked for the selected model. Choose a compatible deployment or switch back to Chat.
+                </div>
+              )}
               {(uiState.status !== 'idle' || composerStatus) && (
                 <div className={`composer-feedback ${uiState.status !== 'idle' ? `is-${uiState.status}` : "is-failed"}`} role="status" aria-live="polite">
                   {uiState.status !== 'idle' ? uiState.message : composerStatus}
@@ -1290,6 +1334,12 @@ function formatGenerationMetrics(metrics) {
 
 function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskDetails }) {
   const status = task.status || "queued";
+  const deploymentProfile = task.deploymentProfile || task.deployment_profile || {};
+  const taskModel = task.model || deploymentProfile.key || "No model selected";
+  const taskMode = task.mode || "chat";
+  const taskWorkspace = displayWorkspaceName(task.workspace);
+  const taskRuntime = deploymentProfile.runtime || deploymentProfile.provider || "unknown";
+  const taskRuntimeIdentity = "Model " + taskModel + " · Mode " + taskMode + " · Workspace " + taskWorkspace + " · Runtime " + taskRuntime;
   const active = ["queued", "running", "paused"].includes(status);
   const runningPhase = [...(task.steps || [])].reverse().find((step) => step.kind === "phase" && step.status === "running")?.name;
   // Planning/execution streams remain available in task details; the chat
@@ -1319,6 +1369,9 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
               {streaming ? "Generating…" : status === "queued" ? "Queued" : status === "paused" ? "Paused" : "Working…"}
             </span>
           )}
+          <span className="task-runtime-identity" data-testid="task-runtime-identity" title={taskRuntimeIdentity}>
+            {taskRuntimeIdentity}
+          </span>
         </div>
         <div
           className={`markdown-body${streaming ? " is-streaming" : ""}`}

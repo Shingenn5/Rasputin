@@ -3602,6 +3602,30 @@ button.runtime-chip {
   font-weight: 800;
 }
 
+.activity-tabs-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ras-accent) var(--ras-panel);
+  padding-bottom: .2rem;
+}
+.activity-tabs-scroll > [role="tab"] {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.activity-tabs-scroll:after {
+  content: "Scroll for more activity views";
+  flex: 0 0 auto;
+  color: var(--ras-muted);
+  font-size: .72rem;
+  padding: .35rem .5rem;
+}
+@media (min-width: 700px) {
+  .activity-tabs-scroll:after { content: none; }
+}
+
 .activity-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -11173,13 +11197,23 @@ button.helper-row:hover {
 .w2-tree-item {
   display: flex;
   align-items: center;
+  width: 100%;
+  min-height: 32px;
   padding: 4px 8px;
+  border: 0;
   cursor: pointer;
   user-select: none;
+  font: inherit;
   font-size: 0.875rem;
   color: var(--cc-text);
+  text-align: left;
   border-radius: 4px;
   margin-bottom: 2px;
+  background: transparent;
+}
+.w2-tree-item:focus-visible {
+  outline: 2px solid var(--cc-accent, #0d6efd);
+  outline-offset: 2px;
 }
 .w2-tree-item:hover {
   background-color: var(--cc-surface);
@@ -13085,6 +13119,11 @@ textarea.cc-input.ras-autogrow {
 }
 
 /* Pending Mounts panel (Workspaces tab) */
+.pending-mount-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .pending-mount-item {
   display: flex;
   flex-direction: column;
@@ -13154,5 +13193,194 @@ textarea.cc-input.ras-autogrow {
 @media (max-width: 800px) {
   .workspace-command-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.warsat-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: .25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ras-accent) var(--ras-panel);
+  overscroll-behavior-inline: contain;
+}
+.warsat-tabs > .warsat-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.warsat-tabs:after {
+  content: "Scroll for more WarSat views";
+  flex: 0 0 auto;
+  display: none;
+  padding: .35rem .5rem;
+  color: var(--ras-muted);
+  font-size: .7rem;
+}
+.ws-next-action {
+  display: grid;
+  gap: .45rem;
+  margin-top: .75rem;
+  border-left: 3px solid var(--ras-accent);
+  padding: .7rem .8rem;
+  background: color-mix(in srgb, var(--ras-accent) 8%, var(--cc-surface));
+  color: var(--cc-text);
+  font-size: .75rem;
+  line-height: 1.45;
+}
+.ws-next-action-heading {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  color: var(--ras-accent);
+  font-weight: 750;
+}
+.ws-next-action-link {
+  width: fit-content;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 45%, var(--cc-border));
+  border-radius: 6px;
+  padding: .35rem .6rem;
+  background: transparent;
+  color: var(--ras-accent);
+  font: inherit;
+  font-weight: 700;
+}
+.ws-next-action-link:focus-visible {
+  outline: 2px solid var(--ras-accent);
+  outline-offset: 2px;
+}
+@media (max-width: 1080px) {
+  .warsat-tabs:after { display: block; }
+}
+
+
+.chat-launch-readiness {
+  margin: 1rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid color-mix(in srgb, var(--ras-primary) 38%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ras-primary) 8%, var(--card));
+}
+.chat-launch-readiness h2 { margin: .2rem 0 .35rem; font-size: 1rem; }
+.chat-launch-readiness p { margin: 0; color: var(--muted-foreground); max-width: 62ch; }
+.chat-launch-readiness-actions { display: flex; flex-wrap: wrap; gap: .5rem; flex-shrink: 0; }
+.task-runtime-identity {
+  display: block;
+  flex-basis: 100%;
+  margin-top: .25rem;
+  color: var(--muted-foreground);
+  font-size: .72rem;
+  line-height: 1.35;
+}
+@media (max-width: 820px) {
+  .chat-launch-readiness { align-items: stretch; flex-direction: column; }
+}
+
+
+/* Assistant essential-first control plane */
+.assistant-dashboard .assistant-essential-card {
+  border-color: color-mix(in srgb, var(--ras-border, #d7dce5) 80%, var(--ras-accent, #4f46e5));
+}
+
+.assistant-performance-control,
+.assistant-needs-attention,
+.assistant-essential-capability,
+.assistant-recommendation {
+  border: 1px solid var(--ras-border, #d7dce5);
+  border-radius: 0.75rem;
+  background: var(--ras-surface-subtle, rgba(127, 127, 127, 0.06));
+}
+
+.assistant-performance-control,
+.assistant-needs-attention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.assistant-essential-capability {
+  display: flex;
+  flex-direction: column;
+  padding: 0.9rem;
+}
+
+.assistant-capability-eyebrow {
+  color: var(--ras-text-muted, #6b7280);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-recommendation {
+  padding: 0.55rem 0.65rem;
+}
+
+.assistant-advanced-group {
+  margin-block: 0.75rem;
+}
+
+.assistant-advanced-group > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--ras-border, #d7dce5);
+  border-radius: 0.75rem;
+  background: var(--ras-surface-subtle, rgba(127, 127, 127, 0.06));
+  font-weight: 700;
+}
+
+.assistant-advanced-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.assistant-advanced-group > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1rem;
+  color: var(--ras-text-muted, #6b7280);
+}
+
+.assistant-advanced-group[open] > summary::before {
+  content: "−";
+}
+
+.assistant-advanced-group > summary span {
+  color: var(--ras-text-muted, #6b7280);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.assistant-advanced-group > summary:focus-visible,
+.assistant-performance-control input:focus-visible,
+.assistant-essential-capability button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ras-accent, #4f46e5) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.assistant-advanced-group > .settings-card {
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 720px) {
+  .assistant-performance-control,
+  .assistant-needs-attention,
+  .assistant-advanced-group > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .assistant-advanced-group > summary span {
+    margin-left: 1rem;
   }
 }

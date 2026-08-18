@@ -49,7 +49,7 @@ export function LoginShell({ onSubmit, status }) {
 
             <label className="login-field" htmlFor="loginPassword">
               <span>Password</span>
-              <input id="loginPassword" name="password" type="password" autoComplete="current-password" required autoFocus />
+              <input id="loginPassword" name="password" type="password" autoComplete="current-password" required />
             </label>
 
             <button className="login-submit" type="submit">

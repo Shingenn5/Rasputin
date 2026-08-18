@@ -460,6 +460,8 @@ def all_models():
         if model_providers.is_api_provider(item):
             item.update(model_secrets.public_state(item))
             item.pop("secret_ref", None)
+        item["deployment_profile"] = deployment_profile(item)
+        item["deployment_fingerprint"] = item["deployment_profile"]["fingerprint"]
         out.append(item)
     return out
 
@@ -467,7 +469,10 @@ def all_models():
 def get_model(key):
     for m in _load()["models"]:
         if m.get("key") == key:
-            return _public_model(m)
+            item = _public_model(m)
+            item["deployment_profile"] = deployment_profile(item)
+            item["deployment_fingerprint"] = item["deployment_profile"]["fingerprint"]
+            return item
     return None
 
 
@@ -501,19 +506,40 @@ _DEAD_HEALTH_STATUSES = {"unhealthy", "stopped", "unreachable", "error"}
 
 
 def key_for_task(role, selected):
-    """Route a task to the model the user explicitly selected (task.model),
-    unless the registry already knows it's dead — then fall back to the
-    existing role-based routing exactly as before. This keeps the user's
-    choice authoritative instead of letting `key_for_role` silently swap in
-    a different model of the same role."""
+    """Keep an explicit task model authoritative for the task's lifetime.
+
+    Availability is validated before task creation. If that deployment later
+    disappears or becomes unhealthy, inference fails visibly instead of
+    silently switching the task to a different model or runtime.
+    """
     selected = str(selected or "")
     if selected:
-        for model in enabled_models():
-            if model.get("key") == selected:
-                if model.get("runtime_status") not in _DEAD_HEALTH_STATUSES:
-                    return selected
-                break
+        return selected
     return key_for_role(role, selected)
+
+
+def deployment_profile(model):
+    """Return the public, immutable deployment identity pinned to a task."""
+    model = dict(model or {})
+    identity = {
+        "key": str(model.get("key") or ""),
+        "name": str(model.get("name") or model.get("model") or model.get("key") or ""),
+        "provider": str(model.get("provider") or ""),
+        "runtime": str(model.get("runtime") or ""),
+        "model": str(model.get("model") or ""),
+        "image": str(model.get("image") or ""),
+        "baseUrl": str(model.get("base_url") or ""),
+        "protocolId": str(model.get("protocol_id") or ""),
+        "modelFormat": str(model.get("model_format") or ""),
+        "quantization": str(model.get("quantization") or ""),
+        "gpuDevice": str(model.get("gpu_device") or ""),
+        "deviceIds": list(model.get("device_ids") or []),
+        "placementMode": str(model.get("placement_mode") or ""),
+        "contextWindow": int(model.get("context_window") or model.get("context") or 0),
+        "toolCallParser": str(model.get("tool_call_parser") or ""),
+    }
+    identity["fingerprint"] = model_compatibility.runtime_fingerprint(model)
+    return identity
 
 
 def chat_url(model):

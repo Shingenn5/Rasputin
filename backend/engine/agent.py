@@ -15,8 +15,7 @@ from backend.models import compatibility as model_compatibility
 async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
     cfg = model_registry.get_model(model_key) or model_registry.get_model("dry-run")
     if model_key == "dry-run" or not cfg or cfg.get("provider") == "mock":
-        user_msg = messages[-1]["content"] if messages else ""
-        reply = f"This is a dry-run response to: {user_msg}"
+        reply = "Testing Mode is ready. No model inference was performed."
         if on_delta:
             try:
                 on_delta({"type": "text", "text": reply})
@@ -155,13 +154,15 @@ def normalize_memory_mode(value):
 
 
 class AgentTask:
-    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None, isolate_workspace=False, isolation_state="none", execution_workspace="", isolation_metadata=None, context_capsule_id=None, memory_mode="auto"):
+    def __init__(self, objective, model, skill, parent_id=None, workspace_path=None, mode="chat", task_id=None, session_id=None, reasoning="auto", priority=0, scheduled_for=None, subagents=0, max_attempts=1, source_task_id=None, isolate_workspace=False, isolation_state="none", execution_workspace="", isolation_metadata=None, context_capsule_id=None, memory_mode="auto", deployment_profile=None, requested_mode=None):
         self.id = task_id or str(uuid.uuid4())[:8]
         self.session_id = session_id or store.new_id("sess")
         self.objective = objective
         self.model = model
+        self.deployment_profile = dict(deployment_profile or {})
         self.skill = skill or "general"
         self.mode = mode or "chat"
+        self.requested_mode = requested_mode or self.mode
         self.memory_mode = normalize_memory_mode(memory_mode)
         self.reasoning = reasoning if reasoning in {"auto", "off", "low", "medium", "high"} else "auto"
         self.priority = max(-10, min(int(priority or 0), 10))
@@ -394,6 +395,8 @@ class AgentHub:
             execution_workspace=row["execution_workspace"] or "",
             isolation_metadata=store._loads(row["isolation_metadata"], {}),
             context_capsule_id=row["context_capsule_id"],
+            deployment_profile=store._loads(row["deployment_profile"], {}),
+            requested_mode=row["requested_mode"] or row["mode"],
         )
         task.owner_id = row["owner_id"] or "admin"
         task.created_at = row["created_at"]
@@ -571,16 +574,18 @@ class AgentHub:
             conn.execute(
                 """
                 INSERT INTO tasks(
-                  id,session_id,parent_id,objective,model,skill,mode,status,progress,result,
+                  id,session_id,parent_id,objective,model,deployment_profile,skill,mode,requested_mode,status,progress,result,
                   workspace,permission_snapshot,isolation_requested,isolation_state,execution_workspace,isolation_metadata,
                   paused,created_at,updated_at,owner_id,reasoning,
                   subagents,priority,queue_order,scheduled_for,started_at,completed_at,attempt_count,
                   max_attempts,source_task_id,context_capsule_id,memory_mode,generation_metrics
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                   status=excluded.status,
                   progress=excluded.progress,
                   result=excluded.result,
+                  deployment_profile=excluded.deployment_profile,
+                  requested_mode=excluded.requested_mode,
                   isolation_requested=excluded.isolation_requested,
                   isolation_state=excluded.isolation_state,
                   execution_workspace=excluded.execution_workspace,
@@ -603,8 +608,10 @@ class AgentHub:
                     task.parent_id,
                     task.objective,
                     task.model,
+                    json.dumps(dict(task.deployment_profile or {})),
                     task.skill,
                     task.mode,
+                    task.requested_mode,
                     task.status,
                     int(task.progress),
                     task.result,
@@ -673,8 +680,12 @@ class AgentHub:
             "sessionId": task.session_id,
             "objective": task.objective,
             "model": task.model,
+            "requestedModel": task.model,
+            "resolvedModel": task.model,
+            "deploymentProfile": dict(getattr(task, "deployment_profile", {}) or {}),
             "skill": task.skill,
             "mode": task.mode,
+            "requestedMode": getattr(task, "requested_mode", task.mode),
             "memoryMode": getattr(task, "memory_mode", "auto"),
             "reasoning": getattr(task, "reasoning", "auto"),
             "subagents": getattr(task, "subagents", 0),
@@ -718,8 +729,12 @@ class AgentHub:
             "sessionId": task["session_id"],
             "objective": task["objective"],
             "model": task["model"],
+            "requestedModel": task["model"],
+            "resolvedModel": task["model"],
+            "deploymentProfile": store._loads(task.get("deployment_profile"), {}),
             "skill": task["skill"],
             "mode": task["mode"],
+            "requestedMode": task.get("requested_mode") or task["mode"],
             "memoryMode": task.get("memory_mode") or "auto",
             "status": task["status"],
             "progress": task["progress"],
@@ -1105,6 +1120,8 @@ class AgentHub:
         isolate_workspace=False,
         context_capsule_id=None,
         memory_mode="auto",
+        deployment_profile=None,
+        requested_mode=None,
     ):
         if context_capsule_id:
             capsule = store.get_assistant_context_capsule(owner_id, context_capsule_id)
@@ -1116,10 +1133,14 @@ class AgentHub:
                 raise ValueError("context capsule must be approved before starting a task")
         if session_id:
             self.session(session_id, owner_id)
-        requested_mode = mode
+        requested_mode = requested_mode or mode
         selected = model_registry.get_model(model)
-        if mode != "chat" and selected and not model_providers.supports_agentic_tools(selected):
-            mode = "chat"
+        if not selected:
+            raise ValueError("selected model is not registered")
+        if mode != "chat" and not model_providers.supports_agentic_tools(selected):
+            if isolate_workspace and requested_mode == "code":
+                raise ValueError("workspace isolation requires a tool-capable Code model; task was not started")
+            raise ValueError("selected model does not support the requested task mode")
         try:
             requested_subagents = max(0, min(4, int(subagents or 0)))
         except (TypeError, ValueError) as exc:
@@ -1158,10 +1179,9 @@ class AgentHub:
             isolate_workspace=isolate_workspace,
             context_capsule_id=context_capsule_id,
             memory_mode=memory_mode,
+            deployment_profile=deployment_profile or model_registry.deployment_profile(selected),
+            requested_mode=requested_mode,
         )
-        if mode != requested_mode:
-            task.log("Selected model does not support tool execution; switched to Chat mode before starting.")
-            task.seen("tool_mode_fallback", {"model": model, "requestedMode": requested_mode, "resolvedMode": "chat"})
         task.owner_id = owner_id
         task.adaptive_budget = adaptive_budget
         self.tasks[task.id] = task
@@ -1439,6 +1459,9 @@ class AgentHub:
         task.log("started")
         await self.emit(task)
         try:
+            if task.model == "dry-run":
+                await self._complete_testing_mode(task)
+                return
             self._load_context_capsule(task)
             if task.isolate_workspace:
                 await self._prepare_isolated_workspace(task)
@@ -1514,6 +1537,43 @@ class AgentHub:
             }
             task.seen("workspace_isolation", {"state": "retained", "executionWorkspace": task.execution_workspace})
             task.log("isolated Git worktree retained for review; source working tree and checked-out branch were not changed")
+        task.completed_at = store.now()
+        await self.emit(task)
+
+    async def _complete_testing_mode(self, task):
+        """Complete a bounded, non-inference smoke task without exposing prompts."""
+        mode = str(getattr(task, "requested_mode", None) or task.mode or "chat").lower()
+        labels = {
+            "chat": "Chat",
+            "code": "Code",
+            "research": "Research",
+        }
+        label = labels.get(mode, mode.title() or "Chat")
+        task.seen("testing_mode", {
+            "inference": False,
+            "mutating": False,
+            "mode": mode,
+        })
+        task.log(f"Testing Mode: {label} dry-run; no inference or tools were used")
+        if mode == "code":
+            reply = (
+                "Testing Mode completed a Code dry-run. No files were changed. "
+                "Real coding work requires a healthy tool-capable model."
+            )
+        elif mode == "research":
+            reply = (
+                "Testing Mode completed a Research dry-run. No model inference or research tools were used. "
+                "Real research requires a healthy model and the required tools."
+            )
+        else:
+            reply = "Testing Mode completed a Chat dry-run. No model inference or tools were used."
+        task.result = reply
+        task.output("markdown", "Testing Mode result", reply)
+        task.progress = 100
+        task.status = "done"
+        task.generation_metrics = _empty_generation_metrics()
+        self._add_message(task.session_id, task.id, "assistant", reply, memory_job=task)
+        task.log("Testing Mode complete")
         task.completed_at = store.now()
         await self.emit(task)
 
@@ -2210,9 +2270,7 @@ class AgentHub:
         return await self.governed_chat(task, "reflection", "summarizer", sections)
 
     def phase_model(self, task, role):
-        if task.model == "dry-run":
-            return "dry-run"
-        return model_registry.key_for_task(role, task.model)
+        return task.model
 
     def execution_role(self, task):
         if task.mode == "code":

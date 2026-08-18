@@ -25,6 +25,10 @@ export const settingsItems = [
   ["about", "About", "platform info"],
 ];
 
+// Keep the full settings catalog and its route ids stable, while giving the
+// normal settings surface a smaller, outcome-oriented starting point.
+export const settingsEssentialIds = ["general", "models", "runtime", "resources"];
+
 export const themeOptions = [
   ["cyberpunk-neon", "Cyberpunk Neon", "Vibrant synthwave dark theme"],
   ["ocean-abyss", "Ocean Abyss", "Deep dark blue and aqua"],

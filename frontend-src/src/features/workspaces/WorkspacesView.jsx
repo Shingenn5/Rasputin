@@ -27,7 +27,7 @@ import {
   X
 } from "lucide-react";
 import { Modal, Button, Table, Spinner, Badge } from "react-bootstrap";
-import { postJson } from "../../api/client.js";
+import { api, postJson } from "../../api/client.js";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
@@ -87,6 +87,11 @@ export function WorkspacesView({
   const [mountStatus, setMountStatus] = useState("");
   const [isMounting, setIsMounting] = useState(false);
   const [mountSuccess, setMountSuccess] = useState(false);
+  const [mountWorkflowStep, setMountWorkflowStep] = useState("saved");
+  const [mountWorkflowPath, setMountWorkflowPath] = useState("");
+  const [mountWorkflowItem, setMountWorkflowItem] = useState(null);
+  const [recheckBusy, setRecheckBusy] = useState(false);
+  const [recheckStatus, setRecheckStatus] = useState("");
   const [copied, setCopied] = useState(false);
 
   // Host folder picker: click through host folders instead of typing a path.
@@ -99,7 +104,8 @@ export function WorkspacesView({
 
   // Pending Mounts panel: which entry's compose line was just copied.
   const [copiedPendingPath, setCopiedPendingPath] = useState("");
-  const pendingMountsList = pendingMounts || [];
+  const [pendingMountsOverride, setPendingMountsOverride] = useState(null);
+  const pendingMountsList = pendingMountsOverride ?? pendingMounts ?? [];
 
   // Phase 10: Button Reliability Framework State
   const [uiState, setUiState] = useState({ status: 'idle', message: '' });
@@ -145,6 +151,10 @@ export function WorkspacesView({
   const ragHits = knowledgeResults?.ragResult?.hits || [];
   const graphNodes = knowledgeResults?.graphResult?.nodes || [];
   const graphEdges = knowledgeResults?.graphResult?.edges || [];
+
+  useEffect(() => {
+    setPendingMountsOverride(pendingMounts || []);
+  }, [pendingMounts]);
 
   useEffect(() => {
     setSelectedEntry(null);
@@ -312,6 +322,11 @@ export function WorkspacesView({
     setMountReadOnly(true);
     setMountStatus("");
     setMountSuccess(false);
+    setMountWorkflowStep("saved");
+    setMountWorkflowPath("");
+    setMountWorkflowItem(null);
+    setRecheckBusy(false);
+    setRecheckStatus("");
     setIsMounting(false);
     setCopied(false);
     setHostListing(null);
@@ -379,6 +394,9 @@ export function WorkspacesView({
       }, setUiState);
 
       setMountSuccess(true);
+      setMountWorkflowPath(mountHostPath);
+      setMountWorkflowStep(native ? "ready" : "restart");
+      setRecheckStatus(native ? "Folder is ready immediately." : "Restart Rasputin, then recheck this page.");
     } catch (error) {
       setMountStatus(error.message);
     } finally {
@@ -471,6 +489,41 @@ export function WorkspacesView({
     }
   }
 
+  async function refreshPendingMounts() {
+    const payload = await api("/api/workspace/mount-requests");
+    const requests = payload.requests || [];
+    setPendingMountsOverride(requests);
+    await loadWorkspaceRoots?.();
+    return requests;
+  }
+
+  async function recheckMountWorkflow() {
+    if (native) {
+      await loadWorkspaceRoots?.();
+      setMountWorkflowStep("ready");
+      setRecheckStatus("Native folders are available immediately.");
+      return;
+    }
+    setRecheckBusy(true);
+    setRecheckStatus("Checking whether the restarted mount is available...");
+    try {
+      const requests = await refreshPendingMounts();
+      const matching = requests.find((item) => normalizePath(item.hostPath) === normalizePath(mountWorkflowPath));
+      setMountWorkflowItem(matching || null);
+      if (matching?.ready) {
+        setMountWorkflowStep("approve");
+        setRecheckStatus("The mount is ready. Approve it to start working.");
+      } else {
+        setMountWorkflowStep("restart");
+        setRecheckStatus("The mount is not ready yet. Restart Rasputin, then check again.");
+      }
+    } catch (error) {
+      setRecheckStatus(`Recheck failed: ${error.message}`);
+    } finally {
+      setRecheckBusy(false);
+    }
+  }
+
   function handleApprovePendingMount(item) {
     return executeAction("ApprovePendingMount", item.hostPath, async () => {
       await approvePendingMount?.(item);
@@ -495,6 +548,12 @@ export function WorkspacesView({
     const rootId = root.id;
     const rootPath = root.path || root.root;
     selectWorkspace?.(rootId || rootPath);
+  }
+
+  function handleTreeItemKeyDown(event, action) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    action();
   }
 
   return (
@@ -613,20 +672,29 @@ export function WorkspacesView({
               </button>
             </div>
             {/* Bounded scroll so a long roots list can't grow the whole page. */}
-            <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '40vh', overflowY: 'auto' }}>
+            <div role="tree" aria-label="Approved workspace folders" style={{ display: 'flex', flexDirection: 'column', maxHeight: '40vh', overflowY: 'auto' }}>
               {workspaceRoots.map((root) => {
                 const rootPath = root.path || root.root;
                 const rootId = root.id;
                 const displayName = root.displayName || root.display_name || root.name || displayWorkspaceName(rootPath);
                 const active = rootId === activeId || normalizePath(rootPath) === normalizePath(workspace.activePath);
                 return (
-                  <div key={rootId} className={`w2-tree-item ${active ? 'is-active' : ''}`} onClick={() => selectAndBrowseRoot(root)} style={{ fontWeight: active ? 600 : 400 }}>
+                  <button
+                    key={rootId}
+                    type="button"
+                    role="treeitem"
+                    aria-selected={active}
+                    className={`w2-tree-item ${active ? 'is-active' : ''}`}
+                    onClick={() => selectAndBrowseRoot(root)}
+                    onKeyDown={(event) => handleTreeItemKeyDown(event, () => selectAndBrowseRoot(root))}
+                    style={{ fontWeight: active ? 600 : 400 }}
+                  >
                     <FolderOpen size={16} className="w2-tree-icon" />
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
                     {root.trusted && (
                       <ShieldAlert size={13} aria-label="Trusted Dev Mode is on for this folder" title="Trusted Dev Mode is on for this folder" style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--ras-warn, #d97706)' }} />
                     )}
-                  </div>
+                  </button>
                 );
               })}
               {workspaceRoots.length === 0 && <div style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', padding: '4px 8px' }}>No approved folders.</div>}
@@ -647,7 +715,12 @@ export function WorkspacesView({
               <div className="w2-section" style={{ gap: '8px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h2 className="w2-section-title">Pending Mounts</h2>
-                  <Badge bg="secondary" pill>{pendingMountsList.length}</Badge>
+                  <span className="pending-mount-heading-actions">
+                    <Badge bg="secondary" pill>{pendingMountsList.length}</Badge>
+                    <button type="button" className="tiny-action" onClick={refreshPendingMounts} aria-label="Recheck pending mounts" title="Recheck pending mounts">
+                      <RefreshCw size={13} /> Recheck
+                    </button>
+                  </span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '30vh', overflowY: 'auto' }}>
                   {pendingMountsList.map((item) => (
@@ -744,12 +817,17 @@ export function WorkspacesView({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', marginTop: '4px' }}>
+            <div role="tree" aria-label="Workspace files and folders" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', marginTop: '4px' }}>
               {filteredEntries.map((entry) => (
-                <div 
-                  key={`${entry.kind}-${entry.path}`} 
+                <div
+                  key={`${entry.kind}-${entry.path}`}
+                  role="treeitem"
+                  tabIndex={0}
+                  aria-selected={selectedEntry?.path === entry.path}
+                  aria-expanded={entry.kind === "folder" ? false : undefined}
                   className={`w2-tree-item ${selectedEntry?.path === entry.path ? 'is-active' : ''}`}
                   onClick={() => openEntry(entry)}
+                  onKeyDown={(event) => handleTreeItemKeyDown(event, () => openEntry(entry))}
                   title={`${entry.kind === "folder" ? "Folder" : entry.extension || "File"}\nSize: ${entry.kind === "folder" ? "--" : formatBytes(entry.sizeBytes)}\nModified: ${formatTime(entry.modifiedAt)}`}
                 >
                   <EntryIcon entry={entry} className="w2-tree-icon" />
@@ -1198,49 +1276,65 @@ export function WorkspacesView({
             <div className="folder-picker-success">
               <span className="folder-picker-success-icon"><Check size={34} /></span>
               <span className="control-eyebrow"><span className="signal-dot" /> {native ? "Workspace ready" : "Mount saved"}</span>
-              <h3>{native ? "Folder added" : "One restart, then approve"}</h3>
+              <h3>{native ? "Folder added" : "Finish setting up this folder"}</h3>
               {native ? (
                 <p className="text-muted mb-4 px-4">
-                  The folder is registered and ready to use right now — no mount or restart needed.
-                  You can approve any subfolder as its own workspace from the explorer (hover a
-                  folder and click the shield).
+                  The folder is registered and ready to use right now; no mount or restart needed.
+                  Approve any subfolder as its own workspace from the explorer when you need a separate trust boundary.
                 </p>
               ) : (
                 <>
                   <p>
-                    The secure mount is saved, but the folder is not available yet. Restart Rasputin,
-                    then approve it from <strong>Pending mounts</strong> on this page.
+                    The secure mount is saved. Restart the Rasputin container from <strong>Runtime {">"} Containers</strong>,
+                    then return here and use Recheck. Docker-control approval may be required for the restart.
                   </p>
-                  <div className="folder-picker-next-steps">
-                    <span className="is-done"><Check size={15} /><strong>Mount saved</strong></span>
-                    <span><b>2</b><strong>Restart Rasputin</strong></span>
-                    <span><b>3</b><strong>Approve folder</strong></span>
+                  <div className="folder-picker-next-steps" aria-label="Folder setup progress">
+                    <span className="is-done"><Check size={15} /><strong>Saved</strong></span>
+                    <span className={mountWorkflowStep === "restart" ? "is-current" : "is-done"}>
+                      {mountWorkflowStep === "restart" ? <b>2</b> : <Check size={15} />}<strong>Restart / reload</strong>
+                    </span>
+                    <span className={mountWorkflowStep === "approve" ? "is-current" : ""}>
+                      <b>3</b><strong>Recheck + approve</strong>
+                    </span>
                   </div>
 
-                  <div className="bg-body-tertiary p-3 rounded mb-4 text-start font-monospace small position-relative border">
-                    <div className="text-muted mb-2 fw-bold font-sans">Docker Compose Volume Line:</div>
-                    <div className="user-select-all text-break">{mountPlan?.composeVolume}</div>
-                    <Button
-                      variant="outline-secondary"
-                      size="sm"
-                      className="position-absolute top-0 end-0 m-2"
-                      onClick={copyMountVolume}
-                    >
-                      {copied ? <Check size={14}/> : <Copy size={14}/>}
+                  <div className="folder-picker-compose">
+                    <span>
+                      <small>Docker Compose volume line</small>
+                      <code>{mountPlan?.composeVolume || "Saved mount configuration"}</code>
+                    </span>
+                    <Button variant="outline-secondary" size="sm" onClick={copyMountVolume} aria-label="Copy Docker Compose volume line">
+                      {copied ? <Check size={14}/> : <Copy size={14}/>} {copied ? "Copied" : "Copy"}
                     </Button>
                   </div>
 
+                  <div className="folder-picker-workflow-status" role="status" aria-live="polite">
+                    {recheckStatus || "Restart Rasputin, then recheck this page."}
+                  </div>
+                  <div className="folder-picker-workflow-actions">
+                    <Button variant="primary" onClick={recheckMountWorkflow} disabled={recheckBusy}>
+                      {recheckBusy ? <><Spinner size="sm" /> Checking...</> : <><RefreshCw size={15} /> Recheck</>}
+                    </Button>
+                    {mountWorkflowItem?.ready && (
+                      <Button
+                        variant="success"
+                        onClick={async () => {
+                          await handleApprovePendingMount(mountWorkflowItem);
+                          resetMountModal();
+                        }}
+                      >
+                        <ShieldPlus size={15} /> Approve folder
+                      </Button>
+                    )}
+                    <Button variant="outline-secondary" onClick={resetMountModal}>Close</Button>
+                  </div>
                   <p className="text-muted small px-4">
-                    Tip: after the restart you can approve any subfolder of this mount as its own
-                    workspace straight from the explorer — hover a folder and click the shield.
-                    No extra mounts or restarts needed.
+                    Recheck refreshes pending mounts and approved roots. Once the mount reports ready, Approve folder becomes available.
                   </p>
                 </>
               )}
 
-              <Button variant="primary" size="lg" onClick={resetMountModal} className="px-5">
-                Done
-              </Button>
+              {native && <Button variant="primary" size="lg" onClick={resetMountModal} className="px-5">Close</Button>}
             </div>
           )}
         </Modal.Body>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bell,
@@ -20,7 +20,7 @@ import {
   Users,
 } from "lucide-react";
 import { GeneralSettings } from "./GeneralSettings.jsx";
-import { settingsItems } from "../../lib/constants.js";
+import { settingsEssentialIds, settingsItems } from "../../lib/constants.js";
 import { useSettingsStore } from "./settingsStore.js";
 import { loadSettings, exportSettings, importSettings, restoreDefaults } from "./settingsActions.js";
 import { SecuritySettings } from "./SecuritySettings.jsx";
@@ -57,6 +57,13 @@ const settingGroups = [
   { label: "Platform", ids: ["deployments", "integrations", "about"] },
 ];
 
+function isPlainSettingsObject(value) {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+}
+
 export function SettingsView(props) {
   const {
     view,
@@ -84,29 +91,104 @@ export function SettingsView(props) {
   const ActiveIcon = iconMap[activeSetting[0]] || Settings2;
   const [searchQuery, setSearchQuery] = useState("");
   const [searchEditable, setSearchEditable] = useState(false);
+  const [settingsScope, setSettingsScope] = useState(isAdmin ? "essentials" : "advanced");
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [importError, setImportError] = useState("");
+  const importInputRef = useRef(null);
   const loading = useSettingsStore((state) => state.loading);
+  const settingsErrors = useSettingsStore((state) => state.errors);
+  const settingsError = Object.values(settingsErrors || {}).find(Boolean);
+  const statusError = importError || settingsError;
+
+  const settingsStatus = loading
+    ? { tone: "loading", label: "Settings action in progress…", icon: <RefreshCw size={14} className="settings-status-spinner" aria-hidden="true" /> }
+    : statusError
+      ? { tone: "error", label: statusError, icon: <ShieldAlert size={14} aria-hidden="true" /> }
+      : settingsLoaded
+        ? { tone: "ready", label: "Settings loaded", icon: <CheckCircle2 size={14} aria-hidden="true" /> }
+        : { tone: "loading", label: "Settings not loaded", icon: <RefreshCw size={14} aria-hidden="true" /> };
+
+  const navigationSettings = useMemo(() => {
+    const query = searchQuery.trim();
+    if (!isAdmin || settingsScope === "advanced" || query) return allowedSettings;
+    const essentials = allowedSettings.filter(([id]) => settingsEssentialIds.includes(id));
+    return essentials.length ? essentials : allowedSettings;
+  }, [allowedSettings, isAdmin, searchQuery, settingsScope]);
 
   const visibleGroups = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return settingGroups
       .map((group) => ({
         ...group,
-        items: allowedSettings.filter(([id, label, small]) =>
+        items: navigationSettings.filter(([id, label, small]) =>
           group.ids.includes(id) && (!query || `${label} ${small}`.toLowerCase().includes(query))
         ),
       }))
       .filter((group) => group.items.length > 0);
-  }, [allowedSettings, searchQuery]);
+  }, [navigationSettings, searchQuery]);
 
   useEffect(() => {
-    if (view === "settings" && isAdmin) loadSettings();
+    if (view === "settings" && isAdmin) {
+      setSettingsLoaded(false);
+      loadSettings().finally(() => setSettingsLoaded(true));
+    }
   }, [isAdmin, view]);
+
+  useEffect(() => {
+    if (!resetDialogOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setResetDialogOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [resetDialogOpen]);
+
+  const handleResetConfirm = async () => {
+    setResetDialogOpen(false);
+    await restoreDefaults("all");
+  };
+
+  const handleImportClick = () => {
+    setImportError("");
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!isPlainSettingsObject(parsed)) {
+        throw new Error("Import file must contain a JSON object.");
+      }
+      const imported = await importSettings(parsed);
+      if (!imported) setImportError("Failed to import settings.");
+    } catch (error) {
+      setImportError(error instanceof SyntaxError
+        ? "Import file is empty or invalid JSON."
+        : error?.message || "Import file could not be imported.");
+    }
+  };
 
   useEffect(() => {
     if (view === "settings" && !allowedSettings.some(([id]) => id === section)) {
       setSection(allowedSettings[0]?.[0] || "accounts");
     }
   }, [allowedSettings, section, setSection, view]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setSettingsScope("advanced");
+    } else if (section && !settingsEssentialIds.includes(section)) {
+      // Direct links to less-frequently-used sections remain valid and reveal
+      // the full navigation automatically.
+      setSettingsScope("advanced");
+    }
+  }, [isAdmin, section]);
 
   // Section changes must always restore the full navigation rail. In
   // particular, credential managers can mistake the first text-like control
@@ -131,14 +213,75 @@ export function SettingsView(props) {
           <div><span>Guardrails</span><strong className="is-safe">Enforced</strong></div>
         </div>
         {isAdmin && <div className="settings-hero-actions" aria-label="Configuration actions">
-          <button type="button" onClick={() => importSettings({})} disabled={loading}><Upload size={15} /> Import</button>
+          <button type="button" onClick={handleImportClick} disabled={loading}><Upload size={15} /> Import</button>
+          <input
+            ref={importInputRef}
+            className="settings-import-input"
+            type="file"
+            accept="application/json"
+            aria-label="Choose settings JSON file"
+            onChange={handleImportFile}
+            tabIndex={-1}
+          />
           <button type="button" onClick={exportSettings} disabled={loading}><Download size={15} /> Export</button>
-          <button type="button" className="is-danger" onClick={() => restoreDefaults("all")} disabled={loading}><RefreshCw size={15} /> Reset</button>
+          <button type="button" className="is-danger" onClick={() => setResetDialogOpen(true)} disabled={loading}><RefreshCw size={15} /> Reset</button>
         </div>}
       </header>
 
+      {resetDialogOpen && (
+        <div className="settings-reset-backdrop">
+          <div
+            className="settings-reset-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-reset-title"
+            aria-describedby="settings-reset-description"
+          >
+            <span className="control-eyebrow">Destructive action</span>
+            <h2 id="settings-reset-title">Reset all settings?</h2>
+            <p id="settings-reset-description">
+              This restores every Settings section to its defaults, including runtime, security, model, and integration configuration. Existing settings will be replaced.
+            </p>
+            <div className="settings-reset-actions">
+              <button type="button" data-testid="settings-reset-cancel" onClick={() => setResetDialogOpen(false)} autoFocus>
+                Cancel
+              </button>
+              <button type="button" className="is-danger" data-testid="settings-reset-confirm" onClick={handleResetConfirm}>
+                Reset all settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="settings-control-grid">
         <nav className="settings-control-rail" aria-label="Settings sections">
+          {isAdmin && (
+            <div className="settings-scope-toggle mb-3" role="group" aria-label="Settings view">
+              <button
+                type="button"
+                className={`btn btn-sm ${settingsScope === "essentials" ? "btn-primary" : "btn-outline-secondary"}`}
+                aria-pressed={settingsScope === "essentials"}
+                data-testid="settings-scope-essentials"
+                onClick={() => {
+                  setSearchQuery("");
+                  setSettingsScope("essentials");
+                  if (!settingsEssentialIds.includes(section)) setSection("general");
+                }}
+              >
+                Essentials
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${settingsScope === "advanced" ? "btn-primary" : "btn-outline-secondary"}`}
+                aria-pressed={settingsScope === "advanced"}
+                data-testid="settings-scope-advanced"
+                onClick={() => setSettingsScope("advanced")}
+              >
+                All settings
+              </button>
+            </div>
+          )}
           <label className="settings-search">
             <Search size={16} aria-hidden="true" />
             <input
@@ -196,7 +339,9 @@ export function SettingsView(props) {
               <h2>{activeSetting[1]}</h2>
               <p>{activeInspector.desc}</p>
             </div>
-            <span className="settings-validation"><CheckCircle2 size={14} /> Schema valid</span>
+            <span className={"settings-validation is-" + settingsStatus.tone} role="status" aria-live="polite">
+              {settingsStatus.icon} {settingsStatus.label}
+            </span>
           </div>
 
           <div className="settings-context-strip">

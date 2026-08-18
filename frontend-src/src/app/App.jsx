@@ -81,6 +81,31 @@ function routeHashFor(view, section) {
   return `#${view || "home"}`;
 }
 
+function assistantProfileToWarsatStrengthProfile(profile) {
+  const normalized = String(profile || "balanced").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["fast", "fastest", "fastest_practical"].includes(normalized)) return "fast";
+  if (["maximum_quality", "maximumquality", "largest", "largest_capable", "maximum"].includes(normalized)) return "maximum_quality";
+  return "balanced";
+}
+
+const taskLifecycleRank = (status) => {
+  if (["done", "error", "cancelled"].includes(status)) return 2;
+  if (["running", "paused"].includes(status)) return 1;
+  return 0;
+};
+
+function reconcileCreatedTaskSnapshot(currentTasks, createdTask, temporaryId) {
+  const current = Array.isArray(currentTasks) ? currentTasks : [];
+  const existing = current.find((item) => item.id === createdTask.id);
+  // Testing Mode can finish before POST /api/tasks resolves. In that race the
+  // SSE snapshot is newer than the queued creation response, so never move a
+  // task backwards through its lifecycle when replacing the optimistic row.
+  const resolved = existing && taskLifecycleRank(existing.status) > taskLifecycleRank(createdTask.status)
+    ? existing
+    : { ...(existing || {}), ...createdTask };
+  return [resolved, ...current.filter((item) => item.id !== createdTask.id && item.id !== temporaryId)];
+}
+
 function supportsAgenticMode(model, mode) {
   if (!model) return false;
   if (mode === "chat") return true;
@@ -174,27 +199,38 @@ export function App() {
   const [selectedTaskContextCapsuleId, setSelectedTaskContextCapsuleId] = useState("");
   const [assistantModelPacks, setAssistantModelPacks] = useState({ packs: [] });
   const [assistantHandoffs, setAssistantHandoffs] = useState({ handoffs: [] });
+  const [assistantModelRequests, setAssistantModelRequests] = useState({ requests: [] });
   const [assistantVoicePreview, setAssistantVoicePreview] = useState(null);
   const [assistantCommandPreview, setAssistantCommandPreview] = useState(null);
   const [assistantContextPreview, setAssistantContextPreview] = useState(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState("");
   const [globalStatus, setGlobalStatus] = useState("");
+  const [eventConnectionStatus, setEventConnectionStatus] = useState("disconnected");
   const toast = useToast();
   const eventSourceRef = useRef(null);
+  const eventReconnectTimerRef = useRef(null);
+  const eventFallbackTimerRef = useRef(null);
+  const eventRetryAttemptRef = useRef(0);
+  const eventGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
   const bootPhaseRef = useRef("starting");
   const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
 
-  // First-run onboarding: show once when the model registry is empty and the
-  // flag is unset. Auto-mark onboarded once any model exists.
+  // First-run onboarding is about launch readiness, not registry cardinality:
+  // seeded entries can still be stopped or unhealthy and cannot start a chat.
   const [onboarded, setOnboarded] = useLocalStorageFlag("rasputin-onboarded", false);
-  const showOnboarding = authenticated && ready && !onboarded && models.length === 0;
+  const hasHealthyRouteableChatModel = useMemo(
+    () => models.some((model) => isUserFacingModel(model, testingMode) && isModelRouteable(model) && isModelHealthy(model)),
+    [models, testingMode],
+  );
+  const showOnboarding = authenticated && ready && !onboarded && !hasHealthyRouteableChatModel;
   useEffect(() => {
-    if (authenticated && ready && !onboarded && models.length > 0) setOnboarded(true);
-  }, [authenticated, ready, onboarded, models.length, setOnboarded]);
+    if (authenticated && ready && !onboarded && hasHealthyRouteableChatModel) setOnboarded(true);
+  }, [authenticated, ready, onboarded, hasHealthyRouteableChatModel, setOnboarded]);
 
   const visibleModels = useMemo(() => {
     return models.filter(
@@ -248,6 +284,7 @@ export function App() {
     ? { active: true, id: activeWorkspaceEntry.id, name: activeWorkspaceEntry.displayName || activeWorkspaceEntry.name || activeWorkspaceName }
     : null;
   const healthy = isModelHealthy(selectedModelObject);
+  const modeBlocked = taskMode !== "chat" && !supportsAgenticMode(selectedModelObject, taskMode);
   const approvedContextCapsules = (assistantContextCapsules?.capsules || []).filter((capsule) => capsule.status === "approved");
   const homeTasks = tasks.filter((task) => !task.parentId && homeTaskIds.has(task.id));
   const runningTasks = tasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
@@ -340,8 +377,12 @@ export function App() {
   }, [globalStatus]);
 
   useEffect(() => {
+    mountedRef.current = true;
     boot();
-    return () => eventSourceRef.current?.close();
+    return () => {
+      mountedRef.current = false;
+      disconnectEvents();
+    };
   }, []);
 
   useEffect(() => {
@@ -693,16 +734,12 @@ export function App() {
   }, [models, modeModelOverrides, selectedModel, testingMode]);
 
   const chooseTaskMode = useCallback((mode) => {
-    const routedModel = modelKeyForMode(mode);
-    const routedConfig = models.find((model) => model.key === routedModel);
-    const resolvedMode = mode !== "chat" && !supportsAgenticMode(routedConfig, mode) ? "chat" : mode;
-    setTaskMode(resolvedMode);
-    const resolvedModel = resolvedMode === mode ? routedModel : modelKeyForMode(resolvedMode);
-    if (resolvedModel) setSelectedModel(resolvedModel);
-    if (resolvedMode !== mode) {
-      setGlobalStatus("The selected local model is chat-only, so Rasputin switched to Chat mode before sending your message.");
+    setTaskMode(mode);
+    const currentModel = models.find((model) => model.key === selectedModel) || null;
+    if (mode !== "chat" && !supportsAgenticMode(currentModel, mode)) {
+      setGlobalStatus("This model is not certified for the selected workflow. Choose a compatible deployment before sending.");
     }
-  }, [modelKeyForMode, models]);
+  }, [models, selectedModel]);
 
   async function openAssistantWorkflow(workflowId) {
     const workflow = workflowId === "coding"
@@ -756,19 +793,75 @@ export function App() {
         next[mode] = modelKey;
       }
       modeModelOverridesRef.current = next;
-      if (mode === taskMode) {
-        const routedModel = modelKeyForMode(mode, next);
-        if (routedModel) setSelectedModel(routedModel);
-      }
       return next;
     });
   }, [modelKeyForMode, taskMode]);
 
-  function connectEvents() {
+  function clearEventTimers() {
+    if (eventReconnectTimerRef.current) {
+      window.clearTimeout(eventReconnectTimerRef.current);
+      eventReconnectTimerRef.current = null;
+    }
+    if (eventFallbackTimerRef.current) {
+      window.clearInterval(eventFallbackTimerRef.current);
+      eventFallbackTimerRef.current = null;
+    }
+  }
+
+  function disconnectEvents(status = "disconnected") {
+    eventGenerationRef.current += 1;
+    clearEventTimers();
     eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+    if (mountedRef.current) setEventConnectionStatus(status);
+  }
+
+  function scheduleEventReconnect(generation) {
+    if (!mountedRef.current || generation !== eventGenerationRef.current || eventReconnectTimerRef.current) return;
+    const attempt = eventRetryAttemptRef.current;
+    const delay = Math.min(30000, 1000 * (2 ** attempt));
+    eventRetryAttemptRef.current = Math.min(attempt + 1, 5);
+    eventReconnectTimerRef.current = window.setTimeout(() => {
+      eventReconnectTimerRef.current = null;
+      if (mountedRef.current && generation === eventGenerationRef.current) connectEvents();
+    }, delay);
+  }
+
+  function startEventFallbackRefresh(generation) {
+    if (eventFallbackTimerRef.current) return;
+    const refresh = () => {
+      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
+      loadTasks().catch(() => {});
+    };
+    refresh();
+    eventFallbackTimerRef.current = window.setInterval(refresh, 3000);
+  }
+
+  function connectEvents() {
+    if (!mountedRef.current) return;
+    disconnectEvents("connecting");
+    const generation = eventGenerationRef.current;
     const source = new EventSource("/api/events");
     eventSourceRef.current = source;
+    source.onopen = () => {
+      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
+      eventRetryAttemptRef.current = 0;
+      if (eventFallbackTimerRef.current) {
+        window.clearInterval(eventFallbackTimerRef.current);
+        eventFallbackTimerRef.current = null;
+      }
+      setEventConnectionStatus("connected");
+    };
+    source.onerror = () => {
+      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
+      source.close();
+      if (eventSourceRef.current === source) eventSourceRef.current = null;
+      setEventConnectionStatus("degraded");
+      startEventFallbackRefresh(generation);
+      scheduleEventReconnect(generation);
+    };
     source.onmessage = (message) => {
+      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
       try {
         const data = JSON.parse(message.data);
         if (data.tasks) {
@@ -881,7 +974,7 @@ export function App() {
   }
 
   async function logout() {
-    eventSourceRef.current?.close();
+    disconnectEvents();
     await api("/api/auth/logout", { method: "POST" });
     setSession(null);
     setLoginVisible(true);
@@ -931,11 +1024,11 @@ export function App() {
     const modelKey = options.model || selectedModel;
     const contextCapsuleId = options.contextCapsuleId || selectedTaskContextCapsuleId || undefined;
     const requestedModel = models.find((model) => model.key === modelKey) || null;
-    if (mode === "code" && !supportsAgenticMode(requestedModel, mode)) {
-      setComposerStatus("Coding workflow requires a healthy, tool-capable coder model. Register or start one before sending.");
+    if (mode !== "chat" && !supportsAgenticMode(requestedModel, mode)) {
+      setComposerStatus("This workflow requires a healthy, tool-capable model certified for the selected mode.");
       return false;
     }
-    if (!healthy) {
+    if (!isModelHealthy(requestedModel)) {
       setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
       return false;
     }
@@ -975,6 +1068,7 @@ export function App() {
       const task = await postJson("/api/tasks", {
         objective: message,
         model: modelKey,
+        deploymentFingerprint: requestedModel?.deployment_fingerprint || requestedModel?.deploymentFingerprint || undefined,
         skill: "general",
         mode,
         memoryMode: requestedMemoryMode,
@@ -989,8 +1083,9 @@ export function App() {
         isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
         contextCapsuleId,
       });
-      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
-      queryClient.setQueryData(["tasks"], (current = []) => [task, ...current.filter((item) => item.id !== task.id && item.id !== tempId)]);
+      setTasks((current) => reconcileCreatedTaskSnapshot(current, task, tempId));
+      queryClient.setQueryData(["tasks"], (current = []) => reconcileCreatedTaskSnapshot(current, task, tempId));
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
       setHomeTaskIds((current) => {
         const next = new Set(current);
         next.delete(tempId);
@@ -1497,13 +1592,14 @@ export function App() {
     setAssistantLoading(true);
     setAssistantError("");
     try {
-      const [nextProfile, nextCapabilities, nextPlans, nextCapsules, nextPacks, nextHandoffs] = await Promise.all([
+      const [nextProfile, nextCapabilities, nextPlans, nextCapsules, nextPacks, nextHandoffs, nextModelRequests] = await Promise.all([
         api("/api/assistant/profile"),
         api("/api/assistant/capabilities"),
         api("/api/assistant/plans"),
         api("/api/assistant/context-capsules"),
         api("/api/assistant/model-packs"),
         api("/api/assistant/handoffs"),
+        api("/api/assistant/model-requests"),
       ]);
       setAssistantProfile(nextProfile);
       setAssistantCapabilities(nextCapabilities);
@@ -1513,12 +1609,63 @@ export function App() {
       setSelectedTaskContextCapsuleId((current) => approvedCapsules.some((capsule) => capsule.id === current) ? current : "");
       setAssistantModelPacks(nextPacks || { packs: [] });
       setAssistantHandoffs(nextHandoffs || { handoffs: [] });
+      setAssistantModelRequests(Array.isArray(nextModelRequests) ? { requests: nextModelRequests } : nextModelRequests || { requests: [] });
       return { profile: nextProfile, capabilities: nextCapabilities, plans: nextPlans, contextCapsules: nextCapsules, modelPacks: nextPacks, handoffs: nextHandoffs };
     } catch (error) {
       setAssistantError(error.message);
       throw error;
     } finally {
       setAssistantLoading(false);
+    }
+  }
+
+  async function requestAssistantModel(request) {
+    const payload = request?.currentTarget
+      ? Object.fromEntries(new FormData(request.currentTarget).entries())
+      : request || {};
+    try {
+      const created = await postJson("/api/assistant/model-requests", payload);
+      await loadAssistantData();
+      setGlobalStatus("Assistant model request created for candidate review.");
+      return created;
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+      return null;
+    }
+  }
+
+  async function prepareAssistantModelRequest(requestId, candidateId) {
+    const resolvedRequestId = typeof requestId === "object" ? requestId?.id : requestId;
+    const resolvedCandidateId = typeof candidateId === "object" ? candidateId?.candidateId : candidateId;
+    if (!resolvedRequestId || !resolvedCandidateId) return null;
+    try {
+      const selectedRequest = await postJson(
+        `/api/assistant/model-requests/${encodeURIComponent(resolvedRequestId)}/select`,
+        { candidateId: resolvedCandidateId },
+      );
+      await loadAssistantData();
+      const candidate = selectedRequest?.selectedCandidate
+        || selectedRequest?.recommendations?.find((item) => item.candidateId === resolvedCandidateId)
+        || selectedRequest?.candidate
+        || selectedRequest?.selectedCandidateSnapshot;
+      const planSeed = candidate?.planSeed || {};
+      const protocolId = candidate?.protocolId || planSeed.protocolId;
+      const profile = planSeed.strengthProfile || planSeed.profile || candidate?.profile || selectedRequest?.profile;
+      if (!candidate?.catalogItem || !protocolId) {
+        throw new Error("The selected Assistant model candidate has no deployable WarSat catalog plan.");
+      }
+      return await prepareCatalogModelForWarsat(candidate.catalogItem, {
+        ...planSeed,
+        protocolId,
+        role: candidate.role || selectedRequest?.role,
+        strengthProfile: assistantProfileToWarsatStrengthProfile(profile),
+        assistantRequestId: resolvedRequestId,
+      });
+    } catch (error) {
+      setAssistantError(error.message);
+      setGlobalStatus(error.message);
+      return null;
     }
   }
 
@@ -2078,6 +2225,7 @@ export function App() {
         resourceManifest: item.resourceManifest || undefined,
         capabilityProfile: loaded?.hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
         containerName: options.containerName || undefined,
+        assistantRequestId: options.assistantRequestId || undefined,
         // Catalog hints are deliberately conservative. When one is present,
         // use it so a known tool-capable model is deployed agent-ready.
         toolCallParser,
@@ -2203,6 +2351,7 @@ export function App() {
           hostPort: warsatPlan.hostPort || undefined,
           role: warsatPlan.role || undefined,
           containerName: warsatPlan.containerName || undefined,
+          assistantRequestId: warsatPlan.assistantRequestId || undefined,
         });
         setWarsatPlan(plan);
         setWarsatDeployment(null);
@@ -2220,6 +2369,7 @@ export function App() {
     setWarsatError("");
     setWarsatDeploying(true);
     const approvalId = warsatDeployment?.approval?.id || warsatDeployment?.approvalId;
+    const assistantRequestId = warsatPlan.assistantRequestId;
     setGlobalStatus(approvalId || warsatPlan.approvalGranted
       ? "Warsat is starting the deployment. Large image pulls stream their progress below."
       : "Creating Warsat deployment approval.");
@@ -2243,6 +2393,17 @@ export function App() {
       } else {
         await Promise.allSettled([loadWarsat(), loadModels(), refreshApprovals()]);
         setGlobalStatus(`Warsat registered ${deployment.modelKey}. You can test and select it from Models.`);
+      }
+      if (deployment.status === "registered" && deployment.modelKey && assistantRequestId) {
+        const verification = await postJson(
+          `/api/assistant/model-requests/${encodeURIComponent(assistantRequestId)}/verify`,
+          { modelKey: deployment.modelKey },
+        );
+        await Promise.allSettled([loadAssistantData(), loadModels()]);
+        if (verification?.status === "selected") {
+          setSelectedModel(deployment.modelKey);
+          setGlobalStatus(`Assistant verified and selected ${deployment.modelKey}.`);
+        }
       }
       return deployment;
     } catch (error) {
@@ -2373,6 +2534,16 @@ export function App() {
         contextCapsules={approvedContextCapsules}
         selectedContextCapsuleId={selectedTaskContextCapsuleId}
         setSelectedContextCapsuleId={setSelectedTaskContextCapsuleId}
+        hasHealthyRouteableChatModel={hasHealthyRouteableChatModel}
+        onOpenModels={() => go("models")}
+        onConnectLocalEndpoint={() => go("models")}
+        onEnableTestingMode={() => {
+          updateTestingMode(true);
+          setOnboarded(true);
+          go("home");
+        }}
+        eventConnectionStatus={eventConnectionStatus}
+        modeBlocked={modeBlocked}
         setPrompt={(prompt, mode) => {
           setObjective(prompt);
           chooseTaskMode(mode === "analyze files" ? "analyze" : mode || "chat");
@@ -2584,6 +2755,10 @@ export function App() {
         requestHandoff={requestAssistantHandoff}
         prepareHandoff={prepareAssistantHandoff}
         dispatchHandoff={dispatchAssistantHandoff}
+        modelRequests={assistantModelRequests}
+        requestModel={requestAssistantModel}
+        prepareModelRequest={prepareAssistantModelRequest}
+        openModels={() => go("models")}
         previewVoice={previewAssistantVoice}
         previewCommand={previewAssistantCommand}
         previewContext={previewAssistantContext}
@@ -2686,8 +2861,11 @@ export function App() {
       />
       {showOnboarding && (
         <Onboarding
+          hasSeededModels={models.length > 0}
           onScanModels={() => { setOnboarded(true); go("warsat"); }}
           onOpenRegistry={() => { setOnboarded(true); go("models"); }}
+          onConnectLocalEndpoint={() => { setOnboarded(true); go("models"); }}
+          onEnableTestingMode={() => { updateTestingMode(true); setOnboarded(true); go("home"); }}
           onDismiss={() => setOnboarded(true)}
         />
       )}

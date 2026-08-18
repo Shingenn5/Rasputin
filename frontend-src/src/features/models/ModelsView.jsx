@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -39,6 +39,7 @@ import {
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { api } from "../../api/client.js";
+import { useSettingsStore } from "../settings/settingsStore.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
 import { Button as UIButton } from "@/components/ui/button.jsx";
@@ -52,6 +53,245 @@ const modelsTabs = [
   { id: "running",    label: "Running",     icon: Activity },
   { id: "settings",   label: "Settings",    icon: Settings },
 ];
+
+
+/* ── Guided advisor helpers ── */
+export const advisorProfileSlots = [
+  { key: "fast", backendProfile: "fast", label: "Fast", goal: "Prioritizes low latency and quick responses." },
+  { key: "balanced", backendProfile: "balanced", label: "Balanced", goal: "Balances quality, speed, and hardware fit." },
+  { key: "maximumQuality", backendProfile: "maximum_quality", label: "Maximum Quality", goal: "Prioritizes quality and can accept heavier placement." },
+];
+
+export const ADVISOR_REQUEST_TIMEOUT_MS = 10000;
+
+function advisorNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function advisorModelId(item) {
+  return String(item?.modelId || item?.id || item?.name || "");
+}
+
+function advisorEvidenceRank(profile) {
+  const evidence = profile?.benchmarkEvidence || profile?.benchmark || profile?.evidence?.benchmark || profile?.evidence || {};
+  if (evidence.exact === true || evidence.status === "exact" || evidence.basis === "measured-exact") return 2;
+  if (evidence.basis === "catalog-estimate" || profile?.evidence?.estimated || profile?.estimated) return 1;
+  return 0;
+}
+
+function advisorProfileScore(profile) {
+  return advisorNumber(profile?.profileScore ?? profile?.profile_score ?? profile?.score, -Infinity);
+}
+
+function advisorBlocked(profile) {
+  return profile?.status === "blocked"
+    || (Array.isArray(profile?.blockers) && profile.blockers.length > 0)
+    || (Array.isArray(profile?.blockedReasons) && profile.blockedReasons.length > 0)
+    || profile?.raw?.status === "blocked";
+}
+
+function advisorDecodeTps(profile) {
+  const metrics = profile?.benchmarkEvidence?.metrics || profile?.benchmark?.metrics || profile?.metrics || {};
+  const value = metrics.decodeTokensPerSecond ?? metrics.tokensPerSecond ?? metrics.tps ?? metrics.throughputTokensPerSecond;
+  return advisorNumber(value?.p50 ?? value, -Infinity);
+}
+
+function advisorTtft(profile) {
+  const metrics = profile?.benchmarkEvidence?.metrics || profile?.benchmark?.metrics || profile?.metrics || {};
+  const value = metrics.ttftMs ?? metrics.timeToFirstTokenMs ?? metrics.ttft;
+  return advisorNumber(value?.p50 ?? value, Infinity);
+}
+
+export function withAdvisorTimeout(requestFactory, timeoutMs = ADVISOR_REQUEST_TIMEOUT_MS, onTimeout) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
+    timer = setTimeout(() => {
+      onTimeout?.();
+      const error = new Error("Advisor request timed out after " + Math.round(timeoutMs / 1000) + "s.");
+      error.name = "TimeoutError";
+      finish(reject, error);
+    }, timeoutMs);
+    Promise.resolve()
+      .then(requestFactory)
+      .then((value) => finish(resolve, value), (error) => finish(reject, error));
+  });
+}
+
+export function hardwarePlacementCapacity(hardware) {
+  const detected = hardware?.detectedHardware || hardware?.detected_hardware || hardware || {};
+  const gpus = Array.isArray(detected?.gpus) ? detected.gpus : [];
+  const capacities = gpus
+    .map((gpu, index) => {
+      const memoryMb = gpu?.memoryTotalMb ?? gpu?.memory_total_mb;
+      const memoryGb = gpu?.memoryGb ?? gpu?.memory_gb;
+      return {
+        index,
+        name: gpu?.name || gpu?.model || "GPU " + index,
+        memoryGb: memoryMb != null ? Number(memoryMb) / 1024 : Number(memoryGb),
+      };
+    })
+    .filter((gpu) => Number.isFinite(gpu.memoryGb) && gpu.memoryGb > 0);
+  return {
+    gpus: capacities,
+    largestSingleGpuGb: capacities.reduce((largest, gpu) => Math.max(largest, gpu.memoryGb), 0) || null,
+    aggregateVramGb: capacities.reduce((total, gpu) => total + gpu.memoryGb, 0) || null,
+  };
+}
+
+export function shouldProbeHardware(view, hasHardware, attempt, refreshToken) {
+  return view === "models" && !hasHardware && attempt !== refreshToken;
+}
+
+export function catalogPlacementAssessment(item, hardware, measuredEvidence = null) {
+  const capacity = hardwarePlacementCapacity(hardware);
+  const estimate = Number(item?.vramEstimateGb);
+  const evidence = measuredEvidence || item?.benchmarkEvidence || item?.benchmark || item?.resourceManifest?.benchmarkEvidence || {};
+  const placement = evidence?.placement || {};
+  const protocol = String(evidence?.protocolId || evidence?.protocol || evidence?.runtime || item?.recommendedProtocol || "").toLowerCase();
+  const exact = evidence?.exact === true || evidence?.status === "exact" || evidence?.basis === "measured-exact";
+  const multiGpu = placement?.mode === "multi-gpu" || placement?.mode === "multi_gpu" || evidence?.placementMode === "multi-gpu" || evidence?.placement_mode === "multi-gpu";
+  const measuredLayerSharding = exact && multiGpu && (protocol.includes("llama") || protocol.includes("gguf"));
+  const largest = capacity.largestSingleGpuGb;
+  const hasEstimate = Number.isFinite(estimate) && estimate > 0;
+  if (measuredLayerSharding) {
+    return {
+      kind: "measured-multi-gpu",
+      label: "Supported multi-GPU / layer sharding",
+      canDeploy: true,
+      largestSingleGpuGb: largest,
+      aggregateVramGb: capacity.aggregateVramGb,
+      reasons: ["Exact measured llama.cpp/GGUF evidence supports this device set."],
+    };
+  }
+  if (hasEstimate && largest != null && estimate <= largest) {
+    return {
+      kind: "single-gpu-fit",
+      label: "Single-GPU fit",
+      canDeploy: true,
+      largestSingleGpuGb: largest,
+      aggregateVramGb: capacity.aggregateVramGb,
+      reasons: ["Estimated " + estimate + " GB fits on the largest single GPU (" + largest.toFixed(1) + " GB)."],
+    };
+  }
+  const reasons = [];
+  if (!capacity.gpus.length) reasons.push("GPU capacity is unavailable, so placement is unproven.");
+  else if (!hasEstimate) reasons.push("Model VRAM demand is unknown, so placement is unproven.");
+  else if (largest != null && estimate > largest) reasons.push("Estimated " + estimate + " GB exceeds the largest single GPU (" + largest.toFixed(1) + " GB).");
+  reasons.push("Combined VRAM is not treated as a vLLM fit without exact measured llama.cpp/GGUF evidence.");
+  return {
+    kind: "blocked-unproven",
+    label: "Blocked / unproven",
+    canDeploy: false,
+    largestSingleGpuGb: largest,
+    aggregateVramGb: capacity.aggregateVramGb,
+    reasons,
+  };
+}
+
+export function shortlistAdvisorModels(items, limit = 12) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => {
+      const blockedReasons = Array.isArray(item?.blockedReasons) ? item.blockedReasons : [];
+      return item?.deployable === true && item?.apiOnly !== true && blockedReasons.length === 0 && advisorModelId(item);
+    })
+    .sort((a, b) => (
+      advisorNumber(b.fitScore, -Infinity) - advisorNumber(a.fitScore, -Infinity)
+      || advisorNumber(b.downloads, 0) - advisorNumber(a.downloads, 0)
+      || advisorNumber(b.likes, 0) - advisorNumber(a.likes, 0)
+      || advisorModelId(a).localeCompare(advisorModelId(b))
+    ))
+    .slice(0, Math.max(0, Math.min(12, Number(limit) || 12)));
+}
+
+export function selectAdvisorWinner(candidates, profileKey = "balanced") {
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => candidate?.profile)
+    .sort((a, b) => {
+      const blockedDifference = Number(advisorBlocked(a.profile)) - Number(advisorBlocked(b.profile));
+      if (blockedDifference) return blockedDifference;
+      const evidenceDifference = advisorEvidenceRank(b.profile) - advisorEvidenceRank(a.profile);
+      if (evidenceDifference) return evidenceDifference;
+      const scoreDifference = advisorProfileScore(b.profile) - advisorProfileScore(a.profile);
+      if (scoreDifference) return scoreDifference;
+      if (profileKey === "fast") {
+        const ttftDifference = advisorTtft(a.profile) - advisorTtft(b.profile);
+        if (ttftDifference) return ttftDifference;
+        const tpsDifference = advisorDecodeTps(b.profile) - advisorDecodeTps(a.profile);
+        if (tpsDifference) return tpsDifference;
+      }
+      return advisorModelId(a.item).localeCompare(advisorModelId(b.item));
+    })[0] || null;
+}
+
+function advisorProfileFromPayload(payload, slotKey) {
+  const profiles = payload?.profiles || payload?.results || payload?.recommendations || payload?.data?.profiles || payload || {};
+  const aliases = {
+    fast: ["fast", "responsive", "speed"],
+    balanced: ["balanced", "default"],
+    maximumQuality: ["maximumQuality", "maximum_quality", "maximum-quality", "quality"],
+  }[slotKey] || [slotKey];
+  for (const key of aliases) {
+    if (profiles?.[key] && typeof profiles[key] === "object") return profiles[key];
+  }
+  return null;
+}
+
+function advisorArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean).map(String) : [];
+}
+
+function advisorMetricValue(metrics, keys, fallback = null) {
+  for (const key of keys) {
+    const raw = metrics?.[key];
+    const value = raw?.p50 ?? raw?.median ?? raw?.value ?? raw;
+    if (Number.isFinite(Number(value))) return Number(value);
+  }
+  return fallback;
+}
+
+function normalizeAdvisorProfile(profile, item, slot, settings, hardwareSnapshot) {
+  const recommendation = profile?.recommendation || profile?.planSeed || profile?.plan || {};
+  const placement = profile?.placement || profile?.gpuPlacement || profile?.gpu_placement || {};
+  const evidence = profile?.benchmarkEvidence || profile?.benchmark || profile?.evidence?.benchmark || {};
+  const metrics = evidence?.metrics || profile?.metrics || {};
+  const exact = evidence.exact === true || evidence.status === "exact" || evidence.basis === "measured-exact";
+  const estimated = !exact && (evidence.basis === "catalog-estimate" || profile?.evidence?.estimated || item?.vramEstimateGb);
+  const blockers = advisorArray(profile?.blockers || profile?.blockedReasons || profile?.blockerReasons);
+  if (!hardwareSnapshot && !exact) blockers.push("Hardware capacity is unavailable; placement is unproven.");
+  const multiGpu = recommendation.multiGpu === true || placement.mode === "multi-gpu" || placement.mode === "multi_gpu";
+  if (multiGpu && settings?.allowMultiGpu === false) blockers.push("Multi-GPU placement is disabled in Model Settings.");
+  const deviceIds = placement.deviceIds || placement.device_ids || placement.gpuDeviceIds || placement.gpu_device_ids || placement.devices || [];
+  return {
+    item,
+    slot,
+    raw: profile,
+    recommendation,
+    planSeed: profile?.planSeed || recommendation,
+    placement,
+    evidence,
+    evidenceLabel: exact ? "Measured" : estimated ? "Estimated" : "Unverified",
+    exact,
+    blockers: [...new Set(blockers)],
+    warnings: advisorArray(profile?.warnings),
+    modelRef: recommendation.modelRef || recommendation.model_ref || advisorModelId(item),
+    protocolId: recommendation.protocolId || recommendation.protocol_id || item?.recommendedProtocol || item?.runtimeOptions?.[0]?.protocolId || "",
+    contextWindow: recommendation.contextWindow || recommendation.context_window || item?.contextWindow || null,
+    toolCallParser: recommendation.toolCallParser || recommendation.tool_call_parser || item?.toolCallParserHint || "",
+    placementMode: placement.mode || (multiGpu ? "multi-gpu" : "single-gpu"),
+    deviceIds: Array.isArray(deviceIds) ? deviceIds.map(String) : [],
+    profileScore: advisorProfileScore(profile),
+    measuredTps: exact ? advisorMetricValue(metrics, ["decodeTokensPerSecond", "tokensPerSecond", "tps", "throughputTokensPerSecond"]) : null,
+    measuredTtft: exact ? advisorMetricValue(metrics, ["ttftMs", "timeToFirstTokenMs", "ttft"]) : null,
+  };
+}
 
 /* ── Helpers ── */
 function contextWindowFor(m) {
@@ -185,6 +425,7 @@ export function ModelsView({
   const [catalogFit, setCatalogFit] = useState("all");
   const [searchMode, setSearchMode] = useState("catalog");
   const [hfQuery, setHfQuery] = useState("");
+  const hfSearchInputRef = useRef(null);
   const [hfResults, setHfResults] = useState([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [hfError, setHfError] = useState("");
@@ -194,22 +435,47 @@ export function ModelsView({
   const [activeDownloads, setActiveDownloads] = useState([]);
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
+  const modelSettings = useSettingsStore((state) => state.models || {});
+  const [showAllModels, setShowAllModels] = useState(false);
+  const [advisorRefreshToken, setAdvisorRefreshToken] = useState(0);
+  const [hardwareRefreshToken, setHardwareRefreshToken] = useState(0);
+  const [localHardware, setLocalHardware] = useState(null);
+  const [hardwareProbeState, setHardwareProbeState] = useState({ status: warsatHardware ? "ready" : "idle", error: "" });
+  const [advisorState, setAdvisorState] = useState({ status: "idle", profiles: {}, errors: [] });
+  const hardwareProbeAttempt = useRef(-1);
+
 
   // Back to page 1 whenever the visible set changes shape.
   useEffect(() => {
     setPage(1);
   }, [catalogSearch, catalogPurpose, catalogRuntime, catalogFit, searchMode, hfQuery, pageSize, vramMinGb, vramMaxGb]);
 
+  const [downloadRefreshToken, setDownloadRefreshToken] = useState(0);
+
   useEffect(() => {
-    if (view !== "models") return;
-    const interval = setInterval(async () => {
+    if (view !== "models") return undefined;
+    let disposed = false;
+    let timer;
+    const pollDownloads = async () => {
       try {
         const d = await api("/api/models/downloads/active");
-        setActiveDownloads(d || []);
-      } catch (e) { }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [view]);
+        const active = Array.isArray(d) ? d : [];
+        if (disposed) return;
+        setActiveDownloads(active);
+        // No background interval is kept when there is nothing to monitor.
+        // Once a download exists, use a measured 3s cadence instead of a 1s
+        // request storm, and stop again as soon as the list is empty.
+        if (active.length > 0) timer = setTimeout(pollDownloads, 3000);
+      } catch (e) {
+        if (!disposed) timer = setTimeout(pollDownloads, 5000);
+      }
+    };
+    pollDownloads();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [view, downloadRefreshToken]);
 
   /* derived */
   const catalogItems = modelCatalog?.items || [];
@@ -218,10 +484,38 @@ export function ModelsView({
   const activeModel = selectedModelObject || models?.[0] || null;
   const healthy = isModelHealthy(activeModel);
   const status = runtimeStatus(activeModel);
-  const totalVramGb = useMemo(() => {
-    const gpus = warsatHardware?.detectedHardware?.gpus || [];
-    return gpus.reduce((sum, g) => sum + (g.memoryTotalMb || g.memory_total_mb || 0), 0) / 1024;
-  }, [warsatHardware]);
+  const effectiveHardware = warsatHardware || localHardware;
+  const gpuCapacity = useMemo(() => hardwarePlacementCapacity(effectiveHardware), [effectiveHardware]);
+  const totalVramGb = gpuCapacity.aggregateVramGb || 0;
+
+  useEffect(() => {
+    if (warsatHardware) {
+      setHardwareProbeState({ status: "ready", error: "" });
+      return undefined;
+    }
+    if (!shouldProbeHardware(view, Boolean(warsatHardware || localHardware), hardwareProbeAttempt.current, hardwareRefreshToken)) return undefined;
+    hardwareProbeAttempt.current = hardwareRefreshToken;
+    const controller = new AbortController();
+    let disposed = false;
+    setHardwareProbeState({ status: "loading", error: "" });
+    withAdvisorTimeout(
+      () => api("/api/warsat/hardware", { signal: controller.signal }),
+      ADVISOR_REQUEST_TIMEOUT_MS,
+      () => controller.abort("timeout"),
+    ).then((hardware) => {
+      if (disposed) return;
+      setLocalHardware(hardware);
+      setHardwareProbeState({ status: "ready", error: "" });
+    }).catch((error) => {
+      const superseded = controller.signal.aborted && controller.signal.reason === "superseded";
+      if (disposed || superseded) return;
+      setHardwareProbeState({ status: "error", error: error?.message || "Hardware detection failed." });
+    });
+    return () => {
+      disposed = true;
+      controller.abort("superseded");
+    };
+  }, [view, warsatHardware, hardwareRefreshToken]);
 
   const apiProviders = modelProviders?.length ? modelProviders : [
     { id: "openai", name: "OpenAI", defaultKeyEnv: "OPENAI_API_KEY" },
@@ -251,6 +545,103 @@ export function ModelsView({
       return true;
     });
   }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime]);
+
+
+  const advisorCandidates = useMemo(() => shortlistAdvisorModels(catalogItems), [catalogItems]);
+
+  useEffect(() => {
+    let disposed = false;
+    if (view !== "models") return () => { disposed = true; };
+    const hardwareUnavailable = hardwareProbeState.status === "error";
+    if (!catalogItems.length || (!effectiveHardware && !hardwareUnavailable)) {
+      setAdvisorState((previous) => previous.status === "waiting"
+        ? previous
+        : { status: "waiting", profiles: {}, errors: [], completed: 0, total: advisorCandidates.length });
+      return () => { disposed = true; };
+    }
+    if (!advisorCandidates.length) {
+      setAdvisorState((previous) => previous.status === "ready" ? previous : { status: "ready", profiles: {}, errors: [] });
+      return () => { disposed = true; };
+    }
+
+    setAdvisorState({ status: "loading", profiles: {}, errors: [], completed: 0, total: advisorCandidates.length, timedOut: 0 });
+    const maxContext = Number(modelSettings?.maxContextTokens);
+    const contextWindow = Number.isFinite(maxContext) && maxContext > 0 ? maxContext : undefined;
+    const controller = new AbortController();
+    const profiles = {};
+    const errors = [];
+    let completed = 0;
+    const summarize = (final = false) => {
+      if (disposed) return;
+      const winners = {};
+      for (const slot of advisorProfileSlots) {
+        const winner = selectAdvisorWinner(profiles[slot.key], slot.key);
+        if (winner) winners[slot.key] = winner;
+      }
+      setAdvisorState({
+        status: final ? (errors.length === advisorCandidates.length ? "error" : "ready") : "loading",
+        profiles: winners,
+        errors: [...errors],
+        completed,
+        total: advisorCandidates.length,
+        timedOut: errors.filter((error) => error.includes("timed out")).length,
+      });
+    };
+    const advisorRequest = (item) => {
+      const requestController = new AbortController();
+      const forwardAbort = () => requestController.abort(controller.signal.reason || "superseded");
+      if (controller.signal.aborted) forwardAbort();
+      else controller.signal.addEventListener("abort", forwardAbort, { once: true });
+      return withAdvisorTimeout(() => api("/api/warsat/advisor/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: requestController.signal,
+        body: JSON.stringify({
+          model: item,
+          hardware: effectiveHardware || {},
+          allProfiles: true,
+          mission: item.purpose === "coding" ? "coding" : item.purpose === "research" ? "research" : "chat",
+          protocolId: item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "",
+          contextWindow: contextWindow || contextWindowFor(item) || undefined,
+          toolCallParser: item.toolCallParserHint || "",
+        }),
+      }), ADVISOR_REQUEST_TIMEOUT_MS, () => requestController.abort("timeout"))
+        .finally(() => controller.signal.removeEventListener("abort", forwardAbort));
+    };
+    advisorCandidates.forEach((item) => {
+      advisorRequest(item)
+        .then((result) => {
+          for (const slot of advisorProfileSlots) {
+            const rawProfile = advisorProfileFromPayload(result, slot.key);
+            if (!rawProfile) continue;
+            const normalized = normalizeAdvisorProfile(rawProfile, item, slot, modelSettings, effectiveHardware);
+            profiles[slot.key] = [...(profiles[slot.key] || []), { item, profile: normalized }];
+          }
+        })
+        .catch((error) => {
+          if (disposed || error?.name === "AbortError" && controller.signal.aborted) return;
+          errors.push((item.name || advisorModelId(item)) + ": " + (error?.message || "Advisor request failed"));
+        })
+        .finally(() => {
+          if (disposed) return;
+          completed += 1;
+          summarize(completed === advisorCandidates.length);
+        });
+    });
+    return () => {
+      disposed = true;
+      controller.abort("superseded");
+    };
+  }, [
+    view,
+    catalogItems,
+    advisorCandidates,
+    effectiveHardware,
+    hardwareProbeState.status,
+    modelSettings?.maxContextTokens,
+    modelSettings?.allowMultiGpu,
+    advisorRefreshToken,
+  ]);
 
   /* HF search with debounce */
   useEffect(() => {
@@ -307,13 +698,12 @@ export function ModelsView({
     const hasMax = vramMaxGb !== "" && Number.isFinite(Number(vramMaxGb));
     const minVram = hasMin ? Number(vramMinGb) : 0;
     const maxVram = hasMax ? Number(vramMaxGb) : Infinity;
-    const vramLimit = totalVramGb > 0 ? totalVramGb : 12; // Fallback to 12GB if no GPU detected
     return list.filter(item => {
       if (!item.vramEstimateGb) return !hasMin && !hasMax;
       if (item.vramEstimateGb < minVram || item.vramEstimateGb > maxVram) return false;
-      return catalogFit !== "fits" || item.vramEstimateGb <= vramLimit;
+      return catalogFit !== "fits" || catalogPlacementAssessment(item, effectiveHardware).canDeploy;
     });
-  }, [searchMode, hfResults, filteredCatalog, catalogFit, totalVramGb, vramMinGb, vramMaxGb]);
+  }, [searchMode, hfResults, filteredCatalog, catalogFit, effectiveHardware, vramMinGb, vramMaxGb]);
 
   const pageCount = Math.max(1, Math.ceil(displayItems.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -326,9 +716,22 @@ export function ModelsView({
   const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
   const handleScanGguf = () => executeAction("ScanGGUF", "system", async () => scanGguf?.(), setUiState);
   const handleLoadCatalog = (remote) => executeAction("LoadCatalog", "system", async () => loadModelCatalog?.(remote), setUiState);
+  const openSpecificHuggingFaceModel = () => {
+    setShowAllModels(true);
+    setSearchMode("huggingface");
+    setCatalogPurpose("all");
+    setCatalogFit("all");
+    setPage(1);
+    requestAnimationFrame(() => hfSearchInputRef.current?.focus());
+  };
+  const handleAdvisorRefresh = () => {
+    setAdvisorRefreshToken((value) => value + 1);
+    if (!warsatHardware) setHardwareRefreshToken((value) => value + 1);
+  };
   const startDownload = async (modelId) => {
     try {
-      await api("/api/models/download", "POST", { modelId });
+      await postJson("/api/models/download", { modelId });
+      setDownloadRefreshToken((value) => value + 1);
       setUiState({ status: "success", message: `Started download of ${modelId}` });
     } catch (e) {
       setUiState({ status: "failed", message: `Failed to start download: ${e.message}` });
@@ -402,6 +805,28 @@ export function ModelsView({
           {/* ═══ LIBRARY TAB ═══ */}
           {activeTab === "library" && (
             <div id="models-panel-library" role="tabpanel" aria-labelledby="models-tab-library" className="w2-section" style={{ flex: 1 }}>
+              {!showAllModels ? (
+                <GuidedRecommendations
+                  advisorState={advisorState}
+                  advisorCandidateCount={advisorCandidates.length}
+                  modelCatalogLoading={modelCatalogLoading}
+                  catalogError={modelCatalogError}
+                  hardwareReady={Boolean(effectiveHardware)}
+                   hardwareProbeState={hardwareProbeState}
+                  performancePreference={modelSettings?.performancePreference || "balanced"}
+                  automaticBenchmarking={modelSettings?.automaticBenchmarking !== false}
+                  onRefresh={handleAdvisorRefresh}
+                  onBrowseAll={() => setShowAllModels(true)}
+                  onUseSpecificModel={openSpecificHuggingFaceModel}
+                  prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+                />
+              ) : (
+                <>
+                  <div className="mb-3 flex justify-end">
+                    <UIButton variant="outline" size="sm" type="button" onClick={() => setShowAllModels(false)}>
+                      <Gauge size={14} /> Back to recommendations
+                    </UIButton>
+                  </div>
               {/* Source toggle */}
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
@@ -424,15 +849,23 @@ export function ModelsView({
               </div>
 
               {/* Search + filters */}
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div className="model-catalog-filters" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
                 <Search size={16} color="var(--cc-muted)" />
                 <input
-                  className="w2-input"
-                  aria-label="Search models"
+                  ref={hfSearchInputRef}
+                  className="w2-input model-catalog-search"
+                  style={{ minWidth: "240px", flex: "1 1 320px" }}
+                  aria-label={searchMode === "huggingface" ? "Hugging Face model ID, URL, or search terms" : "Search models"}
+                  data-testid="model-specific-hf-input"
                   value={searchMode === "huggingface" ? hfQuery : catalogSearch}
                   onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
-                  placeholder={searchMode === "huggingface" ? "Search Hugging Face models..." : "Filter locally cached models by name..."}
+                  placeholder={searchMode === "huggingface" ? "Paste org/model or a huggingface.co URL" : "Filter locally cached models by name..."}
                 />
+                {searchMode === "huggingface" && (
+                  <span className="w-full text-xs text-muted-foreground" data-testid="model-specific-hf-help">
+                    Enter an exact model ID or Hugging Face URL, or use ordinary search terms. Exact matches appear first and still require WarSat review.
+                  </span>
+                )}
                 <select className="w2-input" style={{ width: "140px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
                   <option value="all">All types</option>
                   {catalogCategories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
@@ -456,13 +889,14 @@ export function ModelsView({
                 )}
                 <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogFit} onChange={e => setCatalogFit(e.target.value)}>
                   <option value="all">Any fit</option>
-                  <option value="fits">Fits on device</option>
+                  <option value="fits">Fits safely</option>
                 </select>
               </div>
 
               <div className="model-vram-filter" data-testid="model-vram-filter">
-                <span className="model-vram-filter__capacity">
-                  Detected sharded pool: <strong>{totalVramGb > 0 ? `${totalVramGb.toFixed(1)} GB` : "unknown"}</strong>
+                <span className="model-vram-filter__capacity" data-testid="model-placement-capacity">
+                  Largest single GPU: <strong>{gpuCapacity.largestSingleGpuGb ? gpuCapacity.largestSingleGpuGb.toFixed(1) + " GB" : "unknown"}</strong>
+                  {" · "}Optional combined layer-sharding pool: <strong>{totalVramGb > 0 ? totalVramGb.toFixed(1) + " GB" : "unknown"}</strong>
                 </span>
                 <label>
                   <span>VRAM from</span>
@@ -487,20 +921,20 @@ export function ModelsView({
                     step="1"
                     value={vramMaxGb}
                     onChange={e => setVramMaxGb(e.target.value)}
-                    placeholder={totalVramGb > 0 ? String(Math.max(1, Math.floor(totalVramGb - 2))) : "Any"}
+                    placeholder={gpuCapacity.largestSingleGpuGb ? String(Math.max(1, Math.floor(gpuCapacity.largestSingleGpuGb - 2))) : "Any"}
                   />
                 </label>
                 <button
                   className="w2-button"
                   type="button"
-                  disabled={totalVramGb <= 0}
+                  disabled={!gpuCapacity.largestSingleGpuGb}
                   onClick={() => {
                     setVramMinGb(totalVramGb >= 24 ? "16" : "");
-                    setVramMaxGb(String(Math.max(1, Math.floor(totalVramGb - 2))));
+                    setVramMaxGb(String(Math.max(1, Math.floor((gpuCapacity.largestSingleGpuGb || totalVramGb) - 2))));
                     setHfSort("vram_desc");
                   }}
                 >
-                  Use my GPU pool
+                  Use my largest GPU
                 </button>
                 {(vramMinGb !== "" || vramMaxGb !== "") && (
                   <button className="w2-button" type="button" onClick={() => { setVramMinGb(""); setVramMaxGb(""); }}>
@@ -531,7 +965,7 @@ export function ModelsView({
 
               {/* Model list */}
               {pagedItems.map(item => (
-                <CatalogCard key={item.id} item={item} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
+                <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
               ))}
 
               {/* Pagination */}
@@ -561,6 +995,8 @@ export function ModelsView({
                 <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
                   {searchMode === "huggingface" ? "No models found. Try broadening your search or choosing a different category." : "No models match. Try different filters."}
                 </div>
+              )}
+                </>
               )}
             </div>
           )}
@@ -723,16 +1159,213 @@ export function ModelsView({
 }
 
 
+
+function AdvisorRecommendationCard({ slot, winner, prepareCatalogModelForWarsat, primary = false }) {
+  const item = winner?.item;
+  const profile = winner?.profile;
+  const blockers = profile?.blockers || [];
+  const blocked = !profile || blockers.length > 0 || profile?.raw?.status === "blocked";
+  const modelName = item?.name || profile?.modelRef || "No model selected";
+  const runtimeOption = item?.runtimeOptions?.find((option) => option?.protocolId === profile?.protocolId);
+  const runtimeLabel = runtimeOption?.label || item?.runtime || "Warsat runtime";
+  const deviceLabel = profile
+    ? (profile.placement?.label || profile.placementMode || "Hardware placement")
+      + (profile.deviceIds?.length ? " (" + profile.deviceIds.join(", ") + ")" : "")
+    : "Waiting for advisor";
+  const contextLabel = profile?.contextWindow ? Number(profile.contextWindow).toLocaleString() + " tokens" : "Automatic/default";
+  const why = blocked
+    ? "This profile is shown for transparency but cannot be deployed until its blockers are resolved."
+    : profile.evidenceLabel === "Measured"
+      ? "Fresh measured evidence supports this model and runtime on the available hardware."
+      : profile.evidenceLabel === "Estimated"
+        ? "This is a catalog-based fit estimate; benchmark it locally before relying on peak speed."
+        : "No measured or catalog estimate is available yet, so treat this as exploratory.";
+  return (
+    <Card data-testid={"advisor-recommendation-" + slot.key} className={"flex h-full flex-col gap-3 p-4 " + (primary ? "border-primary/50 bg-primary/5" : "")}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-primary">{primary ? "Best match for your computer" : slot.label}</div>
+          <h3 className="mt-1 text-base font-semibold">{modelName}</h3>
+        </div>
+        <Badge variant={blocked ? "down" : profile?.evidenceLabel === "Measured" ? "up" : "muted"}>
+          {profile?.evidenceLabel || "Unverified"}
+        </Badge>
+      </div>
+      <p className="m-0 text-xs text-muted-foreground">{slot.goal}</p>
+      {!profile && (
+        <div className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
+          No profile is available yet. The advisor will retry when a deployable, unblocked catalog candidate and hardware snapshot are ready.
+        </div>
+      )}
+      {profile && (
+        <>
+          <details className="model-recommendation-details rounded-lg border border-border bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-semibold text-foreground">Technical details</summary>
+            <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+            <div><strong className="text-foreground">Runtime / protocol:</strong> {runtimeLabel} · {profile.protocolId || "Unspecified"}</div>
+            <div><strong className="text-foreground">GPU placement:</strong> {deviceLabel}</div>
+            <div><strong className="text-foreground">Context:</strong> {contextLabel}</div>
+            <div>
+              <strong className="text-foreground">Measured TPS / TTFT:</strong>{" "}
+              {profile.measuredTps == null ? "unavailable" : profile.measuredTps + " TPS"}
+              {" · "}
+              {profile.measuredTtft == null ? "unavailable" : profile.measuredTtft + " ms TTFT"}
+            </div>
+            </div>
+          </details>
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <strong className="text-foreground">Why this recommendation:</strong> {why}
+            {Number.isFinite(profile.profileScore) && <span> Profile score: {profile.profileScore.toFixed(1)}.</span>}
+          </div>
+          {blockers.length > 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <strong>Blocked:</strong> {blockers.join(" ")}
+            </div>
+          )}
+          {profile.warnings?.length > 0 && (
+            <div className="text-xs text-amber-400">{profile.warnings.join(" ")}</div>
+          )}
+        </>
+      )}
+      <div className="mt-auto flex items-center gap-2">
+        <UIButton
+          size="sm"
+          type="button"
+          disabled={blocked}
+          title={blocked ? blockers.join(" ") || "This recommendation is not deployable." : undefined}
+          onClick={() => {
+            const planSeed = profile.planSeed || {};
+            prepareCatalogModelForWarsat?.(item, {
+              ...planSeed,
+              strengthProfile: slot.backendProfile,
+              protocolId: planSeed.protocolId || profile.protocolId,
+              contextWindow: planSeed.contextWindow || profile.contextWindow || undefined,
+              toolCallParser: planSeed.toolCallParser || profile.toolCallParser || undefined,
+            });
+          }}
+        >
+          <Play size={12} /> Review WarSat plan
+        </UIButton>
+        {blocked && <span className="text-[0.7rem] text-muted-foreground">Resolve blockers first</span>}
+      </div>
+    </Card>
+  );
+}
+
+function GuidedRecommendations({
+  advisorState,
+  advisorCandidateCount,
+  modelCatalogLoading,
+  catalogError,
+  hardwareProbeState,
+  hardwareReady,
+  performancePreference,
+  automaticBenchmarking,
+  onRefresh,
+  onBrowseAll,
+  onUseSpecificModel,
+  prepareCatalogModelForWarsat,
+}) {
+  const loading = advisorState.status === "loading" || advisorState.status === "waiting" || modelCatalogLoading;
+  const preferredSlotKey = performancePreference === "responsive"
+    ? "fast"
+    : performancePreference === "maximum_quality" ? "maximumQuality" : "balanced";
+  const primarySlot = advisorProfileSlots.find((slot) => slot.key === preferredSlotKey) || advisorProfileSlots[1];
+  const alternativeSlots = advisorProfileSlots.filter((slot) => slot.key !== primarySlot.key);
+  const statusText = modelCatalogLoading
+    ? "Loading the local catalog and hardware fit data…"
+    : advisorState.status === "loading"
+      ? "Analyzing up to " + advisorCandidateCount + " deployable candidates…"
+      : advisorState.status === "waiting"
+        ? "Waiting for a hardware snapshot before requesting recommendations…"
+        : advisorState.status === "error"
+          ? "The advisor could not complete any candidate request."
+          : advisorCandidateCount
+            ? "Recommendations are ready."
+            : "No deployable, unblocked catalog candidates are available yet.";
+  return (
+    <section aria-labelledby="guided-recommendations-title" data-testid="guided-recommendations" className="mb-5">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Gauge size={18} className="text-primary" />
+            <h2 id="guided-recommendations-title" className="m-0 text-xl font-semibold">Recommended for this computer</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">Start with one best match, choose a specific Hugging Face model, or explore the full catalog.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <UIButton variant="outline" size="sm" type="button" onClick={onRefresh} disabled={loading} aria-label="Refresh model recommendations">
+            <RefreshCw size={14} /> {loading ? "Analyzing…" : "Refresh recommendations"}
+          </UIButton>
+          <UIButton variant="outline" size="sm" type="button" onClick={onUseSpecificModel} data-testid="use-specific-hf-model">
+            <Cloud size={14} /> Use a specific Hugging Face model
+          </UIButton>
+          <UIButton variant="default" size="sm" type="button" onClick={onBrowseAll}>
+            <Database size={14} /> Browse full catalog
+          </UIButton>
+        </div>
+      </div>
+      <div aria-live="polite" role="status" className="mb-3 text-xs text-muted-foreground">
+        {statusText}
+        {advisorState.completed != null && advisorState.total ? " " + advisorState.completed + "/" + advisorState.total + " complete." : ""}
+        {advisorState.errors?.length > 0 && " " + advisorState.errors.slice(0, 2).join(" ")}
+      </div>
+      {catalogError && (
+        <div role="alert" className="mb-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          Catalog warning: {catalogError}
+        </div>
+      )}
+      {!hardwareReady && !modelCatalogLoading && (
+        <div role="alert" className="mb-3 rounded-lg border border-amber-400/40 bg-amber-400/5 px-3 py-2 text-xs text-amber-300">
+          {hardwareProbeState?.status === "loading"
+            ? "Detecting GPU capacity locally before ranking recommendations…"
+            : hardwareProbeState?.status === "error"
+              ? "GPU detection failed, so placement is unproven. Use Refresh recommendations to retry; model cards will remain blocked until hardware or exact runtime evidence is available."
+              : "GPU detection is not ready yet; recommendations will remain unverified or blocked."}
+        </div>
+      )}
+      <div className="mb-3 text-xs text-muted-foreground">
+        Default preference: <strong className="text-foreground">{performancePreference}</strong>
+        {" · "}
+        Automatic benchmarking: <strong className="text-foreground">{automaticBenchmarking ? "on" : "off"}</strong>
+      </div>
+      <div className="max-w-3xl" data-testid="primary-model-recommendation">
+        <AdvisorRecommendationCard
+          slot={primarySlot}
+          winner={advisorState.profiles?.[primarySlot.key]}
+          prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+          primary
+        />
+      </div>
+      <details className="model-alternatives mt-4 rounded-xl border border-border bg-card p-4" data-testid="model-alternatives">
+        <summary className="cursor-pointer text-sm font-semibold">Compare alternatives</summary>
+        <p className="mt-2 text-xs text-muted-foreground">Fast, balanced, and maximum-quality options remain available when you want more control.</p>
+        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+          {alternativeSlots.map((slot) => (
+            <AdvisorRecommendationCard
+              key={slot.key}
+              slot={slot}
+              winner={advisorState.profiles?.[slot.key]}
+              prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+            />
+          ))}
+        </div>
+      </details>
+    </section>
+  );
+}
+
 /* ═══════════════════════════════════════════
    CATALOG CARD
    ═══════════════════════════════════════════ */
-function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads }) {
+function CatalogCard({ item, placementFit, prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads }) {
   const modelId = item.modelId || item.id;
   const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
   const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
   const blockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
   const fitReasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
-  const blocked = blockedReasons.length > 0;
+  const placement = placementFit || catalogPlacementAssessment(item, null);
+  const blocked = blockedReasons.length > 0 || !placement.canDeploy;
   const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n;
   return (
     <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
@@ -753,11 +1386,16 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
         {item.downloads > 0 && <Badge variant="muted">↓ {fmt(item.downloads)}</Badge>}
         {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
         {item.license && <Badge variant="muted">{item.license}</Badge>}
-        {item.fitLabel && (
-          <Badge variant={item.fitLabel === "Strong fit" ? "up" : item.fitLabel === "Blocked" ? "down" : "muted"}>{item.fitLabel}</Badge>
-        )}
+        <Badge variant={placement.kind === "single-gpu-fit" || placement.kind === "measured-multi-gpu" ? "up" : "down"}>
+          {placement.label}
+        </Badge>
       </div>
 
+      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        Largest single GPU: {placement.largestSingleGpuGb == null ? "unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"}
+        {" · "}Optional combined pool: {placement.aggregateVramGb == null ? "unknown" : placement.aggregateVramGb.toFixed(1) + " GB"}
+        {placement.reasons?.[0] && <div className="mt-1">{placement.reasons[0]}</div>}
+      </div>
       {item.summary && <p className="text-xs text-muted-foreground">{item.summary.slice(0, 120)}</p>}
 
       {(blocked || fitReasons.length > 0) && (
@@ -769,7 +1407,7 @@ function CatalogCard({ item, prepareCatalogModelForWarsat, searchMode, startDown
 
       <div className="flex items-center gap-2">
         {item.deployable && (
-          <UIButton size="sm" type="button" disabled={blocked} title={blocked ? blockedReasons.join(" ") : undefined} onClick={() => prepareCatalogModelForWarsat?.(item)}>
+          <UIButton size="sm" type="button" disabled={blocked} title={blocked ? [...blockedReasons, ...placement.reasons].join(" ") : undefined} onClick={() => prepareCatalogModelForWarsat?.(item)}>
             <Play size={12} /> Deploy via Warsat
           </UIButton>
         )}

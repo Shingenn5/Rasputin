@@ -81,6 +81,37 @@ function formatDuration(seconds) {
   return `${minutes}m ${remainder}s remaining`;
 }
 
+
+function guidanceForWarsatReason(reason) {
+  const text = String(reason || "").toLowerCase();
+  if (text.includes("combined_vram_requires_explicit_opt_in") || text.includes("combined vram")) {
+    return { happened: "This model needs both GPUs together, but combined-GPU placement is still protected.", next: "Open Model Settings and enable multi-GPU placement only if you want to review and approve that tradeoff. WarSat will not opt in automatically.", settings: true };
+  }
+  if ((text.includes("unsupported") && (text.includes("runtime") || text.includes("format") || text.includes("model"))) || (text.includes("gguf") && text.includes("vllm"))) {
+    return { happened: "The selected model format is not supported by the chosen runtime.", next: "Open Model Settings or choose a compatible model/runtime pair, then generate the plan again.", settings: true };
+  }
+  if (text.includes("approval") || text.includes("approve")) {
+    return { happened: "The launch is waiting for the required local approval.", next: "Review the plan and choose Approve when you are ready. Deployment remains locked until then." };
+  }
+  if (text.includes("health") || text.includes("probe") || text.includes("endpoint")) {
+    return { happened: "The runtime is still being checked for a healthy model endpoint.", next: "Leave this plan open while the health check completes. If it fails, review the runtime logs and retry the deployment." };
+  }
+  if (text.includes("download") || text.includes("loading") || text.includes("pull")) {
+    return { happened: "The model files are still downloading or loading into memory.", next: "Wait for the progress step to finish; the first launch can take longer while weights are cached." };
+  }
+  return null;
+}
+
+function getWarsatGuidance({ resource, plan, deployment, lifecycle, approvalPending, downloadProgress }) {
+  const reasons = [...(resource?.reasons || []), ...(plan?.warnings || []), deployment?.lastError].filter(Boolean);
+  const reasonGuidance = reasons.map(guidanceForWarsatReason).find(Boolean);
+  if (reasonGuidance) return reasonGuidance;
+  if (approvalPending || (deployment?.approvalRequired && deployment?.approval?.status === "pending")) return guidanceForWarsatReason("approval required");
+  if (downloadProgress && ["downloading", "loading"].includes(downloadProgress.status)) return guidanceForWarsatReason(downloadProgress.status);
+  const lifecycleText = (lifecycle || []).filter((phase) => ["active", "pending", "queued"].includes(phase.status)).map((phase) => phase.id + " " + (phase.label || "") + " " + (phase.message || "")).join(" ");
+  return lifecycleText ? guidanceForWarsatReason(lifecycleText) : null;
+}
+
 function DownloadProgressPanel({ progress, compact = false }) {
   if (!progress || !["downloading", "loading"].includes(progress.status)) return null;
   const downloaded = Number(progress.bytesDownloaded);
@@ -182,8 +213,13 @@ export function WarsatView({
   go,
 }) {
   const [activeTab, setActiveTab] = useState("planner");
+  const selectionMode = useSettingsStore(state => state.models?.selectionMode) || "automatic";
+  const performancePreference = useSettingsStore(state => state.models?.performancePreference) || "balanced";
   const defaultEngine = useSettingsStore(state => state.models?.defaultEngine) || "llamacpp";
   const defaultEngineLabel = ENGINE_LABELS[defaultEngine] || labelize(defaultEngine);
+  const runtimeStrategyLabel = selectionMode === "automatic"
+    ? "Automatic · " + labelize(performancePreference)
+    : defaultEngineLabel;
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
   const executeAction = useReliableAction("WarsatView");
 
@@ -240,12 +276,13 @@ export function WarsatView({
 
   useEffect(() => {
     if (protocolId) return;
-    // Start the recipe on the protocol matching the Default Inference Engine
-    // setting so the choice made in Settings carries through to deploys.
-    const preferred = ENGINE_PROTOCOLS[defaultEngine];
+    // Manual mode honors the engine override. Automatic mode leaves protocol
+    // selection to the model recommendation path instead of silently pinning
+    // every launch to the advanced engine setting.
+    const preferred = selectionMode === "manual" ? ENGINE_PROTOCOLS[defaultEngine] : null;
     const initial = protocols.some(p => p.id === preferred) ? preferred : firstProtocol?.id;
     if (initial) setProtocolId(initial);
-  }, [firstProtocol?.id, protocolId, defaultEngine, protocols]);
+  }, [firstProtocol?.id, protocolId, defaultEngine, protocols, selectionMode]);
 
   useEffect(() => {
     if (plan) {
@@ -342,7 +379,7 @@ export function WarsatView({
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-3">
           {[
-            { v: defaultEngineLabel, l: "Default Engine", c: "text-primary" },
+            { v: runtimeStrategyLabel, l: "Runtime Strategy", c: "text-primary" },
             { v: runningTasks.length, l: "Running", c: "text-primary" },
             { v: pendingApprovals.length, l: "Approvals", c: "text-amber-400" },
             { v: containers.length, l: "Containers", c: "text-foreground" },
@@ -359,11 +396,34 @@ export function WarsatView({
       </div>
 
       {/* ── Tab Bar ── */}
-      <div className="flex items-center gap-2 overflow-x-auto">
-        {warsatTabs.map(t => {
+      <div className="warsat-tabbar flex items-center gap-2">
+        <div className="warsat-tabs flex min-w-0 flex-1 items-center gap-2 overflow-x-auto" role="tablist" aria-label="WarSat views" data-testid="warsat-tabs">
+        {warsatTabs.map((t, index) => {
           const Icon = t.icon;
           return (
-            <UIButton key={t.id} variant={activeTab === t.id ? "default" : "outline"} size="sm" type="button" onClick={() => setActiveTab(t.id)}>
+            <UIButton
+              key={t.id}
+              variant={activeTab === t.id ? "default" : "outline"}
+              size="sm"
+              type="button"
+              role="tab"
+              aria-selected={activeTab === t.id}
+              tabIndex={activeTab === t.id ? 0 : -1}
+              className="warsat-tab"
+              onClick={() => setActiveTab(t.id)}
+              onKeyDown={(event) => {
+                if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const tabList = event.currentTarget.parentElement;
+                const nextIndex = event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? warsatTabs.length - 1
+                    : (index + (event.key === "ArrowRight" ? 1 : -1) + warsatTabs.length) % warsatTabs.length;
+                setActiveTab(warsatTabs[nextIndex].id);
+                requestAnimationFrame(() => tabList?.querySelectorAll('[role="tab"]')[nextIndex]?.focus());
+              }}
+            >
               <Icon size={15} /> {t.label}
               {t.id === "queue" && activeTasks.length > 0 && (
                 <span className="ml-1 rounded-full bg-primary px-1.5 text-[0.65rem] text-primary-foreground">{activeTasks.length}</span>
@@ -374,6 +434,7 @@ export function WarsatView({
             </UIButton>
           );
         })}
+        </div>
         <div className="flex-1" />
         {uiState.status !== "idle" && (
           <Badge variant={uiState.status === "failed" ? "down" : uiState.status === "success" ? "up" : "muted"}>{uiState.message}</Badge>
@@ -467,8 +528,9 @@ export function WarsatView({
               approveApproval={approveApproval}
               denyApproval={denyApproval}
               lifecycle={lifecycle}
-              defaultEngineLabel={defaultEngineLabel}
+              runtimeStrategyLabel={runtimeStrategyLabel}
               enableDockerControl={enableDockerControl}
+              go={go}
             />
           )}
 
@@ -616,7 +678,7 @@ function DeployTab({
   deployPlan, deploying, deployment, deployLabel, deployDisabled, canDeployPlan,
   approvalPending, approvalClosed, approvalStatus, currentApproval,
   approveApproval, denyApproval, lifecycle,
-  defaultEngineLabel, enableDockerControl,
+  runtimeStrategyLabel, enableDockerControl, go,
 }) {
   const formRef = React.useRef(null);
   const briefRef = React.useRef(null);
@@ -818,8 +880,8 @@ function DeployTab({
         <div className="ws-recipe-header">
           <SlidersHorizontal size={14} />
           <span>Launch Recipe</span>
-          {defaultEngineLabel && (
-            <span className="ws-protocol-hint">Default engine: {defaultEngineLabel}</span>
+          {runtimeStrategyLabel && (
+            <span className="ws-protocol-hint">Runtime strategy: {runtimeStrategyLabel}</span>
           )}
           {protocols.length > 0 && (
             <span className="ws-protocol-hint">{selectedProtocol?.runtime || ""}</span>
@@ -901,6 +963,61 @@ function DeployTab({
                 : `Auto-shards across ${(hardware?.detectedHardware?.gpus || []).length || "the visible"} GPUs and fits to available VRAM.`}
             </small>
           </label>
+          {selectedProtocol?.modelFormat === "gguf" && (
+            <details className="rounded-xl border border-border bg-muted/20 p-3" style={{ gridColumn: "1 / -1" }} data-testid="warsat-performance-tuning">
+              <summary className="cursor-pointer text-sm font-semibold">Advanced measured performance tuning</summary>
+              <p className="mb-3 mt-2 text-xs text-muted-foreground">
+                These controls change the exact benchmark identity. Leave them at their safe defaults until Rasputin has measured the alternative on this hardware.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="ws-recipe-field">
+                  <span>Context window</span>
+                  <input className="w2-input" name="contextWindow" type="number" min="512" max="262144" placeholder="Profile default" />
+                </label>
+                <label className="ws-recipe-field">
+                  <span>Split mode</span>
+                  <select className="w2-input" name="splitMode" defaultValue="layer">
+                    <option value="none">Single GPU</option>
+                    <option value="layer">Layer split (compatible)</option>
+                    <option value="tensor">Tensor split (experimental)</option>
+                  </select>
+                </label>
+                <label className="ws-recipe-field">
+                  <span>Batch size</span>
+                  <input className="w2-input" name="batchSize" type="number" min="1" max="65536" defaultValue="768" />
+                </label>
+                <label className="ws-recipe-field">
+                  <span>Microbatch size</span>
+                  <input className="w2-input" name="ubatchSize" type="number" min="1" max="65536" defaultValue="256" />
+                </label>
+                <label className="ws-recipe-field">
+                  <span>Flash attention</span>
+                  <select className="w2-input" name="flashAttention" defaultValue="auto">
+                    <option value="auto">Automatic</option>
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                  </select>
+                </label>
+                <label className="ws-recipe-field">
+                  <span>KV cache</span>
+                  <select className="w2-input" name="cacheTypeK" defaultValue="f16">
+                    <option value="f16">F16 (safe)</option>
+                    <option value="q8_0">Q8_0</option>
+                    <option value="q4_0">Q4_0</option>
+                  </select>
+                  <small>Applies to both K and V cache for a comparable benchmark tuple.</small>
+                </label>
+                <label className="ws-recipe-field" style={{ gridColumn: "1 / -1" }}>
+                  <span>Speculative decoding</span>
+                  <select className="w2-input" name="speculativeMode" defaultValue="none">
+                    <option value="none">Off until benchmarked</option>
+                    <option value="ngram-simple">N-gram simple</option>
+                    <option value="ngram-mod">N-gram shared cache</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          )}
           <div className="ws-recipe-actions">
             <button className="w2-button primary" type="submit" style={{ flex: 1 }}>
               <Zap size={14} /> {plan ? "Regenerate Plan" : "Generate Plan"}
@@ -937,6 +1054,9 @@ function DeployTab({
             lifecycle={lifecycle}
             enableDockerControl={enableDockerControl}
             downloadProgress={downloadProgress}
+            resourceAdmission={plan?.resourceAdmission}
+            resourceAdmissionStatus={plan?.resourceAdmission?.status}
+            go={go}
           />
         </div>
       )}
@@ -983,7 +1103,7 @@ function EnableDockerButton({ enableDockerControl }) {
 /* ═══════════════════════════════════════════
    PLAN PREVIEW (Mission Brief)
    ═══════════════════════════════════════════ */
-function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl, downloadProgress, resourceAdmission, resourceAdmissionStatus }) {
+function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled, canDeployPlan, deployPlan, approvalPending, approvalClosed, approvalStatus, currentApproval, approveApproval, denyApproval, lifecycle, enableDockerControl, downloadProgress, resourceAdmission, resourceAdmissionStatus, go }) {
   // Keep this component safe when a plan comes from an older backend response
   // or an embedded preview that does not include the derived admission props.
   // The plan is the source of truth; the props remain available for callers
@@ -999,6 +1119,14 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
   const planWarnings = (plan.warnings || []).filter(
     (w) => dockerReady || !w.startsWith("Docker control is")
   );
+  const guidance = getWarsatGuidance({
+    resource: admittedResource,
+    plan,
+    deployment,
+    lifecycle,
+    approvalPending,
+    downloadProgress,
+  });
 
   return (
     <div className="ws-mission-brief">
@@ -1009,6 +1137,11 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
           <h3 className="ws-brief-title">{plan.protocolName}</h3>
           <div className="ws-brief-subtitle">
             {plan.runtime} · port {plan.hostPort} · {plan.executionEnabled ? "Execution enabled" : "Plan only"}
+          {plan.assistantRequestId && (
+            <div className="ws-brief-subtitle" data-testid="warsat-assistant-request">
+              Requested by Personal Assistant
+            </div>
+          )}
           </div>
         </div>
         <span className={`ws-binding-badge ${isLocalhost ? "is-safe" : "is-warn"}`}>
@@ -1066,6 +1199,19 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
             <small style={{ width: "100%", opacity: 0.82 }}>
               Reasons: {admittedResource.reasons.join(", ")}
             </small>
+          )}
+        </div>
+      )}
+
+      {guidance && (
+        <div className="ws-next-action" data-testid="warsat-next-action" role="status">
+          <div className="ws-next-action-heading"><ShieldCheck size={14} /> Plain-language next step</div>
+          <div><strong>What happened:</strong> {guidance.happened}</div>
+          <div><strong>What to do next:</strong> {guidance.next}</div>
+          {guidance.settings && go && (
+            <button type="button" className="ws-next-action-link" onClick={() => go("settings", "models")}>
+              Open Model Settings
+            </button>
           )}
         </div>
       )}

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import copy
 import logging
@@ -14,6 +14,39 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 class SettingUpdate(BaseModel):
     key: str
     value: dict | str | bool | int | list | float | None = None
+
+
+MODEL_SETTING_ENUMS = {
+    "selectionMode": {"automatic", "manual"},
+    "performancePreference": {"responsive", "balanced", "maximum_quality"},
+    "fallbackBehavior": {"ask", "single_gpu", "fail"},
+}
+MODEL_SETTING_BOOLEAN_KEYS = {"allowMultiGpu", "automaticBenchmarking"}
+
+
+def _model_setting_error(key: str, value):
+    if key in MODEL_SETTING_ENUMS and value not in MODEL_SETTING_ENUMS[key]:
+        allowed = ", ".join(sorted(MODEL_SETTING_ENUMS[key]))
+        return f"models.{key} must be one of: {allowed}"
+    if key in MODEL_SETTING_BOOLEAN_KEYS and not isinstance(value, bool):
+        return f"models.{key} must be a boolean"
+    if key == "maxContextTokens":
+        if value != "automatic":
+            if isinstance(value, bool) or not isinstance(value, (int, str)) or (isinstance(value, str) and not value.isdigit()):
+                return "models.maxContextTokens must be automatic or a positive integer"
+            if int(value) <= 0:
+                return "models.maxContextTokens must be automatic or a positive integer"
+    return None
+
+
+def _model_settings_error(settings: dict):
+    if not isinstance(settings, dict):
+        return "models settings must be an object"
+    for key, value in settings.items():
+        error = _model_setting_error(key, value)
+        if error:
+            return error
+    return None
 
 DEFAULT_SETTINGS = {
     "general": {
@@ -48,6 +81,14 @@ DEFAULT_SETTINGS = {
         "githubEnabled": False
     },
     "models": {
+        # Automatic is the authoritative normal-use choice. Keep defaultEngine
+        # below as a readable legacy override for advanced troubleshooting.
+        "selectionMode": "automatic",
+        "performancePreference": "balanced",
+        "maxContextTokens": "automatic",
+        "allowMultiGpu": False,
+        "automaticBenchmarking": True,
+        "fallbackBehavior": "ask",
         "defaultEngine": "llamacpp",
         "downloadPath": "",
         "autoQuantization": True,
@@ -115,8 +156,22 @@ def _apply_dynamic_settings(domain: str, key: str, value: any):
 def get_all_settings(_user=Depends(require_admin)):
     return _get_hydrated_settings()
 
+@router.post("/import")
+def import_settings(data: dict, _user=Depends(require_admin)):
+    if isinstance(data, dict) and "models" in data:
+        error = _model_settings_error(data["models"])
+        if error:
+            raise HTTPException(status_code=422, detail=error)
+    store.set_kv("platform_settings", data)
+    return {"success": True}
+
 @router.post("/{domain}")
 def update_setting(domain: str, data: SettingUpdate, _user=Depends(require_admin)):
+    if domain == "models":
+        error = _model_setting_error(data.key, data.value)
+        if error:
+            raise HTTPException(status_code=422, detail=error)
+
     # Security enforcement flags must land in the core security config —
     # writing them only to platform_settings would leave the toggle cosmetic
     # while warsat/mcp keep enforcing the old value.
@@ -140,16 +195,12 @@ def update_setting(domain: str, data: SettingUpdate, _user=Depends(require_admin
 
 @router.post("/validate/{domain}")
 def validate_setting(domain: str, data: dict, _user=Depends(require_admin)):
-    return {"valid": True}
+    error = _model_settings_error(data) if domain == "models" else None
+    return {"valid": error is None, **({"error": error} if error else {})}
 
 @router.get("/export")
 def export_settings(_user=Depends(require_admin)):
     return _get_hydrated_settings()
-
-@router.post("/import")
-def import_settings(data: dict, _user=Depends(require_admin)):
-    store.set_kv("platform_settings", data)
-    return {"success": True}
 
 @router.post("/restore")
 def restore_defaults(data: dict, _user=Depends(require_admin)):

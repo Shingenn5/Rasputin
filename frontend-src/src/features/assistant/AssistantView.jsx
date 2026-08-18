@@ -11,10 +11,70 @@ function workflowLabel(session) {
 }
 
 function statusVariant(status) {
-  if (["approved", "prepared", "ready_for_broker", "approved_for_broker", "ready", "completed"].includes(status)) return "success";
-  if (["rejected", "denied", "blocked", "expired", "missing", "failed"].includes(status)) return "danger";
-  if (["pending_approval", "awaiting_approval", "review_required", "needs_health_check"].includes(status)) return "warning";
+  if (["approved", "prepared", "ready_for_broker", "approved_for_broker", "ready", "completed", "recommendation_ready", "selected"].includes(status)) return "success";
+  if (["rejected", "denied", "blocked", "expired", "missing", "failed", "unqualified"].includes(status)) return "danger";
+  if (["pending_approval", "awaiting_approval", "review_required", "needs_health_check", "candidate_selected"].includes(status)) return "warning";
   return "secondary";
+}
+
+const MODEL_REQUEST_STATUS_LABELS = new Set([
+  "recommendation_ready",
+  "candidate_selected",
+  "selected",
+  "unqualified",
+  "blocked",
+]);
+
+function modelRequestCandidates(request) {
+  const candidates = request?.recommendations || request?.candidates || request?.recommendedModels;
+  if (Array.isArray(candidates)) return candidates;
+  return request?.selectedCandidate ? [request.selectedCandidate] : [];
+}
+
+function candidateIsBlocked(candidate) {
+  const status = String(candidate?.status || candidate?.state || "").toLowerCase();
+  return Boolean(
+    candidate?.blocked
+    || candidate?.qualified === false
+    || candidate?.compatible === false
+    || ["blocked", "unqualified", "rejected"].includes(status)
+    || (Array.isArray(candidate?.blockers) && candidate.blockers.length > 0)
+    || (Array.isArray(candidate?.blockedReasons) && candidate.blockedReasons.length > 0),
+  );
+}
+
+function firstUnblockedRecommendation(request) {
+  return modelRequestCandidates(request).find((candidate) => !candidateIsBlocked(candidate)) || null;
+}
+
+function modelRequestStatus(request) {
+  const rawStatus = String(request?.status || request?.state || "").toLowerCase();
+  if (rawStatus === "verified_selected") return "selected";
+  if (rawStatus === "verified_unqualified") return "unqualified";
+  if (MODEL_REQUEST_STATUS_LABELS.has(rawStatus)) return rawStatus;
+  if (request?.selectedCandidateId || request?.candidateId || request?.selectedModelKey) return "candidate_selected";
+  if (firstUnblockedRecommendation(request)) return "recommendation_ready";
+  return rawStatus || "setup_needed";
+}
+
+function modelRequestId(request) {
+  return request?.id || request?.requestId || request?.request_id || "";
+}
+
+function modelCandidateId(candidate) {
+  return candidate?.id || candidate?.candidateId || candidate?.candidate_id || candidate?.key || candidate?.modelKey || candidate?.model_key || "";
+}
+
+function requirementMatches(request, requirements) {
+  if (!request) return false;
+  if (request.role && request.role !== requirements.role) return false;
+  if (request.requirements?.role && request.requirements.role !== requirements.role) return false;
+  const requestCapabilities = request.requiredCapabilities || request.required_capabilities || request.requirements?.requiredCapabilities || [];
+  return requirements.requiredCapabilities.every((capability) => requestCapabilities.includes(capability));
+}
+
+function statusText(request) {
+  return titleize(modelRequestStatus(request));
 }
 
 function SectionHeader({ title, text, action }) {
@@ -194,6 +254,10 @@ export function AssistantView({
   createContextCapsule,
   reviewContextCapsule,
   openWorkflow,
+  modelRequests = { requests: [] },
+  requestModel,
+  prepareModelRequest,
+  openModels,
 }) {
   const controlOperations = capabilities?.controlOperations || {};
   const brokerOperationMetadata = useMemo(() => {
@@ -239,6 +303,75 @@ export function AssistantView({
   const sessionItems = (sessions?.sessions || []).slice(0, 30);
   const policy = profile?.localControlPolicy || {};
   const contextPolicy = profile?.contextAuthority || {};
+  const [performanceProfile, setPerformanceProfile] = useState("fast");
+  const performanceProfiles = [
+    ["fast", "Fastest practical"],
+    ["balanced", "Balanced"],
+    ["maximum_quality", "Largest capable model"],
+  ];
+  const modelRequestItems = Array.isArray(modelRequests) ? modelRequests : (modelRequests?.requests || []);
+  const capabilityDefinitions = [
+    {
+      id: "main",
+      label: "Core Assistant",
+      role: "main",
+      required: ["chat"],
+      optional: ["reasoning"],
+      actionLabel: "Open Assistant",
+      workflowId: "assistant",
+    },
+    {
+      id: "coder",
+      label: "Coding",
+      role: "coder",
+      required: ["chat", "code", "tools"],
+      actionLabel: "Open Coding",
+      workflowId: "coding",
+    },
+    {
+      id: "researcher",
+      label: "Research",
+      role: "researcher",
+      required: ["chat", "reasoning", "summarize"],
+      actionLabel: "Find compatible model/setup",
+    },
+  ].map((definition) => ({
+    ...definition,
+    requirements: {
+      mission: definition.id === "main" ? "chat" : definition.id === "coder" ? "coding" : "research",
+      role: definition.role,
+      requiredCapabilities: definition.required,
+      profile: performanceProfile,
+    },
+  }));
+  const requestForCapability = (definition) => modelRequestItems.find(
+    (request) => requirementMatches(request, definition.requirements)
+      && (request.profile || "fast") === performanceProfile,
+  );
+  const capabilityReadiness = capabilityDefinitions.map((definition) => {
+    const request = requestForCapability(definition);
+    const recommendation = firstUnblockedRecommendation(request);
+    const status = modelRequestStatus(request);
+    const ready = Boolean(request && status === "selected" && !request.blocked);
+    return { ...definition, request, recommendation, status, ready };
+  });
+  const selectedPerformanceLabel = performanceProfiles.find(([value]) => value === performanceProfile)?.[1] || "Fastest practical";
+  const voiceOperational = Boolean(voiceModelReadiness.ready);
+  const voiceAttention = !voiceOperational || ["blocked", "unqualified", "not_checked"].includes(String(voiceModelStatus).toLowerCase());
+  const needsAttention = [
+    ...capabilityReadiness
+      .filter(({ status }) => ["setup_needed", "unqualified", "blocked"].includes(status))
+      .map(({ label, status }) => `${label}: ${statusText({ status })}`),
+    ...(voiceAttention ? ["Voice: dedicated local speech models need setup or readiness evidence"] : []),
+  ];
+  const formatTpsEvidence = (recommendation) => {
+    const evidence = recommendation?.throughputEvidence || recommendation?.throughput_evidence || recommendation?.evidence || {};
+    const rawTps = evidence.decodeTokensPerSecond ?? evidence.decode_tokens_per_second ?? recommendation?.measuredTps ?? recommendation?.estimatedTps;
+    const tps = rawTps && typeof rawTps === "object" ? (rawTps.p50 ?? rawTps.mean ?? rawTps.average) : rawTps;
+    if (tps === undefined || tps === null) return "";
+    const label = evidence.status === "measured" ? "Measured TPS evidence" : "Estimated TPS evidence";
+    return `${label}: ${tps}`;
+  };
 
   return (
     <section className={`app-view ${view === "assistant" ? "active" : ""}`} id="assistantView" data-app-view="assistant" data-testid="assistant-view">
@@ -267,6 +400,9 @@ export function AssistantView({
               {workflows.map((workflow) => {
                 const isCoding = workflow.id === "coding";
                 const Icon = isCoding ? Code2 : MessageSquare;
+                const workflowCapability = capabilityReadiness.find((capability) => capability.id === (isCoding ? "coder" : "main"));
+                const deploymentPending = workflowCapability?.status === "candidate_selected";
+                const workflowReady = Boolean(workflowCapability?.ready);
                 return (
                   <Col md={6} key={workflow.id}>
                     <div className="border rounded p-3 h-100 d-flex flex-column gap-2" data-testid={`assistant-workflow-${workflow.id}`}>
@@ -285,9 +421,10 @@ export function AssistantView({
                         variant={isCoding ? "outline-primary" : "primary"}
                         className="align-self-start"
                         data-testid={`assistant-open-workflow-${workflow.id}`}
-                        onClick={() => openWorkflow?.(workflow.id)}
+                        disabled={deploymentPending}
+                        onClick={() => workflowReady ? openWorkflow?.(workflow.id) : requestModel?.(workflowCapability?.requirements)}
                       >
-                        Open {workflow.label || titleize(workflow.id)} <ArrowRight size={14} className="ms-1" aria-hidden="true" />
+                        {workflowReady ? <>Open {workflow.label || titleize(workflow.id)}</> : deploymentPending ? "WarSat deployment pending" : "Find compatible model"} <ArrowRight size={14} className="ms-1" aria-hidden="true" />
                       </Button>
                     </div>
                   </Col>
@@ -297,7 +434,112 @@ export function AssistantView({
           </Card.Body>
         </Card>
 
-        <Card className="settings-card shadow-sm mb-3" data-testid="assistant-capability-contracts">
+        <Card className="settings-card shadow-sm mb-3 assistant-essential-card" data-testid="assistant-essential-control-plane">
+          <Card.Body>
+            <SectionHeader
+              title="Essential capabilities"
+              text="Choose the smallest useful setup first. Model requests are capability-shaped and remain separate from dedicated local speech models."
+              action={<Badge bg="light" text="dark">Essential first</Badge>}
+            />
+            <div className="assistant-performance-control" data-testid="assistant-performance-profile" role="group" aria-labelledby="assistant-performance-profile-label">
+              <div>
+                <strong id="assistant-performance-profile-label">Performance profile</strong>
+                <div className="small text-body-secondary">Default: {selectedPerformanceLabel}. This profile is included with every capability setup request.</div>
+              </div>
+              <div className="d-flex flex-wrap gap-2" role="radiogroup" aria-label="Performance profile">
+                {performanceProfiles.map(([value, label]) => (
+                  <Form.Check
+                    key={value}
+                    inline
+                    type="radio"
+                    name="assistantPerformanceProfile"
+                    id={`assistant-performance-${value}`}
+                    value={value}
+                    label={label}
+                    checked={performanceProfile === value}
+                    onChange={() => setPerformanceProfile(value)}
+                  />
+                ))}
+              </div>
+            </div>
+            <Row className="g-3 mt-1">
+              {capabilityReadiness.map((capability) => {
+                const deploymentPending = capability.status === "candidate_selected";
+                return (
+                <Col xl={4} md={6} key={capability.id} data-testid={`assistant-capability-${capability.id}`}>
+                  <div className="assistant-essential-capability h-100">
+                    <div className="d-flex align-items-start justify-content-between gap-2">
+                      <div>
+                        <span className="assistant-capability-eyebrow">{capability.role}</span>
+                        <h3 className="h6 mb-1">{capability.label}</h3>
+                      </div>
+                      <Badge bg={statusVariant(capability.status)} data-testid={`assistant-model-request-status-${capability.id}`}>
+                        {statusText(capability.request)}
+                      </Badge>
+                    </div>
+                    <div className="small text-body-secondary mt-2">
+                      Required: {(capability.required || []).join(", ")}
+                      {capability.optional?.length ? ` · Optional: ${capability.optional.join(", ")}` : ""}
+                    </div>
+                    {capability.recommendation ? (
+                      <div className="assistant-recommendation mt-2" data-testid={`assistant-recommendation-${capability.id}`}>
+                        <div className="small fw-semibold">{capability.recommendation.catalogItem?.name || capability.recommendation.catalog_item?.name || capability.recommendation.label || capability.recommendation.name || capability.recommendation.model || capability.recommendation.key || "Recommended candidate"}</div>
+                        {formatTpsEvidence(capability.recommendation) && <div className="small text-body-secondary">{formatTpsEvidence(capability.recommendation)}</div>}
+                        <div className="small text-body-secondary">Catalog recommendation only; live compatibility is not verified.</div>
+                      </div>
+                    ) : (
+                      <div className="small text-body-secondary mt-2">No unblocked recommendation yet.</div>
+                    )}
+                    <div className="d-flex flex-wrap gap-2 mt-3">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={capability.ready ? "primary" : "outline-primary"}
+                        disabled={deploymentPending}
+                        onClick={() => capability.ready ? openWorkflow?.(capability.workflowId) : requestModel?.(capability.requirements)}
+                        data-testid={`assistant-capability-action-${capability.id}`}
+                      >
+                        {capability.ready ? capability.actionLabel : deploymentPending ? "WarSat deployment pending" : "Find compatible model"}
+                      </Button>
+                      {capability.recommendation && capability.request && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline-secondary"
+                          onClick={() => prepareModelRequest?.(modelRequestId(capability.request), modelCandidateId(capability.recommendation))}
+                          data-testid={`assistant-review-model-request-${capability.id}`}
+                        >
+                          Review WarSat plan
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </Col>
+                );
+              })}
+              <Col xl={4} md={6} data-testid="assistant-capability-voice">
+                <div className="assistant-essential-capability h-100">
+                  <div className="d-flex align-items-start justify-content-between gap-2">
+                    <div>
+                      <span className="assistant-capability-eyebrow">speech_to_text + text_to_speech</span>
+                      <h3 className="h6 mb-1">Voice</h3>
+                    </div>
+                    <Badge bg={voiceOperational ? "success" : "warning"}>{voiceOperational ? "Ready" : "Setup needed"}</Badge>
+                  </div>
+                  <p className="small text-body-secondary mt-2 mb-0">Uses dedicated local speech models. Audio capabilities are never sent to WarSat model requests.</p>
+                  <div className="small text-body-secondary mt-2">STT: {titleize(voiceModelRoles.speechToText?.status || voiceModelRoles.speech_to_text?.status || "not_checked")} · TTS: {titleize(voiceModelRoles.textToSpeech?.status || voiceModelRoles.text_to_speech?.status || "not_checked")}</div>
+                  <Button type="button" size="sm" variant="outline-primary" className="mt-3" onClick={() => openModels?.()} data-testid="assistant-capability-action-voice">
+                    Find speech models
+                  </Button>
+                </div>
+              </Col>
+            </Row>
+          </Card.Body>
+        </Card>
+
+        <details className="assistant-advanced-group" data-testid="assistant-advanced-diagnostics">
+          <summary>Full capability diagnostics <span>Contracts, tool catalog, and relay state</span></summary>
+          <Card className="settings-card shadow-sm mb-3" data-testid="assistant-capability-contracts">
           <Card.Body>
             <SectionHeader
               title="Assistant readiness"
@@ -355,7 +597,8 @@ export function AssistantView({
               </Col>
             </Row>
           </Card.Body>
-        </Card>
+          </Card>
+        </details>
 
         <Card className="settings-card shadow-sm mb-3" data-testid="assistant-command-preview">
           <Card.Body>
@@ -394,9 +637,26 @@ export function AssistantView({
           </Card.Body>
         </Card>
 
+        <section className="assistant-needs-attention" data-testid="assistant-needs-attention" aria-labelledby="assistant-needs-attention-title">
+          <div className="d-flex flex-wrap align-items-start justify-content-between gap-2">
+            <div>
+              <h2 className="h6 mb-1" id="assistant-needs-attention-title">Needs attention</h2>
+              <p className="small text-body-secondary mb-0">Only setup and readiness gaps are listed here; catalog hints are not live verification.</p>
+            </div>
+            <Badge bg={needsAttention.length ? "warning" : "success"}>{needsAttention.length ? `${needsAttention.length} item${needsAttention.length === 1 ? "" : "s"}` : "All clear"}</Badge>
+          </div>
+          {needsAttention.length ? (
+            <ul className="small mb-0 mt-2">
+              {needsAttention.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          ) : <p className="small mb-0 mt-2">No immediate setup gaps reported.</p>}
+        </section>
+
         <Row className="g-3">
           <Col xl={5}>
-            <Card className="settings-card shadow-sm h-100" data-testid="assistant-identity-card">
+            <details className="assistant-advanced-group" data-testid="assistant-advanced-identity">
+              <summary>Identity and context <span>Personality, policy, memory, and capsules</span></summary>
+              <Card className="settings-card shadow-sm h-100" data-testid="assistant-identity-card">
               <Card.Body>
                 <SectionHeader title="Identity and context" text="Rasputin remains the stable personality and owner-scoped context authority." />
                 <div className="d-flex align-items-start gap-3">
@@ -531,11 +791,14 @@ export function AssistantView({
                   )}
                 </div>
               </Card.Body>
-            </Card>
+              </Card>
+            </details>
           </Col>
 
           <Col xl={7}>
-            <Card className="settings-card shadow-sm h-100" data-testid="assistant-plan-composer">
+            <details className="assistant-advanced-group" data-testid="assistant-advanced-planning">
+              <summary>Planning <span>Reviewable objectives and approved context</span></summary>
+              <Card className="settings-card shadow-sm h-100" data-testid="assistant-plan-composer">
               <Card.Body>
                 <SectionHeader title="Plan a request" text="Describe the outcome. Rasputin will build a reviewable plan without starting anything." />
                 <Form onSubmit={createPlan}>
@@ -602,13 +865,16 @@ export function AssistantView({
                   </div>
                 </Form>
               </Card.Body>
-            </Card>
+              </Card>
+            </details>
           </Col>
         </Row>
 
         <Row className="g-3 mt-1">
           <Col xl={5}>
-            <Card className="settings-card shadow-sm h-100" data-testid="assistant-model-packs">
+            <details className="assistant-advanced-group" data-testid="assistant-advanced-model-voice">
+              <summary>Model packs and voice <span>Named packs, readiness, and push-to-talk</span></summary>
+              <Card className="settings-card shadow-sm h-100" data-testid="assistant-model-packs">
               <Card.Body>
                 <SectionHeader title="Named model packs" text="Reusable fleet definitions for conversation, planning, and voice workers." />
                 <Form onSubmit={saveModelPack} className="border-bottom pb-3 mb-3">
@@ -659,11 +925,14 @@ export function AssistantView({
                   <VoiceConsole />
                 </div>
               </Card.Body>
-            </Card>
+              </Card>
+            </details>
           </Col>
 
           <Col xl={7}>
-            <Card className="settings-card shadow-sm h-100" data-testid="assistant-plan-ledger">
+            <details className="assistant-advanced-group" data-testid="assistant-advanced-ledger">
+              <summary>Ledgers <span>Plans and their review state</span></summary>
+              <Card className="settings-card shadow-sm h-100" data-testid="assistant-plan-ledger">
               <Card.Body>
                 <SectionHeader title="Plan ledger" text="Review plans before any future broker adapter can act on them." />
                 {planItems.length ? planItems.map((record) => {
@@ -692,11 +961,14 @@ export function AssistantView({
                   );
                 }) : <p className="small text-body-secondary mb-0">No plans yet. Create a preview above.</p>}
               </Card.Body>
-            </Card>
+              </Card>
+            </details>
           </Col>
         </Row>
 
-        <Card className="settings-card shadow-sm mt-3" data-testid="assistant-handoffs">
+        <details className="assistant-advanced-group" data-testid="assistant-advanced-handoffs">
+          <summary>Broker handoffs <span>Approval and dispatch state</span></summary>
+          <Card className="settings-card shadow-sm mt-3" data-testid="assistant-handoffs">
           <Card.Body>
             <SectionHeader title="Broker handoffs" text="Track the action state before Rasputin invokes an allowlisted local adapter." />
             {handoffItems.length ? handoffItems.map((handoff) => (
@@ -725,7 +997,8 @@ export function AssistantView({
               </div>
             )) : <p className="small text-body-secondary mb-0"><Volume2 size={14} className="me-1" />No broker handoffs requested.</p>}
           </Card.Body>
-        </Card>
+          </Card>
+        </details>
       </div>
     </section>
   );

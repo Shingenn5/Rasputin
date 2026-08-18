@@ -24,6 +24,11 @@ class DockerProvider(DeploymentProvider):
 
         parent = str(file_path.parent)
         context_auto = bool(model.get("context_auto", True))
+        # Keep automatic GPU fitting, but use the deployment context
+        # budget instead of the llama.cpp full-training-context mode.
+        # Large Qwen GGUFs can otherwise reserve 128K/256K of KV cache for a
+        # normal desktop chat and collapse decode throughput.
+        context_value = int(model.get("context", 4096))
         cmd = [
             "docker", "run", "-d",
             "--name", model.get("container") or f"ai-{model['key']}",
@@ -34,7 +39,7 @@ class DockerProvider(DeploymentProvider):
             "-m", f"/models/{file_path.name}",
             "--host", "0.0.0.0",
             "--port", "8080",
-            "-c", "0" if context_auto else str(int(model.get("context", 4096))),
+            "-c", str(context_value),
         ]
         if context_auto:
             cmd.extend(["--fit", "on"])

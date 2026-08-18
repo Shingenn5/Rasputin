@@ -5,6 +5,8 @@ from backend import trials
 from backend import warsat
 from backend.warsat import advisor as warsat_advisor
 from backend.warsat import benchmarks as warsat_benchmarks
+from backend.warsat import benchmark_runner as warsat_benchmark_runner
+from backend.assistant import model_requests as assistant_model_requests
 from backend.core import workspace
 from backend.core import github_read
 from backend.core import host_fs
@@ -55,6 +57,7 @@ class WarsatPlanIn(CamelModel):
     host_port: int | None = None
     role: str | None = None
     container_name: str | None = None
+    assistant_request_id: str | None = None
 
 class WarsatDeployIn(CamelModel):
     plan: dict
@@ -68,6 +71,10 @@ class WarsatAdvisorIn(CamelModel):
     protocol_id: str | None = ""
     context_window: int | None = None
     tool_call_parser: str | None = ""
+    profile: str = "balanced"
+    benchmark_certificate_id: str | None = None
+    concurrency: int | None = None
+    all_profiles: bool = False
 
 
 class WarsatBenchmarkIn(CamelModel):
@@ -83,6 +90,12 @@ class WarsatBenchmarkIn(CamelModel):
     placement_mode: str = "single-gpu"
     max_model_len: int | None = None
     batch_size: int | None = None
+
+class WarsatBenchmarkRunIn(CamelModel):
+    model_id: str
+    samples: int = 1
+    max_tokens: int = warsat_benchmark_runner.DEFAULT_MAX_TOKENS
+    timeout_seconds: float = warsat_benchmark_runner.DEFAULT_TIMEOUT_SECONDS
 
 class WarsatContainerIn(CamelModel):
     container_name: str
@@ -149,6 +162,24 @@ async def warsat_benchmark_create(req: WarsatBenchmarkIn, _user=Depends(require_
     return ok({**saved, "fresh": warsat_benchmarks.is_fresh(saved)})
 
 
+@warsat_router.post("/benchmarks/run")
+async def warsat_benchmark_run(req: WarsatBenchmarkRunIn, _user=Depends(require_admin)):
+    try:
+        result = await asyncio.to_thread(
+            warsat_benchmark_runner.run_registered_model,
+            req.model_id,
+            owner=_user["username"],
+            samples=req.samples,
+            max_tokens=req.max_tokens,
+            timeout_seconds=req.timeout_seconds,
+        )
+    except AppError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ok(result)
+
+
 @warsat_router.get("/benchmarks/{certificate_id}")
 async def warsat_benchmark_get(certificate_id: str, _user=Depends(current_user)):
     certificate = warsat_benchmarks.get_certificate(certificate_id, owner=_user["username"])
@@ -159,25 +190,77 @@ async def warsat_benchmark_get(certificate_id: str, _user=Depends(current_user))
 @warsat_router.post("/plan")
 
 async def warsat_plan(req: WarsatPlanIn, _user=Depends(require_admin)):
-    payload = req.model_dump()
+    if req.assistant_request_id:
+        payload = assistant_model_requests.selected_plan_payload(
+            _user["username"],
+            req.assistant_request_id,
+        )
+        payload["assistantRequestId"] = req.assistant_request_id
+    else:
+        payload = req.model_dump()
     # Resource admission is owner-scoped evidence, not a caller-controlled
     # identity field.  The authenticated admin is the only owner recorded in
     # the preview and any later lease request.
     payload["ownerId"] = _user["username"]
-    return ok(await asyncio.to_thread(warsat.make_plan, payload))
+    plan = await asyncio.to_thread(warsat.make_plan, payload)
+    if req.assistant_request_id:
+        plan["assistantRequestId"] = req.assistant_request_id
+    return ok(plan)
+
+
+async def _warsat_advisor_response(req: WarsatAdvisorIn, user, all_profiles=False):
+    hardware = req.hardware or await asyncio.to_thread(warsat.hardware_probe)
+    pinned = None
+    pin_requested = bool(req.benchmark_certificate_id) and not all_profiles
+    if pin_requested:
+        pinned = warsat_benchmarks.get_certificate(
+            req.benchmark_certificate_id,
+            owner=user["username"],
+        )
+    certificates = (
+        [] if pin_requested else warsat_benchmarks.list_certificates(owner=user["username"])
+    )
+    common = {
+        "model": req.model,
+        "hardware": hardware,
+        "mission": req.mission,
+        "protocol_id": req.protocol_id or "",
+        "context_window": req.context_window,
+        "tool_call_parser": req.tool_call_parser or "",
+        "benchmark_certificate_id": req.benchmark_certificate_id or "",
+        "concurrency": req.concurrency,
+    }
+    if all_profiles or req.all_profiles:
+        profiles = {}
+        for api_name, profile in (("fast", "fast"), ("balanced", "balanced"), ("maximumQuality", "maximum_quality")):
+            profiles[api_name] = warsat_advisor.recommend(
+                **common,
+                profile=profile,
+                benchmark_certificate=pinned,
+                benchmark_certificates=None if pinned is not None else certificates,
+            )
+        return ok({
+            "profiles": profiles,
+            "profileOrder": ["fast", "balanced", "maximumQuality"],
+            "modelRef": req.model.get("modelId") or req.model.get("id") or "",
+        })
+    return ok(warsat_advisor.recommend(
+        **common,
+        profile=req.profile,
+        benchmark_certificate=pinned,
+        benchmark_certificates=None if pinned is not None else certificates,
+    ))
 
 
 @warsat_router.post("/advisor")
 async def warsat_advisor_recommend(req: WarsatAdvisorIn, _user=Depends(current_user)):
-    hardware = req.hardware or await asyncio.to_thread(warsat.hardware_probe)
-    return ok(warsat_advisor.recommend(
-        req.model,
-        hardware,
-        mission=req.mission,
-        protocol_id=req.protocol_id or "",
-        context_window=req.context_window,
-        tool_call_parser=req.tool_call_parser or "",
-    ))
+    return await _warsat_advisor_response(req, _user)
+
+
+@warsat_router.post("/advisor/profiles")
+async def warsat_advisor_profiles(req: WarsatAdvisorIn, _user=Depends(current_user)):
+    return await _warsat_advisor_response(req, _user, all_profiles=True)
+
 
 @warsat_router.post("/deploy")
 

@@ -7,7 +7,21 @@ from backend.models import providers as model_providers
 CERTIFICATION_VERSION = 1
 _READY_TOKEN = "RASPUTIN_READY_7319"
 _RETAINED_TOKEN = "RASPUTIN_RETAINED_4826"
-_IDENTITY_FIELDS = ("provider", "runtime", "model", "image", "base_url")
+_IDENTITY_FIELDS = (
+    "provider",
+    "runtime",
+    "model",
+    "image",
+    "base_url",
+    "protocol_id",
+    "model_format",
+    "quantization",
+    "gpu_device",
+    "device_ids",
+    "placement_mode",
+    "context_window",
+    "tool_call_parser",
+)
 
 
 def _clean(text):

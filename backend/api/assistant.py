@@ -8,6 +8,7 @@ from pydantic import Field
 
 from backend.api.core import CamelModel, current_user, require_member
 from backend.assistant import runtime
+from backend.assistant import model_requests
 from backend.assistant import voice
 from backend.assistant import voice_models
 from backend.assistant import voice_profiles
@@ -76,6 +77,22 @@ class VoiceSynthesisIn(CamelModel):
     response_format: str = "wav"
 
 
+class AssistantModelRequestIn(CamelModel):
+    mission: str
+    required_capabilities: list[str] = Field(default_factory=list)
+    profile: str | None = None
+    context_window: int | None = None
+    role: str | None = None
+
+
+class AssistantModelCandidateSelectIn(CamelModel):
+    candidate_id: str
+
+
+class AssistantModelVerifyIn(CamelModel):
+    model_key: str
+
+
 VOICE_TURN_CONTRACT_VERSION = "0.2"
 
 
@@ -118,6 +135,39 @@ async def assistant_capabilities(_user=Depends(current_user)):
     payload = runtime.capabilities()
     payload["voice_models"] = voice_models.readiness()
     return ok(payload)
+
+
+@router.post("/model-requests")
+async def assistant_model_request_create(req: AssistantModelRequestIn, _user=Depends(require_member)):
+    return ok(await asyncio.to_thread(
+        model_requests.create_request,
+        _user["username"],
+        req.mission,
+        req.required_capabilities,
+        req.profile,
+        req.context_window,
+        req.role,
+    ))
+
+
+@router.get("/model-requests")
+async def assistant_model_request_list(limit: int = 50, _user=Depends(current_user)):
+    return ok({"requests": model_requests.list_requests(_user["username"], limit)})
+
+
+@router.get("/model-requests/{request_id}")
+async def assistant_model_request_get(request_id: str, _user=Depends(current_user)):
+    return ok(model_requests.get_request(_user["username"], request_id))
+
+
+@router.post("/model-requests/{request_id}/select")
+async def assistant_model_request_select(request_id: str, req: AssistantModelCandidateSelectIn, _user=Depends(require_member)):
+    return ok(model_requests.select_candidate(_user["username"], request_id, req.candidate_id))
+
+
+@router.post("/model-requests/{request_id}/verify")
+async def assistant_model_request_verify(request_id: str, req: AssistantModelVerifyIn, _user=Depends(require_member)):
+    return ok(await asyncio.to_thread(model_requests.verify, _user["username"], request_id, req.model_key))
 
 
 @router.get("/voice/profiles")

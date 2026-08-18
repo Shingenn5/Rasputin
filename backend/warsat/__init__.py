@@ -114,6 +114,9 @@ DTYPE_CHOICES = {"auto", "float16", "half", "bfloat16", "float32"}
 KV_CACHE_CHOICES = {"auto", "fp8", "fp8_e5m2", "fp8_e4m3"}
 QUANTIZATION_CHOICES = {"", "awq", "gptq", "fp8", "bitsandbytes"}
 SPLIT_MODE_CHOICES = {"none", "layer", "row", "tensor"}
+FLASH_ATTENTION_CHOICES = {"auto", "on", "off"}
+LLAMA_KV_CACHE_CHOICES = {"f16", "q8_0", "q4_0"}
+SPECULATIVE_CHOICES = {"none", "ngram-simple", "ngram-mod"}
 
 
 def _truthy_env(name):
@@ -680,6 +683,16 @@ def _build_tuning(payload, protocol, strength):
         "multiGpu": False,
         "cpuThreads": _int_value(payload, ["cpuThreads", "cpu_threads"], 0, 0, 256),
         "batchSize": _int_value(payload, ["batchSize", "batch_size"], profile.get("batchSize", 512), 1, 65536),
+        "ubatchSize": _int_value(payload, ["ubatchSize", "ubatch_size"], min(profile.get("batchSize", 512), 256), 1, 65536),
+        "flashAttention": _choice_value(payload, ["flashAttention", "flash_attention"], FLASH_ATTENTION_CHOICES, "auto"),
+        "cacheTypeK": _choice_value(payload, ["cacheTypeK", "cache_type_k"], LLAMA_KV_CACHE_CHOICES, "f16"),
+        "cacheTypeV": _choice_value(
+            payload,
+            ["cacheTypeV", "cache_type_v"],
+            LLAMA_KV_CACHE_CHOICES,
+            _choice_value(payload, ["cacheTypeK", "cache_type_k"], LLAMA_KV_CACHE_CHOICES, "f16"),
+        ),
+        "speculativeMode": _choice_value(payload, ["speculativeMode", "speculative_mode"], SPECULATIVE_CHOICES, "none"),
         "maxNumSeqs": _int_value(payload, ["maxNumSeqs", "max_num_seqs"], default_max_num_seqs, 1, 4096),
         "dtype": _choice_value(payload, ["dtype"], DTYPE_CHOICES, "auto"),
         "quantization": _choice_value(payload, ["quantization"], QUANTIZATION_CHOICES, ""),
@@ -997,16 +1010,35 @@ def _runtime_arguments(protocol, tuning):
     elif protocol.get("modelFormat") == "gguf":
         args = _strip_option(args, [
             "-c", "--ctx-size", "--ctx_size", "-ngl", "--n-gpu-layers", "--threads",
-            "-b", "--batch-size", "--parallel", "-sm", "--split-mode", "-ts", "--tensor-split",
-            "-fit", "--fit",
+            "-b", "--batch-size", "-ub", "--ubatch-size", "--parallel",
+            "-sm", "--split-mode", "-ts", "--tensor-split",
+            "-fa", "--flash-attn", "-ctk", "--cache-type-k", "-ctv", "--cache-type-v",
+            "--spec-type", "-fit", "--fit",
         ])
-        args.extend(["-c", "0" if tuning.get("contextAuto") else str(tuning["contextWindow"])])
+        # -c 0 lets llama.cpp select the model's full training context. On
+        # modern Qwen GGUFs that can be 128K/256K, which reserves a huge KV
+        # cache and makes a desktop chat model feel stalled even when the
+        # prompt is short. Keep GPU layer fitting automatic, but bound an
+        # automatic context to the selected profile's safe window. Operators
+        # can still request a larger explicit contextWindow when they need it.
+        context_value = tuning["contextWindow"]
+        args.extend(["-c", str(context_value)])
         if tuning.get("gpuLayers") is not None:
             args.extend(["-ngl", str(tuning["gpuLayers"])])
         if tuning.get("cpuThreads"):
             args.extend(["--threads", str(tuning["cpuThreads"])])
         if tuning.get("batchSize"):
             args.extend(["-b", str(tuning["batchSize"])])
+        if tuning.get("ubatchSize"):
+            args.extend(["-ub", str(tuning["ubatchSize"])])
+        if tuning.get("flashAttention"):
+            args.extend(["--flash-attn", str(tuning["flashAttention"])])
+        if tuning.get("cacheTypeK"):
+            args.extend(["--cache-type-k", str(tuning["cacheTypeK"])])
+        if tuning.get("cacheTypeV"):
+            args.extend(["--cache-type-v", str(tuning["cacheTypeV"])])
+        if tuning.get("speculativeMode") and tuning["speculativeMode"] != "none":
+            args.extend(["--spec-type", str(tuning["speculativeMode"])])
         if tuning.get("maxNumSeqs"):
             args.extend(["--parallel", str(tuning["maxNumSeqs"])])
         if tuning.get("splitMode"):
@@ -1574,12 +1606,28 @@ def make_plan(payload):
             "enabled": True,
             "managed": True,
             "runtime": f"warsat-{protocol['runtime']}",
+            "protocolId": protocol["id"],
+            "modelFormat": protocol.get("modelFormat") or "",
+            "quantization": payload.get("quantization") or payload.get("quant") or "",
+            "gpuDevice": limits.get("gpuDevice") or "",
+            "deviceIds": [item.strip() for item in str(limits.get("gpuDevice") or "").split(",") if item.strip()],
+            "placementMode": (
+                "multi-gpu"
+                if str(limits.get("gpuDevice") or "").lower() in {"all", "*"}
+                or "," in str(limits.get("gpuDevice") or "")
+                else "single-gpu"
+            ),
             "container": container_name,
             "port": host_port,
             "image": protocol["image"],
             "contextWindow": tuning.get("contextWindow") or tuning.get("maxModelLen"),
             "contextAuto": bool(tuning.get("contextAuto")),
-            "contextSource": "runtime auto-detection" if tuning.get("contextAuto") else "explicit deployment setting",
+            "contextSource": (
+                "bounded profile context with runtime GPU fitting"
+                if tuning.get("contextAuto") and protocol.get("modelFormat") == "gguf"
+                else "runtime auto-detection" if tuning.get("contextAuto")
+                else "explicit deployment setting"
+            ),
             "maxTokens": None if tuning.get("contextAuto") else min(
                 2048,
                 max(256, int(tuning.get("contextWindow") or tuning.get("maxModelLen") or 4096) // 4),
@@ -2073,6 +2121,12 @@ def _registry_entry_from_plan(plan):
         "enabled": bool(entry.get("enabled", True)),
         "managed": True,
         "runtime": entry.get("runtime") or f"warsat-{plan.get('runtime')}",
+        "protocol_id": entry.get("protocolId") or plan.get("protocolId") or "",
+        "model_format": entry.get("modelFormat") or plan.get("modelFormat") or "",
+        "quantization": entry.get("quantization") or "",
+        "gpu_device": entry.get("gpuDevice") or plan.get("limits", {}).get("gpuDevice") or "",
+        "device_ids": list(entry.get("deviceIds") or []),
+        "placement_mode": entry.get("placementMode") or "",
         "container": entry.get("container") or plan.get("containerName"),
         "port": int(entry.get("port") or plan.get("hostPort")),
         "image": entry.get("image") or plan.get("image"),

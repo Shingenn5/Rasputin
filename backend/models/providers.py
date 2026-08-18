@@ -465,6 +465,29 @@ def _stream_openai(url, payload, headers, on_delta):
                 chunk = json.loads(data)
             except Exception:
                 continue
+
+            # OpenAI stream_options usage and llama.cpp timings arrive in a
+            # terminal chunk that may contain no choices. Preserve them as a
+            # provider-native metrics event for benchmark consumers.
+            metrics = {}
+            if isinstance(chunk.get("usage"), dict):
+                metrics["usage"] = chunk["usage"]
+            timing = chunk.get("timings") or chunk.get("timing")
+            if isinstance(timing, dict):
+                metrics["timing"] = timing
+            direct_timing = {
+                key: chunk[key]
+                for key in (
+                    "prompt_n", "prompt_ms", "predicted_n", "predicted_ms",
+                    "predicted_per_second", "predicted_per_token_ms",
+                )
+                if key in chunk
+            }
+            if direct_timing:
+                metrics.setdefault("timing", {}).update(direct_timing)
+            if metrics:
+                _emit(on_delta, {"type": "metrics", **metrics})
+
             for choice in chunk.get("choices") or []:
                 delta = choice.get("delta") or {}
                 piece = delta.get("content")
@@ -553,6 +576,32 @@ def _stream_gemini(url, payload, headers, on_delta):
 REASONING_LEVELS = {"off", "low", "medium", "high"}
 _ANTHROPIC_THINKING_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
 _GEMINI_THINKING_BUDGETS = {"off": 0, "low": 1024, "medium": 4096, "high": 8192}
+
+# llama.cpp exposes repetition controls as OpenAI-compatible request fields,
+# but its server defaults to repeat_penalty=1.0 (no penalty). That is a poor
+# default for long-running local chat, especially for hybrid-thinking Qwen
+# models, where a stalled generation can loop for hundreds of tokens. Keep the
+# policy scoped to llama.cpp so remote APIs and other local runtimes retain
+# their own sampling semantics. Explicit request fields still win.
+_LLAMA_CPP_RUNTIMES = {"docker-llamacpp", "llama.cpp", "warsat-llama.cpp"}
+_LLAMA_CPP_SAMPLING_DEFAULTS = {
+    "repeat_penalty": 1.1,
+    "repeat_last_n": 256,
+}
+
+
+def _is_llama_cpp_model(model):
+    provider = provider_key((model or {}).get("provider"))
+    runtime = str((model or {}).get("runtime") or "").strip().lower()
+    return provider == "llama.cpp" or runtime in _LLAMA_CPP_RUNTIMES
+
+
+def _apply_llama_cpp_sampling(payload, model):
+    if not _is_llama_cpp_model(model):
+        return payload
+    for key, value in _LLAMA_CPP_SAMPLING_DEFAULTS.items():
+        payload.setdefault(key, value)
+    return payload
 
 
 def _apply_reasoning(payload, provider, model, reasoning):
@@ -669,7 +718,14 @@ def _build_chat_payload(provider, model, messages, max_tokens, temperature, tool
         parser = _parse_openai_response
         streamer = _stream_openai
         payload["stream"] = stream
+        if stream:
+            # OpenAI-compatible runtimes may return authoritative completion
+            # usage and runtime timings in the terminal stream chunk. Older
+            # servers can reject this optional field; chat_sync removes it and
+            # retries once below.
+            payload["stream_options"] = {"include_usage": True}
     _apply_reasoning(payload, provider, model, reasoning)
+    _apply_llama_cpp_sampling(payload, model)
     return payload, headers, parser, streamer
 
 
@@ -694,6 +750,7 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
     cur_tools = None if (local_like and tools and model_key in _TOOLS_UNSUPPORTED) else tools
     cur_max = max_tokens
     cur_reasoning = reasoning
+    stream_options_enabled = bool(stream)
 
     first_error = None
     text, tool_calls = None, None
@@ -701,6 +758,8 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
         payload, headers, parser, streamer = _build_chat_payload(
             provider, model, messages, cur_max, temperature, cur_tools, stream, cur_reasoning
         )
+        if stream and not stream_options_enabled:
+            payload.pop("stream_options", None)
         try:
             if stream:
                 text, tool_calls = streamer(url, payload, headers, on_delta)
@@ -718,6 +777,9 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
         except urllib.error.HTTPError as exc:
             if first_error is None:
                 first_error = exc
+            if exc.code == 400 and stream and stream_options_enabled and "stream_options" in payload:
+                stream_options_enabled = False
+                continue
             if not (local_like and exc.code == 400):
                 raise
             body = _http_error_body(exc)
@@ -743,9 +805,9 @@ def chat_sync(model, messages, max_tokens, temperature, tools=None, on_delta=Non
 
 async def chat(model, messages, max_tokens=1024, temperature=0.2, tools=None, on_delta=None, reasoning="auto"):
     """on_delta, when given, switches to a streaming request. It is invoked
-    from a worker thread with {"type": "text", "text": ...} and
-    {"type": "tool_call", "id": ..., "name": ...} events as they arrive;
-    the returned (text, tool_calls) is identical either way."""
+    from a worker thread with text, tool_call, and provider-native metrics
+    events as they arrive; the returned (text, tool_calls) is identical either
+    way."""
     return await asyncio.to_thread(chat_sync, model, messages, max_tokens, temperature, tools, on_delta, reasoning)
 
 
