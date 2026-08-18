@@ -24,6 +24,7 @@ These are the documents to consult before starting implementation work.
 | --- | --- | --- |
 | [`CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`](CODING_AGENT_IMPLEMENTATION_CHECKLIST.md) | Coding-agent capability and verification queue | Active working checklist |
 | [`RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md`](RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md) | Release-readiness gaps and evidence requirements | Current readiness report |
+| [`RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md`](RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md) | Independent fresh-user audit of the rebuilt model-orchestration and UI/UX revision | P1/P2 fixed and independently re-verified |
 | [`RASPUTIN_IMPLEMENTATION_LEDGER.md`](RASPUTIN_IMPLEMENTATION_LEDGER.md) | Compact source/test evidence ledger for current workstation and Assistant status | Reconcile before roadmap edits |
 | [`RASPUTIN_V1_RELEASE_CONTRACT.md`](RASPUTIN_V1_RELEASE_CONTRACT.md) | Frozen ten-slice v1 finish line, evidence matrix, and explicit non-goals | Scope authority for the completion batch |
 | [`DESKTOP_ARCHITECTURE.md`](DESKTOP_ARCHITECTURE.md) | Windows desktop packaging and lifecycle | Current packaging reference |

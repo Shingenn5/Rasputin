@@ -214,6 +214,9 @@ export function App() {
   const eventRetryAttemptRef = useRef(0);
   const eventGenerationRef = useRef(0);
   const mountedRef = useRef(true);
+  const modelCatalogRef = useRef(modelCatalog);
+  const modelCatalogRequestRef = useRef(null);
+  const modelCatalogAutoAttemptedRef = useRef(false);
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
   const bootPhaseRef = useRef("starting");
@@ -507,7 +510,9 @@ export function App() {
     const prefs = data.preferences || {};
     setModels(data.models || []);
     setModelProviders(data.modelProviders || []);
-    setModelCatalog(data.modelCatalog || { items: [], categories: [], runtimes: [], source: {} });
+    const bootstrapCatalog = data.modelCatalog || { items: [], categories: [], runtimes: [], source: {} };
+    modelCatalogRef.current = bootstrapCatalog;
+    setModelCatalog(bootstrapCatalog);
     setTasks(data.tasks || []);
     queryClient.setQueryData(["model-registry"], data.models || []);
     queryClient.setQueryData(["tasks"], data.tasks || []);
@@ -569,8 +574,9 @@ export function App() {
     // creates a guaranteed 403 and makes a read-only session look broken.
     if (data.session?.role === "admin") loadSettings();
     // The bootstrap catalog has no VRAM-based fit labels; swap in the
-    // hardware-aware copy in the background.
-    api("/api/model-catalog?fit=true").then(setModelCatalog).catch(() => {});
+    // hardware-aware copy in the background. This shares the same guarded
+    // loader as the WarSat route so an empty result is still terminal.
+    loadModelCatalog(false, { automatic: true }).catch(() => {});
     if (requestedView === "models") {
       loadWarsatHardware().catch(() => {});
     }
@@ -582,29 +588,58 @@ export function App() {
     return nextModels;
   }
 
-  async function loadModelCatalog(refresh = false) {
-    setModelCatalogLoading(true);
-    setModelCatalogError("");
-    try {
-      if (refresh) {
-        await postJson("/api/model-catalog/refresh", { force: false });
-      }
-      // fit=true runs the hardware probe so catalog entries carry real
-      // VRAM-based fit labels instead of generic estimates.
-      const nextCatalog = await api("/api/model-catalog?fit=true");
-      setModelCatalog(nextCatalog);
-      setGlobalStatus(refresh
-        ? `Model catalog refreshed. ${nextCatalog.count || 0} entries available.`
-        : "Model catalog loaded.");
-      return nextCatalog;
-    } catch (error) {
-      setModelCatalogError(error.message);
-      setGlobalStatus(error.message);
-      return null;
-    } finally {
-      setModelCatalogLoading(false);
+  const loadModelCatalog = useCallback(async (refresh = false, options = {}) => {
+    const automatic = options?.automatic === true;
+    const inFlight = modelCatalogRequestRef.current;
+    if (inFlight) {
+      // A deliberate request joining an automatic request still gets the one
+      // status notification promised by the explicit caller. Joining also
+      // counts as the automatic attempt, so an empty result cannot retrigger.
+      if (automatic) modelCatalogAutoAttemptedRef.current = true;
+      if (!automatic) inFlight.notify = true;
+      return inFlight.promise;
     }
-  }
+    if (automatic && modelCatalogAutoAttemptedRef.current) return modelCatalogRef.current;
+
+    if (automatic) modelCatalogAutoAttemptedRef.current = true;
+    const request = { notify: !automatic, promise: null };
+    const promise = (async () => {
+      if (mountedRef.current) {
+        setModelCatalogLoading(true);
+        setModelCatalogError("");
+      }
+      try {
+        if (refresh) {
+          await postJson("/api/model-catalog/refresh", { force: false });
+        }
+        // fit=true runs the hardware probe so catalog entries carry real
+        // VRAM-based fit labels instead of generic estimates.
+        const nextCatalog = await api("/api/model-catalog?fit=true");
+        modelCatalogRef.current = nextCatalog;
+        if (mountedRef.current) {
+          setModelCatalog(nextCatalog);
+          if (request.notify) {
+            setGlobalStatus(refresh
+              ? `Model catalog refreshed. ${nextCatalog.count || 0} entries available.`
+              : "Model catalog loaded.");
+          }
+        }
+        return nextCatalog;
+      } catch (error) {
+        if (mountedRef.current) {
+          setModelCatalogError(error.message);
+          if (request.notify) setGlobalStatus(error.message);
+        }
+        return null;
+      } finally {
+        if (mountedRef.current) setModelCatalogLoading(false);
+        if (modelCatalogRequestRef.current === request) modelCatalogRequestRef.current = null;
+      }
+    })();
+    request.promise = promise;
+    modelCatalogRequestRef.current = request;
+    return promise;
+  }, []);
 
   async function loadTasks() {
     const nextTasks = await queryClient.fetchQuery({ queryKey: ["tasks"], queryFn: () => api("/api/tasks") });

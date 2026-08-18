@@ -270,7 +270,10 @@ export function WarsatView({
 
   useEffect(() => {
     if (view === "warsat" && !catalogItems.length && !modelCatalogLoading) {
-      loadModelCatalog?.();
+      // Automatic catalog discovery is intentionally silent and bounded. The
+      // App-level loader deduplicates concurrent calls and records an empty
+      // successful catalog as a completed attempt.
+      loadModelCatalog?.(false, { automatic: true });
     }
   }, [view, catalogItems.length, modelCatalogLoading, loadModelCatalog]);
 

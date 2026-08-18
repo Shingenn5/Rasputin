@@ -150,6 +150,94 @@ export function shouldProbeHardware(view, hasHardware, attempt, refreshToken) {
   return view === "models" && !hasHardware && attempt !== refreshToken;
 }
 
+function hardwareStrings(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry === "string") return [entry];
+    if (!entry || typeof entry !== "object") return [];
+    return [entry.message, entry.detail, entry.reason, entry.text]
+      .filter((text) => typeof text === "string" && text.trim())
+      .map((text) => text.trim());
+  });
+}
+
+export function normalizeHardwareSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return {
+      received: false,
+      status: "missing",
+      blocked: false,
+      detectedHardware: null,
+      capabilityProfile: null,
+      blockedReasons: [],
+      recommendations: [],
+      checkMessages: [],
+    };
+  }
+  const rawStatus = String(snapshot.status || "").toLowerCase();
+  const checks = Array.isArray(snapshot.checks) ? snapshot.checks : [];
+  const checkMessages = hardwareStrings(checks);
+  const blockedReasons = [...new Set([
+    ...hardwareStrings(snapshot.blockedReasons),
+    ...hardwareStrings(snapshot.blocked_reasons),
+    ...checks.flatMap((check) => {
+      if (!check || typeof check !== "object") return [];
+      const checkStatus = String(check.status || "").toLowerCase();
+      return ["blocked", "failed", "error"].includes(checkStatus)
+        ? hardwareStrings([check])
+        : [];
+    }),
+  ])];
+  const recommendations = [...new Set([
+    ...hardwareStrings(snapshot.recommendations),
+    ...hardwareStrings(snapshot.nextActions),
+    ...hardwareStrings(snapshot.next_actions),
+  ])];
+  const blocked = snapshot.ok === false || rawStatus === "blocked" || blockedReasons.length > 0;
+  return {
+    received: true,
+    status: blocked ? "blocked" : rawStatus || "ready",
+    blocked,
+    detectedHardware: snapshot.detectedHardware || snapshot.detected_hardware || {},
+    capabilityProfile: snapshot.capabilityProfile || snapshot.capability_profile || null,
+    generatedAt: snapshot.generatedAt || snapshot.generated_at || null,
+    blockedReasons,
+    recommendations,
+    checkMessages,
+    raw: snapshot,
+  };
+}
+
+export function advisorStateForInputs({
+  catalogLoading = false,
+  hardwareProbeStatus = "idle",
+  hardwareError = "",
+  hasHardware = false,
+  hardwareSnapshot = normalizeHardwareSnapshot(null),
+  catalogCount = 0,
+  candidateCount = 0,
+}) {
+  if (catalogLoading) return { status: "catalog-loading", reason: "The local model catalog is still loading." };
+  if (hardwareProbeStatus === "error") {
+    return { status: "hardware-error", reason: hardwareError || "GPU detection failed, so placement is unproven." };
+  }
+  if (!hasHardware || !hardwareSnapshot.received) {
+    return { status: "hardware-loading", reason: "Waiting for a hardware snapshot before requesting recommendations." };
+  }
+  if (hardwareSnapshot.blocked) {
+    return {
+      status: "hardware-blocked",
+      reason: "Hardware snapshot received, but deployment is blocked.",
+      hardwareReasons: hardwareSnapshot.blockedReasons,
+      hardwareRecommendations: hardwareSnapshot.recommendations,
+      hardwareChecks: hardwareSnapshot.checkMessages,
+    };
+  }
+  if (!catalogCount) return { status: "catalog-empty", reason: "The hardware snapshot is ready, but the local model catalog is empty." };
+  if (!candidateCount) return { status: "no-deployable-candidates", reason: "No deployable, unblocked catalog candidates are available." };
+  return null;
+}
+
 export function catalogPlacementAssessment(item, hardware, measuredEvidence = null) {
   const capacity = hardwarePlacementCapacity(hardware);
   const estimate = Number(item?.vramEstimateGb);
@@ -485,12 +573,14 @@ export function ModelsView({
   const healthy = isModelHealthy(activeModel);
   const status = runtimeStatus(activeModel);
   const effectiveHardware = warsatHardware || localHardware;
+  const normalizedHardware = useMemo(() => normalizeHardwareSnapshot(effectiveHardware), [effectiveHardware]);
   const gpuCapacity = useMemo(() => hardwarePlacementCapacity(effectiveHardware), [effectiveHardware]);
   const totalVramGb = gpuCapacity.aggregateVramGb || 0;
 
   useEffect(() => {
     if (warsatHardware) {
-      setHardwareProbeState({ status: "ready", error: "" });
+      const snapshot = normalizeHardwareSnapshot(warsatHardware);
+      setHardwareProbeState({ status: snapshot.blocked ? "blocked" : "ready", error: "", snapshot });
       return undefined;
     }
     if (!shouldProbeHardware(view, Boolean(warsatHardware || localHardware), hardwareProbeAttempt.current, hardwareRefreshToken)) return undefined;
@@ -504,8 +594,9 @@ export function ModelsView({
       () => controller.abort("timeout"),
     ).then((hardware) => {
       if (disposed) return;
+      const snapshot = normalizeHardwareSnapshot(hardware);
       setLocalHardware(hardware);
-      setHardwareProbeState({ status: "ready", error: "" });
+      setHardwareProbeState({ status: snapshot.blocked ? "blocked" : "ready", error: "", snapshot });
     }).catch((error) => {
       const superseded = controller.signal.aborted && controller.signal.reason === "superseded";
       if (disposed || superseded) return;
@@ -552,15 +643,19 @@ export function ModelsView({
   useEffect(() => {
     let disposed = false;
     if (view !== "models") return () => { disposed = true; };
-    const hardwareUnavailable = hardwareProbeState.status === "error";
-    if (!catalogItems.length || (!effectiveHardware && !hardwareUnavailable)) {
-      setAdvisorState((previous) => previous.status === "waiting"
+    const terminalState = advisorStateForInputs({
+      catalogLoading: modelCatalogLoading,
+      hardwareProbeStatus: hardwareProbeState.status,
+      hardwareError: hardwareProbeState.error,
+      hasHardware: Boolean(effectiveHardware),
+      hardwareSnapshot: normalizedHardware,
+      catalogCount: catalogItems.length,
+      candidateCount: advisorCandidates.length,
+    });
+    if (terminalState) {
+      setAdvisorState((previous) => previous.status === terminalState.status && previous.reason === terminalState.reason
         ? previous
-        : { status: "waiting", profiles: {}, errors: [], completed: 0, total: advisorCandidates.length });
-      return () => { disposed = true; };
-    }
-    if (!advisorCandidates.length) {
-      setAdvisorState((previous) => previous.status === "ready" ? previous : { status: "ready", profiles: {}, errors: [] });
+        : { ...terminalState, profiles: {}, errors: [], completed: 0, total: advisorCandidates.length });
       return () => { disposed = true; };
     }
 
@@ -638,6 +733,9 @@ export function ModelsView({
     advisorCandidates,
     effectiveHardware,
     hardwareProbeState.status,
+    hardwareProbeState.error,
+    normalizedHardware,
+    modelCatalogLoading,
     modelSettings?.maxContextTokens,
     modelSettings?.allowMultiGpu,
     advisorRefreshToken,
@@ -812,7 +910,8 @@ export function ModelsView({
                   modelCatalogLoading={modelCatalogLoading}
                   catalogError={modelCatalogError}
                   hardwareReady={Boolean(effectiveHardware)}
-                   hardwareProbeState={hardwareProbeState}
+                  hardwareSnapshot={normalizedHardware}
+                  hardwareProbeState={hardwareProbeState}
                   performancePreference={modelSettings?.performancePreference || "balanced"}
                   automaticBenchmarking={modelSettings?.automaticBenchmarking !== false}
                   onRefresh={handleAdvisorRefresh}
@@ -965,7 +1064,7 @@ export function ModelsView({
 
               {/* Model list */}
               {pagedItems.map(item => (
-                <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
+                <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} hardwareBlocked={normalizedHardware.blocked} hardwareBlockReasons={normalizedHardware.blockedReasons} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
               ))}
 
               {/* Pagination */}
@@ -1258,6 +1357,7 @@ function GuidedRecommendations({
   modelCatalogLoading,
   catalogError,
   hardwareProbeState,
+  hardwareSnapshot,
   hardwareReady,
   performancePreference,
   automaticBenchmarking,
@@ -1266,23 +1366,31 @@ function GuidedRecommendations({
   onUseSpecificModel,
   prepareCatalogModelForWarsat,
 }) {
-  const loading = advisorState.status === "loading" || advisorState.status === "waiting" || modelCatalogLoading;
+  const loading = ["loading", "hardware-loading", "catalog-loading"].includes(advisorState.status) || modelCatalogLoading;
   const preferredSlotKey = performancePreference === "responsive"
     ? "fast"
     : performancePreference === "maximum_quality" ? "maximumQuality" : "balanced";
   const primarySlot = advisorProfileSlots.find((slot) => slot.key === preferredSlotKey) || advisorProfileSlots[1];
   const alternativeSlots = advisorProfileSlots.filter((slot) => slot.key !== primarySlot.key);
-  const statusText = modelCatalogLoading
-    ? "Loading the local catalog and hardware fit data…"
-    : advisorState.status === "loading"
-      ? "Analyzing up to " + advisorCandidateCount + " deployable candidates…"
-      : advisorState.status === "waiting"
-        ? "Waiting for a hardware snapshot before requesting recommendations…"
-        : advisorState.status === "error"
-          ? "The advisor could not complete any candidate request."
-          : advisorCandidateCount
-            ? "Recommendations are ready."
-            : "No deployable, unblocked catalog candidates are available yet.";
+  const statusText = modelCatalogLoading || advisorState.status === "catalog-loading"
+    ? "Loading the local model catalog…"
+    : advisorState.status === "hardware-loading"
+      ? "Waiting for a hardware snapshot before requesting recommendations…"
+      : advisorState.status === "hardware-error"
+        ? advisorState.reason || "GPU detection failed, so placement is unproven."
+        : advisorState.status === "hardware-blocked"
+          ? advisorState.reason || "Hardware snapshot received, but deployment is blocked."
+          : advisorState.status === "catalog-empty"
+            ? advisorState.reason || "The hardware snapshot is ready, but the local model catalog is empty."
+            : advisorState.status === "no-deployable-candidates"
+              ? advisorState.reason || "No deployable, unblocked catalog candidates are available."
+              : advisorState.status === "loading"
+                ? "Analyzing up to " + advisorCandidateCount + " deployable candidates…"
+                : advisorState.status === "error"
+                  ? "The advisor could not complete any candidate request."
+                  : advisorCandidateCount
+                    ? "Recommendations are ready."
+                    : "No deployable, unblocked catalog candidates are available yet.";
   return (
     <section aria-labelledby="guided-recommendations-title" data-testid="guided-recommendations" className="mb-5">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
@@ -1315,13 +1423,24 @@ function GuidedRecommendations({
           Catalog warning: {catalogError}
         </div>
       )}
-      {!hardwareReady && !modelCatalogLoading && (
+      {advisorState.status === "hardware-blocked" && (
+        <div role="alert" data-testid="hardware-blocked-reasons" className="mb-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <strong>Hardware snapshot received.</strong> Deployment remains blocked until the following prerequisites are resolved.
+          {advisorState.hardwareReasons?.length > 0 && <div className="mt-1"><strong>Blockers:</strong> {advisorState.hardwareReasons.join(" ")}</div>}
+          {advisorState.hardwareRecommendations?.length > 0 && <div className="mt-1"><strong>Next steps:</strong> {advisorState.hardwareRecommendations.join(" ")}</div>}
+          {advisorState.hardwareChecks?.length > 0 && <div className="mt-1 text-muted-foreground"><strong>Checks:</strong> {advisorState.hardwareChecks.join(" ")}</div>}
+        </div>
+      )}
+      {advisorState.status === "hardware-error" && (
+        <div role="alert" className="mb-3 rounded-lg border border-amber-400/40 bg-amber-400/5 px-3 py-2 text-xs text-amber-300">
+          {advisorState.reason} Use Refresh recommendations to retry; model cards will remain blocked until hardware or exact runtime evidence is available.
+        </div>
+      )}
+      {advisorState.status === "hardware-loading" && !hardwareSnapshot?.received && !modelCatalogLoading && (
         <div role="alert" className="mb-3 rounded-lg border border-amber-400/40 bg-amber-400/5 px-3 py-2 text-xs text-amber-300">
           {hardwareProbeState?.status === "loading"
             ? "Detecting GPU capacity locally before ranking recommendations…"
-            : hardwareProbeState?.status === "error"
-              ? "GPU detection failed, so placement is unproven. Use Refresh recommendations to retry; model cards will remain blocked until hardware or exact runtime evidence is available."
-              : "GPU detection is not ready yet; recommendations will remain unverified or blocked."}
+            : "Waiting for a hardware snapshot before requesting recommendations…"}
         </div>
       )}
       <div className="mb-3 text-xs text-muted-foreground">
@@ -1358,14 +1477,15 @@ function GuidedRecommendations({
 /* ═══════════════════════════════════════════
    CATALOG CARD
    ═══════════════════════════════════════════ */
-function CatalogCard({ item, placementFit, prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads }) {
+function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads }) {
   const modelId = item.modelId || item.id;
   const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
   const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
-  const blockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
+  const itemBlockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
+  const blockedReasons = [...new Set([...hardwareBlockReasons, ...itemBlockedReasons])];
   const fitReasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
   const placement = placementFit || catalogPlacementAssessment(item, null);
-  const blocked = blockedReasons.length > 0 || !placement.canDeploy;
+  const blocked = hardwareBlocked || blockedReasons.length > 0 || !placement.canDeploy;
   const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n;
   return (
     <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">

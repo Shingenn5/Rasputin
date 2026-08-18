@@ -19,8 +19,10 @@ const {
   catalogPlacementAssessment,
   shouldProbeHardware,
   withAdvisorTimeout,
+  normalizeHardwareSnapshot,
+  advisorStateForInputs,
 } = new Function(
-  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout };",
+  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout, normalizeHardwareSnapshot, advisorStateForInputs };",
 )();
 
 function catalogItem(index, overrides = {}) {
@@ -125,10 +127,53 @@ test("fresh Models without a hardware prop probes once and can reach ready or er
     () => withAdvisorTimeout(() => new Promise(() => {}), 5),
     (error) => error.name === "TimeoutError" && /timed out/.test(error.message),
   );
-  assert.match(source, /setHardwareProbeState\(\{ status: "ready"/);
+  assert.match(source, /status: snapshot\.blocked \? "blocked" : "ready"/);
   assert.match(source, /setHardwareProbeState\(\{ status: "error"/);
   assert.match(source, /api\("\/api\/warsat\/hardware"/);
   assert.match(source, /hardwareProbeAttempt = useRef\(-1\)/);
+});
+
+test("HTTP-200 blocked hardware snapshots are received with exact blockers and next steps", () => {
+  const snapshot = normalizeHardwareSnapshot({
+    ok: false,
+    status: "blocked",
+    blockedReasons: ["Docker control is disabled."],
+    recommendations: ["Enable Docker control in Settings.", "Add a model folder."],
+    checks: [{ id: "gpu", status: "ready", message: "RTX 3060 detected." }],
+    detectedHardware: { gpus: [{ name: "RTX 3060", memoryGb: 12 }] },
+  });
+  assert.equal(snapshot.received, true);
+  assert.equal(snapshot.blocked, true);
+  assert.equal(snapshot.status, "blocked");
+  assert.deepEqual(snapshot.blockedReasons, ["Docker control is disabled."]);
+  assert.deepEqual(snapshot.recommendations, ["Enable Docker control in Settings.", "Add a model folder."]);
+  assert.deepEqual(snapshot.checkMessages, ["RTX 3060 detected."]);
+  const state = advisorStateForInputs({
+    hasHardware: true,
+    hardwareSnapshot: snapshot,
+    catalogCount: 1,
+    candidateCount: 1,
+  });
+  assert.equal(state.status, "hardware-blocked");
+  assert.match(state.reason, /snapshot received/);
+  assert.deepEqual(state.hardwareReasons, ["Docker control is disabled."]);
+  assert.deepEqual(state.hardwareRecommendations, ["Enable Docker control in Settings.", "Add a model folder."]);
+  assert.match(source, /data-testid="hardware-blocked-reasons"/);
+  assert.match(source, /Hardware snapshot received/);
+  assert.match(source, /disabled=\{blocked\}/);
+});
+
+test("advisor states distinguish catalog, hardware, and recommendation readiness", () => {
+  const readyHardware = normalizeHardwareSnapshot({ ok: true, status: "ready", detectedHardware: { gpus: [{ memoryGb: 8 }] } });
+  assert.equal(advisorStateForInputs({ catalogLoading: true }).status, "catalog-loading");
+  assert.equal(advisorStateForInputs({ hasHardware: false }).status, "hardware-loading");
+  assert.equal(advisorStateForInputs({ hardwareProbeStatus: "error", hardwareError: "probe failed" }).status, "hardware-error");
+  assert.equal(advisorStateForInputs({ hasHardware: true, hardwareSnapshot: readyHardware, catalogCount: 0 }).status, "catalog-empty");
+  assert.equal(advisorStateForInputs({ hasHardware: true, hardwareSnapshot: readyHardware, catalogCount: 1, candidateCount: 0 }).status, "no-deployable-candidates");
+  assert.equal(advisorStateForInputs({ hasHardware: true, hardwareSnapshot: readyHardware, catalogCount: 1, candidateCount: 1 }), null);
+  assert.match(source, /Waiting for a hardware snapshot before requesting recommendations/);
+  assert.doesNotMatch(source, /advisorState\.status === "waiting"/);
+  assert.match(source, /Browse full catalog/);
 });
 
 test("catalog search stays usable and starting a download restarts bounded polling", () => {
