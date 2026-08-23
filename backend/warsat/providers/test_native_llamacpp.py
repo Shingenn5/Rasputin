@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from pathlib import Path
 
 from backend.warsat.providers.native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME
-from tests.native_llamacpp_smoke import check_prerequisites
+from tests.native_llamacpp_smoke import _DIAGNOSTIC_CHAR_LIMIT, _DiagnosticTail, _failure, check_prerequisites
 
 
 class NativeLlamaCppProviderTests(unittest.TestCase):
@@ -221,6 +221,18 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
         self.assertEqual(_failure_from_text("unknown argument --mmproj")["failureCode"], "unsupported_flag")
         self.assertEqual(_failure_from_text("CUDA out of memory")["failureCode"], "load_oom")
         self.assertEqual(_failure_from_text("invalid GGUF magic")["failureCode"], "model_corrupt")
+
+    def test_smoke_failure_includes_bounded_child_diagnostics(self):
+        tail = _DiagnosticTail()
+        for index in range(200):
+            tail.append(f"diagnostic-{index} " + ("x" * 200))
+        error = _failure("llama-server health timeout", tail)
+        message = str(error)
+        self.assertIn("llama-server health timeout", message)
+        self.assertIn("llama-server diagnostics (tail):", message)
+        self.assertIn("diagnostic-199", message)
+        self.assertNotIn("diagnostic-0", message)
+        self.assertLessEqual(len(message.split("llama-server diagnostics (tail):\n", 1)[1]), _DIAGNOSTIC_CHAR_LIMIT)
 
     def test_live_smoke_prerequisite_detection_skips_without_runtime_or_model(self):
         with patch.dict(os.environ, {}, clear=True):

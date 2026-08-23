@@ -443,6 +443,7 @@ class DownloadManager:
                 recovered.append(job)
                 continue
             if job.state in {"resolving", "downloading", "verifying", "installing"}:
+                self._update_progress(job)
                 job.state = "queued"
                 job.error = "recovered after process restart"
                 job.error_code = "restart_recovery"
@@ -649,5 +650,3 @@ def _normalize_relative_path(value: str) -> str:
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise ValueError(f"unsafe exact file path: {value!r}")
     return path.as_posix()
-
-\r\n

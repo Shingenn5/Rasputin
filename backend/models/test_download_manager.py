@@ -141,6 +141,40 @@ def test_restart_rehydrates_and_can_resume_paused_job(tmp_path):
     assert restarted.resume(job.id).state == "completed"
 
 
+def test_restart_recovers_interrupted_partial_bytes_without_duplicate_artifact(tmp_path):
+    payloads = {"model.gguf": b"restart-partial"}
+    repository_path = tmp_path / "jobs.json"
+    repository = JsonJobRepository(repository_path)
+    manager = DownloadManager(repository)
+
+    def interrupted_transfer(file, part_path, offset, control, report):
+        assert offset == 0
+        part_path.parent.mkdir(parents=True, exist_ok=True)
+        part_path.write_bytes(payloads[file.path][:6])
+        raise KeyboardInterrupt()
+
+    manager.transfer = interrupted_transfer
+    job = manager.create_job(variant(tmp_path, payloads))
+    with pytest.raises(KeyboardInterrupt):
+        manager.start(job.id)
+
+    part = tmp_path / f".installed.{job.id}.part" / "model.gguf.part"
+    assert part.read_bytes() == payloads["model.gguf"][:6]
+    assert repository.get(job.id).state == "downloading"
+    assert repository.get(job.id).downloaded_bytes == 0
+
+    resumed_transfer = FixtureTransfer(payloads)
+    restarted = DownloadManager(JsonJobRepository(repository_path), transfer=resumed_transfer)
+    recovered = restarted.recover()[0]
+    assert recovered.state == "queued"
+    assert recovered.error_code == "restart_recovery"
+    assert recovered.downloaded_bytes == 6
+    assert restarted.start(job.id).state == "completed"
+    assert resumed_transfer.calls == [("model.gguf", 6)]
+    assert (tmp_path / "installed" / "model.gguf").read_bytes() == payloads["model.gguf"]
+    assert not (tmp_path / f".installed.{job.id}.part").exists()
+
+
 def test_multi_file_aggregate_progress(tmp_path):
     payloads = {"a.bin": b"1234", "nested/b.bin": b"567890"}
     manager, _ = make_manager(tmp_path, payloads)
