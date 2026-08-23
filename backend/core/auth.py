@@ -265,6 +265,10 @@ def localhost_bypass_enabled():
     return os.environ.get("RASPUTIN_LOCALHOST_BYPASS", "0").lower() in {"1", "true", "yes"}
 
 
+def desktop_auto_login_enabled():
+    return os.environ.get("RASPUTIN_DESKTOP_ONLY", "0").lower() in {"1", "true", "yes", "on"}
+
+
 def test_bypass_enabled():
     is_test_env = os.environ.get("RASPUTIN_ENV", "").lower() == "test"
     wants_bypass = os.environ.get("RASPUTIN_TEST_AUTH_BYPASS", "0").lower() in {"1", "true", "yes"}
@@ -474,7 +478,13 @@ def session_info(token):
 
 
 def public_session(token=None, client_host=""):
-    # Both bypasses are explicit, env-gated opt-ins (see load_public()) --
+    # Desktop is a single-user, loopback-only application. Its Electron
+    # supervisor owns the backend and sets this flag; never extend the
+    # automatic session to non-loopback callers or ordinary native/server mode.
+    if desktop_auto_login_enabled() and client_host in _LOOPBACK_HOSTS:
+        public = load_public()
+        return {"authenticated": True, "username": public.get("username", "admin"), "role": "admin"}
+    # Both other bypasses are explicit, env-gated opt-ins (see load_public()) --
     # neither is on unless someone deliberately set the env var.
     if test_bypass_enabled():
         return {"authenticated": True, "username": "admin", "role": "admin"}

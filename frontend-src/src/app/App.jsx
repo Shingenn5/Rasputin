@@ -121,7 +121,9 @@ function supportsAgenticMode(model, mode) {
 export function App() {
   const queryClient = useQueryClient();
   const [ready, setReady] = useState(false);
-  const [loginVisible, setLoginVisible] = useState(true);
+  // The packaged Desktop Runtime supplies a loopback-only automatic session.
+  // Keep the server-mode login fallback, but do not flash it during desktop boot.
+  const [loginVisible, setLoginVisible] = useState(false);
   const [loginStatus, setLoginStatus] = useState("");
   const [session, setSession] = useState(null);
   const [view, setView] = useState("home");
@@ -219,7 +221,6 @@ export function App() {
   const modelCatalogAutoAttemptedRef = useRef(false);
   const selectedTaskIdRef = useRef(null);
   const taskDetailsReturnRef = useRef(null);
-  const bootPhaseRef = useRef("starting");
   const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
   const desktopOnly = Boolean(security?.desktopOnly);
@@ -411,18 +412,6 @@ export function App() {
   }, [session]);
 
   useEffect(() => {
-    if (ready) return undefined;
-    const timer = window.setTimeout(() => {
-      const loginRendered = document.querySelector("#loginShell");
-      if (loginRendered && ["login", "error"].includes(bootPhaseRef.current)) {
-        document.body.dataset.ready = "true";
-        setReady(true);
-      }
-    }, 12000);
-    return () => window.clearTimeout(timer);
-  }, [ready]);
-
-  useEffect(() => {
     if (modelsQuery.data) setModels(modelsQuery.data);
   }, [modelsQuery.data]);
 
@@ -484,24 +473,22 @@ export function App() {
       setReady(true);
     };
     try {
-      bootPhaseRef.current = "starting";
       const authSession = await api("/api/auth/session");
       setSession(authSession);
       if (!authSession.authenticated) {
-        bootPhaseRef.current = "login";
+        // This remains reachable for a non-desktop native/server run. The
+        // packaged Desktop Runtime receives an automatic session above.
         setLoginVisible(true);
         markReady();
         return;
       }
-      bootPhaseRef.current = "loadingApp";
       await loadBasics(authSession.role);
       setLoginVisible(false);
       connectEvents();
-      bootPhaseRef.current = "ready";
       markReady();
     } catch (error) {
-      bootPhaseRef.current = "error";
       setLoginStatus(error.message);
+      setLoginVisible(true);
       markReady();
     }
   }
@@ -1039,6 +1026,7 @@ export function App() {
   }
 
   async function logout() {
+    if (desktopOnly) return;
     disconnectEvents();
     await api("/api/auth/logout", { method: "POST" });
     setSession(null);
@@ -2535,7 +2523,7 @@ export function App() {
         createChatFolder,
         assignSessionFolder,
         session,
-        logout,
+        logout: desktopOnly ? undefined : logout,
       }}
     >
       <DashboardView

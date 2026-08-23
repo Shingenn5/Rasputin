@@ -65,6 +65,7 @@
     },
     "files": [
       "desktop/**/*.cjs",
+      "desktop/assets/**/*",
       "package.json"
     ],
     "extraResources": [
@@ -78,6 +79,7 @@
       }
     ],
     "win": {
+      "icon": "desktop/assets/rasputin.ico",
       "target": [
         "nsis"
       ],

@@ -99,6 +99,18 @@ class BackendSmokeTests(unittest.TestCase):
         data = self.assertOk(self.client.get("/api/auth/session"))
         self.assertIn("authenticated", data)
 
+    def testDesktopOnlyLoopbackSessionIsAutomatic(self):
+        auth._sessions.clear()
+        with patch.dict(os.environ, {
+            "RASPUTIN_DESKTOP_ONLY": "1",
+            "RASPUTIN_LOCALHOST_BYPASS": "0",
+            "RASPUTIN_TEST_AUTH_BYPASS": "0",
+        }, clear=False):
+            session = auth.public_session(None, "127.0.0.1")
+        self.assertTrue(session["authenticated"])
+        self.assertEqual(session["role"], "admin")
+        self.assertEqual(session["username"], auth.load_public()["username"])
+
     def _set_known_admin_password(self, password):
         data = auth.load()
         username = data["users"][0]["username"]

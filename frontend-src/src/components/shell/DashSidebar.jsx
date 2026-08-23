@@ -339,7 +339,7 @@ export function DashSidebar({
             <LockKeyhole size={15} aria-hidden="true" />
             <span>{roleLabel(role)}</span>
           </div>}
-          <button
+          {logout && <button
             type="button"
             data-testid="sidebar-logout"
             onClick={logout}
@@ -349,7 +349,7 @@ export function DashSidebar({
           >
             <LogOut size={15} aria-hidden="true" />
             {expanded && <span>Log out{session?.username ? ` · ${session.username}` : ""}</span>}
-          </button>
+          </button>}
         </div>
       </aside>
     </div>

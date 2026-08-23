@@ -2,7 +2,6 @@ const path = require("node:path");
 const {
   app,
   BrowserWindow,
-  clipboard,
   dialog,
   Menu,
   nativeImage,
@@ -21,6 +20,7 @@ let shutdownComplete = false;
 let desktopSettings = { closeBehavior: "tray" };
 
 app.setName("Rasputin");
+app.setAppUserModelId("com.rasputin.desktop");
 app.setPath("userData", path.join(process.env.APPDATA || app.getPath("appData"), "Rasputin"));
 if (process.env.RASPUTIN_DISABLE_HARDWARE_ACCELERATION === "1") {
   app.disableHardwareAcceleration();
@@ -57,6 +57,10 @@ function trayImage() {
       <path d="M8 23V9h8.2c4 0 6.5 2.2 6.5 5.6 0 2.3-1.2 4.1-3.3 5l4.1 3.4h-5.2l-3.4-3H12v3H8zm4-6.5h4c1.7 0 2.6-.6 2.6-1.9s-.9-1.9-2.6-1.9h-4v3.8z" fill="#ff5f57"/>
     </svg>`;
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+}
+
+function iconPath() {
+  return path.join(__dirname, "assets", "rasputin.ico");
 }
 
 function pageHtml(title, message, accent = "#ff5f57") {
@@ -179,6 +183,7 @@ function createWindow() {
     backgroundColor: "#0b0d11",
     autoHideMenuBar: true,
     title: "Rasputin",
+    icon: iconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -250,20 +255,6 @@ app.whenReady().then(async () => {
       showPage("Desktop Runtime stopped unexpectedly", `${detail}\n\nUse the tray menu to inspect the desktop log and restart.`, "#ffb454");
     }
   });
-  supervisor.on("credentials", async ({ username, password }) => {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "Rasputin is ready",
-      message: "Your local administrator account was created.",
-      detail: `Username: ${username}\nPassword: ${password}\n\nCopy this password now and change it after signing in. The desktop log stores a redacted value.`,
-      buttons: ["Copy password", "Continue"],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (result.response === 0) clipboard.writeText(password);
-  });
-
   createWindow();
   createTray();
   await startEngine();
