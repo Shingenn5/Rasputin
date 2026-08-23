@@ -1,7 +1,9 @@
 from .base import DeploymentProvider
 from .docker import DockerProvider
+from .native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME
 
 _docker_provider = DockerProvider()
+_native_llamacpp_provider = NativeLlamaCppProvider()
 
 def get_provider(model: dict) -> DeploymentProvider:
     """
@@ -12,6 +14,8 @@ def get_provider(model: dict) -> DeploymentProvider:
         raise ValueError("Model is external/unmanaged and has no deployment provider.")
 
     runtime = model.get("runtime")
+    if runtime == NATIVE_RUNTIME:
+        return _native_llamacpp_provider
     # WarSat registers deployed models with runtime f"warsat-{protocol['runtime']}"
     # (e.g. "warsat-vllm", "warsat-llama.cpp", "warsat-ollama"). All of them are
     # plain Docker containers under the hood, same as the standalone

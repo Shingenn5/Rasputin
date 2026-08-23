@@ -30,7 +30,7 @@ class SettingsApiTests(unittest.TestCase):
         self.assertEqual(models["selectionMode"], "automatic")
         self.assertEqual(models["performancePreference"], "balanced")
         self.assertEqual(models["maxContextTokens"], "automatic")
-        self.assertFalse(models["allowMultiGpu"])
+        self.assertTrue(models["allowMultiGpu"])
         self.assertTrue(models["automaticBenchmarking"])
         self.assertEqual(models["fallbackBehavior"], "ask")
 

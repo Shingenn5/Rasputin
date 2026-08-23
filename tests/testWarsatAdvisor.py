@@ -27,8 +27,8 @@ class WarSatAdvisorTests(unittest.TestCase):
         self.assertEqual(6, result["evidence"]["estimated"]["vramMarginGb"])
         self.assertFalse(result["planSeed"]["multiGpu"])
         self.assertFalse(result["approvalBypassed"])
-        self.assertTrue(any("largest fitting single GPU" in item for item in result["assumptions"]))
-        self.assertTrue(any("runtime certificate" in item for item in result["assumptions"]))
+        self.assertTrue(any("largest single GPU" in item for item in result["assumptions"]))
+        self.assertTrue(any("exact vLLM certificate" in item for item in result["assumptions"]))
 
     def test_blocks_memory_overcommit(self):
         result = advisor.recommend(
@@ -81,10 +81,14 @@ class WarSatAdvisorTests(unittest.TestCase):
             cert["status"] = status
         return cert
 
-    def test_fast_profile_uses_largest_single_gpu(self):
-        result = advisor.recommend(self._model(), self._hardware(), profile="fast")
-        self.assertEqual(result["placement"]["mode"], "single-gpu")
-        self.assertEqual(result["placement"]["deviceIds"], ["1"])
+    def test_fast_profile_uses_all_compatible_gpus(self):
+        hardware = {"detectedHardware": {"gpus": [
+            {"name": "RTX 4090", "memoryTotalMb": 24576},
+            {"name": "RTX 4090", "memoryTotalMb": 24576},
+        ]}}
+        result = advisor.recommend(self._model(), hardware, profile="fast")
+        self.assertEqual(result["placement"]["mode"], "multi-gpu")
+        self.assertEqual(result["placement"]["deviceIds"], ["0", "1"])
         self.assertNotEqual(result["status"], "blocked")
 
     def test_balanced_blocks_when_only_aggregate_vram_fits(self):
@@ -130,9 +134,20 @@ class WarSatAdvisorTests(unittest.TestCase):
         self.assertFalse(result["status"] == "blocked")
         vllm = self._model(estimate=22)
         vllm_certificate = self._certificate(vllm, ["0", "1"], "vllmCudaOpenai", "multi-gpu")
-        blocked = advisor.recommend(vllm, self._hardware(), profile="maximum_quality", benchmark_certificate=vllm_certificate)
-        self.assertEqual(blocked["placement"]["mode"], "single-gpu")
-        self.assertEqual(blocked["status"], "blocked")
+        combined = advisor.recommend(vllm, self._hardware(), profile="maximum_quality", benchmark_certificate=vllm_certificate)
+        self.assertEqual(combined["placement"]["mode"], "multi-gpu")
+        self.assertNotEqual(combined["status"], "blocked")
+
+    def test_balanced_defaults_vllm_to_all_matching_gpus(self):
+        model = self._model(estimate=14)
+        hardware = {"detectedHardware": {"gpus": [
+            {"name": "RTX 4090", "memoryTotalMb": 24576},
+            {"name": "RTX 4090", "memoryTotalMb": 24576},
+        ]}}
+        result = advisor.recommend(model, hardware, profile="balanced")
+        self.assertEqual(result["placement"]["mode"], "multi-gpu")
+        self.assertEqual(result["placement"]["deviceIds"], ["0", "1"])
+        self.assertTrue(any("match by name and VRAM" in item for item in result["assumptions"]))
 
     def test_fast_ranking_prioritizes_measured_decode_tps(self):
         responsive = {

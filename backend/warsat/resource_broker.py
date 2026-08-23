@@ -207,6 +207,33 @@ def _request(value: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _next_actions_for_reasons(reasons):
+    actions = []
+    for reason in reasons or []:
+        if reason == "combined_vram_requires_explicit_opt_in":
+            actions.append("Enable compatible automatic multi-GPU placement or select llama.cpp GGUF layer sharding.")
+        elif reason == "runtime_does_not_certify_combined_vram":
+            actions.append("Choose llama.cpp GGUF for combined VRAM, or use a fresh runtime certificate for this engine.")
+        elif reason == "requested_vram_exceeds_observed_device_capacity":
+            actions.append("Choose a smaller quantization/model, free VRAM, or use a compatible multi-GPU runtime.")
+        elif reason == "device_capacity_reserved_or_headroom_required":
+            actions.append("Stop another model or wait for VRAM headroom to become available.")
+        elif reason == "no_accelerator_observed":
+            actions.append("Enable Docker GPU access and refresh the hardware snapshot, or choose CPU mode.")
+        elif reason == "no_accelerator_observed_cpu_fallback":
+            actions.append("Enable Docker GPU access for acceleration, or continue with the explicit CPU fallback.")
+        elif reason == "runtime_inventory_not_supplied":
+            actions.append("Refresh the hardware snapshot before deploying so current per-GPU free VRAM is known.")
+        elif reason == "resource_envelope_missing":
+            actions.append("Provide a model VRAM estimate or runtime resource manifest before deploying.")
+    return list(dict.fromkeys(actions))
+
+
+def _finalize_decision(base):
+    base["nextActions"] = _next_actions_for_reasons(base.get("reasons"))
+    return base
+
+
 def evaluate_admission(
     profile: dict[str, Any] | None,
     request: dict[str, Any] | None,
@@ -246,22 +273,22 @@ def evaluate_admission(
     }
     if requested_vram is None and normalized_request["requestedRamMb"] <= 0:
         base["reasons"].append("resource_envelope_missing")
-        return base
+        return _finalize_decision(base)
     if len(requested_devices) > 1:
         if not normalized_request["allowCombined"]:
             base["status"] = "blocked"
             base["reasons"].append("combined_vram_requires_explicit_opt_in")
-            return base
+            return _finalize_decision(base)
         if runtime not in COMBINED_RUNTIME_HINTS:
             base["status"] = "blocked"
             base["reasons"].append("runtime_does_not_certify_combined_vram")
-            return base
+            return _finalize_decision(base)
 
     if requested_vram is None:
         base["status"] = "ready"
         base["placements"] = [{"deviceId": "cpu", "vramMb": 0}]
         base["reasons"].append("cpu_ram_only_request")
-        return base
+        return _finalize_decision(base)
 
     if not devices:
         if normalized_request["allowCpuFallback"]:
@@ -271,7 +298,7 @@ def evaluate_admission(
         else:
             base["status"] = "blocked"
             base["reasons"].append("no_accelerator_observed")
-        return base
+        return _finalize_decision(base)
 
     candidates = []
     for device in devices:
@@ -304,13 +331,13 @@ def evaluate_admission(
                 base["status"] = "ready"
                 base["placements"] = placements
                 base["reasons"].append("explicit_runtime_combined_vram_fit")
-                return base
+                return _finalize_decision(base)
     elif candidates and candidates[0]["safeCanFit"]:
         selected = candidates[0]
         base["status"] = "ready"
         base["placements"] = [{"deviceId": selected["deviceId"], "vramMb": requested_vram}]
         base["reasons"].append("largest_fitting_single_gpu_first")
-        return base
+        return _finalize_decision(base)
 
     if candidates and any(item["totalCanFit"] for item in candidates):
         base["status"] = "queued"
@@ -319,7 +346,7 @@ def evaluate_admission(
         base["status"] = "blocked"
         base["reasons"].append("requested_vram_exceeds_observed_device_capacity")
     base["capacity"]["candidates"] = candidates
-    return base
+    return _finalize_decision(base)
 
 
 def _lease_from_decision(request: dict[str, Any], decision: dict[str, Any], *, now: float, ttl_seconds: Any) -> dict[str, Any]:

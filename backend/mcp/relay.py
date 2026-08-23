@@ -5,6 +5,8 @@ import shlex
 import sys
 import time
 import urllib.parse
+import urllib.request
+import urllib.error
 from collections import deque
 from pathlib import Path
 from threading import Lock
@@ -25,6 +27,9 @@ _processes = {}
 _request_ids = {}
 _PROTOCOL_VERSION = "2025-06-18"
 _SAFE_RISKS = {"guarded", "approval_required"}
+_SUPPORTED_TRANSPORTS = {"stdio", "internal", "streamable_http"}
+_MAX_OUTPUT = 64 * 1024
+
 _SAFE_PERMISSIONS = {
     "",
     None,
@@ -36,6 +41,60 @@ _SAFE_PERMISSIONS = {
     "allow_model_registry_edit",
     "allow_docker_control",
 }
+
+
+class _Transport:
+    async def request(self, method, params, timeout):
+        raise NotImplementedError
+
+
+class _HttpTransport(_Transport):
+    def __init__(self, server):
+        self.server = server
+
+    async def request(self, method, params, timeout):
+        return await asyncio.to_thread(_http_request, self.server, method, params, timeout)
+
+
+def _secret_value(ref):
+    text = str(ref or "")
+    return os.environ.get(text[5:], "") if text.startswith("$ENV:") else ""
+
+
+def _http_request(server, method, params, timeout):
+    target = str(server.get("network_target") or "").strip()
+    if not target.startswith(("http://", "https://")):
+        raise AppError("mcp_network_target_required", "A Streamable HTTP MCP server requires an http(s) network target.", 400)
+    request_id = _request_ids.get(server.get("id"), 0) + 1
+    _request_ids[server.get("id")] = request_id
+    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+    for key, ref in (server.get("secret_refs") or {}).items():
+        value = _secret_value(ref)
+        if value:
+            headers[str(key)] = value
+    payload = json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}).encode()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(target, data=payload, headers=headers, method="POST"), timeout=timeout) as response:
+            body = response.read(_MAX_OUTPUT + 1)
+    except urllib.error.HTTPError as exc:
+        raise AppError("mcp_http_error", f"MCP HTTP request failed with status {exc.code}.", 502) from exc
+    except TimeoutError as exc:
+        raise AppError("mcp_request_timeout", f"MCP request timed out: {method}", 504) from exc
+    except OSError as exc:
+        raise AppError("mcp_http_unreachable", f"MCP HTTP server could not be reached: {exc}", 502) from exc
+    if len(body) > _MAX_OUTPUT:
+        raise AppError("mcp_output_limit", "MCP HTTP response exceeded the output limit.", 502)
+    try:
+        message = json.loads(body.decode("utf-8"))
+    except Exception as exc:
+        raise AppError("mcp_bad_schema", "MCP Streamable HTTP response was not JSON.", 502) from exc
+    if message.get("error"):
+        error = message.get("error") or {}
+        raise AppError("mcp_protocol_error", error.get("message") or str(error), 502)
+    result = message.get("result") or {}
+    if not isinstance(result, dict):
+        raise AppError("mcp_bad_schema", f"MCP method {method} returned a non-object result.", 502)
+    return result
 
 
 class _ProcessState:
@@ -110,6 +169,9 @@ def _normalize_server(server):
     server.setdefault("id", "")
     server.setdefault("name", server.get("id") or "MCP Server")
     server.setdefault("transport", transport)
+    server.setdefault("scope", "workspace")
+    server.setdefault("network_target", server.get("url", ""))
+    server.setdefault("secret_refs", {})
     server.setdefault("command", "")
     server.setdefault("args", [])
     server.setdefault("env", {})
@@ -174,6 +236,9 @@ def _public(server):
         "id": server_id,
         "name": server.get("name") or server_id,
         "transport": server.get("transport") or "stdio",
+        "scope": server.get("scope") or "workspace",
+        "networkTarget": server.get("network_target") or "",
+        "secretRefs": sorted((server.get("secret_refs") or {}).keys()),
         "command": _command_text(server),
         "args": server.get("args") or [],
         "cwd": server.get("cwd") or str(ROOT),
@@ -257,7 +322,19 @@ def _sanitize_env(env):
         name = str(key or "").strip()
         if not name or not name.replace("_", "").isalnum():
             raise AppError("mcp_env_rejected", "MCP env names must be simple local environment keys.", 400)
+        if any(token in name.lower() for token in ("secret", "token", "password", "api_key", "apikey")):
+            raise AppError("mcp_secret_reference_required", f"Secret env '{name}' must use secret_refs and an $ENV:name reference.", 400)
         clean[name] = str(value or "")
+    return clean
+
+
+def _sanitize_secret_refs(refs):
+    clean = {}
+    for key, value in dict(refs or {}).items():
+        name, ref = str(key or "").strip(), str(value or "").strip()
+        if not name or not ref.startswith("$ENV:") or not ref[5:]:
+            raise AppError("mcp_secret_reference_invalid", "Secret references must be non-empty $ENV:name references.", 400)
+        clean[name] = ref
     return clean
 
 
@@ -267,15 +344,15 @@ def register(payload):
     if not server_id:
         raise AppError("mcp_server_id_required", "MCP relay server id is required.", 400)
     transport = str(payload.get("transport") or "stdio").strip()
-    if transport not in {"stdio", "internal"}:
-        raise AppError("mcp_transport_rejected", "Only local stdio or internal MCP relay transports are allowed.", 400)
-    if transport == "internal":
+    if transport not in _SUPPORTED_TRANSPORTS:
+        raise AppError("mcp_transport_rejected", "Supported MCP transports are stdio and Streamable HTTP; legacy SSE is compatibility-only and unavailable.", 400)
+    if transport in {"internal", "streamable_http"}:
         command, args, approval = "", [], None
         command_approved = True
         enabled = bool(payload.get("enabled", True))
         status = "available"
     else:
-        command, args = _parse_command(payload)
+        command, args = _parse_command(payload) if transport == "stdio" else ("", [])
         approval = approvals.create("mcp_register", {
             "server": server_id,
             "command": " ".join([command, *args]),
@@ -289,6 +366,9 @@ def register(payload):
         "id": server_id,
         "name": str(payload.get("name") or server_id),
         "transport": transport,
+        "scope": str(payload.get("scope") or "workspace"),
+        "network_target": str(payload.get("network_target") or payload.get("url") or "") if transport == "streamable_http" else "",
+        "secret_refs": _sanitize_secret_refs(payload.get("secret_refs") or payload.get("secretRefs") or {}),
         "command": command,
         "args": args,
         "env": _sanitize_env(payload.get("env") or {}),
@@ -353,7 +433,15 @@ def set_enabled(server_id, enabled):
 async def start(server_id, approval_id=None):
     data = _load()
     server = _find(data, server_id)
-    if server.get("transport") == "internal":
+    if server.get("transport") in {"internal", "streamable_http"}:
+        if server.get("transport") == "streamable_http" and not server.get("command_approved"):
+            raise AppError("mcp_approval_required", "Approve the MCP server registration before starting it.", 403)
+        if server.get("transport") == "streamable_http":
+            server["enabled"] = True
+            server["status"] = "running"
+            server["health"] = "running"
+            server["last_started_at"] = time.time()
+            _replace_server(server)
         return _public(server)
     if not server.get("command_approved"):
         target_approval = approval_id or server.get("pending_approval_id")
@@ -364,6 +452,13 @@ async def start(server_id, approval_id=None):
     server["enabled"] = True
     try:
         state = await _ensure_started(server)
+        if server.get("transport") == "streamable_http" and not server.get("capabilities"):
+            init = await _request(server_id, "initialize", {
+                "protocolVersion": _PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "Rasputin", "version": "0.2.0"},
+            }, timeout=12)
+            server["capabilities"] = init.get("capabilities") or {}
         server["status"] = "running"
         server["health"] = "running"
         server["last_error"] = ""
@@ -430,7 +525,15 @@ async def discover(server_id):
         return {"server": _public(server), "tools": [], "resources": [], "prompts": [], "message": "Relay server is disabled until registration is approved and started."}
     try:
         state = await _ensure_started(server)
-        server["capabilities"] = state.capabilities or server.get("capabilities") or {}
+        if server.get("transport") == "streamable_http" and not server.get("capabilities"):
+            init = await _request(server_id, "initialize", {
+                "protocolVersion": _PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "Rasputin", "version": "0.2.0"},
+            }, timeout=12)
+            server["capabilities"] = init.get("capabilities") or {}
+        else:
+            server["capabilities"] = state.capabilities or server.get("capabilities") or {}
         response = await _request(server_id, "tools/list", {})
         raw_tools = response.get("tools") or []
         if not isinstance(raw_tools, list):
@@ -575,15 +678,34 @@ async def call_tool(tool_id, args=None, task_id=None, tool_call_id=None):
     server_id, tool_name = decode_tool_id(tool_id)
     data = _load()
     server = _find(data, server_id)
+    _validate_tool_args(definition, args)
     await _ensure_started(server)
-    return await _request(server_id, "tools/call", {"name": tool_name, "arguments": args})
+    result = await _request(server_id, "tools/call", {"name": tool_name, "arguments": args})
+    audit.log("mcp_tool_called", {"server": server_id, "tool": tool_name, "args": tool_relay.redact_args(tool_id, args)})
+    return result
 
+
+def _validate_tool_args(definition, args):
+    schema = definition.get("input_schema") or {}
+    if not isinstance(schema, dict) or schema.get("type", "object") != "object":
+        raise AppError("mcp_bad_schema", "MCP tool schema must be an object.", 502)
+    args = dict(args or {})
+    missing = [key for key in schema.get("required", []) if key not in args]
+    if missing:
+        raise AppError("mcp_tool_arguments_invalid", f"Missing required MCP tool argument(s): {', '.join(missing)}.", 400)
+    for key, spec in (schema.get("properties") or {}).items():
+        if key not in args or not isinstance(spec, dict):
+            continue
+        expected = spec.get("type")
+        valid = {"string": isinstance(args[key], str), "number": isinstance(args[key], (int, float)) and not isinstance(args[key], bool), "integer": isinstance(args[key], int) and not isinstance(args[key], bool), "boolean": isinstance(args[key], bool), "array": isinstance(args[key], list), "object": isinstance(args[key], dict)}
+        if expected in valid and not valid[expected]:
+            raise AppError("mcp_tool_arguments_invalid", f"MCP argument '{key}' must be {expected}.", 400)
 
 def external_tool_definitions():
     data = _load()
     out = []
     for server in data.get("servers", []):
-        if server.get("transport") != "stdio":
+        if server.get("transport") not in {"stdio", "streamable_http"}:
             continue
         out.extend(public_tool(tool, server) for tool in server.get("tools", []))
     return out
@@ -750,6 +872,8 @@ def _is_running(server_id):
 
 async def _ensure_started(server):
     server_id = server.get("id")
+    if server.get("transport") == "streamable_http":
+        return _HttpTransport(server)
     if _is_running(server_id):
         return _processes[server_id]
     command = server.get("command")
@@ -802,6 +926,9 @@ async def _initialize(server_id):
 
 
 async def _request(server_id, method, params=None, timeout=20):
+    server = _find(_load(), server_id)
+    if server.get("transport") == "streamable_http":
+        return await _HttpTransport(server).request(method, params, timeout)
     state = _processes.get(server_id)
     if not state or state.process.returncode is not None:
         raise AppError("mcp_server_not_running", "MCP server is not running.", 400)

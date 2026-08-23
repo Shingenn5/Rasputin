@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
+const guidanceSource = readFileSync(new URL("../frontend-src/src/features/shared/blockerGuidance.js", import.meta.url), "utf8");
 const helperStart = source.indexOf("/* ── Guided advisor helpers ── */");
 const helperEnd = source.indexOf("function advisorProfileFromPayload", helperStart);
 assert.ok(helperStart >= 0, "advisor helper block is present");
@@ -21,8 +22,9 @@ const {
   withAdvisorTimeout,
   normalizeHardwareSnapshot,
   advisorStateForInputs,
+  catalogVramEstimateGb,
 } = new Function(
-  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout, normalizeHardwareSnapshot, advisorStateForInputs };",
+  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout, normalizeHardwareSnapshot, advisorStateForInputs, catalogVramEstimateGb };",
 )();
 
 function catalogItem(index, overrides = {}) {
@@ -176,11 +178,34 @@ test("advisor states distinguish catalog, hardware, and recommendation readiness
   assert.match(source, /Browse full catalog/);
 });
 
+test("runtime envelope estimate takes precedence and is labeled as estimated", () => {
+  assert.equal(catalogVramEstimateGb({
+    vramEstimateGb: 8,
+    resourceManifest: { runtimeEnvelope: { estimatedVramGb: 11, confidence: "estimated" } },
+  }), 11);
+  assert.equal(catalogVramEstimateGb({ vramEstimateGb: 8 }), 8);
+});
+
+test("blocked model deployment exposes actionable guidance and accessible linkage", () => {
+  assert.match(guidanceSource, /Docker control/);
+  assert.match(guidanceSource, /model folder/);
+  assert.match(guidanceSource, /multi-GPU/);
+  assert.match(guidanceSource, /runtime/);
+  assert.match(guidanceSource, /exact reason above/);
+  assert.match(source, /data-testid=\{blocked \? "model-deployment-blockers"/);
+  assert.match(source, /aria-describedby=\{blocked \? blockerDetailsId/);
+  assert.match(source, /What this means:/);
+  assert.match(source, /Next step:/);
+  assert.match(source, /Estimated ~\{vramEstimateGb\} GB VRAM/);
+});
+
 test("catalog search stays usable and starting a download restarts bounded polling", () => {
   assert.match(source, /className="model-catalog-filters"/);
   assert.match(source, /className="w2-input model-catalog-search"/);
   assert.match(source, /minWidth: "240px"/);
-  assert.match(source, /await postJson\("\/api\/models\/download", \{ modelId \}\)/);
+  assert.match(source, /const startDownload = async \(modelId, variant = null\) =>/);
+  assert.match(source, /const body = variant \? \{ modelId, variant \} : \{ modelId \};/);
+  assert.match(source, /await postJson\("\/api\/models\/download", body\)/);
   assert.match(source, /setDownloadRefreshToken\(\(value\) => value \+ 1\)/);
 });
 

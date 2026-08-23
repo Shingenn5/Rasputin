@@ -51,19 +51,21 @@ installed capacity under `devices[].static`, volatile memory/utilization under
 `available`, `observed`, or `unknown`; `observed` is not a runtime/model
 compatibility certificate. Unknown acceleration must remain unknown rather than
 being presented as supported. The placement hint is
-`largest_fitting_single_gpu_first`, and combined VRAM is explicitly marked as
-runtime-dependent.
+`all_compatible_gpus_first`, and combined VRAM is explicitly marked as
+runtime-dependent. llama.cpp/GGUF can layer-shard across heterogeneous cards;
+vLLM uses all matching cards automatically and requires exact fresh evidence
+before combining a mixed device set.
 
 The resource broker in `backend/warsat/resource_broker.py` is the next safety
 boundary: it accounts for active per-device reservations with a bounded
 heartbeat/expiry, and returns `ready`, `queued`, `blocked`, `degraded`, or
 `unmeasured` without launching a worker. Launch paths must use this decision
-before creating a model container. Runtime placement is also explicit: vLLM
-defaults to the largest Docker-visible single GPU and only enables tensor
-parallelism when `multiGpu=true`, `gpuDevice=all`, or an explicit tensor
-parallel size greater than one is supplied. llama.cpp GGUF may use its
-`--fit` layer-sharding path, but its plan still reports the selected devices
-and warnings for review.
+before creating a model container. Runtime placement is also explicit: vLLM defaults to all matching
+Docker-visible GPUs, respects an explicit single-GPU override, and requires an
+exact fresh device-set certificate before mixed-card tensor parallelism.
+llama.cpp GGUF defaults to all visible GPUs through its `--fit` layer-sharding
+path. Every plan reports the selected devices and any fallback reason for
+review.
 
 - `_discovery_hosts()` → `['127.0.0.1']`
 - `_endpoint_for('127.0.0.1', 8001)` → `http://127.0.0.1:8001/v1` (not `host.docker.internal`)

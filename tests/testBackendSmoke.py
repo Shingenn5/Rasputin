@@ -2270,7 +2270,12 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(archived, 4)
 
     def testWarsatProtocolsAndPlanAreSafeByDefault(self):
-        with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
+        matching_gpus = [
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
+        ]
+        with patch("backend.core.security.load", return_value={"allow_docker_control": False}), \
+             patch("backend.warsat._visible_gpus_for_plan", return_value=matching_gpus):
             protocols = self.assertOk(self.client.get("/api/warsat/protocols"))
             self.assertGreaterEqual(protocols["count"], 3)
             self.assertFalse(protocols["executionEnabled"])
@@ -2367,13 +2372,6 @@ class BackendSmokeTests(unittest.TestCase):
                 "strengthProfile": "large",
                 "multiGpu": True,
             }))
-            vllm = self.assertOk(self.client.post("/api/warsat/plan", json={
-                "protocolId": "vllmCudaOpenai",
-                "modelRef": "Qwen/Qwen2.5-Coder-14B-Instruct",
-                "hostPort": 8022,
-                "strengthProfile": "large",
-                "multiGpu": True,
-            }))
 
         self.assertEqual(gguf["image"], "ghcr.io/ggml-org/llama.cpp:server-cuda")
         self.assertEqual(gguf["containerLimits"]["gpuDevice"], "all")
@@ -2389,10 +2387,106 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("--fit", run)
         self.assertNotIn("--tensor-split", run)
 
-        self.assertEqual(vllm["containerLimits"]["gpuDevice"], "all")
-        self.assertEqual(vllm["tuning"]["tensorParallelSize"], 2)
-        self.assertIn("--tensor-parallel-size", vllm["commandPreview"]["run"])
-        self.assertTrue(any("constrained by the smaller GPU" in item for item in vllm["warnings"]))
+
+    def testWarsatDefaultsVllmToAllHomogeneousVisibleGpus(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-14B-Instruct",
+                "hostPort": 8022,
+                "strengthProfile": "large",
+            }))
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "all")
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 2)
+        self.assertTrue(plan["multiGpu"]["enabled"])
+        self.assertIn("--tensor-parallel-size", plan["commandPreview"]["run"])
+        self.assertTrue(any("compatible GPUs" in item for item in plan["warnings"]))
+
+    def testWarsatExactCertificateAuthorizesMixedVllmPlacement(self):
+        from backend.warsat import benchmarks as runtime_benchmarks
+        certificate = runtime_benchmarks.build_certificate({
+            "modelId": "mixed-vllm-model",
+            "modelRevision": "rev-1",
+            "runtime": "vllm",
+            "protocolId": "vllmCudaOpenai",
+            "deviceIds": ["0", "1"],
+            "contextWindow": 8192,
+            "concurrency": 1,
+            "quantization": "q4",
+            "placementMode": "multi-gpu",
+        }, [{"status": "ok", "totalLatencyMs": 100, "ttftMs": 20, "decodeMs": 80, "outputTokens": 40}], owner="test")
+        runtime_benchmarks.save_certificate(certificate)
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16384},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "mixed-vllm-model",
+                "modelRevision": "rev-1",
+                "contextWindow": 8192,
+                "quantization": "q4",
+                "concurrency": 1,
+                "hostPort": 8020,
+                "strengthProfile": "large",
+                "multiGpu": True,
+                "benchmarkCertificateId": certificate["certificateId"],
+            }))
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "all")
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 2)
+        self.assertTrue(plan["multiGpu"]["enabled"])
+
+    def testWarsatExplicitOffKeepsHomogeneousVllmOnOneGpu(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 20000},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            plan = self.assertOk(self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "hostPort": 8021,
+                "strengthProfile": "large",
+                "multiGpu": False,
+            }))
+        self.assertEqual(plan["containerLimits"]["gpuDevice"], "0")
+        self.assertEqual(plan["tuning"]["tensorParallelSize"], 1)
+        self.assertFalse(plan["multiGpu"]["enabled"])
+
+    def testWarsatExplicitMixedVllmMultiGpuIsBlockedWithNextAction(self):
+        visible_gpus = [
+            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
+            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16384},
+        ]
+        with (
+            patch("backend.core.security.load", return_value={"allow_docker_control": False}),
+            patch("backend.warsat._visible_gpus_for_plan", return_value=visible_gpus),
+        ):
+            response = self.client.post("/api/warsat/plan", json={
+                "protocolId": "vllmCudaOpenai",
+                "modelRef": "Qwen/Qwen2.5-Coder-14B-Instruct",
+                "hostPort": 8022,
+                "strengthProfile": "large",
+                "multiGpu": True,
+            })
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertEqual(body["error"]["code"], "warsatVllmMultiGpuIncompatible")
+        self.assertIn("llama.cpp GGUF layer sharding", body["error"]["message"])
 
     def testWarsatDefaultsVllmToLargestVisibleGpu(self):
         visible_gpus = [
@@ -2414,13 +2508,13 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(plan["tuning"]["tensorParallelSize"], 1)
         self.assertFalse(plan["multiGpu"]["enabled"])
         self.assertEqual(plan["multiGpu"]["gpuCount"], 0)
-        self.assertTrue(any("disabled by default" in item for item in plan["warnings"]))
+        self.assertTrue(any("not a compatible automatic tensor-parallel set" in item for item in plan["warnings"]))
         self.assertTrue(any("RTX 5060 Ti" in item for item in plan["warnings"]))
 
     def testWarsatVllmMultiGpuRequiresExplicitOptIn(self):
         visible_gpus = [
-            {"name": "NVIDIA GeForce RTX 3060", "memoryTotalMb": 12288},
-            {"name": "NVIDIA GeForce RTX 5060 Ti", "memoryTotalMb": 16384},
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
+            {"name": "NVIDIA GeForce RTX 4090", "memoryTotalMb": 24576},
         ]
         with (
             patch("backend.core.security.load", return_value={"allow_docker_control": False}),
@@ -2437,8 +2531,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(plan["containerLimits"]["gpuDevice"], "all")
         self.assertEqual(plan["tuning"]["tensorParallelSize"], 2)
         self.assertEqual(plan["multiGpu"]["gpuCount"], 2)
-        self.assertTrue(any("explicitly enabled" in item for item in plan["warnings"]))
-        self.assertTrue(any("runtime certificate" in item for item in plan["warnings"]))
+        self.assertTrue(any("compatible GPUs" in item for item in plan["warnings"]))
 
     def testWarsatRejectsContradictoryVllmPlacementControls(self):
         visible_gpus = [

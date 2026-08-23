@@ -11,6 +11,7 @@ from backend.core import preferences
 from backend.core import schedules
 from backend.core import security
 from backend.core import telegram
+from backend.core.datadir import data_dir
 from backend.core.response import ok, AppError
 from backend.engine import output
 from backend.engine.agent import AgentHub
@@ -19,7 +20,15 @@ from backend.mcp import skills as skill_store
 from backend.mcp import tools as tool_relay
 from backend.models import acquisition as model_acquisition
 from backend.models import catalog as model_catalog
+from backend.models import load_profiles as model_load_profiles
 from backend.models import providers as model_providers
+from backend.runtime.runtime_service import LlamaCppRuntimeService
+from backend.runtime.bootstrap import discover_manifest_path
+
+try:
+    from backend.models.desktop_acquisition import DesktopAcquisitionService
+except ImportError:  # The parallel desktop adapter may land after this API seam.
+    DesktopAcquisitionService = None
 from backend.models import registry as model_registry
 from backend.rag import graph as graphify
 from backend.rag import memory as memory_store
@@ -29,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 import asyncio
 import os
 from pathlib import Path
+from typing import Any
 
 router = APIRouter()
 
@@ -315,7 +325,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "rag_stats": rag.stats(),
         "workspace": workspace.get_active(username, is_admin),
         "graph_stats": graphify.stats(),
-        "security": {**security.load(), "native": workspace.is_native()},
+        "security": {**security.load(), "native": workspace.is_native(), "desktopOnly": os.environ.get("RASPUTIN_DESKTOP_ONLY") == "1"},
         "audit": {"events": audit.recent(100) if is_admin else []},
         "output": output.get_config(),
         "preferences": preferences.load(username),
@@ -344,7 +354,7 @@ async def setup_status(_user=Depends(current_user)):
 @system_router.get("/security")
 
 async def security_get(_user=Depends(current_user)):
-    return ok({**security.load(), "native": workspace.is_native()})
+    return ok({**security.load(), "native": workspace.is_native(), "desktopOnly": os.environ.get("RASPUTIN_DESKTOP_ONLY") == "1"})
 
 @system_router.post("/security")
 
@@ -485,8 +495,22 @@ async def events(request: Request, _user=Depends(current_user)):
 models_router = APIRouter(prefix="/api", tags=["models"])
 
 
-class ModelDownloadReq(BaseModel):
-    modelId: str
+class ModelDownloadReq(CamelModel):
+    # ``model_id`` keeps the existing modelId payload working while allowing
+    # the desktop client to submit one exact catalog variant.
+    model_id: str | None = None
+    variant: dict[str, Any] | None = None
+
+
+class LoadPlanPreviewReq(CamelModel):
+    profile: dict[str, Any] = {}
+    hardware: dict[str, Any] = {}
+    model: dict[str, Any] = {}
+    model_metadata: dict[str, Any] | None = None
+    capabilities: dict[str, Any] = {}
+    runtime_capabilities: dict[str, Any] | None = None
+    engine: str = "llama-server"
+    model_path: str | None = None
 
 class ModelIn(CamelModel):
     key: str | None = None
@@ -517,6 +541,9 @@ class GgufImportIn(CamelModel):
     port: int | None = None
     context: int = 4096
     n_gpu_layers: int = 0
+    split_mode: str | None = None
+    tensor_split: str | None = None
+    engine_path: str | None = None
     image: str | None = None
     notes: str | None = None
 
@@ -541,6 +568,20 @@ class ModelLogsIn(CamelModel):
 class ModelCatalogRefreshIn(CamelModel):
     force: bool = False
 
+
+class RuntimeSelectIn(CamelModel):
+    hardware: dict[str, Any]
+    runtime: dict[str, Any] | None = None
+
+
+class RuntimeInstallIn(CamelModel):
+    manifest: dict[str, Any] | None = None
+    selection: dict[str, Any] | None = None
+
+
+class RuntimeActivateIn(CamelModel):
+    version: str
+
 @models_router.get("/models")
 
 async def models(_user=Depends(current_user)):
@@ -549,13 +590,158 @@ async def models(_user=Depends(current_user)):
 @models_router.post("/models/download")
 
 async def start_model_download(req: ModelDownloadReq, _user=Depends(require_admin)):
-    state = model_acquisition.start_download(req.modelId)
+    if req.variant is not None:
+        model_id = req.model_id or req.variant.get("repository")
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise AppError("model_id_required", "modelId is required for an exact variant download")
+        state = await _desktop_download_call("start_variant_download", model_id, req.variant)
+    else:
+        if not isinstance(req.model_id, str) or not req.model_id.strip():
+            raise AppError("model_id_required", "modelId is required")
+        state = model_acquisition.start_download(req.model_id)
     return ok(state)
+
+
+@models_router.post("/models/download/variant")
+
+async def start_model_variant_download(req: ModelDownloadReq, _user=Depends(require_admin)):
+    if req.variant is None:
+        raise AppError("variant_required", "variant is required for an exact variant download")
+    return await start_model_download(req, _user)
 
 @models_router.get("/models/downloads/active")
 
 async def get_active_downloads(_user=Depends(current_user)):
     return ok(model_acquisition.get_active_downloads())
+
+
+def _desktop_acquisition_service():
+    """Construct the desktop-only adapter; legacy acquisition remains separate.
+
+    Assumption for the parallel adapter: ``DesktopAcquisitionService`` has a
+    no-argument constructor and exposes the method names used below. The
+    adapter owns durable state and native exact-file transfers; this API never
+    falls back to Docker or the legacy snapshot downloader for desktop jobs.
+    """
+    if DesktopAcquisitionService is None:
+        raise AppError("desktop_download_unavailable", "desktop download operation is unavailable", 501)
+    return DesktopAcquisitionService()
+
+
+async def _desktop_download_call(operation: str, *args):
+    """Run desktop acquisition operations away from the FastAPI event loop."""
+    service = _desktop_acquisition_service()
+    callback = getattr(service, operation, None)
+    if not callable(callback):
+        raise AppError("desktop_download_unavailable", "desktop download operation is unavailable", 501)
+    try:
+        return await asyncio.to_thread(callback, *args)
+    except KeyError:
+        raise AppError("download_job_not_found", "download job not found", 404) from None
+    except PermissionError:
+        raise AppError("permission_denied", "download operation is not permitted", 403) from None
+    except ValueError:
+        raise AppError("download_request_rejected", "download operation was rejected", 400) from None
+
+
+@models_router.get("/models/downloads")
+
+async def list_model_downloads(_user=Depends(current_user)):
+    return ok(await _desktop_download_call("list_jobs"))
+
+
+@models_router.get("/models/downloads/{job_id}")
+
+async def get_model_download(job_id: str, _user=Depends(current_user)):
+    return ok(await _desktop_download_call("get_job", job_id))
+
+
+@models_router.post("/models/downloads/{job_id}/pause")
+
+async def pause_model_download(job_id: str, _user=Depends(require_admin)):
+    return ok(await _desktop_download_call("pause", job_id))
+
+
+@models_router.post("/models/downloads/{job_id}/resume")
+
+async def resume_model_download(job_id: str, _user=Depends(require_admin)):
+    return ok(await _desktop_download_call("resume", job_id))
+
+
+@models_router.post("/models/downloads/{job_id}/cancel")
+
+async def cancel_model_download(job_id: str, _user=Depends(require_admin)):
+    return ok(await _desktop_download_call("cancel", job_id))
+
+
+@models_router.post("/models/downloads/{job_id}/retry")
+
+async def retry_model_download(job_id: str, _user=Depends(require_admin)):
+    return ok(await _desktop_download_call("retry", job_id))
+
+
+def _desktop_runtime_service() -> LlamaCppRuntimeService:
+    """Construct the native runtime manager without any Docker dependency."""
+    if not workspace.is_native():
+        raise AppError(
+            "runtime_desktop_only",
+            "The llama.cpp runtime manager is available only in desktop/native mode.",
+            409,
+        )
+    root = data_dir() / "runtimes" / "llama.cpp"
+    manifest_path = discover_manifest_path(data_root=root.parent.parent)
+    return LlamaCppRuntimeService(root=root, manifest_path=manifest_path)
+
+
+async def _desktop_runtime_call(operation: str, *args):
+    service = _desktop_runtime_service()
+    callback = getattr(service, operation, None)
+    if not callable(callback):
+        raise AppError("runtime_unavailable", f"llama.cpp runtime operation {operation!r} is unavailable.", 503)
+    try:
+        return await asyncio.to_thread(callback, *args)
+    except AppError as exc:
+        if exc.code == "runtime_manifest_missing":
+            raise AppError(exc.code, exc.message, 503) from exc
+        raise
+
+
+@models_router.get("/runtime/llamacpp/status")
+async def llamacpp_runtime_status(_user=Depends(current_user)):
+    return ok(await _desktop_runtime_call("status"))
+
+
+@models_router.post("/runtime/llamacpp/select")
+async def llamacpp_runtime_select(req: RuntimeSelectIn, _user=Depends(require_admin)):
+    selected = await _desktop_runtime_call("select", req.hardware, req.runtime)
+    return ok(selected.to_dict())
+
+
+@models_router.post("/runtime/llamacpp/install")
+async def llamacpp_runtime_install(req: RuntimeInstallIn, _user=Depends(require_admin)):
+    selection = req.manifest or req.selection
+    if selection is None:
+        raise AppError(
+            "runtime_selection_required",
+            "A manifest or selection is required because no runtime selection is persisted by the service.",
+            409,
+        )
+    return ok(await _desktop_runtime_call("install", selection))
+
+
+@models_router.post("/runtime/llamacpp/activate")
+async def llamacpp_runtime_activate(req: RuntimeActivateIn, _user=Depends(require_admin)):
+    return ok(await _desktop_runtime_call("activate", req.version))
+
+
+@models_router.post("/runtime/llamacpp/rollback")
+async def llamacpp_runtime_rollback(_user=Depends(require_admin)):
+    return ok(await _desktop_runtime_call("rollback"))
+
+
+@models_router.post("/runtime/llamacpp/verify")
+async def llamacpp_runtime_verify(_user=Depends(require_admin)):
+    return ok(await _desktop_runtime_call("verify_active"))
 
 @models_router.get("/model-registry")
 
@@ -601,7 +787,25 @@ async def model_catalog_search(
 @models_router.get("/model-catalog/model/{model_id:path}")
 
 async def model_catalog_detail(model_id: str, _user=Depends(current_user)):
-    return ok(model_catalog.hf_model_detail(model_id))
+    # The catalog owns the detail schema, including exact variants.
+    return ok(await asyncio.to_thread(model_catalog.hf_model_detail, model_id))
+
+
+@models_router.post("/model-catalog/load-plan-preview")
+
+async def model_load_plan_preview(req: LoadPlanPreviewReq, _user=Depends(current_user)):
+    model = req.model_metadata if req.model_metadata is not None else req.model
+    capabilities = req.runtime_capabilities if req.runtime_capabilities is not None else req.capabilities
+    plan = await asyncio.to_thread(
+        model_load_profiles.resolve_load_plan,
+        req.profile,
+        hardware=req.hardware,
+        model=model,
+        capabilities=capabilities,
+        engine=req.engine,
+        model_path=req.model_path,
+    )
+    return ok(plan.to_dict())
 
 @models_router.post("/model-registry/upsert")
 

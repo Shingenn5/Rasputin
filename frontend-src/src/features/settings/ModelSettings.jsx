@@ -135,7 +135,7 @@ export function ModelSettings({ models: availableModels, modeModelOverrides, set
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <div>
                     <div className="fw-medium d-flex align-items-center"><Layers3 size={16} className="me-2 text-primary" />Allow multi-GPU placement</div>
-                    <div className="text-body-secondary small">Permit larger models to span GPUs when a single card cannot fit them.</div>
+                    <div className="text-body-secondary small">Rasputin automatically uses all compatible GPUs when the runtime supports a safe placement. Turn this off to force one GPU; incompatible or unproven combinations remain blocked with a corrective explanation.</div>
                   </div>
                   <Form.Check type="switch" id="model-multi-gpu-switch" data-testid="model-multi-gpu-switch" checked={!!modelSettings?.allowMultiGpu} onChange={() => handleToggle("allowMultiGpu")} aria-label="Allow multi-GPU placement" />
                 </div>

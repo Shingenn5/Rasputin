@@ -20,6 +20,7 @@ from backend.core import security
 from backend.core.response import AppError
 from backend.core.datadir import data_dir
 from backend.warsat import admission as resource_admission_module
+from backend.warsat import benchmarks as runtime_benchmarks
 from backend.warsat.capabilities import build_capability_profile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -172,6 +173,13 @@ def _docker_cli_path():
 
 
 def _docker_runtime_enabled():
+    if _truthy_env("RASPUTIN_DESKTOP_ONLY"):
+        return {
+            "enabled": False,
+            "dockerControlEnabled": False,
+            "dockerCliAvailable": False,
+            "message": "Desktop mode uses native llama.cpp and does not deploy model containers.",
+        }
     cfg = security.load()
     if not cfg.get("allow_docker_control", False):
         return {
@@ -730,16 +738,71 @@ def _visible_gpus_for_plan():
     return _gpu_probe_via_docker()
 
 
+def _vllm_devices_compatible(gpus):
+    """Return whether visible GPUs are a safe automatic vLLM TP set.
+
+    vLLM tensor parallelism requires matching device capabilities. Exact model
+    names and installed VRAM are the strongest inventory evidence available
+    before a runtime benchmark; heterogeneous cards stay single-GPU unless an
+    explicit runtime certificate is supplied by a higher-level planner.
+    """
+    if len(gpus) < 2:
+        return False
+    names = {str(item.get("name") or "").strip().lower() for item in gpus}
+    totals = [int(item.get("memoryTotalMb") or 0) for item in gpus]
+    return bool(names and "" not in names and len(names) == 1 and min(totals) > 0 and max(totals) - min(totals) <= max(256, int(min(totals) * 0.02)))
+
+
+def _vllm_certificate_authorizes(payload, protocol, tuning, gpus):
+    """Validate an owner-scoped exact certificate for the live device tuple."""
+    certificate_id = str(_payload_get(payload, "benchmarkCertificateId", "benchmark_certificate_id", default="") or "").strip()
+    if not certificate_id:
+        return False
+    owner_id = str(_payload_get(payload, "ownerId", "owner_id", default="") or "").strip()
+    certificate = runtime_benchmarks.get_certificate(certificate_id, owner=owner_id or None)
+    if not certificate:
+        raise AppError(
+            "warsat_benchmark_missing",
+            "The requested runtime benchmark certificate is missing or is not owned by the authenticated user. "
+            "Refresh the advisor and select a current certificate.",
+            409,
+        )
+    device_ids = [
+        str(item.get("index", index))
+        for index, item in enumerate(gpus)
+    ]
+    target = {
+        "modelId": _payload_get(payload, "modelRef", "model_ref", default=""),
+        "modelRevision": _payload_get(payload, "modelRevision", "model_revision", default=""),
+        "runtime": str(protocol.get("runtime") or ""),
+        "protocolId": str(protocol.get("id") or ""),
+        "deviceIds": device_ids,
+        "contextWindow": _payload_get(payload, "contextWindow", "context_window", default=None) or tuning.get("maxModelLen"),
+        "concurrency": _payload_get(payload, "concurrency", default=None) or tuning.get("maxNumSeqs") or 1,
+        "quantization": tuning.get("quantization") or _payload_get(payload, "quantization", default=""),
+        "placementMode": "multi-gpu",
+    }
+    match = runtime_benchmarks.match_certificate(certificate, target)
+    if not (match.get("exact") and match.get("fresh") and match.get("valid")):
+        fields = ", ".join(match.get("mismatchFields") or []) or match.get("status") or "invalid"
+        raise AppError(
+            "warsat_benchmark_mismatch",
+            f"The runtime certificate cannot authorize this mixed-card vLLM plan ({fields}). "
+            "Refresh hardware and benchmark this exact model, context, runtime, and Docker-visible GPU set.",
+            409,
+        )
+    return True
+
+
 def _configure_multi_gpu(payload, protocol, tuning, limits):
     """Choose a runtime-safe GPU placement for a planned model.
 
-    GPU visibility is not proof that a runtime can safely combine devices.
-    vLLM tensor parallelism is therefore opt-in (``multiGpu=true``,
-    ``gpuDevice=all``, or an explicit tensor-parallel size greater than one),
-    while the default is the largest visible single GPU.  llama.cpp GGUF
-    retains its conservative automatic layer-sharding path because its
-    ``--fit`` behavior is designed for heterogeneous cards.  This function
-    only plans placement; it never starts a container or process.
+    llama.cpp GGUF defaults to all visible GPUs with layer sharding and
+    --fit because that path supports heterogeneous cards. vLLM defaults
+    to all GPUs only when the inventory proves a homogeneous device set;
+    mixed-card tensor parallelism remains blocked unless a higher-level exact
+    runtime certificate authorizes it. This function only plans placement; it
+    never starts a container or process.
     """
     multi_gpu_request = _payload_get(payload, "multiGpu", "multi_gpu", default=None)
     requested_device = str(limits.get("gpuDevice") or "").strip().lower()
@@ -811,13 +874,25 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
         return [], [warning] if multi_gpu_enabled or explicit_all or explicit_tp_size > 1 else []
 
     gpu_count = len(gpus)
+    vllm_compatible = _vllm_devices_compatible(gpus)
     if runtime == "vllm":
-        # Never infer vLLM tensor parallelism from card count. The mixed RTX
-        # 3060/5060 Ti host has already demonstrated that this can fail before
-        # the model serves (for example, when UVA is unavailable).
-        use_multi_gpu = gpu_count > 1 and (
-            multi_gpu_enabled or explicit_all or (explicit_tp and explicit_tp_size > 1)
+        # Homogeneous Docker-visible cards are safe for the automatic default.
+        # Never blindly enable TP on mixed cards: the known RTX 3060 + RTX
+        # 5060 Ti host can fail before serving (for example, UVA unavailable).
+        explicit_vllm_multi = multi_gpu_enabled or explicit_all or (explicit_tp and explicit_tp_size > 1)
+        certificate_authorized = (
+            gpu_count > 1
+            and _vllm_certificate_authorizes(payload, protocol, tuning, gpus)
         )
+        if explicit_vllm_multi and not vllm_compatible and not certificate_authorized:
+            raise AppError(
+                "warsat_vllm_multi_gpu_incompatible",
+                "vLLM multi-GPU was requested, but the visible GPUs are not a compatible tensor-parallel set. "
+                "Use llama.cpp GGUF layer sharding for mixed cards, or provide an exact fresh certificate for "
+                "this model and Docker-visible device set before retrying.",
+                400,
+            )
+        use_multi_gpu = gpu_count > 1 and not multi_gpu_disabled and (vllm_compatible or certificate_authorized)
     else:
         use_multi_gpu = gpu_count > 1 and not multi_gpu_disabled
 
@@ -845,10 +920,12 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
         if not use_multi_gpu:
             selected = gpus[largest_gpu_index]
             warnings.append(
-                "vLLM multi-GPU is disabled by default; selected the largest visible GPU "
-                f"({selected.get('name') or f'GPU {largest_gpu_index}'}, "
-                f"{int(selected.get('memoryTotalMb') or 0) / 1024:.1f} GiB). "
-                "Set multiGpu=true only after validating a runtime certificate for this device set."
+                "vLLM stayed on the largest visible GPU because the available cards are not a compatible "
+                "automatic tensor-parallel set. "
+                f"Selected {selected.get('name') or f'GPU {largest_gpu_index}'} "
+                f"({int(selected.get('memoryTotalMb') or 0) / 1024:.1f} GiB). "
+                "Next action: use llama.cpp GGUF layer sharding for mixed cards, or provide an exact fresh "
+                "vLLM runtime certificate before requesting multi-GPU."
             ) if gpu_count > 1 else None
             return [], warnings
         if explicit_tp and tuning["tensorParallelSize"] > gpu_count:
@@ -860,10 +937,9 @@ def _configure_multi_gpu(payload, protocol, tuning, limits):
         if not explicit_tp:
             tuning["tensorParallelSize"] = gpu_count
         warnings.append(
-            f"vLLM tensor parallelism was explicitly enabled across {tuning['tensorParallelSize']} GPUs. "
-            "It divides tensors evenly, so unequal cards are constrained by the smaller GPU; "
-            "a runtime certificate is required before relying on this placement. "
-            "Use llama.cpp GGUF layer sharding when maximum combined-VRAM capacity matters."
+            f"vLLM tensor parallelism is enabled across {tuning['tensorParallelSize']} compatible GPUs. "
+            "The automatic choice is based on matching Docker-visible GPU names and VRAM; "
+            "run a fresh benchmark certificate before treating throughput as guaranteed."
         )
     elif protocol.get("modelFormat") == "gguf":
         tuning["multiGpu"] = use_multi_gpu

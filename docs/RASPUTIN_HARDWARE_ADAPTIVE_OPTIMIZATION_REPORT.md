@@ -130,9 +130,9 @@ A lease should record model-pack id, role, device ids, reserved VRAM/RAM, contex
 The default policy should remain:
 
 ```text
-largest_fitting_single_gpu_first
-combined_vram = explicit_backend_and_model_capability_only
-vllm_tensor_parallel = certificate_required
+all_compatible_gpus_first
+combined_vram = compatible_runtime_automatic
+vllm_tensor_parallel = matching_devices_or_exact_certificate
 ```
 
 This preserves workstation use while allowing an assistant pack to reserve a main model, speech workers, and a small router independently.

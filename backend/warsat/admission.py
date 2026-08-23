@@ -170,6 +170,7 @@ def _unmeasured_decision(request: dict[str, Any]) -> dict[str, Any]:
         "placements": [],
         "capacity": {"devices": [], "reservedVramMbByDevice": {}, "observedDeviceCount": 0},
         "reasons": reasons,
+        "nextActions": resource_broker._next_actions_for_reasons(reasons),
         "leasesConsidered": 0,
     }
 
@@ -221,7 +222,12 @@ def plan_admission(
         "requestedVramMb": requested_vram_mb,
         "requestedRamMb": requested_ram_mb,
         "deviceIds": device_ids,
-        "allowCombined": bool(explicit_combined and (manifest.get("placement") or {}).get("combinedVramAllowed")),
+        # llama.cpp layer sharding is the safe automatic combined-VRAM path;
+        # vLLM and other runtimes still require an explicit compatible policy.
+        "allowCombined": bool(
+            (explicit_combined or _text(runtime).lower() in {"llama.cpp", "llama_cpp", "llamacpp"})
+            and (manifest.get("placement") or {}).get("combinedVramAllowed")
+        ),
         "allowCpuFallback": bool(allow_cpu_fallback),
     }
     decision = (
@@ -237,14 +243,16 @@ def plan_admission(
 def warning_for(decision: dict[str, Any]) -> str | None:
     status = str((decision or {}).get("status") or "unmeasured")
     reasons = ", ".join(str(item) for item in ((decision or {}).get("reasons") or []))
+    actions = "; ".join(str(item) for item in ((decision or {}).get("nextActions") or []))
+    suffix = f" Next action: {actions}" if actions else ""
     if status == "blocked":
-        return f"Resource admission blocked this launch: {reasons or 'capacity or runtime policy rejected the request'}."
+        return f"Resource admission blocked this launch: {reasons or 'capacity or runtime policy rejected the request'}.{suffix}"
     if status == "queued":
-        return f"Resource admission queued this launch until safe capacity is available: {reasons or 'headroom is unavailable'}."
+        return f"Resource admission queued this launch until safe capacity is available: {reasons or 'headroom is unavailable'}.{suffix}"
     if status == "degraded":
-        return f"Resource admission selected a degraded fallback: {reasons or 'accelerator capacity was unavailable'}."
+        return f"Resource admission selected a degraded fallback: {reasons or 'accelerator capacity was unavailable'}.{suffix}"
     if status == "unmeasured":
-        return "Resource admission is unmeasured until a current runtime capability profile is supplied."
+        return f"Resource admission is unmeasured until a current runtime capability profile is supplied.{suffix}"
     return None
 
 

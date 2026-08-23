@@ -499,9 +499,9 @@ def build_model_pack_preview(pack: Any, capability_profile: dict[str, Any] | Non
         **normalized,
         "entries": entries,
         "placement_policy": {
-            "default": "largest_fitting_single_gpu_first",
-            "combined_vram": "explicit_backend_only",
-            "vllm_tensor_parallel": "not_assumed",
+            "default": "all_compatible_gpus_first",
+            "combined_vram": "compatible_runtime_automatic",
+            "vllm_tensor_parallel": "matching_devices_or_exact_certificate",
             "capacity_status": capacity_status,
         },
         "launch_policy": {

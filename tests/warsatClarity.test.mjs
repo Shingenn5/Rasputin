@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const source = fs.readFileSync("frontend-src/src/features/warsat/WarsatView.jsx", "utf8");
+const guidanceSource = fs.readFileSync("frontend-src/src/features/shared/blockerGuidance.js", "utf8");
 const styles = fs.readFileSync("frontend-src/src/styles/rasputin.css", "utf8");
 
 test("WarSat maps known blockers to plain-language next actions", () => {
@@ -19,6 +20,15 @@ test("WarSat maps known blockers to plain-language next actions", () => {
 test("WarSat keeps unknown admission reasons visible", () => {
   assert.match(source, /Reasons:\s*\{admittedResource\.reasons\.join/);
   assert.match(source, /getWarsatGuidance/);
+});
+
+test("disabled WarSat deployment explains blockers and links the action to them", () => {
+  assert.match(guidanceSource, /Unknown deployment blocker/);
+  assert.match(source, /data-testid="warsat-deployment-blockers"/);
+  assert.match(source, /aria-describedby=\{deployDisabled && deploymentBlockers\.length > 0/);
+  assert.match(source, /Deployment blocked — how to fix it/);
+  assert.match(source, /What this means:/);
+  assert.match(source, /Next step:/);
 });
 
 test("WarSat tabs are labeled, keyboard navigable, and scrollable at tablet width", () => {

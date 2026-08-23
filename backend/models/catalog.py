@@ -12,6 +12,7 @@ import httpx
 from backend.core import audit as audit
 from backend.core.datadir import data_dir
 from backend.models import resource_manifest
+from backend.models.variant_resolver import resolve_model_variants_with_issues
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
@@ -193,15 +194,25 @@ def _quantization_bits(quantization="", model_id=""):
     return 16.0
 
 
-def _vram_estimate(parameter_count, quantization="", model_id=""):
+def _vram_estimate(parameter_count, quantization="", model_id="", model=None,
+                    context_window=None, concurrency=None, protocol_id=""):
     if not parameter_count:
         return None
-    bits = _quantization_bits(quantization, model_id)
-    # Weight bytes plus roughly 10% runtime overhead and a 2 GB floor for KV
-    # cache / CUDA allocations. It is intentionally conservative: context
-    # length and architecture can still move the real number.
-    weights_gb = float(parameter_count) * bits / 8.0
-    return max(4, round(weights_gb * 1.10 + 2))
+    metadata = dict(model or {})
+    if context_window is not None:
+        metadata["contextWindow"] = context_window
+    if concurrency is not None:
+        metadata["concurrency"] = concurrency
+    if protocol_id:
+        metadata["recommendedProtocol"] = protocol_id
+    estimate = resource_manifest.estimate_vram_demand(
+        metadata,
+        parameter_count_b=parameter_count,
+        quantization=quantization,
+        model_id=model_id,
+    )
+    total = (estimate or {}).get("totalGb")
+    return max(4, round(float(total), 2)) if total is not None else None
 
 
 def _purpose(model_id, model, provider_id):
@@ -272,7 +283,13 @@ def _normalize_item(provider_id, provider, model_id, model, source="models.dev")
         "capabilities": _capabilities(model_id, model, purpose),
         "contextWindow": context,
         "parameterCountB": params,
-        "vramEstimateGb": _vram_estimate(params, model.get("quantization"), model_id),
+        "vramEstimateGb": _vram_estimate(
+            params,
+            model.get("quantization"),
+            model_id,
+            model={**model, "contextWindow": context} if context else model,
+            protocol_id=recommended_protocol,
+        ),
         "recommendedProfile": "small" if purpose == "fast" else "balanced",
         "recommendedProtocol": recommended_protocol,
         "toolCallParserHint": _tool_call_parser_hint(model_id, recommended_protocol),
@@ -309,13 +326,7 @@ def _curated_items():
     return items
 
 
-def _hardware_vram_gb(hardware=None):
-    env_vram = os.environ.get("WARSAT_AVAILABLE_VRAM_GB")
-    if env_vram:
-        try:
-            return float(env_vram)
-        except ValueError:
-            pass
+def _hardware_vram_values(hardware=None):
     gpus = ((hardware or {}).get("detected_hardware") or (hardware or {}).get("detectedHardware") or {}).get("gpus") or []
     values = []
     for gpu in gpus:
@@ -325,10 +336,52 @@ def _hardware_vram_gb(hardware=None):
                 values.append(float(mb) / 1024)
         except Exception:
             continue
-    # Multi-GPU llama.cpp deployments shard layers across every visible card.
-    # Catalog fit must use that aggregate capacity or a 12+16 GB machine is
-    # incorrectly presented as a 16 GB machine.
+    return values
+
+
+def _matching_gpu_set(hardware=None):
+    gpus = ((hardware or {}).get("detected_hardware") or (hardware or {}).get("detectedHardware") or {}).get("gpus") or []
+    if len(gpus) < 2:
+        return False
+    names = {str(gpu.get("name") or "").strip().lower() for gpu in gpus}
+    values = _hardware_vram_values(hardware)
+    return bool(
+        len(values) == len(gpus)
+        and names and "" not in names and len(names) == 1
+        and max(values) - min(values) <= max(0.25, min(values) * 0.02)
+    )
+
+
+def _hardware_vram_gb(hardware=None):
+    env_vram = os.environ.get("WARSAT_AVAILABLE_VRAM_GB")
+    if env_vram:
+        try:
+            return float(env_vram)
+        except ValueError:
+            pass
+    # Retain the aggregate helper for llama.cpp and legacy callers.
+    values = _hardware_vram_values(hardware)
     return sum(values) if values else None
+
+
+def _fit_available_vram(item, hardware=None):
+    env_vram = os.environ.get("WARSAT_AVAILABLE_VRAM_GB")
+    if env_vram:
+        try:
+            return float(env_vram), "configured available VRAM"
+        except ValueError:
+            pass
+    values = _hardware_vram_values(hardware)
+    if not values:
+        return None, "detected VRAM"
+    protocol = str(item.get("recommendedProtocol") or "").lower()
+    if protocol == "llamacppggufserver":
+        return sum(values), "aggregate detected VRAM for llama.cpp layer sharding"
+    if protocol == "vllmcudaopenai" and _matching_gpu_set(hardware):
+        return sum(values), "aggregate detected VRAM for matching vLLM tensor-parallel GPUs"
+    # vLLM tensor parallelism is not assumed on heterogeneous GPUs; it needs
+    # exact runtime evidence before aggregate capacity is considered safe.
+    return max(values), "largest detected GPU (multi-GPU sharding unproven)"
 
 
 def _fit_item(item, hardware=None):
@@ -346,7 +399,7 @@ def _fit_item(item, hardware=None):
     reasons = []
     score = 50
     vram = item.get("vramEstimateGb")
-    available = _hardware_vram_gb(hardware)
+    available, available_basis = _fit_available_vram(item, hardware)
     if not item.get("deployable"):
         blocked.append("No local Warsat runtime is known for this catalog entry.")
         score -= 45
@@ -355,13 +408,13 @@ def _fit_item(item, hardware=None):
             margin = available - float(vram)
             if margin >= 4:
                 score += 35
-                reasons.append(f"Estimated {vram} GB VRAM fits inside detected {available:.1f} GB.")
+                reasons.append(f"Estimated {vram} GB VRAM fits inside {available_basis} of {available:.1f} GB.")
             elif margin >= 0:
                 score += 18
-                reasons.append(f"Estimated {vram} GB VRAM fits, but headroom is tight.")
+                reasons.append(f"Estimated {vram} GB VRAM fits inside {available_basis}, but headroom is tight.")
             else:
                 score -= 40
-                blocked.append(f"Estimated {vram} GB VRAM exceeds detected {available:.1f} GB.")
+                blocked.append(f"Estimated {vram} GB VRAM exceeds {available_basis} of {available:.1f} GB.")
         else:
             score += 10 if float(vram) <= 12 else -5
             reasons.append(f"Estimated {vram} GB VRAM; run Warsat readiness for hardware-specific fit.")
@@ -562,7 +615,13 @@ def _local_item(model_id, name, path, protocol, source, size_bytes=0):
         "provider": "local storage", "providerId": "local",
         "purpose": _purpose(model_id, {"name": name}, "local"),
         "capabilities": ["local", "ready-to-deploy"], "contextWindow": None,
-        "parameterCountB": params, "vramEstimateGb": _vram_estimate(params, model_id=f"{model_id} {name}"),
+        "parameterCountB": params,
+        "vramEstimateGb": _vram_estimate(
+            params,
+            model_id=f"{model_id} {name}",
+            model={"name": name, "modelId": model_id},
+            protocol_id=protocol,
+        ),
         "recommendedProfile": "balanced", "recommendedProtocol": protocol,
         "toolCallParserHint": _tool_call_parser_hint(model_id, protocol),
         "runtimeOptions": [{"protocolId": protocol, "label": f"Deploy with {protocol}"}],
@@ -920,7 +979,13 @@ def _normalize_hf_model(hf_model):
         "capabilities": _capabilities(model_id, {"name": model_id, "tags": " ".join(tags)}, purpose),
         "contextWindow": None,
         "parameterCountB": params,
-        "vramEstimateGb": _vram_estimate(params, quant, model_id),
+        "vramEstimateGb": _vram_estimate(
+            params,
+            quant,
+            model_id,
+            model={**hf_model, "quantization": quant},
+            protocol_id=recommended_protocol,
+        ),
         "recommendedProfile": "small" if purpose == "fast" else "balanced",
         "recommendedProtocol": recommended_protocol,
         "toolCallParserHint": _tool_call_parser_hint(model_id, recommended_protocol),
@@ -1150,12 +1215,18 @@ def hf_model_detail(model_id):
     except Exception as exc:
         return {"error": str(exc), "modelId": model_id}
 
+    if not isinstance(raw, dict):
+        return {"error": "Unexpected Hugging Face model detail response format", "modelId": model_id}
+
     item = _normalize_hf_model(raw)
     # Enrich with extra detail fields
     siblings = raw.get("siblings") or []
-    files = [{"rfilename": s.get("rfilename", ""), "size": s.get("size")} for s in siblings[:50]]
+    sibling_records = [s for s in siblings if isinstance(s, dict)]
+    files = [{"rfilename": s.get("rfilename", ""), "size": s.get("size")} for s in sibling_records[:50]]
     item["files"] = files
     item["sha"] = raw.get("sha", "")
+    item["revision"] = raw.get("sha") or raw.get("revision") or ""
+    item["repositoryRevision"] = item["revision"]
     item["private"] = raw.get("private", False)
     item["gated"] = raw.get("gated", False)
     item["disabled"] = raw.get("disabled", False)
@@ -1164,9 +1235,53 @@ def hf_model_detail(model_id):
         item["architecture"] = (config.get("architectures") or [""])[0] if config.get("architectures") else item.get("architecture", "")
         item["modelType"] = config.get("model_type", "")
         item["torchDtype"] = config.get("torch_dtype", "")
+        item["contextWindow"] = (
+            config.get("max_position_embeddings")
+            or config.get("max_seq_len")
+            or config.get("max_sequence_length")
+            or item.get("contextWindow")
+        )
+        item["chatTemplate"] = config.get("chat_template") or raw.get("chat_template") or ""
     card = raw.get("cardData") or {}
     if isinstance(card, dict):
         item["language"] = card.get("language", [])
         item["datasets"] = card.get("datasets", [])
         item["library"] = card.get("library_name", "")
+
+    resolution = resolve_model_variants_with_issues(raw, sibling_records)
+    size_by_path = {}
+    for sibling in sibling_records:
+        path = sibling.get("rfilename") or sibling.get("path") or sibling.get("filename") or ""
+        if not isinstance(path, str) or not path:
+            continue
+        size = sibling.get("size")
+        if size is None and isinstance(sibling.get("lfs"), dict):
+            size = sibling["lfs"].get("size")
+        size_by_path[path] = size
+
+    variants = []
+    for variant in resolution.variants:
+        payload = variant.as_dict()
+        payload["fileSizes"] = {path: size_by_path.get(path) for path in variant.files}
+        variants.append(payload)
+    item["variants"] = variants
+    item["variantIssues"] = [
+        {
+            "kind": issue.kind,
+            "files": list(issue.files),
+            "reason": issue.reason,
+            "nextAction": issue.next_action,
+        }
+        for issue in resolution.issues
+    ]
+    item["modelMetadata"] = {
+        "parameterCountB": item.get("parameterCountB"),
+        "contextWindow": item.get("contextWindow"),
+        "architecture": item.get("architecture", ""),
+        "modelType": item.get("modelType", ""),
+        "torchDtype": item.get("torchDtype", ""),
+        "chatTemplate": item.get("chatTemplate", ""),
+        "pipelineTag": item.get("pipelineTag", ""),
+        "tags": list(raw.get("tags") or []),
+    }
     return item

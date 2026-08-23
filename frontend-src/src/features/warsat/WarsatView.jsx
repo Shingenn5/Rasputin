@@ -43,6 +43,7 @@ import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { api, postJson } from "../../api/client.js";
 import { ENGINE_PROTOCOLS, ENGINE_LABELS } from "../../lib/engines.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
+import { blockerGuidanceForReasons } from "../shared/blockerGuidance.js";
 
 /* ── Tab config ── */
 const warsatTabs = [
@@ -1130,6 +1131,16 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
     approvalPending,
     downloadProgress,
   });
+  const deploymentBlockerReasons = [
+    ...(["blocked", "queued"].includes(admittedResourceStatus) ? (admittedResource?.reasons || []) : []),
+    deployment?.lastError,
+    !plan.dockerControlEnabled ? "Docker control is disabled." : null,
+    !plan.dockerCliAvailable ? "Docker CLI access is unavailable." : null,
+    approvalClosed ? "Approval expired or closed." : null,
+    approvalPending ? "Approval required." : null,
+  ].filter(Boolean);
+  const deploymentBlockers = blockerGuidanceForReasons(deploymentBlockerReasons);
+  const deploymentBlockersId = "warsat-deployment-blockers";
 
   return (
     <div className="ws-mission-brief">
@@ -1281,6 +1292,17 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
       )}
 
       {/* Action zone */}
+      {deployDisabled && deploymentBlockers.length > 0 && (
+        <div id={deploymentBlockersId} data-testid="warsat-deployment-blockers" role="alert" className="ws-brief-warnings">
+          <strong>Deployment blocked — how to fix it</strong>
+          {deploymentBlockers.map((entry) => (
+            <div key={entry.raw} className="ws-brief-warning">
+              <AlertTriangle size={12} />
+              <span><strong>Reason:</strong> {entry.raw}<br /><strong>What this means:</strong> {entry.happened}<br /><strong>Next step:</strong> {entry.next}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="ws-brief-actions">
         {approvalPending && currentApproval?.id && (
           <>
@@ -1296,6 +1318,7 @@ function PlanPreview({ plan, deployment, deploying, deployLabel, deployDisabled,
           className={`ws-brief-btn ${canDeployPlan ? "is-deploy" : ""} ${deploying ? "is-loading" : ""}`}
           type="button"
           disabled={deployDisabled}
+          aria-describedby={deployDisabled && deploymentBlockers.length > 0 ? deploymentBlockersId : undefined}
           onClick={deployPlan}
         >
           {deploying ? <RefreshCw size={14} className="ws-spin" /> : <Play size={14} />}

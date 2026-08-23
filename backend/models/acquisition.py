@@ -128,7 +128,7 @@ def _download_thread(dl_id: str, model_id: str):
         poller.start()
         
         try:
-            snapshot_download(
+            snapshot_path = snapshot_download(
                 repo_id=model_id,
                 cache_dir=str(MODELS_DIR),
                 local_files_only=False,
@@ -145,26 +145,59 @@ def _download_thread(dl_id: str, model_id: str):
             try:
                 from backend.models import registry
                 
-                # Deduce protocol
-                has_gguf = any(s.rfilename and s.rfilename.endswith(".gguf") for s in info.siblings)
-                protocol = "llamaCppGgufServer" if has_gguf else "vllmCudaOpenai"
-                
-                # Create a safe registry key from the model ID
+                has_gguf = any(s.rfilename and s.rfilename.lower().endswith(".gguf") for s in info.siblings)
                 model_name = model_id.split("/")[-1]
                 safe_key = model_name.lower().replace(".", "-").replace("_", "-")
-                
-                new_model = {
-                    "key": safe_key,
-                    "name": model_name,
-                    "model": model_id,
-                    "role": "helper",
-                    "provider": "openai-compatible",
-                    "base_url": "http://host.docker.internal:8000/v1",  # Placeholder until deployed
-                    "managed": True,
-                    "enabled": False,  # Disabled by default until deployed
-                    "warsatProtocol": protocol,
-                    "warsatModelRef": model_id
-                }
+                desktop_only = str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).lower() in {"1", "true", "yes", "on"}
+                if desktop_only:
+                    gguf_files = sorted(
+                        path for path in Path(str(snapshot_path)).rglob("*.gguf")
+                        if not path.name.lower().startswith("mmproj")
+                    ) if has_gguf else []
+                    if gguf_files:
+                        gguf_path = str(gguf_files[0])
+                        new_model = {
+                            "key": safe_key,
+                            "name": model_name,
+                            "model": Path(gguf_path).name,
+                            "role": registry.suggest_role(model_name, model_id),
+                            "provider": "llamacpp",
+                            "base_url": f"http://127.0.0.1:{registry.next_port()}/v1",
+                            "managed": True,
+                            "enabled": False,
+                            "runtime": "native-llamacpp",
+                            "host_model_path": gguf_path,
+                            "context": 4096,
+                            "context_auto": True,
+                            "notes": "Downloaded for the Rasputin Desktop native llama.cpp library.",
+                        }
+                    else:
+                        new_model = {
+                            "key": safe_key,
+                            "name": model_name,
+                            "model": model_id,
+                            "role": "helper",
+                            "provider": "local-artifact",
+                            "base_url": "",
+                            "managed": False,
+                            "enabled": False,
+                            "runtime": "desktop-artifact",
+                            "notes": "Downloaded, but this desktop build requires a GGUF file for llama.cpp.",
+                        }
+                else:
+                    protocol = "llamaCppGgufServer" if has_gguf else "vllmCudaOpenai"
+                    new_model = {
+                        "key": safe_key,
+                        "name": model_name,
+                        "model": model_id,
+                        "role": "helper",
+                        "provider": "openai-compatible",
+                        "base_url": "http://host.docker.internal:8000/v1",
+                        "managed": True,
+                        "enabled": False,
+                        "warsatProtocol": protocol,
+                        "warsatModelRef": model_id
+                    }
                 
                 registry.upsert(new_model)
             except Exception as e:

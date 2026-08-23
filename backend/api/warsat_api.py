@@ -28,6 +28,7 @@ warsat_router = APIRouter(prefix="/api/warsat", tags=["warsat"])
 class WarsatPlanIn(CamelModel):
     protocol_id: str
     model_ref: str | None = None
+    model_revision: str | None = None
     model_path: str | None = None
     strength_profile: str | None = None
     context_window: int | None = None
@@ -36,6 +37,8 @@ class WarsatPlanIn(CamelModel):
     gpu_layers: int | None = None
     tensor_parallel_size: int | None = None
     multi_gpu: bool | None = None
+    benchmark_certificate_id: str | None = None
+    concurrency: int | None = None
     split_mode: str | None = None
     tensor_split: str | None = None
     cpu_threads: int | None = None
@@ -198,6 +201,21 @@ async def warsat_plan(req: WarsatPlanIn, _user=Depends(require_admin)):
         payload["assistantRequestId"] = req.assistant_request_id
     else:
         payload = req.model_dump()
+    certificate_id = str(req.benchmark_certificate_id or "").strip()
+    if certificate_id:
+        certificate = warsat_benchmarks.get_certificate(
+            certificate_id,
+            owner=_user["username"],
+        )
+        if not certificate:
+            raise HTTPException(
+                status_code=404,
+                detail="The requested runtime benchmark certificate was not found for this user.",
+            )
+        # Do not accept certificate objects from the caller. The placement
+        # layer resolves and validates this owner-scoped ID against the live
+        # model/device tuple.
+        payload["benchmarkCertificateId"] = certificate_id
     # Resource admission is owner-scoped evidence, not a caller-controlled
     # identity field.  The authenticated admin is the only owner recorded in
     # the preview and any later lease request.

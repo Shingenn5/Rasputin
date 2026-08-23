@@ -132,6 +132,15 @@ def _select_certificate(certificates, target):
     return records[0]
 
 
+def _compatible_multi_gpu(devices):
+    """Conservative preflight compatibility check for automatic vLLM TP."""
+    if len(devices) < 2:
+        return False
+    names = {str(item.get("name") or "").strip().lower() for item in devices}
+    totals = [float(item.get("vramGb") or 0) for item in devices]
+    return bool(names and "" not in names and len(names) == 1 and min(totals) > 0 and max(totals) - min(totals) <= max(0.25, min(totals) * 0.02))
+
+
 def _placement(facts, devices, mode):
     return {
         "mode": mode,
@@ -197,8 +206,14 @@ def recommend(model, hardware, mission="chat", protocol_id="", context_window=No
         warnings.append("Model VRAM demand is unknown; fit remains unproven.")
     if context > 32768:
         assumptions.append("VRAM estimate may not include the full KV-cache cost of the requested context.")
+    compatible_multi_gpu = _compatible_multi_gpu(facts["gpus"])
     if len(facts["gpus"]) > 1:
-        assumptions.append("Aggregate VRAM is not assumed: default placement uses the largest fitting single GPU. Multi-GPU sharding requires an explicit runtime certificate for the selected devices.")
+        if protocol == "llamaCppGgufServer":
+            assumptions.append("llama.cpp defaults to all Docker-visible GPUs with layer sharding and runtime fitting, including heterogeneous cards.")
+        elif protocol == "vllmCudaOpenai" and compatible_multi_gpu:
+            assumptions.append("vLLM defaults to all Docker-visible GPUs because the observed cards match by name and VRAM.")
+        else:
+            assumptions.append("Mixed or unproven GPU compatibility keeps vLLM on the largest single GPU; use llama.cpp GGUF sharding or provide an exact vLLM certificate to combine cards.")
     purpose = str(model.get("purpose") or "chat")
     if mission not in {purpose, "chat"} and mission not in (model.get("capabilities") or []):
         warnings.append(f"The catalog does not certify this model for the {mission} mission.")
@@ -213,9 +228,8 @@ def recommend(model, hardware, mission="chat", protocol_id="", context_window=No
     selected_devices, placement_mode, evidence_match = single_devices, "single-gpu", single_match
     evidence_certificate = single_certificate
     can_combine = (
-        profile_name == "maximum_quality" and protocol == "llamaCppGgufServer"
-        and len(facts["gpus"]) > 1 and estimate and largest_vram is not None
-        and estimate > largest_vram
+        len(facts["gpus"]) > 1 and protocol in {"llamaCppGgufServer", "vllmCudaOpenai"}
+        and (protocol == "llamaCppGgufServer" or compatible_multi_gpu)
     )
     combined_target = _target(model, protocol, facts["gpus"], context, "multi-gpu", concurrency)
     if benchmark_certificates is not None:
@@ -223,17 +237,18 @@ def recommend(model, hardware, mission="chat", protocol_id="", context_window=No
     else:
         combined_certificate = benchmark_certificate
         combined_match = benchmarks.match_certificate(benchmark_certificate, combined_target)
-    if can_combine and combined_match.get("exact"):
-        selected_devices, placement_mode, evidence_match = list(facts["gpus"]), "multi-gpu", combined_match
-        evidence_certificate = combined_certificate
-    elif can_combine:
-        # A single-GPU certificate is not evidence for a Maximum Quality
-        # candidate that requires combined llama.cpp placement.
+    exact_combined = combined_match.get("exact")
+    if can_combine:
+        selected_devices, placement_mode = list(facts["gpus"]), "multi-gpu"
+        if exact_combined:
+            evidence_match, evidence_certificate = combined_match, combined_certificate
+    elif protocol == "vllmCudaOpenai" and exact_combined:
+        selected_devices, placement_mode = list(facts["gpus"]), "multi-gpu"
         evidence_match, evidence_certificate = combined_match, combined_certificate
     elif strict and profile_name in {"fast", "balanced"} and estimate and largest_vram is not None and estimate > largest_vram:
         blockers.append(f"Estimated model demand exceeds the largest single GPU by {estimate - largest_vram:.2f} GB for the {profile_name} profile.")
     elif strict and profile_name == "maximum_quality" and estimate and largest_vram is not None and estimate > largest_vram:
-        blockers.append("Maximum Quality requires an exact fresh measured llama.cpp/GGUF multi-GPU certificate; aggregate VRAM alone cannot authorize placement.")
+        blockers.append("vLLM requires matching GPUs or an exact fresh multi-GPU certificate; aggregate VRAM alone cannot authorize mixed-card tensor parallelism.")
     has_evidence = benchmark_certificate is not None or bool(benchmark_certificates)
     if strict and has_evidence and evidence_match.get("status") == "mismatch":
         warnings.append("Benchmark evidence is present but does not match the requested placement tuple.")
@@ -243,21 +258,43 @@ def recommend(model, hardware, mission="chat", protocol_id="", context_window=No
     fit = catalog._fit_item(model, hardware)
     placement = _placement(facts, selected_devices, placement_mode)
     evidence = _evidence(evidence_certificate, evidence_match, benchmark_certificate_id)
-    if strict and estimate and largest_vram is not None and estimate <= largest_vram:
+    if strict and estimate and largest_vram is not None and estimate <= largest_vram and placement_mode != "multi-gpu":
         assumptions.append(f"{profile_name.title()} uses the largest single GPU by default.")
     if placement_mode == "multi-gpu":
-        assumptions.append("Combined placement is allowed only by an exact fresh measured llama.cpp/GGUF certificate.")
+        assumptions.append(
+            "Combined placement uses all visible GPUs; llama.cpp layer sharding is runtime-fit, while vLLM requires matching hardware or exact fresh evidence."
+        )
     if evidence_match.get("exact"):
         assumptions.append("Fresh exact benchmark evidence outranks catalog-only estimates for this tuple.")
     status = "blocked" if blockers else "ready_with_warnings" if warnings else "ready_with_assumptions" if assumptions else "ready"
     confidence = "high" if evidence_match.get("exact") else "medium" if estimate or facts["gpus"] else "low"
+    plan_seed = {
+        "protocolId": protocol,
+        "modelRef": _model_id(model),
+        "modelRevision": _model_field(model, "modelRevision", "model_revision", "revision", "checksum", "sha"),
+        "contextWindow": context,
+        "toolCallParser": parser or None,
+        "quantization": _model_field(model, "quantization", "quantizationType"),
+        "concurrency": int(_number(concurrency if concurrency is not None else _model_field(model, "concurrency", default=1), 1)),
+        "multiGpu": placement_mode == "multi-gpu",
+    }
+    # Only exact, fresh, valid evidence is allowed to authorize a mixed-card
+    # vLLM handoff. The plan carries an owner-scoped ID, never the certificate.
+    if (
+        placement_mode == "multi-gpu"
+        and protocol == "vllmCudaOpenai"
+        and evidence_match.get("exact")
+        and evidence_match.get("fresh")
+        and evidence_match.get("valid")
+    ):
+        plan_seed["benchmarkCertificateId"] = evidence_match.get("certificateId")
     result = {
         "status": status, "mission": mission, "profile": profile_name,
         "placement": placement,
         "profileScore": _score(profile_name, estimate, largest_vram, facts["aggregateVramGb"], placement, evidence_match, evidence_certificate),
         "benchmarkEvidence": evidence, "benchmark": evidence,
         "recommendation": {"modelRef": _model_id(model), "protocolId": protocol, "contextWindow": context, "toolCallParser": parser, "multiGpu": placement_mode == "multi-gpu"},
-        "planSeed": {"protocolId": protocol, "modelRef": _model_id(model), "contextWindow": context, "toolCallParser": parser or None, "multiGpu": placement_mode == "multi-gpu"},
+        "planSeed": plan_seed,
         "evidence": {
             "observed": facts,
             "estimated": {"modelVramGb": estimate or None, "vramMarginGb": aggregate_margin, "catalogFitScore": fit.get("fitScore"), "catalogFitLabel": fit.get("fitLabel")},

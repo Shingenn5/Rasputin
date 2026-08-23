@@ -38,13 +38,14 @@ import {
   runtimeStatus,
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
-import { api } from "../../api/client.js";
+import { api, postJson } from "../../api/client.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
 import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Card } from "@/components/ui/card.jsx";
+import { blockerGuidanceForReasons } from "../shared/blockerGuidance.js";
 
 /* ── Tab config ── */
 const modelsTabs = [
@@ -238,9 +239,19 @@ export function advisorStateForInputs({
   return null;
 }
 
+export function runtimeEnvelopeForItem(item) {
+  return item?.resourceManifest?.runtimeEnvelope || item?.resource_manifest?.runtimeEnvelope || item?.resource_manifest?.runtime_envelope || {};
+}
+
+export function catalogVramEstimateGb(item) {
+  const envelope = runtimeEnvelopeForItem(item);
+  const parsed = Number(envelope?.estimatedVramGb ?? envelope?.estimateGb ?? envelope?.estimate ?? item?.vramEstimateGb);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function catalogPlacementAssessment(item, hardware, measuredEvidence = null) {
   const capacity = hardwarePlacementCapacity(hardware);
-  const estimate = Number(item?.vramEstimateGb);
+  const estimate = catalogVramEstimateGb(item);
   const evidence = measuredEvidence || item?.benchmarkEvidence || item?.benchmark || item?.resourceManifest?.benchmarkEvidence || {};
   const placement = evidence?.placement || {};
   const protocol = String(evidence?.protocolId || evidence?.protocol || evidence?.runtime || item?.recommendedProtocol || "").toLowerCase();
@@ -396,11 +407,11 @@ function statusColor(st) {
 }
 
 function trustedDownloadProgress(download) {
-  const downloaded = Number(download?.downloadedBytes);
-  const total = Number(download?.totalBytes);
+  const downloaded = Number(download?.downloadedBytes ?? download?.downloaded_bytes);
+  const total = Number(download?.totalBytes ?? download?.total_bytes);
   const percent = Number(download?.progress);
   return Boolean(
-    download?.progressTrusted === true
+    (download?.progressTrusted === true || (Number.isFinite(downloaded) && Number.isFinite(total) && total > 0))
     && Number.isFinite(downloaded)
     && Number.isFinite(total)
     && total > 0
@@ -412,33 +423,153 @@ function trustedDownloadProgress(download) {
   );
 }
 
-function ModelDownloadProgress({ download }) {
+export const DURABLE_DOWNLOAD_STATES = ["queued", "resolving", "downloading", "paused", "verifying", "installing", "completed", "failed", "cancelled"];
+const BLOCKED_VARIANT_STATES = new Set(["incompatible", "blocked", "unsupported"]);
+export function downloadJobState(download) {
+  return String(download?.state || download?.status || "queued").toLowerCase();
+}
+export function variantCompatibility(variant) {
+  const state = String(variant?.compatibilityState || "unknown").toLowerCase();
+  const reasons = [
+    ...(Array.isArray(variant?.compatibilityReasons) ? variant.compatibilityReasons : []),
+    ...(Array.isArray(variant?.nextActions) ? variant.nextActions : []),
+  ].filter((reason) => typeof reason === "string" && reason.trim());
+  return {
+    state,
+    safe: !BLOCKED_VARIANT_STATES.has(state),
+    reasons: [...new Set(reasons)],
+  };
+}
+export function downloadControlAvailability(download) {
+  const state = downloadJobState(download);
+  return {
+    canPause: state === "downloading",
+    canResume: state === "paused",
+    canCancel: ["queued", "resolving", "downloading", "paused", "verifying", "installing"].includes(state),
+    canRetry: state === "failed" && (download?.canRetry ?? download?.can_retry ?? false) === true,
+  };
+}
+function formatDownloadBytes(value) {
+  const bytes = Number(value);
+  if (value == null || !Number.isFinite(bytes) || bytes < 0) return "size unavailable";
+  if (bytes >= 1024 ** 3) return (bytes / (1024 ** 3)).toFixed(2) + " GB";
+  if (bytes >= 1024 ** 2) return (bytes / (1024 ** 2)).toFixed(1) + " MB";
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return bytes + " B";
+}
+function variantTotalBytes(variant) {
+  const declared = Number(variant?.totalBytes ?? variant?.total_bytes);
+  if (Number.isFinite(declared) && declared >= 0) return declared;
+  const sizes = variant?.fileSizes || variant?.file_sizes || {};
+  let foundSize = false;
+  const total = Object.values(sizes).reduce((sum, size) => {
+    const parsed = Number(size);
+    if (!Number.isFinite(parsed) || parsed < 0) return sum;
+    foundSize = true;
+    return sum + parsed;
+  }, 0);
+  return foundSize ? total : null;
+}
+
+function downloadJobsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.jobs)) return payload.jobs;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data?.jobs)) return payload.data.jobs;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  return [];
+}
+
+function completedArtifactFor(download) {
+  return download?.artifact || download?.artifactMetadata || download?.artifact_metadata || null;
+}
+
+function artifactModelMatch(models, artifact) {
+  if (!artifact) return null;
+  const artifactId = artifact.artifactId || artifact.artifact_id;
+  const mainModelPath = artifact.mainModelPath || artifact.main_model_path;
+  return (models || []).find((model) => (
+    (artifactId && String(model.artifact_id || model.artifactId) === String(artifactId))
+    || (mainModelPath && String(model.host_model_path || model.hostModelPath) === String(mainModelPath))
+  )) || null;
+}
+
+function downloadJobIdentity(download) {
+  return download?.id || download?.jobId || download?.job_id || completedArtifactFor(download)?.artifactId || completedArtifactFor(download)?.artifact_id || null;
+}
+
+function ModelDownloadProgress({ download, onDownloadAction, onLoadArtifact, loadingArtifact }) {
   const hasTrustedProgress = trustedDownloadProgress(download);
-  const downloaded = Number(download?.downloadedBytes) || 0;
-  const total = Number(download?.totalBytes) || 0;
+  const downloaded = Number(download?.downloadedBytes ?? download?.downloaded_bytes) || 0;
+  const total = Number(download?.totalBytes ?? download?.total_bytes) || 0;
   const percent = Number(download?.progress);
+  const state = downloadJobState(download);
+  const controls = downloadControlAvailability(download);
+  const modelLabel = download?.modelId || download?.model_id || download?.repository || "Model download";
+  const jobId = download?.id || download?.jobId || download?.job_id;
+  const artifact = completedArtifactFor(download);
+  const completed = state === "completed";
+  const variantId = artifact?.variantId || artifact?.variant_id || download?.variant_id || download?.variantId;
+  const quantization = artifact?.quantization || download?.quantization;
   return (
     <div className="w2-card" data-testid="model-download-progress" style={{ padding: "8px 12px", gap: "4px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
-        <strong>{download?.modelId}</strong>
-        <span style={{ color: "var(--cc-muted)" }}>{download?.status}</span>
+        <strong>{modelLabel}</strong>
+        <span style={{ color: "var(--cc-muted)" }}>{state}</span>
       </div>
       {hasTrustedProgress && (
         <div
           role="progressbar"
-          aria-label={`Download progress for ${download?.modelId}`}
+          aria-label={"Download progress for " + modelLabel}
           aria-valuemin="0"
           aria-valuemax="100"
           aria-valuenow={percent}
           style={{ height: "4px", background: "var(--cc-border)", borderRadius: "2px", overflow: "hidden" }}
         >
-          <div style={{ height: "100%", width: `${percent}%`, background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
+          <div style={{ height: "100%", width: percent + "%", background: "var(--ras-safe)", transition: "width 0.5s ease" }} />
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.6875rem", color: "var(--cc-muted)" }}>
-        <span>{(downloaded / 1024 / 1024 / 1024).toFixed(2)} GB / {total > 0 ? `${(total / 1024 / 1024 / 1024).toFixed(2)} GB` : "size unavailable"}</span>
-        <span>{hasTrustedProgress ? `${percent.toFixed(1)}%` : "percentage unavailable"}</span>
+        <span>{formatDownloadBytes(downloaded) + " / " + (total > 0 ? formatDownloadBytes(total) : "size unavailable")}</span>
+        <span>{hasTrustedProgress ? percent.toFixed(1) + "%" : "percentage unavailable"}</span>
       </div>
+      {completed && (
+        <div data-testid="model-download-completed-artifact" className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs">
+          <strong className="text-emerald-300">Download complete. Model registered and ready to load.</strong>
+          <div className="mt-1 text-muted-foreground">
+            Variant: <strong className="text-foreground">{variantId || "exact GGUF variant"}</strong>
+            {quantization && <> · Quantization: <strong className="text-foreground">{quantization}</strong></>}
+          </div>
+          {(artifact?.mainModelPath || artifact?.main_model_path) && (
+            <div className="mt-1 truncate text-muted-foreground" title={artifact.mainModelPath || artifact.main_model_path}>
+              Local file: {artifact.mainModelPath || artifact.main_model_path}
+            </div>
+          )}
+          {onLoadArtifact && (
+            <UIButton
+              variant="default"
+              size="sm"
+              type="button"
+              data-testid="model-download-load"
+              aria-label={"Load completed model " + (variantId || modelLabel)}
+              disabled={loadingArtifact}
+              onClick={() => onLoadArtifact(download)}
+              className="mt-2"
+            >
+              <Play size={12} /> {loadingArtifact ? "Loading…" : "Load"}
+            </UIButton>
+          )}
+        </div>
+      )}
+      {download?.error && <div role="alert" style={{ color: "var(--ras-danger)", fontSize: "0.75rem" }}>{download.error}</div>}
+      {(controls.canPause || controls.canResume || controls.canCancel || controls.canRetry) && (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {controls.canPause && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("pause", jobId)} aria-label={"Pause download for " + modelLabel}>Pause</UIButton>}
+          {controls.canResume && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("resume", jobId)} aria-label={"Resume download for " + modelLabel}>Resume</UIButton>}
+          {controls.canCancel && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("cancel", jobId)} aria-label={"Cancel download for " + modelLabel}>Cancel</UIButton>}
+          {controls.canRetry && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("retry", jobId)} aria-label={"Retry download for " + modelLabel}>Retry</UIButton>}
+        </div>
+      )}
     </div>
   );
 }
@@ -521,6 +652,7 @@ export function ModelsView({
   const [vramMinGb, setVramMinGb] = useState("");
   const [vramMaxGb, setVramMaxGb] = useState("");
   const [activeDownloads, setActiveDownloads] = useState([]);
+  const [downloadError, setDownloadError] = useState("");
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const modelSettings = useSettingsStore((state) => state.models || {});
@@ -539,6 +671,8 @@ export function ModelsView({
   }, [catalogSearch, catalogPurpose, catalogRuntime, catalogFit, searchMode, hfQuery, pageSize, vramMinGb, vramMaxGb]);
 
   const [downloadRefreshToken, setDownloadRefreshToken] = useState(0);
+  const [loadingArtifact, setLoadingArtifact] = useState(null);
+  const completedRefreshJobs = useRef(new Set());
 
   useEffect(() => {
     if (view !== "models") return undefined;
@@ -546,16 +680,36 @@ export function ModelsView({
     let timer;
     const pollDownloads = async () => {
       try {
-        const d = await api("/api/models/downloads/active");
-        const active = Array.isArray(d) ? d : [];
+        let payload;
+        try {
+          payload = await api("/api/models/downloads");
+        } catch (primaryError) {
+          payload = await api("/api/models/downloads/active");
+        }
+        const jobs = downloadJobsFromPayload(payload);
         if (disposed) return;
-        setActiveDownloads(active);
-        // No background interval is kept when there is nothing to monitor.
-        // Once a download exists, use a measured 3s cadence instead of a 1s
-        // request storm, and stop again as soon as the list is empty.
-        if (active.length > 0) timer = setTimeout(pollDownloads, 3000);
-      } catch (e) {
-        if (!disposed) timer = setTimeout(pollDownloads, 5000);
+        setDownloadError("");
+        setActiveDownloads(jobs);
+        const newlyCompleted = jobs.filter((job) => {
+          const identity = downloadJobIdentity(job);
+          return downloadJobState(job) === "completed" && identity && !completedRefreshJobs.current.has(identity);
+        });
+        newlyCompleted.forEach((job) => completedRefreshJobs.current.add(downloadJobIdentity(job)));
+        if (newlyCompleted.length && loadModels) {
+          try {
+            await loadModels();
+            setUiState({ status: "success", message: "Download complete. The exact GGUF artifact is registered and ready to load." });
+          } catch (error) {
+            setDownloadError("Download completed, but the model registry could not refresh: " + (error?.message || "unknown error"));
+          }
+        }
+        const hasNonterminalJob = jobs.some((job) => !["completed", "failed", "cancelled"].includes(downloadJobState(job)));
+        if (hasNonterminalJob) timer = setTimeout(pollDownloads, 3000);
+      } catch (error) {
+        if (!disposed) {
+          setDownloadError("Unable to load model download status: " + (error?.message || "unknown error"));
+          timer = setTimeout(pollDownloads, 5000);
+        }
       }
     };
     pollDownloads();
@@ -615,6 +769,7 @@ export function ModelsView({
     { id: "openai-compatible-remote", name: "Other OpenAI-compatible", defaultKeyEnv: "" },
   ];
   const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
+  const desktopOnly = Boolean(security?.desktopOnly);
 
   const registeredModels = useMemo(() => (models || []).filter(m => (
     m.key !== "dry-run" && !["mock", "hash-vector"].includes(m.provider)
@@ -622,7 +777,7 @@ export function ModelsView({
   const installedModels = registeredModels;
   const reachableModels = useMemo(() => registeredModels.filter(m => runtimeStatus(m) === "reachable"), [registeredModels]);
   const runningModels = useMemo(() => registeredModels.filter(m => (
-    m.managed && String(m.container_status || "").toLowerCase() === "running"
+    m.managed && ["running", "reachable"].includes(String(m.container_status || m.runtime_status || "").toLowerCase())
   )), [registeredModels]);
 
   const filteredCatalog = useMemo(() => {
@@ -826,13 +981,46 @@ export function ModelsView({
     setAdvisorRefreshToken((value) => value + 1);
     if (!warsatHardware) setHardwareRefreshToken((value) => value + 1);
   };
-  const startDownload = async (modelId) => {
+  const startDownload = async (modelId, variant = null) => {
     try {
-      await postJson("/api/models/download", { modelId });
+      const body = variant ? { modelId, variant } : { modelId };
+      await postJson("/api/models/download", body);
       setDownloadRefreshToken((value) => value + 1);
-      setUiState({ status: "success", message: `Started download of ${modelId}` });
+      setUiState({ status: "success", message: "Started download of " + (variant?.id || modelId) });
     } catch (e) {
-      setUiState({ status: "failed", message: `Failed to start download: ${e.message}` });
+      setUiState({ status: "failed", message: "Failed to start download: " + (e.message || "unknown error") });
+    }
+  };
+  const onDownloadAction = async (action, jobId) => {
+    if (!jobId || !["pause", "resume", "cancel", "retry"].includes(action)) return;
+    try {
+      await postJson("/api/models/downloads/" + encodeURIComponent(jobId) + "/" + action, {});
+      setDownloadRefreshToken((value) => value + 1);
+    } catch (e) {
+      setDownloadError("Unable to " + action + " download: " + (e.message || "unknown error"));
+    }
+  };
+
+  const loadCompletedArtifact = async (download) => {
+    const artifact = completedArtifactFor(download);
+    const identity = downloadJobIdentity(download);
+    setLoadingArtifact(identity);
+    try {
+      let registry = models || [];
+      let model = artifactModelMatch(registry, artifact);
+      if (!model && loadModels) {
+        registry = await loadModels();
+        model = artifactModelMatch(registry, artifact);
+      }
+      if (!model?.key) {
+        throw new Error("The completed artifact is not available in the model registry yet. Use Refresh and try Load again.");
+      }
+      await runModelAction?.("start", model.key);
+      setUiState({ status: "success", message: "Model loaded and confirmed by the API." });
+    } catch (error) {
+      setUiState({ status: "failed", message: "Unable to load completed model: " + (error?.message || "unknown error") });
+    } finally {
+      setLoadingArtifact(null);
     }
   };
 
@@ -854,7 +1042,7 @@ export function ModelsView({
           {[
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Reachable now", c: "text-primary" },
-            { v: runningModels.length, l: "Running containers", c: "text-amber-400" },
+            { v: runningModels.length, l: desktopOnly ? "Running models" : "Running containers", c: "text-amber-400" },
             { v: catalogItems.length, l: "Cached locally", c: "text-sky-400" },
           ].map((s) => (
             <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
@@ -918,6 +1106,7 @@ export function ModelsView({
                   onBrowseAll={() => setShowAllModels(true)}
                   onUseSpecificModel={openSpecificHuggingFaceModel}
                   prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+                  desktopOnly={desktopOnly}
                 />
               ) : (
                 <>
@@ -1055,16 +1244,22 @@ export function ModelsView({
                 </div>
               )}
 
+              {downloadError && (
+                <div role="alert" style={{ fontSize: "0.8125rem", color: "var(--ras-danger)", backgroundColor: "color-mix(in srgb, var(--ras-danger) 10%, var(--cc-surface))", border: "1px solid var(--ras-danger)", borderRadius: "6px", padding: "8px 12px" }} data-testid="model-download-error">
+                  {downloadError}
+                </div>
+              )}
+
               {/* Active Downloads */}
               {activeDownloads.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
-                  {activeDownloads.map(dl => <ModelDownloadProgress key={dl.id} download={dl} />)}
+                  {activeDownloads.map((dl) => <ModelDownloadProgress key={downloadJobIdentity(dl) || dl.modelId || dl.repository} download={dl} onDownloadAction={onDownloadAction} onLoadArtifact={downloadJobState(dl) === "completed" ? loadCompletedArtifact : undefined} loadingArtifact={loadingArtifact === downloadJobIdentity(dl)} />)}
                 </div>
               )}
 
               {/* Model list */}
               {pagedItems.map(item => (
-                <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} hardwareBlocked={normalizedHardware.blocked} hardwareBlockReasons={normalizedHardware.blockedReasons} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} />
+                <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} hardwareBlocked={normalizedHardware.blocked} hardwareBlockReasons={normalizedHardware.blockedReasons} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} desktopOnly={desktopOnly} />
               ))}
 
               {/* Pagination */}
@@ -1259,7 +1454,7 @@ export function ModelsView({
 
 
 
-function AdvisorRecommendationCard({ slot, winner, prepareCatalogModelForWarsat, primary = false }) {
+function AdvisorRecommendationCard({ slot, winner, prepareCatalogModelForWarsat, desktopOnly = false, primary = false }) {
   const item = winner?.item;
   const profile = winner?.profile;
   const blockers = profile?.blockers || [];
@@ -1343,7 +1538,7 @@ function AdvisorRecommendationCard({ slot, winner, prepareCatalogModelForWarsat,
             });
           }}
         >
-          <Play size={12} /> Review WarSat plan
+          <Play size={12} /> {desktopOnly ? "Download GGUF" : "Review WarSat plan"}
         </UIButton>
         {blocked && <span className="text-[0.7rem] text-muted-foreground">Resolve blockers first</span>}
       </div>
@@ -1365,6 +1560,7 @@ function GuidedRecommendations({
   onBrowseAll,
   onUseSpecificModel,
   prepareCatalogModelForWarsat,
+  desktopOnly = false,
 }) {
   const loading = ["loading", "hardware-loading", "catalog-loading"].includes(advisorState.status) || modelCatalogLoading;
   const preferredSlotKey = performancePreference === "responsive"
@@ -1453,6 +1649,7 @@ function GuidedRecommendations({
           slot={primarySlot}
           winner={advisorState.profiles?.[primarySlot.key]}
           prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+          desktopOnly={desktopOnly}
           primary
         />
       </div>
@@ -1466,6 +1663,7 @@ function GuidedRecommendations({
               slot={slot}
               winner={advisorState.profiles?.[slot.key]}
               prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+              desktopOnly={desktopOnly}
             />
           ))}
         </div>
@@ -1477,16 +1675,58 @@ function GuidedRecommendations({
 /* ═══════════════════════════════════════════
    CATALOG CARD
    ═══════════════════════════════════════════ */
-function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads }) {
+function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads, desktopOnly = false }) {
   const modelId = item.modelId || item.id;
-  const downloadState = (activeDownloads || []).find(dl => dl.modelId === modelId);
-  const isDownloading = downloadState && downloadState.status !== "failed" && downloadState.status !== "completed";
+  const isHuggingFace = searchMode === "huggingface" || item.source === "huggingface";
+  const [variantDetail, setVariantDetail] = useState(null);
+  const [variantDetailLoading, setVariantDetailLoading] = useState(false);
+  const [variantDetailError, setVariantDetailError] = useState("");
+  const [selectedVariantId, setSelectedVariantId] = useState("");
+  const downloadState = (activeDownloads || []).find((dl) => (
+    (dl.modelId || dl.model_id || dl.repository) === modelId
+  ));
+  const downloadStateName = downloadJobState(downloadState);
+  const isDownloading = Boolean(downloadState && !["failed", "completed", "cancelled"].includes(downloadStateName));
+  const variants = Array.isArray(variantDetail?.variants) ? variantDetail.variants : [];
+  const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || null;
+  const selectedCompatibility = selectedVariant ? variantCompatibility(selectedVariant) : null;
+  const legacyDownloadAvailable = Boolean(variantDetail && variants.length === 0);
+  const downloadDisabled = Boolean(
+    isDownloading
+    || (desktopOnly && isHuggingFace && !selectedVariant && !legacyDownloadAvailable)
+    || (selectedCompatibility && !selectedCompatibility.safe)
+  );
   const itemBlockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
   const blockedReasons = [...new Set([...hardwareBlockReasons, ...itemBlockedReasons])];
   const fitReasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
   const placement = placementFit || catalogPlacementAssessment(item, null);
   const blocked = hardwareBlocked || blockedReasons.length > 0 || !placement.canDeploy;
-  const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : n;
+  const blockerGuidance = blockerGuidanceForReasons([...blockedReasons, ...(blocked ? placement.reasons : [])]);
+  const blockerDetailsId = "model-deployment-blockers-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-");
+  const runtimeEnvelope = runtimeEnvelopeForItem(item);
+  const vramEstimateGb = catalogVramEstimateGb(item);
+  const estimateRange = runtimeEnvelope?.rangeGb || runtimeEnvelope?.range || null;
+  const estimateBreakdown = runtimeEnvelope?.breakdown || null;
+  const estimateConfidence = runtimeEnvelope?.confidence || runtimeEnvelope?.estimateSource || null;
+  const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : n;
+  const loadVariantDetail = async () => {
+    setVariantDetailLoading(true);
+    setVariantDetailError("");
+    try {
+      const encodedModelId = String(modelId).split("/").map(encodeURIComponent).join("/");
+      const detail = await api("/api/model-catalog/model/" + encodedModelId);
+      setVariantDetail(detail);
+      const nextVariants = Array.isArray(detail?.variants) ? detail.variants : [];
+      setSelectedVariantId((current) => current && nextVariants.some((variant) => variant.id === current)
+        ? current
+        : (nextVariants[0]?.id || ""));
+    } catch (error) {
+      setVariantDetailError("Unable to load exact GGUF variants: " + (error?.message || "unknown error"));
+    } finally {
+      setVariantDetailLoading(false);
+    }
+  };
+  const variantIssues = Array.isArray(variantDetail?.variantIssues) ? variantDetail.variantIssues : [];
   return (
     <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1496,13 +1736,13 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {item.deployable && <Zap size={13} className="text-primary" />}
-          {item.containerBacked && <Badge variant="muted">Managed container</Badge>}
+          {item.containerBacked && <Badge variant="muted">{desktopOnly ? "Container cache (unavailable)" : "Managed container"}</Badge>}
           <span className="text-[0.7rem] text-muted-foreground">{labelize(item.purpose || "chat")}</span>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {item.vramEstimateGb && <Badge variant="muted">~{item.vramEstimateGb} GB VRAM</Badge>}
+        {vramEstimateGb && <Badge variant="muted">Estimated ~{vramEstimateGb} GB VRAM</Badge>}
         {item.downloads > 0 && <Badge variant="muted">↓ {fmt(item.downloads)}</Badge>}
         {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
         {item.license && <Badge variant="muted">{item.license}</Badge>}
@@ -1515,25 +1755,91 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
         Largest single GPU: {placement.largestSingleGpuGb == null ? "unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"}
         {" · "}Optional combined pool: {placement.aggregateVramGb == null ? "unknown" : placement.aggregateVramGb.toFixed(1) + " GB"}
         {placement.reasons?.[0] && <div className="mt-1">{placement.reasons[0]}</div>}
+        {estimateRange && <div className="mt-1">Estimated range: {typeof estimateRange === "object" ? String(estimateRange.min ?? "?") + "–" + String(estimateRange.max ?? "?") + " GB" : String(estimateRange)}</div>}
+        {estimateConfidence && <div className="mt-1">Confidence: {String(estimateConfidence)}</div>}
+        {estimateBreakdown && <div className="mt-1">Estimator includes runtime overhead and cache headroom.</div>}
       </div>
       {item.summary && <p className="text-xs text-muted-foreground">{item.summary.slice(0, 120)}</p>}
 
       {(blocked || fitReasons.length > 0) && (
-        <div className={`rounded-lg border px-3 py-2 text-xs ${blocked ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-border bg-muted/30 text-muted-foreground"}`}>
+        <div id={blocked ? blockerDetailsId : undefined} data-testid={blocked ? "model-deployment-blockers" : undefined} role={blocked ? "alert" : undefined} className={"rounded-lg border px-3 py-2 text-xs " + (blocked ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-border bg-muted/30 text-muted-foreground")}>
           <strong className="mr-1">{blocked ? "Deployment blocked:" : "Why it fits:"}</strong>
-          {(blocked ? blockedReasons : fitReasons).join(" ")}
+          {blocked ? blockerGuidance.map((entry) => (
+            <div key={entry.raw} className="mt-1">
+              <div><strong>Reason:</strong> {entry.raw}</div>
+              <div><strong>What this means:</strong> {entry.happened}</div>
+              <div><strong>Next step:</strong> {entry.next}</div>
+            </div>
+          )) : fitReasons.join(" ")}
         </div>
       )}
 
       <div className="flex items-center gap-2">
-        {item.deployable && (
-          <UIButton size="sm" type="button" disabled={blocked} title={blocked ? [...blockedReasons, ...placement.reasons].join(" ") : undefined} onClick={() => prepareCatalogModelForWarsat?.(item)}>
+        {item.deployable && !desktopOnly && (
+          <UIButton size="sm" type="button" disabled={blocked} aria-describedby={blocked ? blockerDetailsId : undefined} title={blocked ? [...blockedReasons, ...placement.reasons].join(" ") : undefined} onClick={() => prepareCatalogModelForWarsat?.(item)}>
             <Play size={12} /> Deploy via Warsat
           </UIButton>
         )}
-        {(searchMode === "huggingface" || item.source === "huggingface") && (
-          <UIButton variant={isDownloading ? "default" : "outline"} size="sm" type="button" disabled={isDownloading} onClick={() => startDownload(modelId)}>
-            <Download size={12} /> {isDownloading ? "Downloading…" : "Download Weights"}
+        {desktopOnly && isHuggingFace && (
+          <span className="text-[0.7rem] text-muted-foreground">Download a GGUF variant for native llama.cpp.</span>
+        )}
+        {isHuggingFace && (
+          <div className="w-full rounded-lg border border-border bg-muted/20 p-2" data-testid="model-variant-picker">
+            <UIButton variant="outline" size="sm" type="button" onClick={loadVariantDetail} disabled={variantDetailLoading || isDownloading} aria-expanded={Boolean(variantDetail)}>
+              <Download size={12} /> {variantDetailLoading ? "Loading GGUF variants…" : variantDetail ? "Refresh GGUF variants" : "Choose GGUF variant"}
+            </UIButton>
+            {variantDetailError && (
+              <div role="alert" className="mt-2 text-xs text-destructive">{variantDetailError}</div>
+            )}
+            {variantDetail && variants.length > 0 && (
+              <div className="mt-2 grid gap-1.5">
+                <label htmlFor={"variant-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-")} className="text-xs font-medium">Exact GGUF variant</label>
+                <select
+                  id={"variant-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-")}
+                  className="w2-input"
+                  value={selectedVariant?.id || ""}
+                  onChange={(event) => setSelectedVariantId(event.target.value)}
+                  aria-label={"Exact GGUF variant for " + modelId}
+                >
+                  {variants.map((variant) => {
+                    const compatibility = variantCompatibility(variant);
+                    const size = variantTotalBytes(variant);
+                    const mmprojFiles = Array.isArray(variant.mmprojFiles) ? variant.mmprojFiles : [];
+                    return (
+                      <option key={variant.id} value={variant.id}>
+                        {(variant.quantization || "Unknown quantization") + " · " + formatDownloadBytes(size) + " · " + (variant.shardCount || 1) + " shard" + ((variant.shardCount || 1) === 1 ? "" : "s") + " · " + (variant.multimodal || mmprojFiles.length ? "mmproj" : "text-only") + " · " + (compatibility.state === "unknown" ? "Needs review" : labelize(compatibility.state))}
+                      </option>
+                    );
+                  })}
+                </select>
+                {selectedVariant && (
+                  <div className="text-xs text-muted-foreground">
+                    <div>Quantization: <strong className="text-foreground">{selectedVariant.quantization || "unknown"}</strong>{" · "}Size: <strong className="text-foreground">{formatDownloadBytes(variantTotalBytes(selectedVariant))}</strong>{" · "}Shards: <strong className="text-foreground">{selectedVariant.shardCount || 1}</strong></div>
+                    <div>{selectedVariant.multimodal ? "Multimodal" : "Text-only"}{" · "}mmproj: {Array.isArray(selectedVariant.mmprojFiles) && selectedVariant.mmprojFiles.length ? "included" : "not included"}</div>
+                    <div>Compatibility: <strong className={selectedCompatibility?.safe ? "text-amber-300" : "text-destructive"}>{selectedCompatibility?.state === "unknown" ? "Needs review" : labelize(selectedCompatibility?.state || "unknown")}</strong></div>
+                    {selectedCompatibility?.reasons?.map((reason) => <div key={reason}>{reason}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+            {variantDetail && variants.length === 0 && (
+              <div className="mt-2 text-xs text-muted-foreground">No complete GGUF variants were returned; the legacy model download remains available.</div>
+            )}
+            {variantIssues.length > 0 && (
+              <div className="mt-2 text-xs text-amber-300">
+                {variantIssues.map((issue, index) => (
+                  <div key={(issue.kind || "issue") + "-" + index}>
+                    <strong>{issue.reason || issue.kind || "Variant issue"}</strong>
+                    {issue.nextAction && <div>{issue.nextAction}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {isHuggingFace && (
+          <UIButton variant={isDownloading ? "default" : "outline"} size="sm" type="button" disabled={downloadDisabled} onClick={() => startDownload(modelId, selectedVariant || null)}>
+            <Download size={12} /> {isDownloading ? "Downloading…" : selectedVariant ? "Download selected GGUF" : "Download Weights"}
           </UIButton>
         )}
         {item.sourceUrl && item.source === "huggingface" && (
@@ -1558,7 +1864,9 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const mismatch = modelMismatchLine(model);
   const ctx = contextWindowFor(model);
 
-  const [busy, setBusy] = useState(null); // which action ("test"|"discover") is in flight
+  const [busy, setBusy] = useState(null); // which action is in flight
+  const nativeRuntime = model.runtime === "native-llamacpp";
+  const isRunning = ["running", "reachable"].includes(String(model.container_status || model.runtime_status || "").toLowerCase());
   const runAction = async (key, name, op) => {
     setBusy(key);
     try {
@@ -1569,6 +1877,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   };
   const handleTest = () => runAction("test", "TestHealth", "test");
   const handleDiscover = () => runAction("discover", "Discover", "discover");
+  const handleRuntime = () => runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
 
   return (
     <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
@@ -1599,6 +1908,11 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
       <CompatibilitySummary model={model} />
 
       <div className="flex gap-2">
+        {model.managed && (
+          <Button onClick={handleRuntime} loading={busy === "start" || busy === "stop"} loadingLabel={isRunning ? "Stopping&" : "Starting&"} icon={isRunning ? <Power size={12} /> : <Play size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
+            {isRunning ? "Stop" : nativeRuntime ? "Start llama.cpp" : "Start"}
+          </Button>
+        )}
         <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Test</Button>
         <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Discover</Button>
       </div>
@@ -1656,7 +1970,7 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
         <button className="w2-button" type="button" onClick={handleTest}><CheckCircle2 size={14} /> Test</button>
         <button className="w2-button" type="button" onClick={handleDiscover}><Search size={14} /> Discover</button>
         <button className="w2-button" type="button" onClick={handleRepair}><Wrench size={14} /> Repair</button>
-        <button className="w2-button primary" type="button" onClick={openWarsat}><Play size={14} /> Warsat</button>
+        {model?.runtime !== "native-llamacpp" && <button className="w2-button primary" type="button" onClick={openWarsat}><Play size={14} /> Warsat</button>}
       </div>
     </div>
   );

@@ -2228,6 +2228,34 @@ export function App() {
 
   async function prepareCatalogModelForWarsat(item, options = {}) {
     if (!item) return null;
+    if (security?.desktopOnly) {
+      const modelRef = item.modelId || item.id || item.name;
+      if (item.modelPath && String(item.modelPath).toLowerCase().endsWith(".gguf")) {
+        try {
+          const imported = await postJson("/api/model-registry/import-gguf", {
+            path: item.modelPath,
+            name: item.name || modelRef,
+            role: item.purpose === "coding" ? "coder" : "helper",
+            context: Number(options.contextWindow || item.contextWindow || 4096),
+          });
+          await loadModels();
+          setSelectedModel(imported.key);
+          setGlobalStatus("Imported the GGUF into the native llama.cpp library.");
+          return imported;
+        } catch (error) {
+          setGlobalStatus(error.message);
+          return null;
+        }
+      }
+      try {
+        await postJson("/api/models/download", { modelId: modelRef });
+        setGlobalStatus("GGUF download started. Rasputin will register it when the download completes.");
+        return { status: "downloading", modelId: modelRef };
+      } catch (error) {
+        setGlobalStatus(error.message);
+        return null;
+      }
+    }
     // Honor the Default Inference Engine setting when this model actually
     // offers that runtime; explicit choices and API-only entries still win.
     const preferredProtocol = ENGINE_PROTOCOLS[useSettingsStore.getState().models?.defaultEngine];
@@ -2249,14 +2277,20 @@ export function App() {
       const plan = await postJson("/api/warsat/plan", {
         protocolId,
         modelRef,
+        modelRevision: options.modelRevision || item.modelRevision || item.model_revision || undefined,
+        contextWindow: Number(options.contextWindow || 0) || undefined,
+        multiGpu: options.multiGpu === true ? true : undefined,
+        benchmarkCertificateId: options.benchmarkCertificateId || undefined,
+        concurrency: Number(options.concurrency || 0) || undefined,
         // Only a real local file/folder goes in modelPath; for HF repos the
         // backend resolves a GGUF file and lets llama.cpp download it.
         modelPath: item.modelPath || undefined,
         strengthProfile: profile,
         hostPort: port,
         role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),
-        maxModelLen: item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
+        maxModelLen: !options.contextWindow && item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
         vramEstimateGb: item.vramEstimateGb || undefined,
+        quantization: options.quantization || item.quantization || undefined,
         resourceManifest: item.resourceManifest || undefined,
         capabilityProfile: loaded?.hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
         containerName: options.containerName || undefined,

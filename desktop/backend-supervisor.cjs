@@ -274,6 +274,7 @@ class BackendSupervisor extends EventEmitter {
       PYTHONUNBUFFERED: "1",
       RASPUTIN_DATA_DIR: this.dataDir,
       RASPUTIN_DESKTOP: "1",
+      RASPUTIN_DESKTOP_ONLY: "1",
       RASPUTIN_HTTPS: "0",
     };
     delete environment.WRAPPER_RUNTIME;

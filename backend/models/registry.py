@@ -17,7 +17,7 @@ from backend.models import secrets as model_secrets
 from backend.core import security as security
 from backend.core import workspace
 from backend.core.response import AppError
-from backend.warsat.providers import get_provider
+from backend.warsat.providers import get_provider, NATIVE_RUNTIME
 from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,7 +75,7 @@ def _is_relative_to(child, parent):
 def _model_library_roots():
     roots = []
     raw = os.environ.get("CONTAINER_MODELS_DIR")
-    candidates = [Path(raw).expanduser() if raw else None, ROOT / "models"]
+    candidates = [Path(raw).expanduser() if raw else None, ROOT / "models", data_dir() / "models"]
     for candidate in candidates:
         if not candidate:
             continue
@@ -437,7 +437,8 @@ def all_models():
         item = _public_model(m)
         item["url"] = chat_url(item)
         if item.get("managed"):
-            if docker_allowed:
+            native_runtime = item.get("runtime") == NATIVE_RUNTIME
+            if native_runtime or docker_allowed:
                 try:
                     item["container_status"] = get_provider(item).status(item)
                 except Exception:
@@ -914,6 +915,9 @@ def start_health_monitor():
 def import_gguf(req):
     security.require("allow_model_registry_edit")
     file_path = _safe_file(req.get("path", ""))
+    existing = _gguf_already_imported(file_path)
+    if existing:
+        return existing
     name = req.get("name") or file_path.stem
     key = req.get("key") or _slug(name)
     port = int(req.get("port") or next_port())
@@ -927,9 +931,8 @@ def import_gguf(req):
         "model": file_path.name,
         "enabled": True,
         "managed": True,
-        "runtime": "docker-llamacpp",
-        "container": container,
-        "image": req.get("image") or "ghcr.io/ggml-org/llama.cpp:server",
+        "runtime": "native-llamacpp",
+        "engine_path": req.get("engine_path") or "",
         "port": port,
         "host_model_path": str(file_path),
         "context": int(req.get("context") or 0),
@@ -938,11 +941,32 @@ def import_gguf(req):
         if req.get("context") in (None, "", 0, "0")
         else "explicit import setting",
         "n_gpu_layers": int(req.get("n_gpu_layers") if req.get("n_gpu_layers") is not None else 0),
-        "notes": req.get("notes") or "Imported GGUF for llama.cpp server.",
+        "split_mode": req.get("split_mode") or "layer",
+        "tensor_split": req.get("tensor_split") or "",
+        "notes": req.get("notes") or "Imported GGUF for native llama.cpp.",
     }
+    for field in ("artifact_id", "repository", "revision", "variant_id", "quantization",
+                  "artifact_files", "artifact_destination", "mmproj_path"):
+        if req.get(field) is not None:
+            model[field] = req[field]
     out = upsert(model)
     audit.log("model_import_gguf", {"key": key, "path": str(file_path), "port": port})
     return out
+
+
+def register_artifact(artifact):
+    """Register an installed desktop artifact exactly once by its main path."""
+    main = str(artifact.get("main_model_path") or "")
+    mmproj = artifact.get("mmproj_files") or []
+    mmproj_path = mmproj[0].get("localPath") if mmproj else None
+    key = f"artifact-{_slug(artifact.get('artifact_id') or Path(main).stem)}"
+    return import_gguf({"path": main, "key": key,
+                        "name": artifact.get("variant_id") or Path(main).stem,
+                        "artifact_id": artifact.get("artifact_id"),
+                        "repository": artifact.get("repository"), "revision": artifact.get("revision"),
+                        "variant_id": artifact.get("variant_id"), "quantization": artifact.get("quantization"),
+                        "artifact_files": artifact.get("files") or [],
+                        "artifact_destination": artifact.get("destination"), "mmproj_path": mmproj_path})
 
 
 def scan_gguf(root=None):
@@ -993,10 +1017,13 @@ def next_port():
 
 
 def start_model(key):
-    security.require("allow_docker_control")
     model = get_model(key)
     if not model:
         raise ValueError("model missing")
+    if model.get("runtime") == NATIVE_RUNTIME:
+        security.require("allow_model_registry_edit")
+    else:
+        security.require("allow_docker_control")
     if not model.get("managed"):
         return {"ok": False, "message": "external model, start it outside the wrapper"}
     try:
@@ -1013,8 +1040,11 @@ def start_model(key):
 
 
 def stop_model(key):
-    security.require("allow_docker_control")
     model = get_model(key)
+    if model and model.get("runtime") == NATIVE_RUNTIME:
+        security.require("allow_model_registry_edit")
+    else:
+        security.require("allow_docker_control")
     if not model or not model.get("managed"):
         return {"ok": False, "message": "model is not managed"}
     try:
@@ -1027,8 +1057,11 @@ def stop_model(key):
 
 
 def rm_model(key):
-    security.require("allow_docker_control")
     model = get_model(key)
+    if model and model.get("runtime") == NATIVE_RUNTIME:
+        security.require("allow_model_registry_edit")
+    else:
+        security.require("allow_docker_control")
     if model and model.get("managed"):
         try:
             get_provider(model).rm(model)

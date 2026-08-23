@@ -70,6 +70,10 @@
       {
         "from": "dist/desktop-backend/rasputin-backend",
         "to": "backend"
+      },
+      {
+        "from": "runtime/llama",
+        "to": "llama"
       }
     ],
     "win": {

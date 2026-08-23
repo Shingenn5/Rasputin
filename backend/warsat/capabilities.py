@@ -206,7 +206,7 @@ def build_capability_profile(
         "gpuCount": len(devices),
         "installedVramMb": total_vram,
         "knownFreeVramMb": round(sum(free_values), 2) if free_values else None,
-        "placementDefault": "largest_fitting_single_gpu_first",
+        "placementDefault": "all_compatible_gpus_first",
         "combinedVramRequiresExplicitRuntime": True,
     }
     return {

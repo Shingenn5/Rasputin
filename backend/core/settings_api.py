@@ -86,7 +86,10 @@ DEFAULT_SETTINGS = {
         "selectionMode": "automatic",
         "performancePreference": "balanced",
         "maxContextTokens": "automatic",
-        "allowMultiGpu": False,
+        # Automatic placement may use every compatible visible GPU. Runtime
+        # safety remains enforced by WarSat (for example, mixed-card vLLM
+        # tensor parallelism is never enabled without compatibility evidence).
+        "allowMultiGpu": True,
         "automaticBenchmarking": True,
         "fallbackBehavior": "ask",
         "defaultEngine": "llamacpp",

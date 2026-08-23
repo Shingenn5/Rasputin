@@ -68,12 +68,14 @@ class ResourceBrokerTests(unittest.TestCase):
         blocked = resource_broker.evaluate_admission(_profile(), request, leases=[], now=100.0)
         self.assertEqual(blocked["status"], "blocked")
         self.assertIn("combined_vram_requires_explicit_opt_in", blocked["reasons"])
+        self.assertTrue(blocked["nextActions"])
 
         wrong_runtime = resource_broker.evaluate_admission(
             _profile(), {**request, "allowCombined": True}, leases=[], now=100.0
         )
         self.assertEqual(wrong_runtime["status"], "blocked")
         self.assertIn("runtime_does_not_certify_combined_vram", wrong_runtime["reasons"])
+        self.assertTrue(any("llama.cpp" in item for item in wrong_runtime["nextActions"]))
 
         allowed = resource_broker.evaluate_admission(
             _profile(), {**request, "runtime": "llama.cpp", "allowCombined": True}, leases=[], now=100.0

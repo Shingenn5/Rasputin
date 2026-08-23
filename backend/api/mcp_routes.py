@@ -19,6 +19,10 @@ class McpRelayIn(CamelModel):
     env: dict | None = None
     cwd: str | None = None
     enabled: bool = False
+    scope: str = "workspace"
+    network_target: str | None = None
+    url: str | None = None
+    secret_refs: dict | None = None
 
 class McpServerActionIn(CamelModel):
     approval_id: str | None = None

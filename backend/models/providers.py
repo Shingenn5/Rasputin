@@ -583,7 +583,7 @@ _GEMINI_THINKING_BUDGETS = {"off": 0, "low": 1024, "medium": 4096, "high": 8192}
 # models, where a stalled generation can loop for hundreds of tokens. Keep the
 # policy scoped to llama.cpp so remote APIs and other local runtimes retain
 # their own sampling semantics. Explicit request fields still win.
-_LLAMA_CPP_RUNTIMES = {"docker-llamacpp", "llama.cpp", "warsat-llama.cpp"}
+_LLAMA_CPP_RUNTIMES = {"docker-llamacpp", "native-llamacpp", "llama.cpp", "warsat-llama.cpp"}
 _LLAMA_CPP_SAMPLING_DEFAULTS = {
     "repeat_penalty": 1.1,
     "repeat_last_n": 256,

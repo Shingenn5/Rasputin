@@ -199,10 +199,9 @@ class WarsatBenchmarkTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 200, response.text)
         profiles = response.json()["data"]["profiles"]
-        self.assertEqual(profiles["fast"]["benchmarkEvidence"]["status"], "mismatch")
-        self.assertEqual(profiles["balanced"]["benchmarkEvidence"]["status"], "mismatch")
-        self.assertEqual(profiles["maximumQuality"]["benchmarkEvidence"]["status"], "exact")
-        self.assertEqual(profiles["maximumQuality"]["placement"]["mode"], "multi-gpu")
+        for profile in profiles.values():
+            self.assertEqual(profile["benchmarkEvidence"]["status"], "exact")
+            self.assertEqual(profile["placement"]["mode"], "multi-gpu")
 
 
 if __name__ == "__main__":
