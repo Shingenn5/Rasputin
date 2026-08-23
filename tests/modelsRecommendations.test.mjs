@@ -209,6 +209,16 @@ test("catalog search stays usable and starting a download restarts bounded polli
   assert.match(source, /setDownloadRefreshToken\(\(value\) => value \+ 1\)/);
 });
 
+test("completed artifacts expose an explicit user Load action", () => {
+  assert.match(source, /data-testid="model-download-load"/);
+  assert.match(source, /const loadCompletedArtifact = async \(download\) =>/);
+  assert.match(source, /await loadModels\(\);/);
+  assert.match(source, /let registry = models \|\| \[\];/);
+  assert.match(source, /model = artifactModelMatch\(registry, artifact\);/);
+  assert.match(source, /registry = await loadModels\(\);/);
+  assert.match(source, /runModelAction\?\.\("start", model\.key\)/);
+});
+
 test("guided selection presents one primary choice with collapsed advanced paths", () => {
   assert.match(source, /Best match for your computer/);
   assert.match(source, /data-testid="primary-model-recommendation"/);
