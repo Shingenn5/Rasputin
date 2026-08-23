@@ -9,7 +9,16 @@
       "accelerator": "cpu",
       "license": "MIT",
       "executable": "llama-server.exe",
-      "assets": [{"name": "llama-b10586-bin-win-cpu-x64.zip", "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/llama-b10586-bin-win-cpu-x64.zip", "sha256": "3d5d61f82967c5458a5d112caf292d40d251a714ab4d9aa17da05372d6c04e16", "size_bytes": 18130251, "archive": true}]
+      "assets": [
+        {
+          "name": "llama-b10586-bin-win-cpu-x64.zip",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/llama-b10586-bin-win-cpu-x64.zip",
+          "sha256": "3d5d61f82967c5458a5d112caf292d40d251a714ab4d9aa17da05372d6c04e16",
+          "size_bytes": 18130251,
+          "archive": true
+        }
+      ],
+      "bundled_path": "bundled/llama.cpp-b10586-windows-x86_64-cpu"
     },
     {
       "manifest_id": "llama.cpp-b10586-windows-x86_64-cuda12.4",
@@ -20,7 +29,23 @@
       "accelerator": "cuda12.4",
       "license": "MIT",
       "executable": "llama-server.exe",
-      "assets": [{"name": "llama-b10586-bin-win-cuda-12.4-x64.zip", "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/llama-b10586-bin-win-cuda-12.4-x64.zip", "sha256": "626a0285960cdb33d28c8ec67aaef5ca1ab8918fba2a5ecbdd19af09ccaa5d2b", "size_bytes": 250493134, "archive": true}, {"name": "cudart-llama-bin-win-cuda-12.4-x64.zip", "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/cudart-llama-bin-win-cuda-12.4-x64.zip", "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6", "size_bytes": 391443627, "archive": true}]
+      "assets": [
+        {
+          "name": "llama-b10586-bin-win-cuda-12.4-x64.zip",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/llama-b10586-bin-win-cuda-12.4-x64.zip",
+          "sha256": "626a0285960cdb33d28c8ec67aaef5ca1ab8918fba2a5ecbdd19af09ccaa5d2b",
+          "size_bytes": 250493134,
+          "archive": true
+        },
+        {
+          "name": "cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/cudart-llama-bin-win-cuda-12.4-x64.zip",
+          "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+          "size_bytes": 391443627,
+          "archive": true
+        }
+      ],
+      "bundled_path": "bundled/llama.cpp-b10586-windows-x86_64-cuda12.4"
     },
     {
       "manifest_id": "llama.cpp-b10586-windows-x86_64-cuda13.3",
@@ -31,7 +56,23 @@
       "accelerator": "cuda13.3",
       "license": "MIT",
       "executable": "llama-server.exe",
-      "assets": [{"name": "llama-b10586-bin-win-cuda-13.3-x64.zip", "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/llama-b10586-bin-win-cuda-13.3-x64.zip", "sha256": "7ca9c25055284db752296678ef5faa1e3477d49de8adfd8b3f2dc5d41a894dca", "size_bytes": 146420763, "archive": true}, {"name": "cudart-llama-bin-win-cuda-13.3-x64.zip", "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/cudart-llama-bin-win-cuda-13.3-x64.zip", "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e", "size_bytes": 390970417, "archive": true}]
+      "assets": [
+        {
+          "name": "llama-b10586-bin-win-cuda-13.3-x64.zip",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/llama-b10586-bin-win-cuda-13.3-x64.zip",
+          "sha256": "7ca9c25055284db752296678ef5faa1e3477d49de8adfd8b3f2dc5d41a894dca",
+          "size_bytes": 146420763,
+          "archive": true
+        },
+        {
+          "name": "cudart-llama-bin-win-cuda-13.3-x64.zip",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10586/cudart-llama-bin-win-cuda-13.3-x64.zip",
+          "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e",
+          "size_bytes": 390970417,
+          "archive": true
+        }
+      ],
+      "bundled_path": "bundled/llama.cpp-b10586-windows-x86_64-cuda13.3"
     }
   ]
 }

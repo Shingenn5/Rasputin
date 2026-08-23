@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from typing import Any, Callable, Mapping, Sequence
@@ -102,12 +103,20 @@ class LlamaCppRuntimeService:
         root: str | Path | None = None,
         manifests: Sequence[RuntimeManifest | Mapping[str, Any]] | None = None,
         manifest_path: str | Path | None = None,
+        bundled_root: str | Path | None = None,
         downloader: Callable[..., Any] | None = None,
         smoke_runner: Callable[..., SmokeCheckResult | bool] | None = None,
     ) -> None:
         self.root = Path(root) if root is not None else data_dir() / "runtimes" / "llama.cpp"
         self.root.mkdir(parents=True, exist_ok=True)
-        self.manifest_path = Path(manifest_path) if manifest_path is not None else None
+        self.manifest_path = Path(manifest_path).expanduser().resolve() if manifest_path is not None else None
+        configured_bundle = bundled_root or os.environ.get("RASPUTIN_LLAMA_BUNDLED_DIR")
+        if configured_bundle:
+            self.bundled_root = Path(configured_bundle).expanduser().resolve()
+        elif self.manifest_path is not None and (self.manifest_path.parent / "bundled").is_dir():
+            self.bundled_root = self.manifest_path.parent.resolve()
+        else:
+            self.bundled_root = None
         self._manifests = tuple(manifests or ())
         self.downloader = downloader
         self.smoke_runner = smoke_runner
@@ -135,6 +144,56 @@ class LlamaCppRuntimeService:
             item.validate()
         return result
 
+    def _bundled_records(self) -> list[dict[str, Any]]:
+        if self.bundled_root is None:
+            return []
+        records: list[dict[str, Any]] = []
+        for manifest in self._manifest_list():
+            if not manifest.bundled_path:
+                continue
+            candidate = (self.bundled_root / manifest.bundled_path).resolve()
+            try:
+                candidate.relative_to(self.bundled_root)
+            except ValueError:
+                continue
+            executable = (candidate / manifest.executable).resolve()
+            try:
+                executable.relative_to(candidate)
+            except ValueError:
+                continue
+            if not executable.is_file():
+                continue
+            records.append({
+                "version": manifest.version,
+                "installation_id": manifest.installation_id,
+                "path": str(candidate),
+                "manifest": manifest.to_dict(),
+                "bundled": True,
+                "engine_path": str(executable),
+            })
+        return records
+
+    def bundled_engine_path(self, accelerator: str | None = None, *, required: bool = False) -> str:
+        records = self._bundled_records()
+        requested = str(accelerator or os.environ.get("RASPUTIN_LLAMA_ACCELERATOR") or "").strip().lower().replace("-", "")
+        if requested:
+            matching = [
+                item for item in records
+                if str((item.get("manifest") or {}).get("accelerator") or "").lower().replace("-", "") == requested
+                or (requested == "cuda" and str((item.get("manifest") or {}).get("accelerator") or "").lower().startswith("cuda"))
+            ]
+            if matching:
+                records = matching
+        elif shutil.which("nvidia-smi"):
+            cuda = [item for item in records if str((item.get("manifest") or {}).get("accelerator") or "").lower().startswith("cuda")]
+            if cuda:
+                records = sorted(cuda, key=lambda item: str((item.get("manifest") or {}).get("version") or ""), reverse=True)
+        if not records:
+            if required:
+                raise AppError("runtime_unavailable", "The packaged llama.cpp runtime is missing.")
+            return ""
+        return str(records[0]["engine_path"])
+
     def status(self) -> dict[str, Any]:
         active = self.installer.active_record()
         installed: list[dict[str, Any]] = []
@@ -151,6 +210,14 @@ class LlamaCppRuntimeService:
                 continue
         manifest_path = self.manifest_path
         manifest_available = bool(manifest_path and manifest_path.is_file())
+        bundled = self._bundled_records()
+        installed.extend({
+            "version": item["version"],
+            "installationId": item["installation_id"],
+            "path": item["path"],
+            "active": False,
+            "bundled": True,
+        } for item in bundled)
         if manifest_path is not None and not manifest_available:
             state = "manifest_missing"
         elif active:
@@ -160,6 +227,8 @@ class LlamaCppRuntimeService:
                 state = "repair_required"
             else:
                 state = "ready"
+        elif bundled:
+            state = "ready"
         else:
             state = "install_required" if manifest_available else "manifest_missing"
         return {
@@ -167,12 +236,14 @@ class LlamaCppRuntimeService:
             "root": str(self.root),
             "active": active,
             "installed": sorted(installed, key=lambda item: item["version"]),
+            "bundled": bool(bundled),
             "manifestCount": len(self._manifest_list()),
             "manifestPath": str(manifest_path) if manifest_path else "",
             "manifestAvailable": manifest_available,
             "state": state,
             "repairRequired": state == "repair_required",
             "enginePath": self.active_engine_path(required=False),
+            "bundledEnginePath": self.bundled_engine_path(required=False),
         }
 
     def select(
@@ -192,6 +263,14 @@ class LlamaCppRuntimeService:
         downloader: Callable[..., Any] | None = None,
         smoke_runner: Callable[..., SmokeCheckResult | bool] | None = None,
     ) -> dict[str, Any]:
+        manifest = selection if isinstance(selection, RuntimeManifest) else RuntimeManifest.from_dict(selection)
+        manifest.validate()
+        if manifest.bundled_path:
+            bundled = next((item for item in self._bundled_records() if item["installation_id"] == manifest.installation_id), None)
+            if bundled:
+                self.installer._write_active(bundled)
+                return dict(bundled)
+            raise AppError("runtime_executable_missing", f"The bundled llama.cpp runtime is missing: {manifest.installation_id}")
         installer = LlamaCppRuntimeInstaller(
             self.root,
             downloader=downloader if downloader is not None else (self.downloader or _default_http_downloader),
@@ -207,18 +286,20 @@ class LlamaCppRuntimeService:
     def rollback(self) -> dict[str, Any]:
         return self.installer.restore_previous()
 
-    def active_engine_path(self, *, required: bool = True) -> str:
+    def active_engine_path(self, *, required: bool = True, accelerator: str | None = None) -> str:
         active = self.installer.active_record()
-        if not active or not active.get("path"):
-            if required:
-                raise AppError("runtime_unavailable", "No llama.cpp runtime is active.")
-            return ""
-        manifest = active.get("manifest") if isinstance(active.get("manifest"), Mapping) else {}
-        executable = str(manifest.get("executable") or "llama-server.exe")
-        path = (Path(str(active["path"])) / executable).resolve()
-        if required and not path.is_file():
-            raise AppError("runtime_executable_missing", f"The active llama.cpp executable is missing: {path}")
-        return str(path)
+        if active and active.get("path"):
+            manifest = active.get("manifest") if isinstance(active.get("manifest"), Mapping) else {}
+            executable = str(manifest.get("executable") or "llama-server.exe")
+            path = (Path(str(active["path"])) / executable).resolve()
+            if path.is_file():
+                return str(path)
+            if not active.get("bundled"):
+                if required:
+                    raise AppError("runtime_executable_missing", f"The active llama.cpp executable is missing: {path}")
+                return ""
+        bundled = self.bundled_engine_path(accelerator, required=required)
+        return bundled
 
     def verify_active(self, runner: Callable[[Path], SmokeCheckResult | bool] | None = None) -> dict[str, Any]:
         path = Path(self.active_engine_path())

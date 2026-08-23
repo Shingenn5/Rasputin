@@ -79,15 +79,44 @@ def _pid_alive(pid):
         return False
 
 
+def _desktop_only():
+    return str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _model_accelerator(model):
+    snapshot = model.get("hardware_snapshot") if isinstance(model, Mapping) else {}
+    devices = (snapshot or {}).get("devices") or (snapshot or {}).get("gpus") or []
+    if any(
+        str(device.get("vendor") or "").lower() == "nvidia"
+        or any(token in str(device.get("name") or "").lower() for token in ("nvidia", "geforce", "rtx", "quadro", "tesla"))
+        or device.get("compute_capability")
+        for device in devices if isinstance(device, Mapping)
+    ):
+        return "cuda"
+    if shutil.which("nvidia-smi"):
+        return "cuda"
+    return "cpu"
+
+
 def _find_engine(model):
     configured = str(model.get("engine_path") or os.environ.get("RASPUTIN_LLAMA_SERVER") or "").strip()
+    accelerator = _model_accelerator(model)
     try:
-        managed = LlamaCppRuntimeService().active_engine_path(required=False)
+        service = LlamaCppRuntimeService()
+        if _desktop_only():
+            bundled = service.bundled_engine_path(accelerator, required=False)
+            if bundled:
+                return bundled
+            return ""
+        managed = service.active_engine_path(required=False, accelerator=accelerator)
     except (AppError, OSError, ValueError, TypeError):
         managed = ""
     candidates = [configured] if configured else []
     if managed:
         candidates.append(managed)
+    bundled_root = str(os.environ.get("RASPUTIN_LLAMA_BUNDLED_DIR") or "").strip()
+    if bundled_root:
+        candidates.append(str(Path(bundled_root) / "llama-server.exe"))
     candidates.extend([
         str(Path(sys.executable).resolve().parent / "llama" / "llama-server.exe"),
         str(Path(sys.executable).resolve().parent / "llama-server.exe"),
@@ -355,6 +384,14 @@ class NativeLlamaCppProvider(DeploymentProvider):
             return _failure("model_load_blocked", self._blocked_message(plan), "Supply a fresh hardware/runtime snapshot or adjust the load profile.", status="blocked", blockReasons=list(plan.block_reasons), resolvedPlan=plan_payload, command=[])
         engine = _find_engine(model)
         if not engine:
+            if _desktop_only():
+                return _failure(
+                    "missing_bundled_runtime",
+                    "The packaged llama.cpp runtime is missing. Reinstall or rebuild the Rasputin desktop application.",
+                    "Use the self-contained Rasputin installer; Docker, Python, and a separate llama.cpp installation are not supported in desktop mode.",
+                    status="unavailable",
+                    resolvedPlan=self._plan_payload(plan, []),
+                )
             return _failure("missing_runtime", "llama-server was not found. Install llama.cpp or set RASPUTIN_LLAMA_SERVER to llama-server.exe.", "Set RASPUTIN_LLAMA_SERVER to a valid llama-server executable and retry.", status="unavailable", resolvedPlan=self._plan_payload(plan, []))
         self.stop(model)
         command = self._command_for_plan(plan, engine, model_path, port, mmproj_path)

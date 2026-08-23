@@ -1,6 +1,6 @@
 # Rasputin Desktop Architecture
 
-Status: lifecycle shell and self-contained Windows packaging implemented on 2026-07-13.
+Status: self-contained Windows desktop packaging with bundled llama.cpp implemented on 2026-08-23.
 
 Rasputin's two supported product shapes share the same FastAPI backend and React frontend:
 
@@ -9,8 +9,9 @@ Rasputin's two supported product shapes share the same FastAPI backend and React
 | Rasputin Desktop | One workstation operator | Electron owns the native backend process | Direct host folders | Random loopback-only HTTP port inside Electron |
 | Rasputin Server | Multiple local or LAN users | Docker Compose and the CLI own the service | Explicit server/container mounts | Configured HTTP/HTTPS listener |
 
-Electron is a host shell, not a second Rasputin implementation. It starts `server.py`, waits for
-`/api/health`, and loads the existing frontend in a hardened `BrowserWindow`. The desktop
+Electron is a host shell, not a second Rasputin implementation. In repository development it can
+start server.py; in the installed application it starts the PyInstaller backend shipped inside the
+installer, waits for /api/health, and loads the existing frontend in a hardened BrowserWindow. The desktop
 window has no Node.js integration, uses context isolation and renderer sandboxing, denies new
 windows, and sends ordinary HTTPS links to the system browser.
 
@@ -39,9 +40,9 @@ stored under Electron's per-user application data directory. The tray owns these
 - Show the persistent desktop log
 - Quit Rasputin and stop its managed backend
 
-When the persistent Native Server already owns the same native data directory, Desktop attaches to
-that instance instead of starting another backend. Closing or quitting the window leaves the host
-running for browser users; choosing the explicit tray stop action shuts the host down gracefully.
+The installed Desktop application owns its packaged backend and does not attach to a separately
+launched Native Server. Keep the source-development Native Server and Desktop process on separate
+data directories; the installed app is the only supported daily-driver path for this branch.
 
 Before starting a Desktop Runtime, Electron checks `desktop-runtime.json`. If a previous Electron
 process crashed but left its backend alive, the new app terminates that abandoned process tree and
@@ -58,15 +59,19 @@ fallback. Do not run it against the same data directory while Rasputin Desktop i
 Repository development reuses `.venv`, or a Python 3.12+ interpreter supplied through
 `RASPUTIN_PYTHON`. Distribution uses PyInstaller plus electron-builder:
 
-1. `npm run build` produces `frontend/`.
-2. `npm run desktop:backend` produces a standalone onedir backend runtime containing the frontend.
-3. electron-builder copies that runtime into Electron resources; packaged Electron selects the
-   executable automatically.
-4. NSIS creates a user-scoped installer while preserving data on uninstall.
+1. npm run build produces frontend/.
+2. npm run desktop:runtime downloads, verifies, and stages the pinned CPU/CUDA llama.cpp builds
+   under runtime/llama/bundled/ at build time.
+3. npm run desktop:backend produces a standalone onedir backend runtime containing the frontend.
+4. electron-builder copies the backend and all llama.cpp binaries into Electron resources; the
+   packaged app selects the correct native engine automatically.
+5. The NSIS install hook grants Electron's restricted AppContainer read/execute ACL and creates a
+   user-scoped installer while preserving data on uninstall.
 
-The unpacked application and bundled backend have passed local lifecycle smoke tests. Remaining
-release gates are a production icon, Authenticode signing, update signing/channel metadata, and a
-clean-machine install/upgrade/uninstall test outside the development workstation.
+The unpacked application, bundled backend, bundled CPU/CUDA engines, and ordinary sandboxed launch
+path have passed local smoke tests. Remaining release gates are a production icon, Authenticode
+signing, update signing/channel metadata, and a clean-machine install/upgrade/uninstall test outside
+the development workstation.
 
 ## Security and ownership rules
 
@@ -76,5 +81,5 @@ clean-machine install/upgrade/uninstall test outside the development workstation
 - Browser renderer code cannot invoke Electron or Node APIs.
 - Existing Rasputin authentication, workspace approval, audit, and Host Shell isolation remain in
   force; Electron does not bypass them.
-- Docker remains the shared-account server/appliance deployment and the supported remote-access
-  boundary.
+- Docker remains legacy server-mode code only; it is not part of the packaged Desktop runtime,
+  model-loading path, or agentic coding path on this branch.

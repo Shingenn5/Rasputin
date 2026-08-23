@@ -1329,6 +1329,7 @@ export function ModelsView({
                 executeAction={executeAction}
                 setUiState={setUiState}
                 openWarsat={openWarsat}
+                desktopOnly={desktopOnly}
               />
 
               {runningModels.length > 0 && (
@@ -1349,7 +1350,7 @@ export function ModelsView({
                 </div>
               )}
 
-              <InfraStatusCard warsatHardware={warsatHardware} warsatRuntimes={warsatRuntimes} warsat={warsat} />
+              <InfraStatusCard warsatHardware={warsatHardware} warsatRuntimes={warsatRuntimes} warsat={warsat} desktopOnly={desktopOnly} />
             </div>
           )}
 
@@ -1410,12 +1411,19 @@ export function ModelsView({
                 </form>
               </div>
 
-              {/* Warsat */}
-              <div className="w2-card">
-                <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Play size={14} style={{ verticalAlign: "-2px" }} /> Warsat Deployment</h3>
-                <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>Use Warsat to deploy local model endpoints via Docker.</p>
-                <button className="w2-button primary" type="button" onClick={openWarsat} style={{ alignSelf: "flex-start" }}><Play size={14} /> Open Warsat</button>
-              </div>
+              {/* Native runtime */}
+              {desktopOnly ? (
+                <div className="w2-card" data-testid="native-runtime-settings">
+                  <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Cpu size={14} style={{ verticalAlign: "-2px" }} /> Native llama.cpp Runtime</h3>
+                  <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>The bundled llama.cpp engine loads downloaded GGUF models directly. No Docker, Python, Node, or separate runtime install is required.</p>
+                </div>
+              ) : (
+                <div className="w2-card">
+                  <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Play size={14} style={{ verticalAlign: "-2px" }} /> Warsat Deployment</h3>
+                  <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>Use Warsat to deploy local model endpoints via Docker.</p>
+                  <button className="w2-button primary" type="button" onClick={openWarsat} style={{ alignSelf: "flex-start" }}><Play size={14} /> Open Warsat</button>
+                </div>
+              )}
 
               {/* Full registry list */}
               <div className="w2-card">
@@ -1444,6 +1452,7 @@ export function ModelsView({
             healthy={healthy}
             status={status}
             warsatHardware={warsatHardware}
+            desktopOnly={desktopOnly}
           />
         </div>
       </div>
@@ -1736,7 +1745,7 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {item.deployable && <Zap size={13} className="text-primary" />}
-          {item.containerBacked && <Badge variant="muted">{desktopOnly ? "Container cache (unavailable)" : "Managed container"}</Badge>}
+          {item.containerBacked && !desktopOnly && <Badge variant="muted">Managed container</Badge>}
           <span className="text-[0.7rem] text-muted-foreground">{labelize(item.purpose || "chat")}</span>
         </div>
       </div>
@@ -1924,7 +1933,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
 /* ═══════════════════════════════════════════
    ACTIVE MODEL CARD
    ═══════════════════════════════════════════ */
-function ActiveModelCard({ model, models, healthy, status, runModelAction, executeAction, setUiState, openWarsat }) {
+function ActiveModelCard({ model, models, healthy, status, runModelAction, executeAction, setUiState, openWarsat, desktopOnly = false }) {
   const name = displayModelName(model, models);
   const secondary = displayModelSecondary(model, models);
   const mismatch = modelMismatchLine(model);
@@ -1970,7 +1979,7 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
         <button className="w2-button" type="button" onClick={handleTest}><CheckCircle2 size={14} /> Test</button>
         <button className="w2-button" type="button" onClick={handleDiscover}><Search size={14} /> Discover</button>
         <button className="w2-button" type="button" onClick={handleRepair}><Wrench size={14} /> Repair</button>
-        {model?.runtime !== "native-llamacpp" && <button className="w2-button primary" type="button" onClick={openWarsat}><Play size={14} /> Warsat</button>}
+        {!desktopOnly && model?.runtime !== "native-llamacpp" && <button className="w2-button primary" type="button" onClick={openWarsat}><Play size={14} /> Warsat</button>}
       </div>
     </div>
   );
@@ -1980,15 +1989,25 @@ function ActiveModelCard({ model, models, healthy, status, runModelAction, execu
 /* ═══════════════════════════════════════════
    INFRA STATUS
    ═══════════════════════════════════════════ */
-function InfraStatusCard({ warsatHardware, warsatRuntimes, warsat }) {
+function InfraStatusCard({ warsatHardware, warsatRuntimes, warsat, desktopOnly = false }) {
   const runtimeCount = warsatRuntimes?.count ?? warsatRuntimes?.containers?.length ?? 0;
   return (
     <div className="w2-card">
       <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Infrastructure</h3>
       <div className="w2-health-grid">
-        <div className="w2-health-item"><Server size={16} color="var(--cc-muted)" /> Warsat: {warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked"}</div>
-        <div className="w2-health-item"><MonitorSpeaker size={16} color="var(--cc-muted)" /> Containers: {runtimeCount}</div>
-        <div className="w2-health-item"><ShieldCheck size={16} color="var(--ras-safe)" /> Docker: {warsat?.dockerControlEnabled ? "Enabled" : "Off"}</div>
+        {desktopOnly ? (
+          <>
+            <div className="w2-health-item"><Server size={16} color="var(--cc-muted)" /> Native runtime: {warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked"}</div>
+            <div className="w2-health-item"><MonitorSpeaker size={16} color="var(--cc-muted)" /> Running models: {runtimeCount}</div>
+            <div className="w2-health-item"><ShieldCheck size={16} color="var(--ras-safe)" /> llama.cpp: Bundled</div>
+          </>
+        ) : (
+          <>
+            <div className="w2-health-item"><Server size={16} color="var(--cc-muted)" /> Warsat: {warsatHardware ? labelize(warsatHardware.status || "unknown") : "Not checked"}</div>
+            <div className="w2-health-item"><MonitorSpeaker size={16} color="var(--cc-muted)" /> Containers: {runtimeCount}</div>
+            <div className="w2-health-item"><ShieldCheck size={16} color="var(--ras-safe)" /> Docker: {warsat?.dockerControlEnabled ? "Enabled" : "Off"}</div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1998,7 +2017,7 @@ function InfraStatusCard({ warsatHardware, warsatRuntimes, warsat }) {
 /* ═══════════════════════════════════════════
    RIGHT PANEL
    ═══════════════════════════════════════════ */
-function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHardware }) {
+function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHardware, desktopOnly = false }) {
   const name = displayModelName(activeModel, models);
 
   if (activeTab === "library") {
@@ -2008,19 +2027,40 @@ function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHar
         <div className="w2-card">
           <strong style={{ fontSize: "0.875rem" }}>How to add a model</strong>
           <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-            <li>Browse or search for a model</li>
-            <li>Click "Deploy via Warsat" on a deployable model</li>
-            <li>Or use Settings to connect a running endpoint</li>
+            {desktopOnly ? (
+              <>
+                <li>Browse or search for a model</li>
+                <li>Choose an exact GGUF variant</li>
+                <li>Download it, then start it from Local Registry</li>
+              </>
+            ) : (
+              <>
+                <li>Browse or search for a model</li>
+                <li>Click "Deploy via Warsat" on a deployable model</li>
+                <li>Or use Settings to connect a running endpoint</li>
+              </>
+            )}
           </ol>
         </div>
         <div className="w2-card">
-          <strong style={{ fontSize: "0.875rem" }}>Supported Runtimes</strong>
+          <strong style={{ fontSize: "0.875rem" }}>{desktopOnly ? "Bundled Runtime" : "Supported Runtimes"}</strong>
           <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px" }}>
-            <span>• vLLM CUDA (Hugging Face models)</span>
-            <span>• llama.cpp (GGUF files)</span>
-            <span>• Ollama (quick experiments)</span>
-            <span>• External local endpoints</span>
-            <span>• Remote APIs (OpenAI, Anthropic, Gemini)</span>
+            {desktopOnly ? (
+              <>
+                <span>- llama.cpp native engine (bundled)</span>
+                <span>- GGUF model files</span>
+                <span>- GPU offload and KV cache controls</span>
+                <span>- No external runtime installation</span>
+              </>
+            ) : (
+              <>
+                <span>- vLLM CUDA (Hugging Face models)</span>
+                <span>- llama.cpp (GGUF files)</span>
+                <span>- Ollama (quick experiments)</span>
+                <span>- External local endpoints</span>
+                <span>- Remote APIs (OpenAI, Anthropic, Gemini)</span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -2037,8 +2077,8 @@ function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHar
         </div>
         <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)", display: "flex", flexDirection: "column", gap: "4px" }}>
           <span>Status: {healthy ? "Reachable" : labelize(status)}</span>
-          <span>Model: {activeModel?.model || "—"}</span>
-          <span>Runtime: {activeModel?.runtime || activeModel?.provider || "—"}</span>
+          <span>Model: {activeModel?.model || ""}</span>
+          <span>Runtime: {activeModel?.runtime || activeModel?.provider || ""}</span>
           <span>Role: {labelize(activeModel?.role || "main")}</span>
         </div>
       </div>
@@ -2052,7 +2092,7 @@ function RightPanel({ activeTab, activeModel, models, healthy, status, warsatHar
               return (
                 <div key={i} style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
                   <strong style={{ color: "var(--cc-text)" }}>{gpu.name}</strong>
-                  <div>{vramMb ? `${(vramMb / 1024).toFixed(1)} GB VRAM` : "Unknown VRAM"}</div>
+                  <div>{vramMb ? ((vramMb / 1024).toFixed(1) + " GB VRAM") : "Unknown VRAM"}</div>
                 </div>
               );
             })}

@@ -222,6 +222,7 @@ export function App() {
   const bootPhaseRef = useRef("starting");
   const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
+  const desktopOnly = Boolean(security?.desktopOnly);
 
   // First-run onboarding is about launch readiness, not registry cardinality:
   // seeded entries can still be stopped or unhealthy and cannot start a chat.
@@ -556,11 +557,15 @@ export function App() {
     const route = parseAppRouteHash();
     const hasExplicitRoute = Boolean(window.location.hash.replace(/^#\/?/, "").trim());
     const requestedView = hasExplicitRoute ? route.view : prefs.activeView || "home";
+    const nativeRequestedView = data.security?.desktopOnly && requestedView === "warsat" ? "models" : requestedView;
     const requestedSection = hasExplicitRoute && route.view === "settings" ? route.section || "general" : prefs.activeSettingsSection || "general";
-    const routeAllowed = canAccessRoute(activeRole, requestedView, requestedSection);
-    setView(routeAllowed ? requestedView : "home");
+    const routeAllowed = canAccessRoute(activeRole, nativeRequestedView, requestedSection);
+    setView(routeAllowed ? nativeRequestedView : "home");
     setSettingsSection(routeAllowed ? requestedSection : "accounts");
-    if (!routeAllowed) {
+    if (data.security?.desktopOnly && requestedView !== nativeRequestedView) {
+      setGlobalStatus("WarSat is unavailable in Rasputin Desktop; use Models for native llama.cpp loading.");
+      window.history.replaceState(null, "", routeHashFor(nativeRequestedView, requestedSection));
+    } else if (!routeAllowed) {
       setGlobalStatus("This account does not include this area.");
       window.history.replaceState(null, "", routeHashFor("home"));
     }
@@ -577,7 +582,7 @@ export function App() {
     // hardware-aware copy in the background. This shares the same guarded
     // loader as the WarSat route so an empty result is still terminal.
     loadModelCatalog(false, { automatic: true }).catch(() => {});
-    if (requestedView === "models") {
+    if (nativeRequestedView === "models") {
       loadWarsatHardware().catch(() => {});
     }
   }
@@ -961,13 +966,17 @@ export function App() {
   }
 
   function go(nextView, section, options = {}) {
-    if (!canAccessRoute(session?.role, nextView, section)) {
+    const effectiveView = desktopOnly && nextView === "warsat" ? "models" : nextView;
+    if (desktopOnly && nextView === "warsat") {
+      setGlobalStatus("WarSat is unavailable in Rasputin Desktop; Models uses the bundled native llama.cpp runtime.");
+    }
+    if (!canAccessRoute(session?.role, effectiveView, section)) {
       setGlobalStatus("This account does not include this area.");
       return;
     }
-    applyView(nextView, section);
+    applyView(effectiveView, section);
     if (options.fromHistory) return;
-    const nextHash = routeHashFor(nextView, section);
+    const nextHash = routeHashFor(effectiveView, section);
     if (window.location.hash !== nextHash) {
       window.history.pushState(null, "", nextHash);
     }
@@ -979,6 +988,13 @@ export function App() {
     setView("home");
     window.history.replaceState(null, "", routeHashFor("home"));
   }, [session, settingsSection, view]);
+
+  useEffect(() => {
+    if (!desktopOnly || view !== "warsat") return;
+    setGlobalStatus("WarSat is unavailable in Rasputin Desktop; use Models for native llama.cpp loading.");
+    setView("models");
+    window.history.replaceState(null, "", routeHashFor("models"));
+  }, [desktopOnly, view]);
 
   function toggleSidebar() {
     // < sm breakpoint (639px) → overlay mode; sm+ → collapse/expand rail
@@ -2401,38 +2417,6 @@ export function App() {
     }
   }
 
-  async function enableDockerControl() {
-    try {
-      const saved = await postJson("/api/security", { ...security, allowDockerControl: true });
-      setSecurity(saved);
-      const loaded = await loadWarsat();
-      // Plans snapshot the docker flags at creation time, so refresh the
-      // active plan or the deploy button stays locked on stale data.
-      if (warsatPlan) {
-        const plan = await postJson("/api/warsat/plan", {
-          protocolId: warsatPlan.protocolId,
-          modelRef: warsatPlan.modelRef || undefined,
-          modelPath: warsatPlan.modelPath || undefined,
-          strengthProfile: warsatPlan.strengthProfile || undefined,
-          vramEstimateGb: warsatPlan.resourceManifest?.runtimeEnvelope?.estimatedVramGb || undefined,
-          resourceManifest: warsatPlan.resourceManifest || undefined,
-          capabilityProfile: loaded?.hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
-          hostPort: warsatPlan.hostPort || undefined,
-          role: warsatPlan.role || undefined,
-          containerName: warsatPlan.containerName || undefined,
-          assistantRequestId: warsatPlan.assistantRequestId || undefined,
-        });
-        setWarsatPlan(plan);
-        setWarsatDeployment(null);
-      }
-      setGlobalStatus("Docker control enabled. WarSat can now launch containers.");
-      return true;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return false;
-    }
-  }
-
   async function deployWarsatPlan() {
     if (!warsatPlan) return null;
     setWarsatError("");
@@ -2520,7 +2504,8 @@ export function App() {
         workspaceName: activeWorkspaceName,
         modelName: displayModelName(selectedModelObject, models),
         locked: security.privacyLock,
-        runtimeMode: security.native ? "native" : "docker",
+        runtimeMode: security.desktopOnly || security.native ? "native" : "docker",
+        desktopOnly,
         motionMode,
         mobileOpen: mobileSidebarOpen,
         newTask: startNewChat,
@@ -2716,6 +2701,7 @@ export function App() {
         schedules={schedulesList}
         createSchedule={createSchedule}
       />
+      {!desktopOnly && (
       <WarsatView
         view={view}
         warsat={warsat}
@@ -2748,7 +2734,6 @@ export function App() {
         cancelTask={cancelTask}
         pauseTask={pauseTask}
         resumeTask={resumeTask}
-        enableDockerControl={enableDockerControl}
         modelCatalog={modelCatalog}
         modelCatalogLoading={modelCatalogLoading}
         modelCatalogError={modelCatalogError}
@@ -2756,6 +2741,7 @@ export function App() {
         prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
         go={go}
       />
+      )}
       <ArchiveView
         view={view}
         openTaskDetails={openTaskDetails}
@@ -2799,7 +2785,7 @@ export function App() {
         warsatRuntimes={warsatRuntimes}
         warsatPlan={warsatPlan}
         security={security}
-        openWarsat={() => go("warsat")}
+        openWarsat={() => (desktopOnly ? go("models") : go("warsat"))}
       />
       <AssistantView
         view={view}
@@ -2931,7 +2917,7 @@ export function App() {
       {showOnboarding && (
         <Onboarding
           hasSeededModels={models.length > 0}
-          onScanModels={() => { setOnboarded(true); go("warsat"); }}
+          onScanModels={() => { setOnboarded(true); go(desktopOnly ? "models" : "warsat"); }}
           onOpenRegistry={() => { setOnboarded(true); go("models"); }}
           onConnectLocalEndpoint={() => { setOnboarded(true); go("models"); }}
           onEnableTestingMode={() => { updateTestingMode(true); setOnboarded(true); go("home"); }}

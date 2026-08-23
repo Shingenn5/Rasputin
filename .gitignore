@@ -100,3 +100,7 @@ graph.json
 # keep placeholder folders visible
 !workspace/.gitkeep
 !models/.gitkeep
+
+# llama.cpp binaries are generated and verified during desktop packaging; they
+# are included in the installer artifact, not committed to the source branch.
+runtime/llama/bundled/

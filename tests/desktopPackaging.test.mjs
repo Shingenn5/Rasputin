@@ -19,6 +19,9 @@ test('desktop packaging scripts and resources are wired', () => {
   assert.match(scripts['desktop:package'] ?? '', /electron-builder\s+--win\s+nsis/, 'desktop:package must build the Windows NSIS installer');
   assert.ok(resourceSources.includes('runtime/llama'), 'electron-builder must package runtime/llama as an extra resource');
   assert.ok(resourceSources.includes('dist/desktop-backend/rasputin-backend'), 'electron-builder must package the PyInstaller backend resource');
+  assert.match(scripts["desktop:package:dir"] ?? "", /desktop:runtime/, "unpacked packaging must prepare bundled llama.cpp binaries");
+  assert.equal(packageJson.build?.nsis?.include, "scripts/desktop-installer.nsh", "NSIS must apply the Electron sandbox ACL hook");
+  assert.match(fs.readFileSync(path.join(repoRoot, "scripts", "desktop-installer.nsh"), "utf8"), /S-1-15-2-2/, "installer must grant restricted AppContainer read/execute access");
 });
 
 test('packaged llama runtime manifest declares CPU, CUDA, and companion assets', () => {
@@ -28,6 +31,10 @@ test('packaged llama runtime manifest declares CPU, CUDA, and companion assets',
   const accelerators = new Set(manifest.runtimes.map((runtime) => runtime.accelerator));
   assert.ok(accelerators.has('cpu'), 'runtime manifest must include a CPU runtime');
   assert.ok([...accelerators].some((accelerator) => accelerator.startsWith('cuda')), 'runtime manifest must include a CUDA runtime');
+
+  for (const runtime of manifest.runtimes) {
+    assert.match(runtime.bundled_path ?? "", /^bundled[\\/]/, runtime.manifest_id + " must declare its installer-bundled executable path");
+  }
 
   for (const runtime of manifest.runtimes.filter((entry) => entry.accelerator?.startsWith('cuda'))) {
     const names = (runtime.assets ?? []).map((asset) => asset.name);

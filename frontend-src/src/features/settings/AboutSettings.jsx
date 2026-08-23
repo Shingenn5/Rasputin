@@ -2,7 +2,7 @@ import React from "react";
 import { Card, Row, Col, Badge } from "react-bootstrap";
 import { Info, Github, FileText, Globe } from "lucide-react";
 
-export function AboutSettings() {
+export function AboutSettings({ desktopOnly = false }) {
   return (
     <section className="settings-pane active animate-fade-in">
       <div className="mb-4 border-bottom pb-3">
@@ -36,8 +36,8 @@ export function AboutSettings() {
               <h6 className="fw-bold mb-3">System Information</h6>
               <ul className="list-unstyled mb-0">
                 <li className="mb-2 text-muted"><strong className="text-dark">Architecture:</strong> x64</li>
-                <li className="mb-2 text-muted"><strong className="text-dark">Runtimes:</strong> Native, Docker, and Desktop</li>
-                <li className="mb-2 text-muted"><strong className="text-dark">Engine:</strong> Node.js + Python 3.12</li>
+                <li className="mb-2 text-muted"><strong className="text-dark">Runtimes:</strong> {desktopOnly ? "Bundled native llama.cpp" : "Native, Docker, and Desktop"}</li>
+                <li className="mb-2 text-muted"><strong className="text-dark">Engine:</strong> {desktopOnly ? "Electron + bundled native backend" : "Node.js + Python 3.12"}</li>
                 <li className="mb-0 text-muted"><strong className="text-dark">UI Framework:</strong> React + Vite</li>
               </ul>
             </Card.Body>

@@ -82,6 +82,7 @@ class RuntimeManifest:
     architecture: str = "x86_64"
     executable: str = _DEFAULT_EXECUTABLE
     manifest_id: str | None = None
+    bundled_path: str | None = None
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> "RuntimeManifest":
@@ -98,6 +99,7 @@ class RuntimeManifest:
             architecture=str(payload.get("architecture") or "x86_64"),
             executable=str(payload.get("executable") or _DEFAULT_EXECUTABLE),
             manifest_id=_optional_string(payload.get("manifest_id", payload.get("id"))),
+            bundled_path=_optional_string(payload.get("bundled_path", payload.get("bundledPath"))),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -111,6 +113,7 @@ class RuntimeManifest:
             "license": self.license,
             "executable": self.executable,
             **({"manifest_id": self.manifest_id} if self.manifest_id else {}),
+            **({"bundled_path": self.bundled_path} if self.bundled_path else {}),
         }
 
     @property
@@ -129,6 +132,10 @@ class RuntimeManifest:
             raise AppError("runtime_manifest_invalid", "A runtime manifest must identify its license.")
         if not self.executable or Path(self.executable).is_absolute():
             raise AppError("runtime_manifest_invalid", "The runtime executable must be a relative path.")
+        if self.bundled_path:
+            bundled = Path(self.bundled_path)
+            if bundled.is_absolute() or bundled.drive or ".." in bundled.parts:
+                raise AppError("runtime_manifest_invalid", "The bundled runtime path must stay relative to the package resources.")
         for asset in self.assets:
             if not asset.name or Path(asset.name).name != asset.name:
                 raise AppError("runtime_manifest_invalid", f"Runtime asset name is invalid: {asset.name!r}.")

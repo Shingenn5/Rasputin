@@ -4,7 +4,7 @@ import { DashSidebar } from "./shell/DashSidebar.jsx";
 import { CommandPalette } from "./CommandPalette.jsx";
 
 export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust, commandPaletteProps }) {
-  const nativeRuntime = sidebarProps?.runtimeMode === "native";
+  const nativeRuntime = Boolean(sidebarProps?.desktopOnly) || sidebarProps?.runtimeMode === "native";
   const mobileSidebarTriggerRef = React.useRef(null);
   const mainContentRef = React.useRef(null);
   const motionKey = `${sidebarProps?.view || "home"}:${sidebarProps?.settingsSection || ""}`;

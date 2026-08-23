@@ -62,6 +62,7 @@ export function DashSidebar({
   newTask,
   locked,
   runtimeMode = "docker",
+  desktopOnly = false,
   motionMode = "full",
   mobileOpen = false,
   mobileTriggerRef,
@@ -78,7 +79,7 @@ export function DashSidebar({
   const taskAccess = canRunTasks(role);
   const visibleNavGroups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => canAccessView(role, item.view)),
+    items: group.items.filter((item) => canAccessView(role, item.view) && (!desktopOnly || item.view !== "warsat")),
   })).filter((group) => group.items.length > 0);
   const asideRef = useRef(null);
   const wasMobileOpenRef = useRef(mobileOpen);
@@ -102,7 +103,7 @@ export function DashSidebar({
   const isActive = (item) =>
     view === item.view && (item.view !== "settings" || settingsSection === item.section);
   const sessions = (recentSessions || []).slice(0, 12);
-  const nativeRuntime = runtimeMode === "native";
+  const nativeRuntime = desktopOnly || runtimeMode === "native";
   const RuntimeIcon = nativeRuntime ? Laptop : Box;
 
   const navBtn = (item) => {

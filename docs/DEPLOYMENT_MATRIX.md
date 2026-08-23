@@ -104,9 +104,9 @@ The controller waits for /api/health, attempts a graceful Uvicorn shutdown, and 
 process-tree termination only after a timeout. Fresh credentials are printed once by the start
 command and are not written to the persistent host log.
 
-Desktop and Native Server share this data store deliberately; never open two independent backends
-against it. If Native Server is already running, Electron attaches to its stable URL. Native Host
-refuses to start when an Electron-owned backend already holds the store.
+Desktop and Native Server use the same native data-store convention, but they must not run as two
+independent backends against the same store. The installed Desktop application owns its packaged
+backend; Native Server is a separate source-development/server shape.
 
 Start-at-login is available for the current Windows user:
 
@@ -121,8 +121,9 @@ For direct LAN access, generate HTTPS first and then use -Lan. Plain HTTP LAN mo
 
 ## Desktop (Windows)
 
-Desktop is an Electron lifecycle shell around the same native backend and frontend. It binds to
-loopback, manages the backend from the window/tray, and uses the native data store.
+Desktop is the self-contained Windows daily-driver. Electron owns the window, tray, packaged
+PyInstaller backend, and bundled llama.cpp engine; all backend traffic stays on an internal loopback
+port and models are loaded directly from local GGUF files.
 
 ~~~powershell
 npm run desktop
@@ -130,8 +131,9 @@ npm run desktop:package:dir
 npm run desktop:package
 ~~~
 
-Packages are currently unsigned and may trigger a Windows publisher warning. The packaged target
-does not need Python or Node, but Docker is still required for Action Skills and WarSat.
+Packages are currently unsigned and may trigger a Windows publisher warning. The installed target
+does not need Python, Node, Docker, WSL, or a separate llama.cpp install. The only user-initiated
+network download in the model workflow is the model weight selected from the catalog.
 
 ## Private remote access
 

@@ -75,6 +75,9 @@ def load():
 def save(data):
     merged = defaults()
     merged.update(_normalize(data))
+    desktop_only = str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
+    if desktop_only:
+        merged["allow_docker_control"] = False
     with _lock:
         store.set_kv("security", merged)
     return merged

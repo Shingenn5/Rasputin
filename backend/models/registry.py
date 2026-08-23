@@ -23,6 +23,10 @@ from backend.core.datadir import data_dir
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
 REGISTRY_FILE = DATA_DIR / "models.json"
+def _desktop_only():
+    return str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 MODEL_ROLES = [
     "main",
     "planner",
@@ -432,7 +436,7 @@ def _public_model(model):
 def all_models():
     data = _load()
     out = []
-    docker_allowed = security.load().get("allow_docker_control", False)
+    docker_allowed = bool(security.load().get("allow_docker_control", False)) and not _desktop_only()
     for m in data["models"]:
         item = _public_model(m)
         item["url"] = chat_url(item)
@@ -608,6 +612,13 @@ def upsert(model):
         model["role"] = "helper"
     model.setdefault("provider", "openai-compatible")
     model.setdefault("runtime", "external-local")
+    runtime = str(model.get("runtime") or "").strip().lower()
+    if _desktop_only() and (runtime == "docker-llamacpp" or runtime.startswith("warsat-")):
+        raise AppError(
+            "desktop_native_only",
+            "Rasputin Desktop accepts native llama.cpp or external local endpoints, not Docker-backed models.",
+            409,
+        )
     model.setdefault("enabled", True)
     model.setdefault("managed", False)
     if not model.get("name"):

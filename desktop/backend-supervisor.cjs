@@ -239,9 +239,12 @@ class BackendSupervisor extends EventEmitter {
   async start() {
     if (this.child || this.attachedToNativeHost) return this.url;
     await this.recoverAbandonedDesktopRuntime();
-    if (await this.attachToNativeHost()) return this.url;
 
     const packaged = Boolean(this.backendExecutable && fs.existsSync(this.backendExecutable));
+    // Packaged Rasputin Desktop owns its self-contained backend. The native-host
+    // attachment remains available only for repository development compatibility.
+    if (!packaged && await this.attachToNativeHost()) return this.url;
+
     const serverPath = path.join(this.projectRoot, "server.py");
     const frontendPath = path.join(this.projectRoot, "frontend", "index.html");
     if (!packaged && !fs.existsSync(serverPath)) {
@@ -266,6 +269,13 @@ class BackendSupervisor extends EventEmitter {
       : { ...resolvePython(this.projectRoot), args: [serverPath], cwd: this.projectRoot };
     const port = this.requestedPort || await findFreePort();
     this.url = `http://localhost:${port}`;
+    const bundledLlamaRoot = packaged && process.resourcesPath
+      ? path.join(process.resourcesPath, "llama")
+      : null;
+    const bundledLlamaManifest = packaged && process.resourcesPath
+      ? path.join(process.resourcesPath, "llama", "manifest.json")
+      : null;
+
 
     const environment = {
       ...process.env,
@@ -276,6 +286,8 @@ class BackendSupervisor extends EventEmitter {
       RASPUTIN_DESKTOP: "1",
       RASPUTIN_DESKTOP_ONLY: "1",
       RASPUTIN_HTTPS: "0",
+      ...(bundledLlamaRoot ? { RASPUTIN_LLAMA_BUNDLED_DIR: bundledLlamaRoot } : {}),
+      ...(bundledLlamaManifest ? { RASPUTIN_LLAMA_CPP_MANIFEST: bundledLlamaManifest } : {}),
     };
     delete environment.WRAPPER_RUNTIME;
     delete environment.RASPUTIN_TLS_CERT_FILE;

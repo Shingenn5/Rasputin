@@ -429,11 +429,12 @@ def _docker_info_checks(docker_path, docker_version):
 
 
 def hardware_probe():
+    desktop_only = _truthy_env("RASPUTIN_DESKTOP_ONLY")
     cfg = security.load()
-    docker_path = _docker_cli_path()
+    docker_path = None if desktop_only else _docker_cli_path()
     docker_version_raw = _probe_command(["docker", "version", "--format", "{{json .}}"], timeout=10) if docker_path else {"ok": False, "stdout": "", "stderr": ""}
     docker_version = _json_object(docker_version_raw.get("stdout"))
-    checks, detected = _docker_info_checks(docker_path, docker_version)
+    checks, detected = _docker_info_checks(docker_path, docker_version) if not desktop_only else ([], {})
 
     detected.update({
         "os": platform.system(),
@@ -442,17 +443,28 @@ def hardware_probe():
         "insideDocker": os.environ.get("WRAPPER_RUNTIME") == "docker",
     })
 
-    docker_control_enabled = bool(cfg.get("allow_docker_control", False))
-    checks.append(_check(
-        "dockerControl",
-        "Docker Control Permission",
-        "pass" if docker_control_enabled else "block",
-        "Docker control is enabled in Safety settings." if docker_control_enabled else "Docker control is disabled in Safety settings.",
-        {"enabled": docker_control_enabled},
-        "Enable Docker control only when you are ready for Rasputin to request approved container actions." if not docker_control_enabled else "",
-    ))
+    docker_control_enabled = bool(cfg.get("allow_docker_control", False)) and not desktop_only
+    if desktop_only:
+        checks.append(_check(
+            "dockerControl",
+            "Docker Control Permission",
+            "skip",
+            "Docker is not part of the Rasputin Desktop runtime.",
+            {"enabled": False, "desktopOnly": True},
+        ))
+    else:
+        checks.append(_check(
+            "dockerControl",
+            "Docker Control Permission",
+            "pass" if docker_control_enabled else "block",
+            "Docker control is enabled in Safety settings." if docker_control_enabled else "Docker control is disabled in Safety settings.",
+            {"enabled": docker_control_enabled},
+            "Enable Docker control only when you are ready for Rasputin to request approved container actions." if not docker_control_enabled else "",
+        ))
 
-    if docker_path and docker_version_raw.get("ok"):
+    if desktop_only:
+        pass
+    elif docker_path and docker_version_raw.get("ok"):
         docker_info_raw = _probe_command(["docker", "info", "--format", "{{json .}}"], timeout=10)
         info = _json_object(docker_info_raw.get("stdout"))
         runtimes = info.get("Runtimes") or {}
@@ -479,7 +491,7 @@ def hardware_probe():
             {"count": len(managed)},
             "Check Docker daemon access if managed containers should be visible." if not ps.get("ok") else "",
         ))
-    else:
+    elif not desktop_only:
         detected["dockerRuntimes"] = []
         checks.append(_check(
             "dockerGpuRuntime",
@@ -508,8 +520,8 @@ def hardware_probe():
         if gpu_raw.get("ok"):
             gpus = _parse_gpu_csv(gpu_raw.get("stdout", ""))
     else:
-        gpus = _gpu_probe_via_docker()
-        probed_via_docker = bool(gpus)
+        gpus = [] if desktop_only else _gpu_probe_via_docker()
+        probed_via_docker = bool(gpus) and not desktop_only
     detected["gpus"] = gpus
     detected["gpuProbeSource"] = "nvidia-smi" if nvidia_smi and gpus else "docker-nvidia-smi" if probed_via_docker else "unknown"
     if gpus:
@@ -535,8 +547,12 @@ def hardware_probe():
             "hostGpu",
             "GPU Visibility",
             "warn",
+            "nvidia-smi is not available in this Rasputin runtime, so GPU details could not be collected."
+            if desktop_only else
             "nvidia-smi is not available inside this Rasputin runtime, and the Docker GPU probe found nothing.",
             {},
+            "CPU deployment can still work. Install the host NVIDIA driver tools to enable GPU placement."
+            if desktop_only else
             "CPU deployment can still work. For GPU deployment, expose NVIDIA tools/runtime to the container.",
         ))
 
@@ -2123,6 +2139,12 @@ def _streamed_pull(pull_cmd):
 
 
 def _validate_deploy_plan(plan):
+    if _truthy_env("RASPUTIN_DESKTOP_ONLY"):
+        raise AppError(
+            "desktop_native_only",
+            "Rasputin Desktop uses its bundled native llama.cpp runtime; Docker deployments are unavailable.",
+            409,
+        )
     if not isinstance(plan, dict):
         raise AppError("warsat_plan_invalid", "Create a launch plan before deploying.", 400)
     admission = plan.get("resourceAdmission") or plan.get("resource_admission") or {}

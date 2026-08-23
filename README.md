@@ -17,7 +17,7 @@ managed native server and a desktop application are also available on Windows.
 
 | Platform | Recommended path | Host requirements | Default URL |
 | --- | --- | --- | --- |
-| Windows | Docker Server, or Native Server/Desktop for direct Windows folders | Docker Desktop for Docker; Python 3.12+ for native; Node 22+ for source builds | Docker http://127.0.0.1:8787; native http://localhost:8788 |
+| Windows | Rasputin Desktop installer for the local daily-driver; Docker Server for shared/server mode | Desktop: no Python, Node, Docker, WSL, or separate llama.cpp; source builds use Python 3.12+ and Node 22+ | Desktop: internal loopback; Docker http://127.0.0.1:8787 |
 | macOS | Docker Server | Docker Desktop; Git or curl/unzip for installation | http://127.0.0.1:8787 |
 | Linux | Docker Server | Docker Engine plus the Compose v2 plugin; Git or curl/unzip for installation | http://127.0.0.1:8787 |
 
@@ -416,7 +416,12 @@ This is a current-user startup entry, not a Windows service. The user must remai
 
 ### Desktop
 
-Desktop is an Electron window/tray around the same native backend and data store:
+The installed Desktop application is the recommended Windows daily-driver. It owns its packaged
+backend and bundled native llama.cpp runtime; it does not require a terminal, localhost server,
+Docker, WSL, Python, Node, or a separately installed llama.cpp. Downloaded model weights remain
+managed from the in-app catalog.
+
+For repository development only:
 
 ~~~powershell
 py -3.12 -m venv .venv
@@ -425,8 +430,8 @@ npm ci
 npm run desktop
 ~~~
 
-Build a Windows package with npm run desktop:package. The current package is unsigned and may
-show a Windows publisher warning. See docs/DESKTOP_ARCHITECTURE.md.
+Build the self-contained Windows installer with npm run desktop:package. The current package is
+unsigned and may show a Windows publisher warning. See docs/DESKTOP_ARCHITECTURE.md.
 
 ## Source development on any platform
 

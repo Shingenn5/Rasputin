@@ -1,3 +1,5 @@
+import os
+
 from .base import DeploymentProvider
 from .docker import DockerProvider
 from .native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME
@@ -14,6 +16,9 @@ def get_provider(model: dict) -> DeploymentProvider:
         raise ValueError("Model is external/unmanaged and has no deployment provider.")
 
     runtime = model.get("runtime")
+    desktop_only = str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
+    if desktop_only and (runtime == "docker-llamacpp" or str(runtime or "").startswith("warsat-")):
+        raise ValueError("Desktop mode supports only native llama.cpp deployments.")
     if runtime == NATIVE_RUNTIME:
         return _native_llamacpp_provider
     # WarSat registers deployed models with runtime f"warsat-{protocol['runtime']}"

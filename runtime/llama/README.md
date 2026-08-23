@@ -1,12 +1,15 @@
 # Native llama.cpp runtime manifest
 
-This directory contains only the pinned `manifest.json` contract. It does not
-bundle `llama-server.exe` or any runtime binaries. On first use, Rasputin Desktop
-selects a CPU or compatible CUDA asset, downloads it over HTTPS, verifies its
-SHA-256, runs `llama-server --version`, and records the install under the user
-data directory.
+The manifest pins the Windows llama.cpp CPU and CUDA builds used by the desktop
+installer. The prepare-desktop-runtime.ps1 build step downloads and verifies
+those assets at build time, flattens each verified runtime into bundled/, and
+runs llama-server --version before electron-builder packages the application.
 
-The same manifest is used from a development checkout and from packaged
-Electron resources. If installation is incomplete or the active executable is
-missing, the runtime status remains repairable instead of reporting a bundled
-runtime.
+The shipped Windows installer therefore contains the native inference engine;
+an end user does not install Docker, Python, Node, or llama.cpp separately.
+Model weights remain user-selected downloads from the model catalog.
+
+The manifest is also retained for runtime identity and compatibility selection.
+Development checkouts may still use the repository's native Python launch path,
+but the packaged Electron application resolves its engine exclusively from the
+bundled runtime directory.

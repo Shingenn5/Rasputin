@@ -82,11 +82,18 @@ export function SettingsView(props) {
     session,
   } = props;
   const isAdmin = session?.role === "admin";
+  const desktopOnly = Boolean(security?.desktopOnly);
   const allowedSettings = useMemo(
-    () => isAdmin ? settingsItems : settingsItems.filter(([id]) => ["accounts", "about"].includes(id)),
-    [isAdmin],
+    () => {
+      const allowed = isAdmin ? settingsItems : settingsItems.filter(([id]) => ["accounts", "about"].includes(id));
+      return desktopOnly ? allowed.filter(([id]) => id !== "deployments") : allowed;
+    },
+    [desktopOnly, isAdmin],
   );
-  const activeSetting = allowedSettings.find(([id]) => id === section) || allowedSettings[0] || settingsItems[0];
+  const effectiveSection = allowedSettings.some(([id]) => id === section)
+    ? section
+    : allowedSettings[0]?.[0] || "general";
+  const activeSetting = allowedSettings.find(([id]) => id === effectiveSection) || allowedSettings[0] || settingsItems[0];
   const activeInspector = getInspectorText(activeSetting[0]);
   const ActiveIcon = iconMap[activeSetting[0]] || Settings2;
   const [searchQuery, setSearchQuery] = useState("");
@@ -314,9 +321,9 @@ export function SettingsView(props) {
                     <button
                       key={id}
                       type="button"
-                      className={`settings-nav-item ${section === id ? "is-active" : ""}`}
+                      className={`settings-nav-item ${effectiveSection === id ? "is-active" : ""}`}
                       data-testid={`settings-${id}`}
-                      aria-current={section === id ? "page" : undefined}
+                      aria-current={effectiveSection === id ? "page" : undefined}
                       onClick={() => setSection(id)}
                     >
                       <span className="settings-nav-icon"><Icon size={17} /></span>
@@ -351,7 +358,7 @@ export function SettingsView(props) {
           </div>
 
           <div className="settings-panel-surface">
-            {section === "general" && (
+            {effectiveSection === "general" && (
               <GeneralSettings
                 theme={theme}
                 setTheme={setTheme}
@@ -361,17 +368,17 @@ export function SettingsView(props) {
                 updateTestingMode={updateTestingMode}
               />
             )}
-            {section === "runtime" && <RuntimeSettings />}
-            {section === "security" && <SecuritySettings />}
-            {section === "accounts" && <AccountsSettings session={session} />}
-            {section === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
-            {section === "deployments" && <DeploymentSettings />}
-            {section === "integrations" && <IntegrationSettings />}
-            {section === "resources" && <ResourceSettings />}
-            {section === "notifications" && <NotificationSettings />}
-            {section === "audit" && <AuditSettings />}
-            {section === "diagnostics" && <DiagnosticsSettings />}
-            {section === "about" && <AboutSettings />}
+            {effectiveSection === "runtime" && <RuntimeSettings />}
+            {effectiveSection === "security" && <SecuritySettings desktopOnly={desktopOnly} />}
+            {effectiveSection === "accounts" && <AccountsSettings session={session} />}
+            {effectiveSection === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
+            {effectiveSection === "deployments" && <DeploymentSettings />}
+            {effectiveSection === "integrations" && <IntegrationSettings />}
+            {effectiveSection === "resources" && <ResourceSettings />}
+            {effectiveSection === "notifications" && <NotificationSettings />}
+            {effectiveSection === "audit" && <AuditSettings />}
+            {effectiveSection === "diagnostics" && <DiagnosticsSettings />}
+            {effectiveSection === "about" && <AboutSettings desktopOnly={desktopOnly} />}
           </div>
         </main>
       </div>

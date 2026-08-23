@@ -4,7 +4,7 @@ import { ShieldCheck, Lock, Unlock, Key, FileCheck2, Globe, Server, AlertTriangl
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting, rotateSecrets } from "./settingsActions.js";
 
-export function SecuritySettings() {
+export function SecuritySettings({ desktopOnly = false }) {
   const security = useSettingsStore(state => state.security);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.security);
@@ -128,6 +128,7 @@ export function SecuritySettings() {
                       <Form.Check type="switch" id="allow-remote-models" checked={!!security?.allow_remote_models} onChange={() => handleToggle("allow_remote_models")} />
                     </td>
                   </tr>
+                  {!desktopOnly && (
                   <tr>
                     <td className="ps-4">
                       <div className="fw-medium"><Box size={16} className="me-2 text-danger"/>WarSat Docker Control</div>
@@ -140,6 +141,17 @@ export function SecuritySettings() {
                       <Form.Check type="switch" id="allow-docker-control" checked={!!security?.allow_docker_control} onChange={() => handleToggle("allow_docker_control")} />
                     </td>
                   </tr>
+                  )}
+                  {desktopOnly && (
+                    <tr data-testid="native-runtime-row">
+                      <td className="ps-4">
+                        <div className="fw-medium"><Server size={16} className="me-2 text-success"/>Native llama.cpp Runtime</div>
+                        <div className="text-muted small">Bundled with this desktop application; Docker and separate runtime installs are unavailable.</div>
+                      </td>
+                      <td><Badge bg="success">Bundled</Badge></td>
+                      <td className="text-end pe-4"><span className="text-muted small">Managed by Rasputin Desktop</span></td>
+                    </tr>
+                  )}
                   <tr>
                     <td className="ps-4">
                       <div className="fw-medium"><FileCheck2 size={16} className="me-2 text-warning"/>File Modifications</div>

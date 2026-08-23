@@ -150,6 +150,32 @@ class RuntimeServiceTests(unittest.TestCase):
                 service.select({"platform": "windows", "architecture": "x64", "accelerators": ["cuda"]})
             self.assertEqual(unsupported.exception.code, "runtime_accelerator_unsupported")
 
+    def test_bundled_runtime_is_ready_without_downloading_or_installing(self):
+        bundled_manifest = RuntimeManifest.from_dict({
+            **manifest(b"bundled").to_dict(),
+            "manifest_id": "bundled-cpu",
+            "bundled_path": "bundled/cpu",
+        })
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = root / "bundled" / "cpu"
+            bundle.mkdir(parents=True)
+            executable = bundle / "llama-server.exe"
+            executable.write_bytes(b"bundled runtime")
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps({"runtimes": [bundled_manifest.to_dict()]}), encoding="utf-8")
+
+            service = LlamaCppRuntimeService(root=root / "state", manifest_path=manifest_path)
+            with patch("backend.runtime.runtime_service._default_http_downloader", side_effect=AssertionError("bundled runtime must not download")):
+                status = service.status()
+                record = service.install(bundled_manifest)
+
+            self.assertEqual(status["state"], "ready")
+            self.assertTrue(status["bundled"])
+            self.assertEqual(service.bundled_engine_path(), str(executable.resolve()))
+            self.assertEqual(service.active_engine_path(), str(executable.resolve()))
+            self.assertTrue(record["bundled"])
+
     def test_status_exposes_first_run_and_repair_states(self):
         with TemporaryDirectory() as tmp:
             manifest_path = Path(tmp) / "manifest.json"
