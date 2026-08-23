@@ -8,6 +8,7 @@ import {
   FileWarning,
   Info,
   Plug,
+  Network,
   RefreshCw,
   Rocket,
   Search,
@@ -28,6 +29,7 @@ import { DeploymentSettings } from "./DeploymentSettings.jsx";
 import { RuntimeSettings } from "./RuntimeSettings.jsx";
 import { ModelSettings } from "./ModelSettings.jsx";
 import { IntegrationSettings } from "./IntegrationSettings.jsx";
+import { McpSettings } from "./McpSettings.jsx";
 import { ResourceSettings } from "./ResourceSettings.jsx";
 import { NotificationSettings } from "./NotificationSettings.jsx";
 import { AuditSettings } from "./AuditSettings.jsx";
@@ -43,6 +45,7 @@ const iconMap = {
   models: BrainCircuit,
   deployments: Rocket,
   integrations: Plug,
+  mcp: Network,
   resources: ServerIcon,
   notifications: Bell,
   audit: FileWarning,
@@ -54,7 +57,7 @@ const settingGroups = [
   { label: "Experience", ids: ["general", "notifications"] },
   { label: "Intelligence", ids: ["models", "runtime", "resources"] },
   { label: "Governance", ids: ["security", "accounts", "audit", "diagnostics"] },
-  { label: "Platform", ids: ["deployments", "integrations", "about"] },
+  { label: "Platform", ids: ["deployments", "integrations", "mcp", "about"] },
 ];
 
 function isPlainSettingsObject(value) {
@@ -80,6 +83,19 @@ export function SettingsView(props) {
     updateTestingMode,
     security,
     session,
+    workspaceRoots,
+    mcpRelays,
+    registerMcpRelay,
+    registerMcpFixture,
+    startMcpRelay,
+    stopMcpRelay,
+    restartMcpRelay,
+    removeMcpRelay,
+    discoverMcpRelay,
+    testMcpRelay,
+    classifyMcpTool,
+    callMcpTestTool,
+    go,
   } = props;
   const isAdmin = session?.role === "admin";
   const desktopOnly = Boolean(security?.desktopOnly);
@@ -374,6 +390,23 @@ export function SettingsView(props) {
             {effectiveSection === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
             {effectiveSection === "deployments" && <DeploymentSettings />}
             {effectiveSection === "integrations" && <IntegrationSettings />}
+            {effectiveSection === "mcp" && (
+              <McpSettings
+                mcpRelays={mcpRelays}
+                workspaceRoots={workspaceRoots}
+                registerMcpRelay={registerMcpRelay}
+                registerMcpFixture={registerMcpFixture}
+                startMcpRelay={startMcpRelay}
+                stopMcpRelay={stopMcpRelay}
+                restartMcpRelay={restartMcpRelay}
+                removeMcpRelay={removeMcpRelay}
+                discoverMcpRelay={discoverMcpRelay}
+                testMcpRelay={testMcpRelay}
+                classifyMcpTool={classifyMcpTool}
+                callMcpTestTool={callMcpTestTool}
+                go={go}
+              />
+            )}
             {effectiveSection === "resources" && <ResourceSettings />}
             {effectiveSection === "notifications" && <NotificationSettings />}
             {effectiveSection === "audit" && <AuditSettings />}
@@ -395,6 +428,7 @@ function getInspectorText(section) {
     models: { desc: "Register intelligence providers and choose how work routes between them.", validation: "Provider and model availability", impact: "Changes inference routing", deps: ["Runtime", "Tasks"] },
     deployments: { desc: "Define how isolated WarSat workers are created and operated.", validation: "Container deployment schema", impact: "Applies to newly created workers", deps: ["WarSat", "Models"] },
     integrations: { desc: "Connect Rasputin to the external services that extend your workflow.", validation: "Endpoint and credential checks", impact: "Changes available external actions", deps: ["Security"] },
+    mcp: { desc: "Register local or Streamable HTTP Model Context Protocol servers and govern their tools.", validation: "Transport, approval, and tool policy checks", impact: "Changes the tools available to agentic runs", deps: ["Security", "Workspaces"] },
     resources: { desc: "Set practical hardware ceilings for predictable local performance.", validation: "Host capacity and numeric bounds", impact: "May reduce task concurrency", deps: ["Runtime"] },
     notifications: { desc: "Decide which system events deserve your attention and where they appear.", validation: "Channel and event mapping", impact: "Changes alert delivery only", deps: ["Activity"] },
     audit: { desc: "Configure the durable record of agent actions and security-sensitive events.", validation: "Retention and storage policy", impact: "Changes compliance records", deps: ["Security", "Activity"] },

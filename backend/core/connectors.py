@@ -2,6 +2,7 @@ from urllib.parse import urlsplit
 
 from backend.core import audit
 from backend.core import runtime_store as store
+from backend.core import security
 
 PROVIDERS = {
     "gmail": {
@@ -148,6 +149,22 @@ def test_connector(owner_id, connector_id):
             if provider == "github"
             else "Webhook configuration is valid. No external payload was sent during this check."
         )
+        if provider == "github" and not missing:
+            try:
+                security.require("allow_github_read")
+                if security.load().get("offline_lock"):
+                    raise PermissionError("offline_lock blocks GitHub access")
+                from backend.core.github_read import _get
+                profile = _get("/user", credentials.get("token"))
+                login = str(profile.get("login") or "account")
+                status = "ready"
+                message = f"GitHub token verified for @{login}. Read-only repository access is available."
+            except PermissionError as exc:
+                status = "blocked"
+                message = str(exc)
+            except (RuntimeError, ValueError) as exc:
+                status = "error"
+                message = str(exc)
         stamp = store.now()
         conn.execute(
             "UPDATE connectors SET status=?,last_tested_at=?,last_error=?,updated_at=? WHERE id=?",

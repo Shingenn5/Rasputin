@@ -81,6 +81,11 @@ async def mcp_servers_start(server_id: str, req: McpServerActionIn | None = None
 async def mcp_servers_stop(server_id: str, _user=Depends(require_admin)):
     return ok(await mcp_relay.stop(server_id))
 
+@mcp_router.delete("/mcp/servers/{server_id}")
+
+async def mcp_servers_delete(server_id: str, _user=Depends(require_admin)):
+    return ok(await mcp_relay.remove(server_id))
+
 @mcp_router.post("/mcp/servers/{server_id}/restart")
 
 async def mcp_servers_restart(server_id: str, req: McpServerActionIn | None = None, _user=Depends(require_admin)):

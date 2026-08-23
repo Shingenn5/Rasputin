@@ -18,6 +18,7 @@ from backend.mcp import tools as tool_relay
 from backend.core import runtime_store as store
 from backend.core.response import AppError
 from backend.core.datadir import data_dir
+from backend.core import workspace as workspace_store
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = data_dir()
@@ -175,7 +176,7 @@ def _normalize_server(server):
     server.setdefault("command", "")
     server.setdefault("args", [])
     server.setdefault("env", {})
-    server.setdefault("cwd", str(ROOT))
+    server.setdefault("cwd", _mcp_default_cwd())
     server.setdefault("enabled", False)
     server.setdefault("command_approved", transport == "internal")
     server.setdefault("status", "available" if transport == "internal" else "registered")
@@ -248,6 +249,7 @@ def _public(server):
         "health": "running" if running else (server.get("health") or "unknown"),
         "lastError": server.get("last_error") or "",
         "toolCount": tool_count,
+        "tools": [public_tool(tool, server) for tool in server.get("tools") or []],
         "resourcesCount": resources_count,
         "promptsCount": prompts_count,
         "resources": server.get("resources") or [],
@@ -270,6 +272,19 @@ def servers():
         "servers": [_public(item) for item in data.get("servers", [])],
         "registryFile": str(REGISTRY_FILE),
     }
+
+
+async def remove(server_id):
+    data = _load()
+    server = _find(data, server_id)
+    if server.get("id") == "rasputin-tool-relay":
+        raise AppError("mcp_internal_relay_required", "The internal Rasputin Tool Relay cannot be removed.", 400)
+    await stop(server_id)
+    data = _load()
+    data["servers"] = [item for item in data.get("servers", []) if item.get("id") != server_id]
+    _save(data)
+    audit.log("mcp_relay_removed", {"id": server_id})
+    return {"deleted": True, "id": server_id}
 
 
 def _find(data, server_id):
@@ -304,15 +319,47 @@ def _command_text(server):
     return " ".join([command, *[shlex.quote(str(item)) for item in args]]).strip()
 
 
+def _mcp_allowed_roots():
+    roots = {ROOT.resolve(), data_dir().resolve()}
+    try:
+        approved = workspace_store.approved_roots(None, True).get("roots") or []
+    except Exception:
+        approved = []
+    for item in approved:
+        raw = item.get("absolute_path") if isinstance(item, dict) else None
+        if raw:
+            try:
+                roots.add(Path(raw).expanduser().resolve())
+            except OSError:
+                continue
+    return {item for item in roots if item.exists() and item.is_dir()}
+
+
+def _mcp_default_cwd():
+    try:
+        active = workspace_store.get_active("admin", True)
+        path = active.get("absolute_path") if isinstance(active, dict) else None
+        if path and Path(path).expanduser().resolve().is_dir():
+            return str(Path(path).expanduser().resolve())
+    except Exception:
+        pass
+    return str(ROOT)
+
+
 def _resolve_cwd(cwd):
     if not cwd:
-        return str(ROOT)
+        return _mcp_default_cwd()
     target = Path(str(cwd)).expanduser()
     if not target.is_absolute():
-        target = ROOT / target
+        target = Path(_mcp_default_cwd()) / target
     target = target.resolve()
-    if target != ROOT and ROOT not in target.parents:
-        raise AppError("mcp_cwd_rejected", "MCP server cwd must stay inside the Rasputin project for this local-stdio pass.", 400)
+    allowed = _mcp_allowed_roots()
+    if not any(target == item or item in target.parents for item in allowed):
+        raise AppError(
+            "mcp_cwd_rejected",
+            "MCP server cwd must stay inside the packaged app or an approved Rasputin workspace.",
+            400,
+        )
     return str(target)
 
 
@@ -344,6 +391,7 @@ def register(payload):
     if not server_id:
         raise AppError("mcp_server_id_required", "MCP relay server id is required.", 400)
     transport = str(payload.get("transport") or "stdio").strip()
+    requested_cwd = _resolve_cwd(payload.get("cwd"))
     if transport not in _SUPPORTED_TRANSPORTS:
         raise AppError("mcp_transport_rejected", "Supported MCP transports are stdio and Streamable HTTP; legacy SSE is compatibility-only and unavailable.", 400)
     if transport in {"internal", "streamable_http"}:
@@ -356,7 +404,7 @@ def register(payload):
         approval = approvals.create("mcp_register", {
             "server": server_id,
             "command": " ".join([command, *args]),
-            "cwd": payload.get("cwd") or str(ROOT),
+            "cwd": requested_cwd,
         }, risk_level="approval_required", workspace=".")
         command_approved = False
         enabled = False
@@ -372,7 +420,7 @@ def register(payload):
         "command": command,
         "args": args,
         "env": _sanitize_env(payload.get("env") or {}),
-        "cwd": _resolve_cwd(payload.get("cwd")),
+        "cwd": requested_cwd,
         "enabled": enabled,
         "command_approved": command_approved,
         "status": status,
@@ -403,13 +451,18 @@ def register(payload):
 
 
 def register_operator_fixture():
-    script = ROOT / "backend" / "mcp" / "fixture.py"
+    if getattr(sys, "frozen", False):
+        command = sys.executable
+        args = ["--mcp-fixture"]
+    else:
+        command = sys.executable
+        args = [str(ROOT / "server.py"), "--mcp-fixture"]
     return register({
         "id": "operator-mcp-fixture",
         "name": "Operator MCP Fixture",
         "transport": "stdio",
-        "command": sys.executable,
-        "args": [str(script)],
+        "command": command,
+        "args": args,
         "cwd": str(ROOT),
         "enabled": False,
     })

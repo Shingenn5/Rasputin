@@ -1,4 +1,5 @@
 import os
+import sys
 
 import uvicorn
 
@@ -21,6 +22,11 @@ def _tls_config():
 
 
 if __name__ == "__main__":
+    if "--mcp-fixture" in sys.argv:
+        from backend.mcp.fixture import main as mcp_fixture_main
+
+        mcp_fixture_main()
+        raise SystemExit(0)
     tls = _tls_config()
     scheme = "https" if tls else "http"
     print(f"Rasputin: {scheme}://{HOST}:{PORT}")

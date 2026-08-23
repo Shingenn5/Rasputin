@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -106,6 +107,23 @@ class MultiUserTests(unittest.TestCase):
         self.assertEqual(connectors.list_connectors("bob"), [])
         checked = connectors.test_connector("alice", connector["id"])
         self.assertEqual(checked["status"], "ready_for_authorization")
+
+    def test_github_connector_check_verifies_read_only_token(self):
+        connector = connectors.save_connector(
+            "alice",
+            "github",
+            "Alice GitHub",
+            {},
+            {"token": "test-token"},
+        )
+        with patch("backend.core.connectors.security.require") as require, patch(
+            "backend.core.connectors.security.load", return_value={"offline_lock": False}
+        ), patch("backend.core.github_read._get", return_value={"login": "alice"}) as github_get:
+            checked = connectors.test_connector("alice", connector["id"])
+        self.assertEqual(checked["status"], "ready")
+        self.assertIn("@alice", checked["message"])
+        require.assert_called_once_with("allow_github_read")
+        github_get.assert_called_once_with("/user", "test-token")
 
     def test_task_queue_survives_restart_and_scopes_inbox(self):
         owner = "queue-owner"

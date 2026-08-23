@@ -18,6 +18,7 @@ export const settingsItems = [
   ["models", "Models", "AI governance"],
   ["deployments", "Deployments", "WarSat rules"],
   ["integrations", "Integrations", "external systems"],
+  ["mcp", "MCP Servers", "tools & servers"],
   ["resources", "Resources", "hardware limits"],
   ["notifications", "Notifications", "alerts"],
   ["audit", "Audit", "compliance"],
@@ -27,7 +28,7 @@ export const settingsItems = [
 
 // Keep the full settings catalog and its route ids stable, while giving the
 // normal settings surface a smaller, outcome-oriented starting point.
-export const settingsEssentialIds = ["general", "models", "runtime", "resources"];
+export const settingsEssentialIds = ["general", "models", "runtime", "resources", "integrations", "mcp"];
 
 export const themeOptions = [
   ["cyberpunk-neon", "Cyberpunk Neon", "Vibrant synthwave dark theme"],

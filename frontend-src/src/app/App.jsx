@@ -693,6 +693,20 @@ export function App() {
     return stopped;
   }
 
+  async function restartMcpRelay(server) {
+    const restarted = await postJson(`/api/mcp/servers/${server.id}/restart`, { approvalId: server?.pendingApprovalId || "" });
+    await Promise.allSettled([loadMcpRelays(), loadTools(), refreshApprovals()]);
+    setGlobalStatus(`${restarted.name || server.id} restarted.`);
+    return restarted;
+  }
+
+  async function removeMcpRelay(server) {
+    const removed = await api(`/api/mcp/servers/${encodeURIComponent(server.id)}`, { method: "DELETE" });
+    await Promise.allSettled([loadMcpRelays(), loadTools(), refreshApprovals()]);
+    setGlobalStatus(`${server.name || server.id} removed.`);
+    return removed;
+  }
+
   async function discoverMcpRelay(server) {
     const discovered = await postJson(`/api/mcp/servers/${server.id}/discover`, {});
     await Promise.allSettled([loadMcpRelays(), loadTools()]);
@@ -2887,6 +2901,8 @@ export function App() {
         registerMcpFixture={registerMcpFixture}
         startMcpRelay={startMcpRelay}
         stopMcpRelay={stopMcpRelay}
+        restartMcpRelay={restartMcpRelay}
+        removeMcpRelay={removeMcpRelay}
         discoverMcpRelay={discoverMcpRelay}
         testMcpRelay={testMcpRelay}
         classifyMcpTool={classifyMcpTool}

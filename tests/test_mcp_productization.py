@@ -4,6 +4,7 @@ import os
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _DATA = tempfile.TemporaryDirectory(prefix="rasputin-mcp-product-test-")
@@ -106,6 +107,23 @@ class McpProductizationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+    async def test_mcp_cwd_is_limited_to_packaged_or_approved_roots(self):
+        with self.assertRaises(AppError) as ctx:
+            relay.register({
+                "id": "outside-root",
+                "name": "Outside Root",
+                "transport": "stdio",
+                "command": "python",
+                "cwd": tempfile.gettempdir(),
+            })
+        self.assertEqual(ctx.exception.code, "mcp_cwd_rejected")
+
+    async def test_frozen_fixture_uses_packaged_backend_entrypoint(self):
+        with patch.object(relay.sys, "frozen", True, create=True), patch.object(relay.sys, "executable", "rasputin-backend.exe"):
+            registered = relay.register_operator_fixture()
+        self.assertEqual(registered["command"], "rasputin-backend.exe --mcp-fixture")
+        self.assertEqual(registered["args"], ["--mcp-fixture"])
 
     async def test_legacy_sse_is_explicitly_rejected(self):
         with self.assertRaises(AppError) as ctx:
