@@ -2515,6 +2515,26 @@ export function App() {
         taskCount: tasks.length,
         runningCount: runningTasks.length,
         workspaceName: activeWorkspaceName,
+        workspaceRoots,
+        activeWorkspacePath: workspace.activePath,
+        activeWorkspaceId: workspace.activeId || workspace.active_id,
+        onSelectProject: async (project) => {
+          await selectWorkspace(project.id || project.path || project.root);
+          go("chat");
+        },
+        graphifyProject: async (project) => {
+          const projectPath = project.path || project.root;
+          const projectName = project.displayName || project.display_name || project.name || displayWorkspaceName(projectPath);
+          setGlobalStatus(`Indexing and Graphifying ${projectName}...`);
+          try {
+            const result = await indexWorkspaceKnowledge(projectPath);
+            const docs = result?.rag?.documents ?? result?.documents ?? 0;
+            const nodes = result?.graph?.nodes ?? result?.nodes ?? 0;
+            setGlobalStatus(`${projectName} is ready - ${docs} indexed files - ${nodes} graph nodes.`);
+          } catch (error) {
+            setGlobalStatus(`Could not Graphify ${projectName}: ${error?.message || "unknown error"}`);
+          }
+        },
         modelName: displayModelName(selectedModelObject, models),
         locked: security.privacyLock,
         runtimeMode: security.desktopOnly || security.native ? "native" : "docker",

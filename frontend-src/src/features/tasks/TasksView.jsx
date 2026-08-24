@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 
 const activityTabs = ["History", "Queue", "All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
-const advancedActivityTabs = activityTabs.slice(1);
 
 export function ActivityView({
   view,
@@ -117,20 +116,21 @@ export function ActivityView({
         </div>
       </div>
 
-      <div className="activity-tabs-scroll flex items-center gap-2" role="tablist" aria-label="History views">
-        <UIButton role="tab" aria-selected={tab === "History"} variant={tab === "History" ? "default" : "outline"} size="sm" onClick={() => setTab("History")}>
-          History
-        </UIButton>
-        <details className="history-advanced-tabs">
-          <summary>Advanced history</summary>
-          <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Advanced history views">
-            {advancedActivityTabs.map(t => (
-              <UIButton key={t} role="tab" aria-selected={tab === t} variant={tab === t ? "default" : "outline"} size="sm" onClick={() => setTab(t)}>
-                {t}
-              </UIButton>
-            ))}
-          </div>
-        </details>
+      <div className="history-toolbar">
+        <div className="activity-tabs-scroll" role="tablist" aria-label="History views" data-testid="history-view-tabs">
+          {activityTabs.map((item) => (
+            <button
+              key={item}
+              type="button"
+              role="tab"
+              aria-selected={tab === item}
+              className={cn("history-view-tab", tab === item && "is-active")}
+              onClick={() => setTab(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
         <div className="flex-1" />
         {uiState.status !== 'idle' && (
           <Badge variant={uiState.status === 'failed' ? "down" : uiState.status === 'success' ? "up" : "muted"}>
@@ -142,7 +142,7 @@ export function ActivityView({
         </UIButton>
       </div>
 
-      <div className="w2-main-grid">
+      <div className="w2-main-grid history-main-grid">
         
         {/* MAIN COLUMN */}
         <div className="w2-column">
@@ -369,10 +369,12 @@ export function ActivityView({
         </div>
 
         {/* RIGHT COLUMN: Inspector / Monitor */}
-        <div className="w2-column">
-          <details className="history-advanced-disclosure">
-            <summary>Execution details{activeTasks.length ? " - " + activeTasks.length + " active" : ""}</summary>
-            <div className="flex flex-col gap-4">
+        <aside className="w2-column history-inspector" aria-label="Execution summary">
+          <header className="history-inspector-heading">
+            <span>Execution summary</span>
+            <Badge variant={activeTasks.length ? "muted" : "up"}>{activeTasks.length ? activeTasks.length + " active" : "Idle"}</Badge>
+          </header>
+          <div className="flex flex-col gap-4">
           
           {/* PHASE 3: Active Execution Monitor */}
           <div className="w2-section">
@@ -425,9 +427,8 @@ export function ActivityView({
               </div>
             </div>
           </div>
-            </div>
-          </details>
-        </div>
+          </div>
+        </aside>
 
       </div>
       </div>

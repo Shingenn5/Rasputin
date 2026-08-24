@@ -1047,13 +1047,13 @@ export function ModelsView({
 
   return (
     <section className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
-      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
+      <div className="models-page-shell fx-rise mx-auto flex w-full min-w-0 max-w-[1600px] flex-col">
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-5">
+      <div className="models-page-header">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Models</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Browse, download, and load local models. Advanced placement stays out of the way until you need it.</p>
+          <h1>Models</h1>
+          <p>Find a GGUF model, download it, and load it with the bundled llama.cpp runtime.</p>
         </div>
         <div className={desktopOnly ? "hidden" : "flex min-w-0 flex-wrap justify-end gap-3"}>
           {[
@@ -1071,9 +1071,10 @@ export function ModelsView({
       </div>
 
       {/* ── Tab Bar ── */}
-      <div className="flex items-center gap-2 overflow-x-auto" role="tablist" aria-label="Model management areas">
+      <div className="models-page-tabs" role="tablist" aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
+          const desktopLabel = { library: "Discover", installed: "My Models", running: "Loaded", settings: "Connections" }[t.id];
           return (
             <UIButton
               key={t.id}
@@ -1086,7 +1087,7 @@ export function ModelsView({
               type="button"
               onClick={() => setActiveTab(t.id)}
             >
-              <Icon size={15} /> {t.label}
+              <Icon size={15} /> {desktopOnly ? desktopLabel : t.label}
             </UIButton>
           );
         })}
@@ -1102,7 +1103,7 @@ export function ModelsView({
       </div>
 
       {/* ── Content ── */}
-      <div className="w2-main-grid">
+      <div className={desktopOnly ? "models-page-content" : "w2-main-grid"}>
         <div className="w2-column">
 
           {/* ═══ LIBRARY TAB ═══ */}
@@ -1133,7 +1134,7 @@ export function ModelsView({
                     </UIButton>
                   </div>
               {/* Source toggle */}
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div className="models-source-switcher">
                 <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
                   <HardDrive size={14} /> Local cache
                 </button>
@@ -1198,7 +1199,9 @@ export function ModelsView({
                 </select>
               </div>
 
-              <div className="model-vram-filter" data-testid="model-vram-filter">
+              <details className="model-hardware-filters">
+                <summary>Hardware fit filters</summary>
+                <div className="model-vram-filter" data-testid="model-vram-filter">
                 <span className="model-vram-filter__capacity" data-testid="model-placement-capacity">
                   Largest single GPU: <strong>{gpuCapacity.largestSingleGpuGb ? gpuCapacity.largestSingleGpuGb.toFixed(1) + " GB" : "unknown"}</strong>
                   {" · "}Optional combined layer-sharding pool: <strong>{totalVramGb > 0 ? totalVramGb.toFixed(1) + " GB" : "unknown"}</strong>
@@ -1246,7 +1249,8 @@ export function ModelsView({
                     Clear VRAM range
                   </button>
                 )}
-              </div>
+                </div>
+              </details>
 
               {/* Status line */}
               <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
@@ -1333,7 +1337,7 @@ export function ModelsView({
           {/* ═══ INSTALLED TAB ═══ */}
           {activeTab === "installed" && (
             <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section" style={{ flex: 1 }}>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div className="models-source-switcher">
                 <h2 style={{ margin: 0, fontSize: "1rem" }}>Local Registry</h2>
                 <div style={{ flex: 1 }} />
                 <button className="w2-button" type="button" onClick={handleScanGguf}><HardDrive size={14} /> Scan GGUF</button>
@@ -1372,7 +1376,7 @@ export function ModelsView({
                   <h3 style={{ margin: 0, fontSize: "0.875rem" }}>Active Deployments ({runningModels.length})</h3>
                   {runningModels.map(m => (
                     <div key={m.key} className="w2-list-item">
-                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <div className="models-source-switcher">
                         <Activity size={14} color="var(--ras-safe)" />
                         <div>
                           <strong style={{ fontSize: "0.8125rem" }}>{displayModelName(m, models)}</strong>
@@ -1478,18 +1482,21 @@ export function ModelsView({
 
         </div>
 
-        {/* ── Right Column (context) ── */}
-        <div className="w2-column">
-          <RightPanel
-            activeTab={activeTab}
-            activeModel={activeModel}
-            models={models}
-            healthy={healthy}
-            status={status}
-            warsatHardware={warsatHardware}
-            desktopOnly={desktopOnly}
-          />
-        </div>
+        {/* The desktop catalog already owns its detail inspector. Avoid a
+            second nested inspector; server mode retains the legacy context column. */}
+        {!desktopOnly && (
+          <div className="w2-column">
+            <RightPanel
+              activeTab={activeTab}
+              activeModel={activeModel}
+              models={models}
+              healthy={healthy}
+              status={status}
+              warsatHardware={warsatHardware}
+              desktopOnly={desktopOnly}
+            />
+          </div>
+        )}
       </div>
       </div>
       <ModelLoadDialog

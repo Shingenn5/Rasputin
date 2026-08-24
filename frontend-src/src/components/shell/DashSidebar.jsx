@@ -1,8 +1,10 @@
 import React, { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import {
+  BrainCircuit,
   Box,
   Clock,
+  Folder,
   FolderOpen,
   Laptop,
   LockKeyhole,
@@ -24,7 +26,7 @@ const NAV_GROUPS = [
     label: "Work",
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
-      { view: "workspaces", label: "Projects", icon: FolderOpen, testId: "nav-workspaces" },
+
       { view: "activity", label: "History", icon: Clock, testId: "nav-activity" },
       { view: "models", label: "Models", icon: Box, testId: "nav-models" },
     ],
@@ -54,6 +56,11 @@ export function DashSidebar({
   activeSessionId,
   session,
   logout,
+  workspaceRoots = [],
+  activeWorkspacePath = "",
+  activeWorkspaceId = "",
+  onSelectProject,
+  graphifyProject,
 }) {
   const role = normalizedRole(session?.role);
   const taskAccess = canRunTasks(role);
@@ -66,9 +73,9 @@ export function DashSidebar({
   const reducedMotion = motionMode === "reduced";
   // Collapsed mode is a deliberate, persistent rail. It never relies on hover
   // for access; the brand control is always keyboard-reachable and reopens it.
-  // Desktop uses a quiet, icon-only rail. The expanded treatment is reserved
-  // for the mobile drawer where labels are needed for touch navigation.
-  const expanded = mobileOpen;
+  // Mobile always opens as a labelled drawer. Desktop follows the persisted
+  // collapsed preference so the toggle changes both content and reserved space.
+  const expanded = mobileOpen || !collapsed;
 
   useEffect(() => {
     const wasMobileOpen = wasMobileOpenRef.current;
@@ -85,6 +92,7 @@ export function DashSidebar({
   const isActive = (item) =>
     view === item.view && (item.view !== "settings" || settingsSection === item.section);
   const sessions = (recentSessions || []).slice(0, 12);
+  const projects = (workspaceRoots || []).slice(0, 8);
   const nativeRuntime = desktopOnly || runtimeMode === "native";
   const RuntimeIcon = nativeRuntime ? Laptop : Box;
 
@@ -127,8 +135,8 @@ export function DashSidebar({
   return (
     <div
       className={cn(
-        "relative h-dvh shrink-0 w-0",
-        "sm:w-[58px]",
+        "relative h-dvh shrink-0 w-0 transition-[width] duration-200 ease-out",
+        collapsed ? "sm:w-[58px]" : "sm:w-[248px]",
       )}
     >
       {/* Mobile scrim — covers content behind the open sidebar overlay */}
@@ -162,13 +170,13 @@ export function DashSidebar({
           <button
             type="button"
             data-testid="sidebar-toggle"
-            onClick={() => desktopOnly && !mobileOpen ? go("chat") : toggleSidebar()}
-            aria-label={desktopOnly && !mobileOpen ? "Open chat" : collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
-            title={desktopOnly && !mobileOpen ? "Rasputin" : collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggleSidebar}
+            aria-label={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="ras-brand-sigil shrink-0"
           >
             <span>R</span><i aria-hidden="true" />
-            {(!desktopOnly || mobileOpen) && <PanelLeft size={11} className="ras-brand-toggle-icon" aria-hidden="true" />}
+            <PanelLeft size={11} className="ras-brand-toggle-icon" aria-hidden="true" />
           </button>
           {expanded && (
             <div className="flex flex-col leading-tight">
@@ -253,6 +261,39 @@ export function DashSidebar({
             </button>
           </div>
         </nav>
+
+        {expanded && (
+          <section className="ras-sidebar-projects mt-3" aria-labelledby="sidebar-projects-heading">
+            <div className="flex items-center justify-between gap-2 px-3 pb-1">
+              <span id="sidebar-projects-heading" className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">Projects</span>
+              <button type="button" className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground" onClick={() => go("workspaces")}>Manage</button>
+            </div>
+            <div className="flex flex-col gap-0.5" data-testid="sidebar-project-list">
+              {projects.map((project) => {
+                const projectPath = project.path || project.root || "";
+                const projectId = project.id || projectPath;
+                const projectName = project.displayName || project.display_name || project.name || projectPath.split(/[\\/]/).filter(Boolean).pop() || "Project";
+                const active = (activeWorkspaceId && project.id === activeWorkspaceId) || (activeWorkspacePath && projectPath === activeWorkspacePath);
+                return (
+                  <div key={projectId} className={cn("group/project flex items-center rounded-lg", active ? "bg-sidebar-accent text-sidebar-foreground" : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground")}>
+                    <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-1.5 text-left text-[0.78rem]" title={`Open ${projectName}`} aria-current={active ? "location" : undefined} onClick={() => onSelectProject?.(project)}>
+                      <Folder size={14} className="shrink-0 opacity-75" aria-hidden="true" />
+                      <span className="truncate">{projectName}</span>
+                    </button>
+                    <button type="button" className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-sidebar-primary/10 hover:text-sidebar-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring" title={`Index and Graphify ${projectName}`} aria-label={`Index and Graphify ${projectName}`} onClick={() => graphifyProject?.(project)}>
+                      <BrainCircuit size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
+              {projects.length === 0 && (
+                <button type="button" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.75rem] text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-foreground" onClick={() => go("workspaces")}>
+                  <FolderOpen size={14} aria-hidden="true" /> Open your first project
+                </button>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Recent chats continue naturally in the unified sidebar flow. */}
         {expanded && sessions.length > 0 && (

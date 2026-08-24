@@ -6,6 +6,10 @@ const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.
 const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
 const mcp = readFileSync(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url), "utf8");
+const modal = readFileSync(new URL("../frontend-src/src/components/Modal.jsx", import.meta.url), "utf8");
+const history = readFileSync(new URL("../frontend-src/src/features/tasks/TasksView.jsx", import.meta.url), "utf8");
+const projects = readFileSync(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url), "utf8");
+const interfaceCss = readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
 
 test("desktop navigation uses minimal project and history aliases", () => {
   assert.match(app, /rawView === "project" \? "workspaces"/);
@@ -27,11 +31,33 @@ test("desktop command palette describes the simplified primary workflow", () => 
 
 test("desktop shell uses a quiet icon rail and Settings opens as a modal", () => {
   assert.match(sidebar, /"sm:w-\[58px\]"/);
-  assert.match(sidebar, /const expanded = mobileOpen/);
+  assert.match(sidebar, /const expanded = mobileOpen \|\| !collapsed/);
+  assert.match(sidebar, /collapsed \? "sm:w-\[58px\]" : "sm:w-\[248px\]"/);
+  assert.match(sidebar, /data-testid="sidebar-project-list"/);
+  assert.match(sidebar, /Index and Graphify/);
   assert.match(settings, /className="studio-settings-modal"/);
   assert.match(settings, /open=\{view === "settings"\}/);
   assert.doesNotMatch(settings, /AccountsSettings/);
   assert.doesNotMatch(settings, /accounts: Users/);
+});
+
+test("desktop Settings closes from the visual backdrop", () => {
+  assert.match(modal, /classList\?\.contains\("ras-modal-backdrop"\)/);
+  assert.match(settings, /onClose=\{\(\) => go\("chat"\)\}/);
+});
+
+test("History uses one visible view strip instead of nested advanced disclosures", () => {
+  assert.match(history, /data-testid="history-view-tabs"/);
+  assert.match(history, /history-inspector-heading/);
+  assert.doesNotMatch(history, /history-advanced-tabs/);
+  assert.doesNotMatch(history, /history-advanced-disclosure/);
+});
+
+test("Projects keeps Graphify available in the compact viewport-contained surface", () => {
+  assert.match(projects, /useState\(true\)/);
+  assert.match(projects, /data-testid="project-graphify"/);
+  assert.match(projects, /Graphify/);
+  assert.match(interfaceCss, /height: calc\(100dvh - 230px\) !important/);
 });
 
 test("desktop MCP management is a compact searchable integrations surface", () => {

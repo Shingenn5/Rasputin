@@ -12,7 +12,9 @@ test("desktop Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /setShowAllModels\(true\)/);
   assert.match(models, /setCatalogRuntime\("llamaCppGgufServer"\)/);
   assert.match(models, /searchMode === "catalog" && !desktopOnly/);
-  assert.match(models, /<h1 className="text-3xl font-bold tracking-tight">Models<\/h1>/);
+    assert.match(models, /className="models-page-shell/);
+  assert.match(models, /className="models-page-tabs"/);
+  assert.match(models, /desktopLabel = \{ library: "Discover", installed: "My Models", running: "Loaded", settings: "Connections" \}/);
   assert.doesNotMatch(models, /Models <span className="text-muted-foreground">Center<\/span>/);
 });
 
@@ -28,6 +30,8 @@ test("model cards use generated identity and collapse advanced details", () => {
 test("desktop model catalog exposes selection details and a real llama.cpp loader", () => {
   assert.match(models, /studio-model-browser/);
   assert.match(models, /<StudioModelDetail item=\{selectedCatalogItem\}/);
+  assert.match(models, /!desktopOnly && \(/);
+  assert.match(models, /model-hardware-filters/);
   assert.match(models, /<ModelLoadDialog/);
   assert.match(loader, /Pool system RAM and VRAM/);
   assert.match(loader, /GPU split mode/);

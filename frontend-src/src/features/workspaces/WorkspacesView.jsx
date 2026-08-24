@@ -69,7 +69,7 @@ export function WorkspacesView({
   const taskAccess = role !== "viewer";
   const [filter, setFilter] = useState("");
   const [selectedEntry, setSelectedEntry] = useState(null);
-  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(true);
   
   // Preview State
   const [previewMode, setPreviewMode] = useState(false);
@@ -570,7 +570,7 @@ export function WorkspacesView({
       {/* PHASE 1: Workspace Header Summary Card */}
       <div className="w2-header-card workspace-command-hero">
         <div className="workspace-hero-copy">
-          <span className="control-eyebrow"><span className="signal-dot" /> Workspace command</span>
+          <span className="control-eyebrow"><span className="signal-dot" /> Current project</span>
           <h1>{activeName || "No workspace selected"}</h1>
           <p>{displayPath(activePath)}</p>
           <div className="workspace-hero-actions">
@@ -584,6 +584,16 @@ export function WorkspacesView({
               title={adminAccess ? "Choose the folder Rasputin should work in" : "Administrator access is required to open a project folder"}
             >
               <FolderOpen size={16} /> Open Project
+            </button>
+            <button
+              type="button"
+              className="workspace-secondary-action"
+              data-testid="project-graphify"
+              onClick={indexCurrentFolder}
+              disabled={!taskAccess || !activeId}
+              title={activeId ? "Index this project and rebuild its Graphify relationships" : "Open a project first"}
+            >
+              <BrainCircuit size={15} /> Graphify
             </button>
             <button type="button" className="workspace-secondary-action" onClick={loadWorkspaceRoots}><RefreshCw size={15} /> Refresh</button>
           </div>

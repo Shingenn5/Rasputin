@@ -86,11 +86,11 @@ export function Modal({
   if (!mounted || typeof document === "undefined") return null;
 
   function onBackdropMouseDown(event) {
-    // Only close when the press starts on the backdrop itself, so a drag that
-    // ends on the backdrop (text selection inside the panel) does not close it.
-    if (event.target === event.currentTarget && typeof onClose === "function") {
-      onClose();
-    }
+    // Close for presses on either the layer or its visual backdrop. The
+    // backdrop is a child element, so target === currentTarget alone misses it.
+    const pressedOutsidePanel = event.target === event.currentTarget
+      || event.target?.classList?.contains("ras-modal-backdrop");
+    if (pressedOutsidePanel && typeof onClose === "function") onClose();
   }
 
   return createPortal(
