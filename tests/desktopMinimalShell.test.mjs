@@ -48,6 +48,8 @@ test("desktop Settings closes from the visual backdrop", () => {
 
 test("History uses one visible view strip instead of nested advanced disclosures", () => {
   assert.match(history, /data-testid="history-view-tabs"/);
+  assert.match(history, /const activityGroups = \[/);
+  assert.match(history, /history-nav-group/);
   assert.match(history, /history-inspector-heading/);
   assert.doesNotMatch(history, /history-advanced-tabs/);
   assert.doesNotMatch(history, /history-advanced-disclosure/);
@@ -57,7 +59,15 @@ test("Projects keeps Graphify available in the compact viewport-contained surfac
   assert.match(projects, /useState\(true\)/);
   assert.match(projects, /data-testid="project-graphify"/);
   assert.match(projects, /Graphify/);
-  assert.match(interfaceCss, /height: calc\(100dvh - 230px\) !important/);
+  assert.match(projects, /workspace-access-menu/);
+  assert.match(projects, /> Open Folder/);
+  assert.match(interfaceCss, /height: calc\(100dvh - 120px\) !important/);
+});
+
+test("primary desktop views use coherent local section rails", () => {
+  assert.match(interfaceCss, /Coherent desktop section navigation/);
+  assert.match(interfaceCss, /grid-template-columns: 172px minmax\(0, 1fr\)/);
+  assert.match(interfaceCss, /\.models-catalog-toolbar/);
 });
 
 test("desktop MCP management is a compact searchable integrations surface", () => {

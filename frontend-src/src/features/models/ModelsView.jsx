@@ -1053,8 +1053,13 @@ export function ModelsView({
       <div className="models-page-header">
         <div>
           <h1>Models</h1>
-          <p>Browse, download, and run local GGUF models with the bundled llama.cpp runtime.</p>
+          <p>Your local model library and native llama.cpp runtime.</p>
         </div>
+        {desktopOnly && (
+          <div className="models-header-runtime" aria-label="Native runtime status">
+            <span aria-hidden="true" /> Native · llama.cpp
+          </div>
+        )}
         <div className={desktopOnly ? "hidden" : "flex min-w-0 flex-wrap justify-end gap-3"}>
           {[
             { v: totalModels, l: "Registered", c: "text-foreground" },
@@ -1074,7 +1079,12 @@ export function ModelsView({
       <div className="models-page-tabs" role="tablist" aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
-          const desktopLabel = { library: "Discover", installed: "My Models", running: "Loaded", settings: "Developer" }[t.id];
+          const desktopItem = {
+            library: { label: "Discover", hint: "Browse and download" },
+            installed: { label: "My Models", hint: "Local and connected" },
+            running: { label: "Loaded", hint: "Active runtime" },
+            settings: { label: "Developer", hint: "Runtime and connections" },
+          }[t.id];
           return (
             <UIButton
               key={t.id}
@@ -1087,7 +1097,11 @@ export function ModelsView({
               type="button"
               onClick={() => setActiveTab(t.id)}
             >
-              <Icon size={15} /> {desktopOnly ? desktopLabel : t.label}
+              <Icon size={15} />
+              <span>
+                <strong>{desktopItem.label}</strong>
+                {desktopOnly && <small>{desktopItem.hint}</small>}
+              </span>
             </UIButton>
           );
         })}
@@ -1097,9 +1111,7 @@ export function ModelsView({
             {uiState.message}
           </Badge>
         )}
-        <UIButton variant="outline" size="sm" type="button" onClick={handleRefresh}>
-          <RefreshCw size={15} /> Refresh
-        </UIButton>
+
       </div>
 
       {/* ── Content ── */}
@@ -1128,15 +1140,15 @@ export function ModelsView({
                 />
               ) : (
                 <>
-                  <div className="mb-3 flex justify-end">
+                  <div className={desktopOnly ? "hidden" : "mb-3 flex justify-end"}>
                     <UIButton variant="outline" size="sm" type="button" onClick={() => setShowAllModels(false)}>
                       <Gauge size={14} /> Back to recommendations
                     </UIButton>
                   </div>
-              {/* Source toggle */}
+              <div className="models-catalog-toolbar">
               <div className="models-source-switcher">
                 <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
-                  <HardDrive size={14} /> Local cache
+                  <HardDrive size={14} /> Catalog
                 </button>
                 <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("huggingface")}>
                   <Cloud size={14} /> Hugging Face
@@ -1144,11 +1156,8 @@ export function ModelsView({
                 <div style={{ flex: 1 }} />
                 {searchMode === "catalog" && (
                   <>
-                    <button className="w2-button" type="button" onClick={() => handleLoadCatalog(false)}>
-                      <RefreshCw size={14} /> Refresh cache
-                    </button>
-                    <Button primary onClick={() => handleLoadCatalog(true)} loading={modelCatalogLoading} loadingLabel="Refreshing…" icon={<Cloud size={14} />}>
-                      Refresh catalog
+                    <Button onClick={() => handleLoadCatalog(true)} loading={modelCatalogLoading} loadingLabel="Refreshing…" icon={<RefreshCw size={14} />} aria-label="Refresh model catalog" title="Refresh model catalog">
+                      Refresh
                     </Button>
                   </>
                 )}
@@ -1200,7 +1209,7 @@ export function ModelsView({
               </div>
 
               <details className="model-hardware-filters">
-                <summary>Hardware fit filters</summary>
+                <summary><SlidersHorizontal size={14} /> Hardware</summary>
                 <div className="model-vram-filter" data-testid="model-vram-filter">
                 <span className="model-vram-filter__capacity" data-testid="model-placement-capacity">
                   Largest single GPU: <strong>{gpuCapacity.largestSingleGpuGb ? gpuCapacity.largestSingleGpuGb.toFixed(1) + " GB" : "unknown"}</strong>
@@ -1251,6 +1260,7 @@ export function ModelsView({
                 )}
                 </div>
               </details>
+              </div>
 
               {/* Status line */}
               <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>

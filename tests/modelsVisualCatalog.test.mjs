@@ -14,7 +14,11 @@ test("desktop Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /searchMode === "catalog" && !desktopOnly/);
   assert.match(models, /className="models-page-shell/);
   assert.match(models, /className="models-page-tabs"/);
-  assert.match(models, /desktopLabel = \{ library: "Discover", installed: "My Models", running: "Loaded", settings: "Developer" \}/);
+  assert.match(models, /const desktopItem = \{/);
+  assert.match(models, /library: \{ label: "Discover", hint: "Browse and download" \}/);
+  assert.match(models, /settings: \{ label: "Developer", hint: "Runtime and connections" \}/);
+  assert.match(models, /className="models-catalog-toolbar"/);
+  assert.match(models, /aria-label="Refresh model catalog"/);
   assert.doesNotMatch(models, /Models <span className="text-muted-foreground">Center<\/span>/);
   assert.match(models, /data-testid="studio-installed-list"/);
   assert.match(models, /data-testid="models-developer-header"/);

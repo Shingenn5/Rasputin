@@ -10,7 +10,11 @@ import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 
-const activityTabs = ["History", "Queue", "All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
+const activityGroups = [
+  { label: "Timeline", items: ["History"] },
+  { label: "Runs", items: ["All Runs", "Active", "Queue", "Completed", "Failed", "Scheduled"] },
+  { label: "System", items: ["System Events", "Audit Log"] },
+];
 
 export function ActivityView({
   view,
@@ -102,10 +106,10 @@ export function ActivityView({
 
   return (
     <section className={`w2-layout app-view activity-view tw ${view === "activity" ? "active" : ""}`} id="activityView" data-app-view="activity">
-      <div className="fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
+      <div className="history-page-shell fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-5">
+      <div className="history-page-header flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">History</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">Recent chats, runs, notifications, and outcomes in one quiet timeline.</p>
@@ -118,17 +122,22 @@ export function ActivityView({
 
       <div className="history-toolbar">
         <div className="activity-tabs-scroll" role="tablist" aria-label="History views" data-testid="history-view-tabs">
-          {activityTabs.map((item) => (
-            <button
-              key={item}
-              type="button"
-              role="tab"
-              aria-selected={tab === item}
-              className={cn("history-view-tab", tab === item && "is-active")}
-              onClick={() => setTab(item)}
-            >
-              {item}
-            </button>
+          {activityGroups.map((group) => (
+            <div className="history-nav-group" role="presentation" key={group.label}>
+              <span className="history-nav-label">{group.label}</span>
+              {group.items.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === item}
+                  className={cn("history-view-tab", tab === item && "is-active")}
+                  onClick={() => setTab(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
         <div className="flex-1" />
@@ -137,7 +146,7 @@ export function ActivityView({
             {uiState.message}
           </Badge>
         )}
-        <UIButton variant="outline" size="sm" onClick={handleRefresh}>
+        <UIButton className="history-refresh-button" variant="outline" size="sm" onClick={handleRefresh} aria-label="Refresh history">
           <RefreshCw size={15} /> Refresh
         </UIButton>
       </div>
@@ -339,7 +348,7 @@ export function ActivityView({
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <UIButton variant="outline" size="sm" onClick={handleRefresh}>Refresh activity</UIButton>
+                <UIButton className="history-refresh-button" variant="outline" size="sm" onClick={handleRefresh} aria-label="Refresh history">Refresh activity</UIButton>
                 <span className="text-xs text-muted-foreground">Health data is not included in the current activity payload.</span>
               </div>
 

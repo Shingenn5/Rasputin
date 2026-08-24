@@ -567,97 +567,70 @@ export function WorkspacesView({
       id="workspacesView"
       data-app-view="workspaces"
     >
-      {/* PHASE 1: Workspace Header Summary Card */}
       <div className="w2-header-card workspace-command-hero">
         <div className="workspace-hero-copy">
-          <span className="control-eyebrow"><span className="signal-dot" /> Current project</span>
-          <h1>{activeName || "No workspace selected"}</h1>
+          <h1>{activeName || "No project selected"}</h1>
           <p>{displayPath(activePath)}</p>
-          <div className="workspace-hero-actions">
-            <button
-              type="button"
-              className="workspace-primary-action"
-              data-testid="open-project-primary"
-              onClick={() => setShowAddModal(true)}
-              disabled={!adminAccess}
-              aria-label="Open a project folder"
-              title={adminAccess ? "Choose the folder Rasputin should work in" : "Administrator access is required to open a project folder"}
-            >
-              <FolderOpen size={16} /> Open Project
-            </button>
-            <button
-              type="button"
-              className="workspace-secondary-action"
-              data-testid="project-graphify"
-              onClick={indexCurrentFolder}
-              disabled={!taskAccess || !activeId}
-              title={activeId ? "Index this project and rebuild its Graphify relationships" : "Open a project first"}
-            >
-              <BrainCircuit size={15} /> Graphify
-            </button>
-            <button type="button" className="workspace-secondary-action" onClick={loadWorkspaceRoots}><RefreshCw size={15} /> Refresh</button>
-          </div>
         </div>
-        <div className="w2-header-stats">
-          {uiState.status !== 'idle' && (
-            <div style={{ 
-              padding: '8px 16px', borderRadius: '4px', fontSize: '0.875rem',
-              backgroundColor: uiState.status === 'failed' ? 'var(--ras-danger)' : 
-                               uiState.status === 'success' ? 'var(--ras-safe)' : 'var(--cc-surface)',
-              color: '#fff', display: 'flex', alignItems: 'center', marginRight: '16px'
-            }}>
-              {uiState.message}
-            </div>
+        <div className="workspace-hero-actions">
+          {uiState.status !== "idle" && (
+            <span className={`workspace-action-status is-${uiState.status}`} role="status">{uiState.message}</span>
           )}
-          <div className="w2-header-stat">
-            <strong>{activeReadOnly ? "Read Only" : "Read / Write"}</strong>
-            <small>Access Mode</small>
-          </div>
-          {adminAccess && <button
+          <button
             type="button"
-            className="w2-header-stat"
-            style={{
-              cursor: activeId ? "pointer" : "default",
-              border: activeTrusted ? "1px solid var(--ras-warn, #d97706)" : "1px solid transparent",
-              background: "transparent",
-            }}
-            onClick={handleTrustToggleClick}
-            disabled={!activeId || trustBusy}
-            aria-pressed={activeTrusted}
-            aria-label={activeTrusted ? "Trusted Dev Mode is on for this workspace. Click to revoke." : "Trusted Dev Mode is off for this workspace. Click to enable."}
-            title={activeTrusted ? "File writes and git run without per-action approval here. Click to revoke." : "Enable to let the agent write files and use git here without per-action approval."}
+            className="workspace-primary-action"
+            data-testid="open-project-primary"
+            onClick={() => setShowAddModal(true)}
+            disabled={!adminAccess}
+            aria-label="Open a project folder"
+            title={adminAccess ? "Choose the folder Rasputin should work in" : "Administrator access is required to open a project folder"}
           >
-            <strong style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              {activeTrusted ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
-              {activeTrusted ? "On" : "Off"}
-            </strong>
-            <small>Trusted Dev Mode</small>
-          </button>}
-          {adminAccess && <button
+            <FolderOpen size={16} /> Open Folder
+          </button>
+          <button
             type="button"
-            className="w2-header-stat"
-            style={{
-              cursor: activeId ? "pointer" : "default",
-              border: activeHostShell ? "1px solid var(--ras-danger, #dc2626)" : "1px solid transparent",
-              background: "transparent",
-            }}
-            onClick={handleShellToggleClick}
-            disabled={!activeId || shellBusy}
-            aria-pressed={activeHostShell}
-            aria-label={activeHostShell ? "Host Shell is on for this workspace. Click to revoke." : "Host Shell is off for this workspace. Click to enable."}
-            title={activeHostShell
-              ? `The agent can run shell commands ${native ? "through the native sandbox account" : "inside the Docker wrapper"} for this folder. Click to revoke.`
-              : `Enable shell commands ${native ? "through the native sandbox account" : "inside the Docker wrapper"} for this folder.`}
+            className="workspace-secondary-action"
+            data-testid="project-graphify"
+            onClick={indexCurrentFolder}
+            disabled={!taskAccess || !activeId}
+            title={activeId ? "Index this project and rebuild its Graphify relationships" : "Open a project first"}
           >
-            <strong style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-              {activeHostShell ? <AlertTriangle size={14} /> : <Terminal size={14} />}
-              {activeHostShell ? "On" : "Off"}
-            </strong>
-            <small>Host Shell</small>
-          </button>}
+            <BrainCircuit size={15} /> Graphify
+          </button>
+          <button type="button" className="workspace-icon-action" onClick={loadWorkspaceRoots} aria-label="Refresh projects" title="Refresh projects">
+            <RefreshCw size={15} />
+          </button>
+          <details className="workspace-access-menu">
+            <summary className="workspace-secondary-action"><ShieldCheck size={15} /> Access</summary>
+            <div className="workspace-access-popover">
+              <div className="workspace-access-mode">
+                <span>Folder access</span>
+                <strong>{activeReadOnly ? "Read only" : "Read / write"}</strong>
+              </div>
+              {adminAccess && <button
+                type="button"
+                className="workspace-access-option"
+                onClick={handleTrustToggleClick}
+                disabled={!activeId || trustBusy}
+                aria-pressed={activeTrusted}
+              >
+                {activeTrusted ? <ShieldAlert size={15} /> : <ShieldCheck size={15} />}
+                <span><strong>Trusted Dev Mode</strong><small>{activeTrusted ? "On" : "Off"}</small></span>
+              </button>}
+              {adminAccess && <button
+                type="button"
+                className="workspace-access-option"
+                onClick={handleShellToggleClick}
+                disabled={!activeId || shellBusy}
+                aria-pressed={activeHostShell}
+              >
+                {activeHostShell ? <AlertTriangle size={15} /> : <Terminal size={15} />}
+                <span><strong>Host Shell</strong><small>{activeHostShell ? "On" : "Off"}</small></span>
+              </button>}
+            </div>
+          </details>
         </div>
       </div>
-
       <div className={`workspace-runtime-note ${native ? "is-native" : "is-docker"}`} data-testid="workspace-runtime-mode">
         <span className="workspace-runtime-icon" aria-hidden="true">
           {native ? <HardDrive size={17} /> : <Database size={17} />}
