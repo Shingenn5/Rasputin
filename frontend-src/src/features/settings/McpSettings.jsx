@@ -6,6 +6,7 @@ import {
   Network,
   Play,
   RefreshCw,
+  Search,
   Server,
   ShieldAlert,
   Square,
@@ -46,6 +47,7 @@ function serverCommand(server) {
 }
 
 export function McpSettings({
+  compact = false,
   mcpRelays = { servers: [] },
   workspaceRoots = [],
   registerMcpRelay,
@@ -71,6 +73,7 @@ export function McpSettings({
   const [busy, setBusy] = useState("");
   const [expanded, setExpanded] = useState({});
   const [approvalCode, setApprovalCode] = useState("");
+  const [filter, setFilter] = useState("");
 
   function updateForm(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -175,18 +178,22 @@ export function McpSettings({
   }
 
   const hasExternalServer = servers.some((server) => server.transport !== "internal");
+  const filteredServers = servers.filter((server) => {
+    const query = filter.trim().toLowerCase();
+    return !query || [server.name, server.id, server.transport, server.networkTarget, serverCommand(server)].join(" ").toLowerCase().includes(query);
+  });
 
   return (
-    <section className="settings-pane active tw space-y-5" data-testid="mcp-settings">
+    <section className={"settings-pane active tw space-y-5 " + (compact ? "mcp-compact" : "")} data-testid="mcp-settings">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
         <div>
           <h2 className="flex items-center gap-2 text-2xl font-bold">
-            <Network className="text-primary" /> MCP Servers
+            <Network className="text-primary" /> {compact ? "Integrations" : "MCP Servers"}
           </h2>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          {!compact && <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Register local Model Context Protocol servers and Streamable HTTP endpoints for agentic coding.
             Every local process requires explicit approval, and every discovered tool remains disabled until classified.
-          </p>
+          </p>}
         </div>
         <Badge variant="muted">{servers.length} registered</Badge>
       </header>
@@ -211,22 +218,28 @@ export function McpSettings({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" onClick={() => openDialog("streamable_http")}>
-          <Link2 size={15} /> Add Streamable HTTP
-        </Button>
-        <Button type="button" variant="outline" onClick={() => openDialog("stdio")}>
-          <Server size={15} /> Add local stdio
-        </Button>
-        {!hasExternalServer && (
-          <Button type="button" variant="ghost" onClick={registerFixture} disabled={busy === "fixture"}>
-            <Wrench size={15} /> Register operator fixture
+      <div className="mcp-compact-toolbar">
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={() => openDialog("streamable_http")}>
+            <Link2 size={15} /> {compact ? "Install" : "Add Streamable HTTP"}
           </Button>
-        )}
+          <Button type="button" variant="outline" onClick={() => openDialog("stdio")}>
+            <Server size={15} /> Add local
+          </Button>
+          {!hasExternalServer && !compact && (
+            <Button type="button" variant="ghost" onClick={registerFixture} disabled={busy === "fixture"}>
+              <Wrench size={15} /> Register operator fixture
+            </Button>
+          )}
+        </div>
+        <label className="mcp-filter">
+          <Search size={15} aria-hidden="true" />
+          <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter integrations..." aria-label="Filter MCP integrations" />
+        </label>
       </div>
 
-      <div className="grid gap-4">
-        {servers.map((server) => {
+      <div className="grid gap-4 mcp-server-list">
+        {filteredServers.map((server) => {
           const tools = server.tools || [];
           const isInternal = server.transport === "internal";
           const isRunning = server.status === "running" || server.health === "running";
@@ -234,7 +247,7 @@ export function McpSettings({
           return (
             <article
               key={server.id}
-              className="glow-card rounded-2xl border border-border bg-card p-5"
+              className="mcp-server-card glow-card rounded-2xl border border-border bg-card p-5"
               data-testid={"mcp-server-" + server.id}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -401,9 +414,9 @@ export function McpSettings({
           );
         })}
 
-        {servers.length === 0 && (
+        {filteredServers.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            No MCP servers are registered yet. Add a Streamable HTTP endpoint or a local stdio server.
+            {servers.length ? "No integrations match this filter." : "No MCP servers are registered yet. Add a Streamable HTTP endpoint or a local stdio server."}
           </div>
         )}
       </div>

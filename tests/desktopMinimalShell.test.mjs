@@ -3,6 +3,9 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
+const settings = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
+const mcp = readFileSync(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url), "utf8");
 
 test("desktop navigation uses minimal project and history aliases", () => {
   assert.match(app, /rawView === "project" \? "workspaces"/);
@@ -19,4 +22,21 @@ test("desktop command palette describes the simplified primary workflow", () => 
   assert.match(app, /label: "Open models", hint: "Browse, download, and load local models\."/);
   assert.doesNotMatch(app, /label: "Open workspaces"/);
   assert.doesNotMatch(app, /label: "Open activity inbox"/);
+});
+
+
+test("desktop shell uses a quiet icon rail and Settings opens as a modal", () => {
+  assert.match(sidebar, /"sm:w-\[58px\]"/);
+  assert.match(sidebar, /const expanded = mobileOpen/);
+  assert.match(settings, /className="studio-settings-modal"/);
+  assert.match(settings, /open=\{view === "settings"\}/);
+  assert.doesNotMatch(settings, /AccountsSettings/);
+  assert.doesNotMatch(settings, /accounts: Users/);
+});
+
+test("desktop MCP management is a compact searchable integrations surface", () => {
+  assert.match(mcp, /compact = false/);
+  assert.match(mcp, /placeholder="Filter integrations\.\.\."/);
+  assert.match(mcp, /mcp-compact/);
+  assert.match(mcp, /filteredServers\.map/);
 });

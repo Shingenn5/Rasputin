@@ -66,7 +66,9 @@ export function DashSidebar({
   const reducedMotion = motionMode === "reduced";
   // Collapsed mode is a deliberate, persistent rail. It never relies on hover
   // for access; the brand control is always keyboard-reachable and reopens it.
-  const expanded = !collapsed || mobileOpen;
+  // Desktop uses a quiet, icon-only rail. The expanded treatment is reserved
+  // for the mobile drawer where labels are needed for touch navigation.
+  const expanded = mobileOpen;
 
   useEffect(() => {
     const wasMobileOpen = wasMobileOpenRef.current;
@@ -126,7 +128,7 @@ export function DashSidebar({
     <div
       className={cn(
         "relative h-dvh shrink-0 w-0",
-        collapsed ? "sm:w-[76px]" : "sm:w-[248px]",
+        "sm:w-[58px]",
       )}
     >
       {/* Mobile scrim — covers content behind the open sidebar overlay */}
@@ -148,8 +150,8 @@ export function DashSidebar({
           }
         }}
         className={cn(
-          "ras-sidebar ras-sidebar-scroll absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-3 py-3 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
-          expanded ? "w-[248px]" : "w-[76px]",
+          "ras-sidebar ras-desktop-rail ras-sidebar-scroll absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
+          expanded ? "w-[248px]" : "w-[58px]",
           // Mobile-only CSS hides closed controls from tab/AT order; desktop remains persistent.
           !mobileOpen && "is-mobile-closed -translate-x-full sm:translate-x-0",
           mobileOpen ? "shadow-2xl shadow-black/50" : "",
@@ -160,13 +162,13 @@ export function DashSidebar({
           <button
             type="button"
             data-testid="sidebar-toggle"
-            onClick={toggleSidebar}
-            aria-label={collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => desktopOnly && !mobileOpen ? go("chat") : toggleSidebar()}
+            aria-label={desktopOnly && !mobileOpen ? "Open chat" : collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
+            title={desktopOnly && !mobileOpen ? "Rasputin" : collapsed && !mobileOpen ? "Expand sidebar" : "Collapse sidebar"}
             className="ras-brand-sigil shrink-0"
           >
             <span>R</span><i aria-hidden="true" />
-            <PanelLeft size={11} className="ras-brand-toggle-icon" aria-hidden="true" />
+            {(!desktopOnly || mobileOpen) && <PanelLeft size={11} className="ras-brand-toggle-icon" aria-hidden="true" />}
           </button>
           {expanded && (
             <div className="flex flex-col leading-tight">
@@ -181,7 +183,7 @@ export function DashSidebar({
           type="button"
           data-testid="new-task"
           onClick={newTask}
-          title={!expanded ? "New Chat" : undefined}
+          title={!expanded ? "New chat" : undefined}
           aria-label="New Chat"
           className={cn(
             "ras-new-chat mb-1 flex shrink-0 items-center gap-2.5 rounded-lg bg-sidebar-primary px-3 py-2 text-sm font-semibold text-sidebar-primary-foreground transition-colors hover:brightness-110",
@@ -230,13 +232,13 @@ export function DashSidebar({
           ))}
 
           {/* Settings — pinned with the primary nav, always reachable */}
-          <div className="mt-1">
+          <div className="mt-auto pt-2">
             <button
               type="button"
               data-testid="nav-settings"
               aria-label="Settings"
               aria-current={view === "settings" ? "page" : undefined}
-              onClick={() => go("settings", role === "admin" ? "general" : "accounts")}
+              onClick={() => go("settings", "general")}
               title={!expanded ? "Settings" : undefined}
               className={cn(
                 "ras-nav-item flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium transition-colors",

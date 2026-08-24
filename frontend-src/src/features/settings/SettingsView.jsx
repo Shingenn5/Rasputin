@@ -18,9 +18,9 @@ import {
   ShieldCheck,
   Stethoscope,
   Upload,
-  Users,
 } from "lucide-react";
 import { GeneralSettings } from "./GeneralSettings.jsx";
+import { Modal } from "../../components/Modal.jsx";
 import { settingsEssentialIds, settingsItems } from "../../lib/constants.js";
 import { useSettingsStore } from "./settingsStore.js";
 import { loadSettings, exportSettings, importSettings, restoreDefaults } from "./settingsActions.js";
@@ -35,13 +35,11 @@ import { NotificationSettings } from "./NotificationSettings.jsx";
 import { AuditSettings } from "./AuditSettings.jsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.jsx";
 import { AboutSettings } from "./AboutSettings.jsx";
-import { AccountsSettings } from "./AccountsSettings.jsx";
 
 const iconMap = {
   general: Settings2,
   runtime: Activity,
   security: ShieldCheck,
-  accounts: Users,
   models: BrainCircuit,
   deployments: Rocket,
   integrations: Plug,
@@ -56,9 +54,21 @@ const iconMap = {
 const settingGroups = [
   { label: "Experience", ids: ["general", "notifications"] },
   { label: "Intelligence", ids: ["models", "runtime", "resources"] },
-  { label: "Governance", ids: ["security", "accounts", "audit", "diagnostics"] },
+  { label: "Governance", ids: ["security", "audit", "diagnostics"] },
   { label: "Platform", ids: ["deployments", "integrations", "mcp", "about"] },
 ];
+
+const desktopSettingIds = ["general", "models", "integrations", "mcp", "runtime", "resources", "security", "about"];
+const desktopSettingLabels = {
+  general: ["General", "Application behavior"],
+  models: ["Model defaults", "Loading and routing"],
+  integrations: ["Connections", "GitHub and services"],
+  mcp: ["MCP servers", "Tools and integrations"],
+  runtime: ["Runtime", "Native inference"],
+  resources: ["Hardware", "CPU, RAM, and GPU"],
+  security: ["Security", "Local permissions"],
+  about: ["About", "Build and licenses"],
+};
 
 function isPlainSettingsObject(value) {
   return value !== null
@@ -101,8 +111,12 @@ export function SettingsView(props) {
   const desktopOnly = Boolean(security?.desktopOnly);
   const allowedSettings = useMemo(
     () => {
-      const allowed = isAdmin ? settingsItems : settingsItems.filter(([id]) => ["accounts", "about"].includes(id));
-      return desktopOnly ? allowed.filter(([id]) => id !== "deployments") : allowed;
+      if (desktopOnly) {
+        return settingsItems
+          .filter(([id]) => desktopSettingIds.includes(id))
+          .map(([id, label, small]) => [id, desktopSettingLabels[id]?.[0] || label, desktopSettingLabels[id]?.[1] || small]);
+      }
+      return (isAdmin ? settingsItems : settingsItems.filter(([id]) => id === "about")).filter(([id]) => id !== "accounts");
     },
     [desktopOnly, isAdmin],
   );
@@ -199,7 +213,7 @@ export function SettingsView(props) {
 
   useEffect(() => {
     if (view === "settings" && !allowedSettings.some(([id]) => id === section)) {
-      setSection(allowedSettings[0]?.[0] || "accounts");
+      setSection(allowedSettings[0]?.[0] || "general");
     }
   }, [allowedSettings, section, setSection, view]);
 
@@ -221,6 +235,98 @@ export function SettingsView(props) {
     setSearchQuery("");
     setSearchEditable(false);
   }, [section]);
+
+  const renderActivePanel = () => (
+    <>
+      {effectiveSection === "general" && (
+        <GeneralSettings
+          theme={theme}
+          setTheme={setTheme}
+          motionMode={motionMode}
+          setMotionMode={setMotionMode}
+          testingMode={testingMode}
+          updateTestingMode={updateTestingMode}
+        />
+      )}
+      {effectiveSection === "runtime" && <RuntimeSettings />}
+      {effectiveSection === "security" && <SecuritySettings desktopOnly={desktopOnly} />}
+      {effectiveSection === "models" && <ModelSettings desktopOnly={desktopOnly} models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
+      {effectiveSection === "deployments" && <DeploymentSettings />}
+      {effectiveSection === "integrations" && <IntegrationSettings />}
+      {effectiveSection === "mcp" && (
+        <McpSettings
+          compact={desktopOnly}
+          mcpRelays={mcpRelays}
+          workspaceRoots={workspaceRoots}
+          registerMcpRelay={registerMcpRelay}
+          registerMcpFixture={registerMcpFixture}
+          startMcpRelay={startMcpRelay}
+          stopMcpRelay={stopMcpRelay}
+          restartMcpRelay={restartMcpRelay}
+          removeMcpRelay={removeMcpRelay}
+          discoverMcpRelay={discoverMcpRelay}
+          testMcpRelay={testMcpRelay}
+          classifyMcpTool={classifyMcpTool}
+          callMcpTestTool={callMcpTestTool}
+          go={go}
+        />
+      )}
+      {effectiveSection === "resources" && <ResourceSettings />}
+      {effectiveSection === "notifications" && <NotificationSettings />}
+      {effectiveSection === "audit" && <AuditSettings />}
+      {effectiveSection === "diagnostics" && <DiagnosticsSettings />}
+      {effectiveSection === "about" && <AboutSettings desktopOnly={desktopOnly} />}
+    </>
+  );
+
+  if (desktopOnly) {
+    return (
+      <Modal
+        open={view === "settings"}
+        onClose={() => go("chat")}
+        title="Settings"
+        size="xl"
+        className="studio-settings-modal"
+        data-testid="desktop-settings-dialog"
+      >
+        <div className="studio-settings-layout">
+          <nav className="studio-settings-nav" aria-label="Settings sections">
+            {allowedSettings.map(([id, label, small]) => {
+              const Icon = iconMap[id] || Settings2;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={effectiveSection === id ? "is-active" : ""}
+                  data-testid={"settings-" + id}
+                  aria-current={effectiveSection === id ? "page" : undefined}
+                  onClick={() => setSection(id)}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  <span><strong>{label}</strong><small>{small}</small></span>
+                </button>
+              );
+            })}
+          </nav>
+          <main className="studio-settings-stage">
+            <header className="studio-settings-heading">
+              <span className="settings-stage-icon"><ActiveIcon size={20} /></span>
+              <div>
+                <h2>{activeSetting[1]}</h2>
+                <p>{activeInspector.desc}</p>
+              </div>
+              <span className={"settings-validation is-" + settingsStatus.tone} role="status" aria-live="polite">
+                {settingsStatus.icon} {settingsStatus.label}
+              </span>
+            </header>
+            <div className="studio-settings-content settings-panel-surface">
+              {renderActivePanel()}
+            </div>
+          </main>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <section className={`app-view settings-view tw ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
@@ -386,7 +492,6 @@ export function SettingsView(props) {
             )}
             {effectiveSection === "runtime" && <RuntimeSettings />}
             {effectiveSection === "security" && <SecuritySettings desktopOnly={desktopOnly} />}
-            {effectiveSection === "accounts" && <AccountsSettings session={session} />}
             {effectiveSection === "models" && <ModelSettings desktopOnly={desktopOnly} models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
             {effectiveSection === "deployments" && <DeploymentSettings />}
             {effectiveSection === "integrations" && <IntegrationSettings />}
@@ -424,7 +529,6 @@ function getInspectorText(section) {
     general: { desc: "Tune the application experience and the defaults every new session inherits.", validation: "Live type and range checks", impact: "Changes the interface and session defaults", deps: ["Archive", "Workspaces"] },
     runtime: { desc: "Balance speed, stability, and resource use for local task execution.", validation: "Resource limits and numeric bounds", impact: "Can affect new and running tasks", deps: ["WarSat"] },
     security: { desc: "Control authentication, secrets, approvals, and agent access boundaries.", validation: "Key and policy integrity checks", impact: "May end sessions or revoke capabilities", deps: ["All subsystems"] },
-    accounts: { desc: "Manage local identities, appliance roles, and account lifecycle.", validation: "Unique usernames and strong local passwords", impact: "Controls who can sign in and administer the appliance", deps: ["Security", "Workspaces"] },
     models: { desc: "Register intelligence providers and choose how work routes between them.", validation: "Provider and model availability", impact: "Changes inference routing", deps: ["Runtime", "Tasks"] },
     deployments: { desc: "Define how isolated WarSat workers are created and operated.", validation: "Container deployment schema", impact: "Applies to newly created workers", deps: ["WarSat", "Models"] },
     integrations: { desc: "Connect Rasputin to the external services that extend your workflow.", validation: "Endpoint and credential checks", impact: "Changes available external actions", deps: ["Security"] },

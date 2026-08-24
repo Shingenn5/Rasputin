@@ -552,6 +552,7 @@ class GgufScanIn(CamelModel):
 
 class ModelKeyIn(CamelModel):
     key: str
+    profile: dict[str, Any] | None = None
 
     @field_validator("key")
     @classmethod
@@ -825,7 +826,7 @@ async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(
 @models_router.post("/model-registry/start")
 
 async def model_registry_start(req: ModelKeyIn, _user=Depends(require_admin)):
-    return ok(model_registry.start_model(req.key))
+    return ok(model_registry.start_model(req.key, load_profile=req.profile))
 
 @models_router.post("/model-registry/stop")
 

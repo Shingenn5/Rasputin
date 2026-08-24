@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend.models import registry
 from backend.models.load_profiles import resolve_load_plan
@@ -33,6 +33,31 @@ class NativeDesktopPreferencesTests(unittest.TestCase):
         ):
             resolved = registry._native_model_with_desktop_preferences(model)
         self.assertEqual(resolved["load_profile"]["memory_mode"], "cpu_only")
+
+    def test_per_launch_profile_reaches_native_provider_without_mutating_registry_model(self):
+        model = {
+            "key": "demo",
+            "runtime": "native-llamacpp",
+            "managed": True,
+            "load_profile": {"context_length": 4096},
+        }
+        provider = Mock()
+        provider.start.return_value = {"ok": True}
+        requested = {"contextLength": 16384, "memoryMode": "hybrid", "splitMode": "layer"}
+
+        with (
+            patch.object(registry, "get_model", return_value=model),
+            patch.object(registry, "get_provider", return_value=provider),
+            patch.object(registry.security, "require"),
+            patch.object(registry, "_native_model_with_desktop_preferences", side_effect=lambda value: dict(value)),
+            patch.object(registry.audit, "log"),
+        ):
+            result = registry.start_model("demo", load_profile=requested)
+
+        self.assertTrue(result["ok"])
+        started = provider.start.call_args.args[0]
+        self.assertEqual(started["load_profile"], requested)
+        self.assertEqual(model["load_profile"], {"context_length": 4096})
 
     def test_live_hardware_snapshot_preserves_headroom_and_nested_gpu_capacity(self):
         snapshot = {

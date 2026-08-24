@@ -17,6 +17,7 @@ import {
   Pause,
   PanelLeftOpen,
   Play,
+  Search,
   Settings,
   ShieldCheck,
   SquareSlash,
@@ -41,6 +42,7 @@ import {
   uploadAttachment,
 } from "../../lib/fileExtraction.js";
 import { Avatar } from "../../components/Avatar.jsx";
+import { Modal } from "../../components/Modal.jsx";
 import { CodeSandbox } from "../../components/CodeSandbox.jsx";
 import { PromptRecipePanel } from "./PromptRecipePanel.jsx";
 import { featuredRecipes, recipesForMode } from "./promptRecipes.js";
@@ -589,32 +591,6 @@ export function HomeView(props) {
     };
   }, [modePanelOpen]);
 
-  useEffect(() => {
-    if (!modelPanelOpen) return undefined;
-    const firstControl = modelPanelRef.current?.querySelector("button, select, input");
-    firstControl?.focus();
-    function closeOnEscape(event) {
-      if (event.key === "Escape") {
-        setModelPanelOpen(false);
-        window.requestAnimationFrame(() => modelButtonRef.current?.focus());
-      }
-    }
-    function closeOnOutsideClick(event) {
-      if (modelPanelRef.current && !modelPanelRef.current.contains(event.target)) {
-        setModelPanelOpen(false);
-      }
-    }
-    document.addEventListener("keydown", closeOnEscape);
-    const attachTimer = window.setTimeout(() => {
-      document.addEventListener("mousedown", closeOnOutsideClick);
-    }, 0);
-    return () => {
-      window.clearTimeout(attachTimer);
-      document.removeEventListener("keydown", closeOnEscape);
-      document.removeEventListener("mousedown", closeOnOutsideClick);
-    };
-  }, [modelPanelOpen]);
-
   function handleThreadScroll(event) {
     const target = event.currentTarget;
     const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
@@ -1132,6 +1108,8 @@ export function HomeView(props) {
                     setModelPanelOpen(false);
                     window.requestAnimationFrame(() => modelButtonRef.current?.focus());
                   }}
+                  onOpenModels={onOpenModels}
+                  returnFocusRef={modelButtonRef}
                   close={() => {
                     setModelPanelOpen(false);
                     window.requestAnimationFrame(() => modelButtonRef.current?.focus());
@@ -1159,58 +1137,55 @@ export function HomeView(props) {
   );
 }
 
-function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close }) {
-  const items = visibleModels;
+function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close, onOpenModels, returnFocusRef }) {
+  const [query, setQuery] = useState("");
+  const items = visibleModels.filter((model) => {
+    const text = [displayModelName(model, models), displayModelSecondary(model, models), model.key, model.model].join(" ").toLowerCase();
+    return text.includes(query.trim().toLowerCase());
+  });
   return (
-    <aside
-      ref={panelRef}
-      className="model-side-panel"
-      data-testid="model-side-panel"
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby="modelPanelTitle"
-    >
-      <header className="mode-panel-head">
-        <div>
-          <span className="eyebrow">Runtime routing</span>
-          <h2 id="modelPanelTitle">Choose model</h2>
+    <Modal open onClose={close} title="Select a model to load" size="lg" className="studio-model-picker" returnFocusRef={returnFocusRef}>
+      <div ref={panelRef} data-testid="model-side-panel">
+        <label className="studio-model-picker-search">
+          <Search size={16} aria-hidden="true" />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter local models..." autoFocus />
+        </label>
+        <div className="studio-model-picker-head"><strong>Your models</strong><span>Available</span></div>
+        <div className="studio-model-picker-list">
+          {!items.length && (
+            <p className="model-panel-empty" role="status">
+              No available chat model matches this filter.
+            </p>
+          )}
+          {items.map((model) => {
+            const selected = model.key === selectedModel;
+            const status = runtimeStatus(model);
+            const context = model.context_window || model.contextWindow;
+            return (
+              <button
+                key={model.key}
+                type="button"
+                className={selected ? "model-choice is-active" : "model-choice"}
+                data-testid="model-option"
+                aria-pressed={selected}
+                onClick={() => setSelectedModel(model.key)}
+              >
+                <span className={"model-choice-status status-" + status} aria-hidden="true" />
+                <span>
+                  <strong>{displayModelName(model, models)}</strong>
+                  <small>{displayModelSecondary(model, models) || model.model || model.key}</small>
+                </span>
+                <em>{context ? Number(context).toLocaleString() + " ctx" : status}</em>
+              </button>
+            );
+          })}
         </div>
-        <button className="icon-button" type="button" aria-label="Close model panel" onClick={close}>
-          <X size={18} />
-        </button>
-      </header>
-      <div className="model-panel-list">
-        {!items.length && (
-          <p className="model-panel-empty" role="status">
-            No healthy chat model is currently available. Start or test a model from Models settings.
-          </p>
-        )}
-        {items.map((model) => {
-          const selected = model.key === selectedModel;
-          const status = runtimeStatus(model);
-          return (
-            <button
-              key={model.key}
-              type="button"
-              className={selected ? "model-choice is-active" : "model-choice"}
-              data-testid="model-option"
-              aria-pressed={selected}
-              onClick={() => setSelectedModel(model.key)}
-            >
-              <span className={`model-choice-status status-${status}`} aria-hidden="true" />
-              <span>
-                <strong>{displayModelName(model, models)}</strong>
-                <small>{displayModelSecondary(model, models) || model.key}</small>
-              </span>
-              <em>{status}</em>
-            </button>
-          );
-        })}
+        <footer className="studio-model-picker-footer">
+          <span>Only healthy chat-capable models are selectable here.</span>
+          <button type="button" className="w2-button" onClick={() => { close(); onOpenModels?.(); }}>Manage models</button>
+        </footer>
       </div>
-      <footer className="model-panel-footer">
-        <p>Only available chat models appear here. Stopped, unhealthy, embedding, and raw registry entries stay in Models settings.</p>
-      </footer>
-    </aside>
+    </Modal>
   );
 }
 

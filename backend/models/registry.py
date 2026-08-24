@@ -1044,13 +1044,17 @@ def _native_model_with_desktop_preferences(model):
     return resolved
 
 
-def start_model(key):
+def start_model(key, load_profile=None):
     model = get_model(key)
     if not model:
         raise ValueError("model missing")
     if model.get("runtime") == NATIVE_RUNTIME:
         security.require("allow_model_registry_edit")
         model = _native_model_with_desktop_preferences(model)
+        if load_profile is not None:
+            if not isinstance(load_profile, dict):
+                raise ValueError("load profile must be a mapping")
+            model = {**model, "load_profile": dict(load_profile)}
     else:
         security.require("allow_docker_control")
     if not model.get("managed"):

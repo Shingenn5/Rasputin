@@ -47,6 +47,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { blockerGuidanceForReasons } from "../shared/blockerGuidance.js";
 import { ModelIdentity } from "./ModelIdentity.jsx";
+import { ModelLoadDialog } from "./ModelLoadDialog.jsx";
 
 /* ── Tab config ── */
 const modelsTabs = [
@@ -673,6 +674,8 @@ export function ModelsView({
 
   const [downloadRefreshToken, setDownloadRefreshToken] = useState(0);
   const [loadingArtifact, setLoadingArtifact] = useState(null);
+  const [selectedCatalogId, setSelectedCatalogId] = useState("");
+  const [loadDialogModel, setLoadDialogModel] = useState(null);
   const completedRefreshJobs = useRef(new Set());
 
   useEffect(() => {
@@ -972,6 +975,13 @@ export function ModelsView({
     [displayItems, currentPage, pageSize]
   );
 
+  const selectedCatalogItem = pagedItems.find((item) => (item.id || item.modelId) === selectedCatalogId) || pagedItems[0] || null;
+  useEffect(() => {
+    if (selectedCatalogItem && selectedCatalogId !== (selectedCatalogItem.id || selectedCatalogItem.modelId)) {
+      setSelectedCatalogId(selectedCatalogItem.id || selectedCatalogItem.modelId);
+    }
+  }, [selectedCatalogItem, selectedCatalogId]);
+
   /* reliable actions */
   const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
   const handleScanGguf = () => executeAction("ScanGGUF", "system", async () => scanGguf?.(), setUiState);
@@ -1022,8 +1032,8 @@ export function ModelsView({
       if (!model?.key) {
         throw new Error("The completed artifact is not available in the model registry yet. Use Refresh and try Load again.");
       }
-      await runModelAction?.("start", model.key);
-      setUiState({ status: "success", message: "Model loaded and confirmed by the API." });
+      setLoadDialogModel(model);
+      setUiState({ status: "success", message: "Download complete. Review load settings, then start the model." });
     } catch (error) {
       setUiState({ status: "failed", message: "Unable to load completed model: " + (error?.message || "unknown error") });
     } finally {
@@ -1265,10 +1275,26 @@ export function ModelsView({
               )}
 
               {/* Model catalog */}
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="model-catalog-grid">
-                {pagedItems.map(item => (
-                  <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} hardwareBlocked={normalizedHardware.blocked} hardwareBlockReasons={normalizedHardware.blockedReasons} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} desktopOnly={desktopOnly} />
-                ))}
+              <div className={desktopOnly ? "studio-model-browser" : ""}>
+                <div className={desktopOnly ? "studio-model-list" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"} data-testid="model-catalog-grid">
+                  {pagedItems.map(item => (
+                    <CatalogCard
+                      key={item.id || item.modelId}
+                      item={item}
+                      selected={desktopOnly && selectedCatalogItem === item}
+                      onSelect={desktopOnly ? () => setSelectedCatalogId(item.id || item.modelId) : undefined}
+                      placementFit={catalogPlacementAssessment(item, effectiveHardware)}
+                      hardwareBlocked={normalizedHardware.blocked}
+                      hardwareBlockReasons={normalizedHardware.blockedReasons}
+                      prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+                      searchMode={searchMode}
+                      startDownload={startDownload}
+                      activeDownloads={activeDownloads}
+                      desktopOnly={desktopOnly}
+                    />
+                  ))}
+                </div>
+                {desktopOnly && <StudioModelDetail item={selectedCatalogItem} />}
               </div>
 
               {/* Pagination */}
@@ -1315,7 +1341,7 @@ export function ModelsView({
               </div>
 
               {installedModels.map(model => (
-                <InstalledCard key={model.key} model={model} allModels={models} runModelAction={runModelAction} executeAction={executeAction} setUiState={setUiState} />
+                <InstalledCard key={model.key} model={model} allModels={models} runModelAction={runModelAction} executeAction={executeAction} setUiState={setUiState} onConfigureLoad={setLoadDialogModel} />
               ))}
 
               {!installedModels.length && (
@@ -1466,6 +1492,16 @@ export function ModelsView({
         </div>
       </div>
       </div>
+      <ModelLoadDialog
+        model={loadDialogModel}
+        models={models}
+        hardware={effectiveHardware}
+        onClose={() => setLoadDialogModel(null)}
+        onLoad={async (model, profile) => {
+          await runModelAction?.("start", model.key, { profile });
+          setUiState({ status: "success", message: "Model loaded with the selected llama.cpp profile." });
+        }}
+      />
     </section>
   );
 }
@@ -1693,7 +1729,47 @@ function GuidedRecommendations({
 /* ═══════════════════════════════════════════
    CATALOG CARD
    ═══════════════════════════════════════════ */
-function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads, desktopOnly = false }) {
+function StudioModelDetail({ item }) {
+  if (!item) {
+    return <aside className="studio-model-detail"><p>Select a model to see its details.</p></aside>;
+  }
+  const parameterCount = item.parameterCountB ? item.parameterCountB + "B" : "Unknown";
+  const context = contextWindowFor(item);
+  const capabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
+  const format = item.format || ((item.runtimeOptions || []).some((option) => option.protocolId === "llamaCppGgufServer") ? "GGUF" : "Model");
+  const updated = item.lastModified || item.updatedAt || item.updated_at;
+  return (
+    <aside className="studio-model-detail" data-testid="studio-model-detail">
+      <header>
+        <ModelIdentity item={item} />
+        {item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label="Open model source"><ExternalLink size={15} /></a>}
+      </header>
+      <div className="studio-model-metrics">
+        {item.downloads > 0 && <span>Downloads {Number(item.downloads).toLocaleString()}</span>}
+        {item.likes > 0 && <span>Likes {Number(item.likes).toLocaleString()}</span>}
+        {updated && <span>Updated {new Date(updated).toLocaleDateString()}</span>}
+      </div>
+      <section>
+        <p>{item.summary || "Model information from the local Rasputin catalog and Hugging Face metadata."}</p>
+        <div className="studio-model-facts">
+          <span><small>Parameters</small><strong>{parameterCount}</strong></span>
+          <span><small>Architecture</small><strong>{item.architecture || item.arch || "Unknown"}</strong></span>
+          <span><small>Purpose</small><strong>{labelize(item.purpose || "chat")}</strong></span>
+          <span><small>Format</small><strong>{format}</strong></span>
+          {context > 0 && <span><small>Context</small><strong>{context.toLocaleString()}</strong></span>}
+          {item.license && <span><small>License</small><strong>{item.license}</strong></span>}
+        </div>
+        {capabilities.length > 0 && <div className="studio-model-capabilities">{capabilities.map((capability) => <Badge key={capability} variant="muted">{labelize(capability)}</Badge>)}</div>}
+      </section>
+      <section>
+        <h3>About this model</h3>
+        <p>{item.description || item.summary || "Select a GGUF variant to download it into Rasputin's native model library. Loading is handled by the bundled llama.cpp runtime."}</p>
+      </section>
+    </aside>
+  );
+}
+
+function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads, desktopOnly = false }) {
   const modelId = item.modelId || item.id;
   const isHuggingFace = searchMode === "huggingface" || item.source === "huggingface";
   const [variantDetail, setVariantDetail] = useState(null);
@@ -1785,7 +1861,19 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
   const parameterLabel = item.parameterCountB ? item.parameterCountB + "B parameters" : null;
 
   return (
-    <article className="ras-list-item glow-card flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4" data-testid="model-catalog-card">
+    <article
+      className={"ras-list-item glow-card flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 " + (selected ? "is-selected" : "")}
+      data-testid="model-catalog-card"
+      tabIndex={onSelect ? 0 : undefined}
+      aria-selected={onSelect ? selected : undefined}
+      onClick={onSelect}
+      onKeyDown={onSelect ? (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      } : undefined}
+    >
       <div className="flex items-start justify-between gap-3">
         <ModelIdentity item={item} />
         <Badge variant={downloadStateName === "completed" || item.readyWithinThreeMinutes ? "up" : blocked ? "down" : "muted"}>
@@ -1915,7 +2003,7 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
 /* ═══════════════════════════════════════════
    INSTALLED CARD
    ═══════════════════════════════════════════ */
-function InstalledCard({ model, allModels, runModelAction, executeAction, setUiState }) {
+function InstalledCard({ model, allModels, runModelAction, executeAction, setUiState, onConfigureLoad }) {
   const name = displayModelName(model, allModels);
   const secondary = displayModelSecondary(model, allModels);
   const st = runtimeStatus(model);
@@ -1936,7 +2024,7 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   };
   const handleTest = () => runAction("test", "TestHealth", "test");
   const handleDiscover = () => runAction("discover", "Discover", "discover");
-  const handleRuntime = () => runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
+  const handleRuntime = () => nativeRuntime && !isRunning ? onConfigureLoad?.(model) : runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
 
   return (
     <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">

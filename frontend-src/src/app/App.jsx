@@ -1271,7 +1271,7 @@ export function App() {
     }
   }
 
-  async function runModelAction(action, key) {
+  async function runModelAction(action, key, options = {}) {
     const resolvedKey = typeof key === "string" ? key.trim() : "";
     if (!resolvedKey) {
       const message = "Select a registered model before running this action.";
@@ -1279,7 +1279,7 @@ export function App() {
       throw new Error(message);
     }
     try {
-      const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey });
+      const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey, ...options });
       setGlobalStatus(action === "repair" && result.repaired ? "Model repaired." : `${action} finished.`);
       await loadModels();
     } catch (error) {
@@ -2501,7 +2501,7 @@ export function App() {
           { label: "Open models", hint: "Browse, download, and load local models.", action: () => go("models") },
           { label: "Open Rasputin assistant", hint: "Review identity, model packs, plans, and broker handoffs.", keywords: "jarvis friday voice orchestration", action: () => go("assistant") },
           { label: "Open artifacts", hint: "Browse generated files and evidence.", keywords: "archive output", action: () => go("archive") },
-          { label: "Open settings", hint: "Configure accounts, security, and integrations.", action: () => go("settings", "general") },
+          { label: "Open settings", hint: "Configure the application, models, hardware, and integrations.", action: () => go("settings", "general") },
         ],
         onOpenTask: openTaskDetails,
         onOpenSession: resumeSession,
@@ -2556,7 +2556,7 @@ export function App() {
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
-        view={view}
+        view={desktopOnly && view === "settings" ? "chat" : view}
         selectedModel={selectedModel}
         selectedModelObject={selectedModelObject}
         models={models}
