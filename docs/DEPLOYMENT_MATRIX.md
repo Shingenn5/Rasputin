@@ -71,21 +71,6 @@ powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -EnableWarSat 
 An administrator must also enable Docker control in Settings -> Safety. Run WarSat readiness before
 deploying a model. GPU/model-image compatibility remains runtime-specific.
 
-### Optional profiles
-
-The rag and search Compose profiles add Chroma and SearXNG:
-
-~~~bash
-docker compose --profile rag up --build -d
-docker compose --profile search up --build -d
-~~~
-
-Use the same commands in PowerShell. Stop them with:
-
-~~~bash
-docker compose --profile rag --profile search down
-~~~
-
 ## Native Server (Windows)
 
 Native Server is the managed non-Docker option for Windows. It runs independently of Electron,

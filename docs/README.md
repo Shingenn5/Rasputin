@@ -23,13 +23,14 @@ These are the documents to consult before starting implementation work.
 | Document | Scope | Status |
 | --- | --- | --- |
 | [`CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`](CODING_AGENT_IMPLEMENTATION_CHECKLIST.md) | Coding-agent capability and verification queue | Active working checklist |
+| [`ADAPTIVE_CONTEXT_AND_THROUGHPUT.md`](ADAPTIVE_CONTEXT_AND_THROUGHPUT.md) | Evidence-bound context sizing and child-work budgets | Implemented policy contract; measured runtime evidence remains bounded |
 | [`RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md`](RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md) | Release-readiness gaps and evidence requirements | Current readiness report |
 | [`RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md`](RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md) | Independent fresh-user audit of the rebuilt model-orchestration and UI/UX revision | P1/P2 fixed and independently re-verified |
 | [`RASPUTIN_IMPLEMENTATION_LEDGER.md`](RASPUTIN_IMPLEMENTATION_LEDGER.md) | Compact source/test evidence ledger for current workstation and Assistant status | Reconcile before roadmap edits |
 | [`RASPUTIN_V1_RELEASE_CONTRACT.md`](RASPUTIN_V1_RELEASE_CONTRACT.md) | Frozen ten-slice v1 finish line, evidence matrix, and explicit non-goals | Scope authority for the completion batch |
 | [`DESKTOP_ARCHITECTURE.md`](DESKTOP_ARCHITECTURE.md) | Windows desktop packaging and lifecycle | Current packaging reference |
 | [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md) | Native versus Docker runtime behavior | Runtime contract |
-| [`REMAINING_WORK.md`](REMAINING_WORK.md) | Dual-mode/security residuals and packaging track | Track-specific status; not a replacement for the checklist |
+| [`MODEL_RESOURCE_MANIFEST.md`](MODEL_RESOURCE_MANIFEST.md) | Versioned model resource and placement evidence schema | Implemented contract; live runtime measurements remain bounded |
 | [`LASTING_MEMORY.md`](LASTING_MEMORY.md) | Owner/workspace-scoped durable memory contract and current API/UI | Implemented foundation; follow-up slices remain |
 | [`MCP_CAPABILITY_CONTRACT.md`](MCP_CAPABILITY_CONTRACT.md) | Versioned MCP tool discovery and callable-only model surface | Implemented capability contract |
 | [`ASSISTANT_COMMAND_ROUTING.md`](ASSISTANT_COMMAND_ROUTING.md) | Deterministic assistant command previews and approval states | Implemented preview boundary |
@@ -47,7 +48,6 @@ implemented behavior or security policy.
 | Document | Purpose |
 | --- | --- |
 | [`RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx) / [`PDF`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.pdf) | Reviewable visual proposal for Rasputin's personal-assistant direction |
-| [`RASPUTIN_FEATURE_EXPANSION_STRATEGY.docx`](RASPUTIN_FEATURE_EXPANSION_STRATEGY.docx) | Earlier feature-expansion strategy artifact |
 | [`RASPUTIN_VS_ODYSSEUS_COMPARISON.md`](RASPUTIN_VS_ODYSSEUS_COMPARISON.md) | Product and architecture comparison |
 | [`ODYSSEUS_INSPIRED_RASPUTIN_ROADMAP.md`](ODYSSEUS_INSPIRED_RASPUTIN_ROADMAP.md) | Project Prometheus roadmap and adoption boundaries |
 | [`PROJECT_PROMETHEUS_PHASE_0_STATUS.md`](PROJECT_PROMETHEUS_PHASE_0_STATUS.md) | Phase-0 milestone record |

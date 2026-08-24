@@ -40,24 +40,6 @@ services:
       - ./data/tls:/app/tls:ro
     restart: "no"
 
-  chroma:
-    profiles: ["rag"]
-    image: chromadb/chroma:latest
-    ports:
-      - "127.0.0.1:8008:8000"
-    volumes:
-      - ./data/chroma:/chroma/chroma
-    restart: "no"
-
-  searxng:
-    profiles: ["search"]
-    image: searxng/searxng:latest
-    ports:
-      - "127.0.0.1:8888:8080"
-    volumes:
-      - ./data/searxng:/etc/searxng
-    restart: "no"
-
 volumes:
   # Wrapper runtime store. Populated on existing installs by `rasputin.ps1
   # migrate-data`; auto-created empty (fresh bootstrap) on new installs.

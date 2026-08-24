@@ -242,7 +242,7 @@ This keeps the onboarding document, checklist, roadmap, and product claims align
 - `docs/CODEX_ONBOARDING.md` — project contract and current coding-agent status.
 - `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` — implementation/verification history and remaining coding workflow proof.
 - `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md` — current source/test evidence and explicit status boundaries.
-- `docs/REMAINING_WORK.md`, `docs/DEPLOYMENT_MATRIX.md`, and `docs/DESKTOP_ARCHITECTURE.md` — deployment, security, and packaging status.
+- `THREAT_MODEL.md`, `docs/DEPLOYMENT_MATRIX.md`, and `docs/DESKTOP_ARCHITECTURE.md` — security, deployment, and packaging status.
 - `backend/mcp/tools.py` — the intentional `docker_control` policy stub.
 - `backend/trials/scorecards.py` — current unmeasured scorecard dimensions.
 - `frontend-src/src/features/workspaces/WorkspacesView.jsx` and `tests/ui/rasputinSmoke.spec.mjs` — validation-command UI and current coverage.

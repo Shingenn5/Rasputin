@@ -155,7 +155,7 @@ work). Position:
 | `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | §4 is current/canonical; later backend path maps still contain pre-package-layout names |
 | `docs/README.md` | Canonical documentation map and source-of-truth rules |
 | `docs/RASPUTIN_V1_RELEASE_CONTRACT.md` | Frozen ten-slice v1 finish line, evidence matrix, and non-goals |
-| `docs/REMAINING_WORK.md` | Current dual-mode/security residuals + open Phase 5 packaging |
+| `docs/RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md` | Current release residuals and evidence report; reconcile against code and the implementation ledger |
 | `docs/DEPLOYMENT_MATRIX.md`, `docs/DESKTOP_ARCHITECTURE.md` | Current runtime and packaging guidance |
 | `THREAT_MODEL.md`, `docs/WRAPPER_RUNTIME_CONTRACT.md` | Current security and runtime contracts |
 | `.agents/skills/verify/SKILL.md`, `.claude/skills/verify/SKILL.md` | Current — isolated native verification with real-auth login/cookie flow |

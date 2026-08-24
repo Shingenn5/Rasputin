@@ -1,9 +1,8 @@
 # Rasputin Desktop
 
 Rasputin is a Windows desktop AI workstation for local model inference and agentic coding.
-This branch, codex/desktop-llamacpp, is shaped to be used like LM Studio: install a normal
-application, browse a model catalog, download an exact model variant, load it with native
-llama.cpp, and use it in chat or coding tasks.
+It is shaped to be used like LM Studio: install a normal application, browse a model catalog,
+download an exact model variant, load it with native llama.cpp, and use it in chat or coding tasks.
 
 The packaged application is the daily-driver path. You do not launch a terminal, manage a
 localhost server, start Docker, install Python or Node, or deploy downloaded models into
@@ -14,7 +13,7 @@ containers.
 ![llama.cpp](https://img.shields.io/badge/inference-llama.cpp-111318?style=for-the-badge)
 ![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-orange?style=for-the-badge)
 
-## What changed on this branch
+## Current desktop capabilities
 
 - Rasputin launches as a self-contained Electron desktop application.
 - The packaged app boots directly to the main user workspace; there is no login screen in the
@@ -33,9 +32,6 @@ containers.
 - MCP Servers and integrations are available inside Settings, including local stdio servers,
   Streamable HTTP servers, guarded tool discovery, approvals, and GitHub repository context.
 - Rasputin has its own application identity and icon instead of presenting as a generic Electron app.
-
-The old Docker/server-oriented README is preserved verbatim in
-[README.legacy.md](README.legacy.md) for rollback or reference.
 
 ## Product boundary
 
@@ -306,7 +302,6 @@ daily-driver path, and Docker is not required for it.
 | runtime/llama/ | Pinned llama.cpp manifest and bundled-runtime staging documentation |
 | scripts/ | Desktop runtime, backend, installer, packaging, and verification scripts |
 | tests/ | Backend, desktop lifecycle, branding, UI, and integration tests |
-| README.legacy.md | Exact pre-rewrite README kept for rollback/reference |
 
 ## License
 

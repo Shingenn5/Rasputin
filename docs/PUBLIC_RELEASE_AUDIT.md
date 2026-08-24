@@ -1,8 +1,9 @@
 # Rasputin Public Release Audit
 
 > **Audit started:** July 24, 2026
-> **Branch:** `codex/project-prometheus-phase-0`
-> **Status:** Initial automated pass complete; release is not yet cleared
+> **Audit refreshed:** August 24, 2026
+> **Branch:** `main`
+> **Status:** Local repository-safety re-check passed; release is not yet cleared
 
 ## Executive result
 
@@ -20,14 +21,14 @@ need their first remote run before final clearance.
 | Check | Result |
 |---|---|
 | `scripts/check-repo-safety.ps1` | Pass |
-| Tracked files | 216 |
+| Tracked files | 375 |
 | Tracked `data/`, build, distribution, virtualenv, Playwright, or `node_modules` paths | 0 |
 | Tracked private-key, certificate, database, or log extensions | 0 |
 | Tracked local screenshots covered by the audit patterns | 0 |
 | Tracked `.env` files | `.env.example` only |
 | Tracked model weights | 0 |
 | Tracked file larger than 5 MB | 0 |
-| Git object database | Approximately 7 MB unpacked plus packed objects |
+| Git object database | Approximately 7 MB total (`6.57 MiB` packed plus loose objects) |
 
 `backend/models/secrets.py` matched the filename audit because it is the
 application's secret-storage implementation, not a secret file.
@@ -115,7 +116,7 @@ GitHub dependency review for pull requests. Before publication:
 | Vulnerability scan | Pending |
 | Project license | AGPL-3.0-or-later selected and added |
 | Public governance documents | Initial set added; contribution-signing policy pending |
-| Feature baseline | In progress; see `PROJECT_PROMETHEUS_PHASE_0_STATUS.md` |
+| Feature baseline | In progress; see `RASPUTIN_IMPLEMENTATION_LEDGER.md` and `RASPUTIN_V1_RELEASE_CONTRACT.md` |
 
 Do not rewrite history, publish a release, or import Odysseus source without a
 recorded provenance and compatibility review.
