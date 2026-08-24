@@ -136,7 +136,7 @@ export function DashSidebar({
     <div
       className={cn(
         "relative h-dvh shrink-0 w-0 transition-[width] duration-200 ease-out",
-        collapsed ? "sm:w-[58px]" : "sm:w-[248px]",
+        collapsed ? "sm:w-[54px]" : "sm:w-[220px]",
       )}
     >
       {/* Mobile scrim — covers content behind the open sidebar overlay */}
@@ -159,7 +159,7 @@ export function DashSidebar({
         }}
         className={cn(
           "ras-sidebar ras-desktop-rail ras-sidebar-scroll absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
-          expanded ? "w-[248px]" : "w-[58px]",
+          expanded ? "w-[220px]" : "w-[54px]",
           // Mobile-only CSS hides closed controls from tab/AT order; desktop remains persistent.
           !mobileOpen && "is-mobile-closed -translate-x-full sm:translate-x-0",
           mobileOpen ? "shadow-2xl shadow-black/50" : "",

@@ -12,10 +12,13 @@ test("desktop Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /setShowAllModels\(true\)/);
   assert.match(models, /setCatalogRuntime\("llamaCppGgufServer"\)/);
   assert.match(models, /searchMode === "catalog" && !desktopOnly/);
-    assert.match(models, /className="models-page-shell/);
+  assert.match(models, /className="models-page-shell/);
   assert.match(models, /className="models-page-tabs"/);
-  assert.match(models, /desktopLabel = \{ library: "Discover", installed: "My Models", running: "Loaded", settings: "Connections" \}/);
+  assert.match(models, /desktopLabel = \{ library: "Discover", installed: "My Models", running: "Loaded", settings: "Developer" \}/);
   assert.doesNotMatch(models, /Models <span className="text-muted-foreground">Center<\/span>/);
+  assert.match(models, /data-testid="studio-installed-list"/);
+  assert.match(models, /data-testid="models-developer-header"/);
+  assert.match(models, />No Docker<\/Badge>/);
 });
 
 test("model cards use generated identity and collapse advanced details", () => {

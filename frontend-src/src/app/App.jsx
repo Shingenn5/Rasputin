@@ -133,7 +133,7 @@ export function App() {
   const [settingsSection, setSettingsSection] = useState("general");
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorageFlag("rasputin-sidebar-collapsed", false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState(() => normalizeTheme(localStorage.getItem("rasputin-theme") || "rasputin-light"));
+  const [theme, setTheme] = useState(readInitialTheme);
   const [motionMode, setMotionMode] = useState(readStoredMotionMode);
   const [models, setModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
@@ -533,7 +533,9 @@ export function App() {
     const localTheme = localStorage.getItem("rasputin-theme");
     const localMotionMode = localStorage.getItem("rasputin-motion-mode");
     const localSidebarCollapsed = readStoredFlag("rasputin-sidebar-collapsed");
-    setTheme(normalizeTheme(localTheme || prefs.theme || "rasputin-light"));
+    const themeWasExplicitlyChosen = localStorage.getItem("rasputin-theme-explicit") === "1";
+    const storedTheme = localTheme || prefs.theme;
+    setTheme(normalizeTheme(!themeWasExplicitlyChosen && storedTheme === "rasputin-light" ? "rasputin-dark" : storedTheme || "rasputin-dark"));
     setMotionMode(normalizeMotionMode(localMotionMode || prefs.motionMode || "full"));
     setSidebarCollapsed(localSidebarCollapsed === null ? !!prefs.sidebarCollapsed : localSidebarCollapsed);
     setTestingMode(!!prefs.testingMode);
@@ -2910,7 +2912,10 @@ export function App() {
         saveOutputConfig={saveOutputConfig}
         themeOptions={themeOptions}
         theme={theme}
-        setTheme={setTheme}
+        setTheme={(nextTheme) => {
+          localStorage.setItem("rasputin-theme-explicit", "1");
+          setTheme(normalizeTheme(nextTheme));
+        }}
         motionMode={motionMode}
         setMotionMode={setMotionMode}
         logout={logout}
@@ -3049,7 +3054,13 @@ async function fetchAuditEvents() {
 }
 
 function normalizeTheme(value) {
-  return window.rasputinTheme?.normalize?.(value) || (themeOptions.some(([key]) => key === value) ? value : "rasputin-light");
+  return window.rasputinTheme?.normalize?.(value) || (themeOptions.some(([key]) => key === value) ? value : "rasputin-dark");
+}
+
+function readInitialTheme() {
+  const storedTheme = localStorage.getItem("rasputin-theme");
+  const themeWasExplicitlyChosen = localStorage.getItem("rasputin-theme-explicit") === "1";
+  return normalizeTheme(!themeWasExplicitlyChosen && storedTheme === "rasputin-light" ? "rasputin-dark" : storedTheme || "rasputin-dark");
 }
 
 function updateThemeChrome(theme) {

@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import { darkThemes, themeOptions } from "../frontend-src/src/lib/constants.js";
 
 const indexHtml = readFileSync(new URL("../frontend-src/index.html", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const preferenceSource = readFileSync(new URL("../backend/core/preferences.py", import.meta.url), "utf8");
 const bootThemeEntries = [...indexHtml.matchAll(/^\s+"([a-z0-9-]+)": \{[^\n]+dark: (true|false) \}/gm)]
   .map((match) => ({ key: match[1], dark: match[2] === "true" }));
 
@@ -32,4 +34,12 @@ test("expanded library contains balanced new light and dark palettes", () => {
   const pickerKeys = new Set(themeOptions.map(([key]) => key));
   additions.forEach((key) => assert.ok(pickerKeys.has(key), `${key} is missing`));
   assert.equal(additions.filter((key) => darkThemes.has(key)).length, 3);
+});
+
+test("Rasputin boots dark unless the user explicitly selected light", () => {
+  assert.match(indexHtml, /storedTheme \|\| "rasputin-dark"/);
+  assert.match(indexHtml, /rasputin-theme-explicit/);
+  assert.match(appSource, /useState\(readInitialTheme\)/);
+  assert.match(appSource, /storedTheme === "rasputin-light" \? "rasputin-dark"/);
+  assert.match(preferenceSource, /"theme": "rasputin-dark"/);
 });

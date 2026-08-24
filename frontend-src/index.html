@@ -9,7 +9,7 @@
       (function () {
         var themes = {
           "rasputin-light": { bg: "#eee9df", text: "#20231f", accent: "#c24f32", a1: "rgba(194, 79, 50, 0.18)", a2: "rgba(39, 84, 91, 0.12)", a3: "rgba(210, 148, 70, 0.10)", dark: false },
-          "rasputin-dark": { bg: "#10120f", text: "#ece8de", accent: "#de6545", a1: "rgba(222, 101, 69, 0.18)", a2: "rgba(76, 126, 132, 0.12)", a3: "rgba(205, 149, 79, 0.10)", dark: true },
+          "rasputin-dark": { bg: "#111214", text: "#f2f3f5", accent: "#7165f5", a1: "rgba(113, 101, 245, 0.08)", a2: "rgba(69, 119, 214, 0.05)", a3: "rgba(132, 91, 196, 0.04)", dark: true },
           "contrast": { bg: "#ffffff", text: "#000000", accent: "#005fcc", a1: "rgba(0, 95, 204, 0.2)", a2: "rgba(0, 0, 0, 0.1)", a3: "rgba(0, 95, 204, 0.1)", dark: false },
           "bootswatch-slate": { bg: "#272b30", text: "#e8edf0", accent: "#d85b32", a1: "rgba(216, 91, 50, 0.5)", a2: "rgba(56, 130, 246, 0.42)", a3: "rgba(130, 90, 255, 0.4)", dark: true },
           "bootswatch-cyborg": { bg: "#060606", text: "#e8edf0", accent: "#ff5b45", a1: "rgba(255, 91, 69, 0.5)", a2: "rgba(40, 40, 40, 0.6)", a3: "rgba(255, 0, 0, 0.4)", dark: true },
@@ -71,7 +71,9 @@
           return selected;
         }
         window.rasputinTheme = { apply: apply, normalize: normalize, themes: themes };
-        apply(localStorage.getItem("rasputin-theme") || "rasputin-light");
+        var storedTheme = localStorage.getItem("rasputin-theme");
+        var explicitTheme = localStorage.getItem("rasputin-theme-explicit") === "1";
+        apply(!explicitTheme && storedTheme === "rasputin-light" ? "rasputin-dark" : storedTheme || "rasputin-dark");
       })();
     </script>
     <style>

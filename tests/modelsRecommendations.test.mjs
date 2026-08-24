@@ -216,7 +216,8 @@ test("completed artifacts expose an explicit user Load action", () => {
   assert.match(source, /let registry = models \|\| \[\];/);
   assert.match(source, /model = artifactModelMatch\(registry, artifact\);/);
   assert.match(source, /registry = await loadModels\(\);/);
-  assert.match(source, /runModelAction\?\.\("start", model\.key\)/);
+  assert.match(source, /setLoadDialogModel\(model\)/);
+  assert.match(source, /Review load settings, then start the model/);
 });
 
 test("guided selection presents one primary choice with collapsed advanced paths", () => {

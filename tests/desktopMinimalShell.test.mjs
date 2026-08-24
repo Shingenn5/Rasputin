@@ -30,9 +30,9 @@ test("desktop command palette describes the simplified primary workflow", () => 
 
 
 test("desktop shell uses a quiet icon rail and Settings opens as a modal", () => {
-  assert.match(sidebar, /"sm:w-\[58px\]"/);
+  assert.match(sidebar, /"sm:w-\[54px\]"/);
   assert.match(sidebar, /const expanded = mobileOpen \|\| !collapsed/);
-  assert.match(sidebar, /collapsed \? "sm:w-\[58px\]" : "sm:w-\[248px\]"/);
+  assert.match(sidebar, /collapsed \? "sm:w-\[54px\]" : "sm:w-\[220px\]"/);
   assert.match(sidebar, /data-testid="sidebar-project-list"/);
   assert.match(sidebar, /Index and Graphify/);
   assert.match(settings, /className="studio-settings-modal"/);

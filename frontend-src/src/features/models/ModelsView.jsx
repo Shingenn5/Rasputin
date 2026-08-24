@@ -1053,7 +1053,7 @@ export function ModelsView({
       <div className="models-page-header">
         <div>
           <h1>Models</h1>
-          <p>Find a GGUF model, download it, and load it with the bundled llama.cpp runtime.</p>
+          <p>Browse, download, and run local GGUF models with the bundled llama.cpp runtime.</p>
         </div>
         <div className={desktopOnly ? "hidden" : "flex min-w-0 flex-wrap justify-end gap-3"}>
           {[
@@ -1074,7 +1074,7 @@ export function ModelsView({
       <div className="models-page-tabs" role="tablist" aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
-          const desktopLabel = { library: "Discover", installed: "My Models", running: "Loaded", settings: "Connections" }[t.id];
+          const desktopLabel = { library: "Discover", installed: "My Models", running: "Loaded", settings: "Developer" }[t.id];
           return (
             <UIButton
               key={t.id}
@@ -1336,7 +1336,7 @@ export function ModelsView({
 
           {/* ═══ INSTALLED TAB ═══ */}
           {activeTab === "installed" && (
-            <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section studio-installed-panel" style={{ flex: 1 }}>
               <div className="models-source-switcher">
                 <h2 style={{ margin: 0, fontSize: "1rem" }}>Local Registry</h2>
                 <div style={{ flex: 1 }} />
@@ -1344,9 +1344,16 @@ export function ModelsView({
                 <button className="w2-button" type="button" onClick={handleRefresh}><RefreshCw size={14} /> Refresh</button>
               </div>
 
-              {installedModels.map(model => (
-                <InstalledCard key={model.key} model={model} allModels={models} runModelAction={runModelAction} executeAction={executeAction} setUiState={setUiState} onConfigureLoad={setLoadDialogModel} />
-              ))}
+              <div className="studio-installed-list" data-testid="studio-installed-list">
+                {desktopOnly && (
+                  <div className="studio-installed-head" aria-hidden="true">
+                    <span>Model</span><span>Runtime</span><span>Compatibility</span><span>Actions</span>
+                  </div>
+                )}
+                {installedModels.map(model => (
+                  <InstalledCard key={model.key} model={model} allModels={models} runModelAction={runModelAction} executeAction={executeAction} setUiState={setUiState} onConfigureLoad={setLoadDialogModel} />
+                ))}
+              </div>
 
               {!installedModels.length && (
                 <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
@@ -1395,9 +1402,23 @@ export function ModelsView({
 
           {/* ═══ SETTINGS TAB ═══ */}
           {activeTab === "settings" && (
-            <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section models-developer-panel" style={{ flex: 1 }}>
+              <header className="models-developer-header" data-testid="models-developer-header">
+                <div className="models-runtime-state">
+                  <span aria-hidden="true" />
+                  <div>
+                    <strong>Native model runtime</strong>
+                    <small>Rasputin Desktop owns the local llama.cpp process.</small>
+                  </div>
+                </div>
+                <div className="models-runtime-contract">
+                  <Badge variant="up">Loopback only</Badge>
+                  <Badge variant="muted">llama.cpp bundled</Badge>
+                  <Badge variant="muted">No Docker</Badge>
+                </div>
+              </header>
               {/* Testing Mode */}
-              <div className="w2-card">
+              <div className="w2-card models-testing-card">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <strong>Testing Mode</strong>
@@ -1410,7 +1431,7 @@ export function ModelsView({
               </div>
 
               {/* Connect Local */}
-              <div className="w2-card">
+              <div className="w2-card models-connection-card">
                 <h3 style={{ margin: 0, fontSize: "0.875rem" }}><HardDrive size={14} style={{ verticalAlign: "-2px" }} /> Connect Local Endpoint</h3>
                 <form onSubmit={registerLocalModel} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                   <input className="w2-input" name="name" placeholder="Display Name" />
@@ -1426,7 +1447,7 @@ export function ModelsView({
               </div>
 
               {/* Connect API */}
-              <div className="w2-card">
+              <div className="w2-card models-connection-card">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Cloud size={14} style={{ verticalAlign: "-2px" }} /> Connect API Provider</h3>
                   <span style={{ fontSize: "0.6875rem", padding: "2px 10px", borderRadius: "999px", background: remoteBlocked ? "color-mix(in srgb, var(--ras-danger) 15%, var(--cc-surface))" : "color-mix(in srgb, var(--ras-safe) 15%, var(--cc-surface))", color: remoteBlocked ? "var(--ras-danger)" : "var(--ras-safe)", fontWeight: 600 }}>
@@ -1452,7 +1473,7 @@ export function ModelsView({
 
               {/* Native runtime */}
               {desktopOnly ? (
-                <div className="w2-card" data-testid="native-runtime-settings">
+                <div className="w2-card models-native-runtime-card" data-testid="native-runtime-settings">
                   <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Cpu size={14} style={{ verticalAlign: "-2px" }} /> Native llama.cpp Runtime</h3>
                   <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>The bundled llama.cpp engine loads downloaded GGUF models directly. No Docker, Python, Node, or separate runtime install is required.</p>
                 </div>
@@ -1465,7 +1486,7 @@ export function ModelsView({
               )}
 
               {/* Full registry list */}
-              <div className="w2-card">
+              <div className="w2-card models-registry-card">
                 <h3 style={{ margin: 0, fontSize: "0.875rem" }}><SlidersHorizontal size={14} style={{ verticalAlign: "-2px" }} /> Full Registry</h3>
                 {(models || []).map(m => (
                   <div key={m.key} className="w2-list-item" style={{ cursor: "default" }}>
@@ -2034,41 +2055,35 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const handleRuntime = () => nativeRuntime && !isRunning ? onConfigureLoad?.(model) : runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
 
   return (
-    <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <Cpu size={18} style={{ color: statusColor(st) }} />
-          <div>
-            <strong className="text-sm">{name}</strong>
-            {secondary && <div className="text-[0.7rem] text-muted-foreground">{secondary}</div>}
-          </div>
+    <div className="studio-installed-row ras-list-item border border-border bg-card">
+      <div className="studio-installed-model">
+        <Cpu size={18} style={{ color: statusColor(st) }} />
+        <div>
+          <strong className="text-sm">{name}</strong>
+          {secondary && <div className="text-[0.7rem] text-muted-foreground">{secondary}</div>}
+          <div className="studio-installed-meta">{model.model || "Local model"}</div>
         </div>
+      </div>
+
+      <div className="studio-installed-runtime">
         <Badge variant={isHealthy ? "up" : "down"}>{isHealthy ? "Healthy" : labelize(st)}</Badge>
+        <span>{model.runtime || model.provider || "local"}</span>
+        <small>{labelize(model.role || "chat")}{ctx > 0 ? ` · ${ctx.toLocaleString()} context` : ""}</small>
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>Model: {model.model || "—"}</span>
-        <span>Runtime: {model.runtime || model.provider || "local"}</span>
-        <span>Role: {labelize(model.role || "chat")}</span>
-        {ctx > 0 && <span>Context: {ctx.toLocaleString()}</span>}
+      <div className="studio-installed-compatibility">
+        {mismatch && <div className="studio-installed-warning"><AlertTriangle size={13} /> {mismatch}</div>}
+        <CompatibilitySummary model={model} />
       </div>
 
-      {mismatch && (
-        <div className="flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-400">
-          <AlertTriangle size={13} /> {mismatch}
-        </div>
-      )}
-
-      <CompatibilitySummary model={model} />
-
-      <div className="flex gap-2">
+      <div className="studio-installed-actions">
         {model.managed && (
-          <Button onClick={handleRuntime} loading={busy === "start" || busy === "stop"} loadingLabel={isRunning ? "Stopping&" : "Starting&"} icon={isRunning ? <Power size={12} /> : <Play size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-            {isRunning ? "Stop" : nativeRuntime ? "Start llama.cpp" : "Start"}
+          <Button onClick={handleRuntime} loading={busy === "start" || busy === "stop"} loadingLabel={isRunning ? "Stopping…" : "Starting…"} icon={isRunning ? <Power size={12} /> : <Play size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
+            {isRunning ? "Stop" : nativeRuntime ? "Load" : "Start"}
           </Button>
         )}
         <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Test</Button>
-        <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Discover</Button>
+        <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Info</Button>
       </div>
     </div>
   );

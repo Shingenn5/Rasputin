@@ -61,22 +61,22 @@ html[data-theme="rasputin-light"] {
   --sidebar: #20231f;
   --sidebar-foreground: #f4efe6;
   --sidebar-primary: #d25d3d;
-  --sidebar-primary-foreground: #10120f;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #2d312b;
   --sidebar-accent-foreground: #fff;
   --sidebar-border: rgba(244, 239, 230, 0.11);
-  --sidebar-ring: #e17a59;
+  --sidebar-ring: #9188ff;
 }
 
 html[data-theme="rasputin-dark"] {
-  --sidebar: #0b0d0b;
-  --sidebar-foreground: #ece8de;
-  --sidebar-primary: #de6545;
-  --sidebar-primary-foreground: #10120f;
-  --sidebar-accent: #1a1d18;
+  --sidebar: #17181b;
+  --sidebar-foreground: #f2f3f5;
+  --sidebar-primary: #7165f5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #25262b;
   --sidebar-accent-foreground: #fff;
-  --sidebar-border: rgba(236, 232, 222, 0.1);
-  --sidebar-ring: #e17a59;
+  --sidebar-border: rgba(255, 255, 255, 0.085);
+  --sidebar-ring: #9188ff;
 }
 
 /* Map tokens into Tailwind's theme so utilities like bg-card, text-muted-foreground work. */

@@ -224,7 +224,7 @@ export function McpSettings({
             <Link2 size={15} /> {compact ? "Install" : "Add Streamable HTTP"}
           </Button>
           <Button type="button" variant="outline" onClick={() => openDialog("stdio")}>
-            <Server size={15} /> Add local
+            <Server size={15} /> Add local stdio
           </Button>
           {!hasExternalServer && !compact && (
             <Button type="button" variant="ghost" onClick={registerFixture} disabled={busy === "fixture"}>
