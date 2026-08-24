@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import {
   Pause, Play, RefreshCw, Square, Users, Search, 
   Activity, AlertTriangle, CheckCircle, Clock, 
-  Server, Database, HardDrive, Download, Eye, FileText, Inbox, Archive, ChevronUp, ChevronDown
+  Server, Database, HardDrive, Download, Eye, FileText, Archive, ChevronUp, ChevronDown
 } from "lucide-react";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
@@ -10,7 +10,8 @@ import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 
-const activityTabs = ["Inbox", "Queue", "All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
+const activityTabs = ["History", "Queue", "All Runs", "Active", "Completed", "Failed", "Scheduled", "System Events", "Audit Log"];
+const advancedActivityTabs = activityTabs.slice(1);
 
 export function ActivityView({
   view,
@@ -33,7 +34,7 @@ export function ActivityView({
   archiveInbox,
   markAllInboxRead,
 }) {
-  const [tab, setTab] = useState("Inbox");
+  const [tab, setTab] = useState("History");
   const [searchQuery, setSearchQuery] = useState("");
   const [localAudit, setLocalAudit] = useState(actionRegistry.logs);
   
@@ -59,6 +60,21 @@ export function ActivityView({
     .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0) || Number(a.queueOrder || a.createdAt || 0) - Number(b.queueOrder || b.createdAt || 0));
   const scheduledTasks = queuedTasks.filter((task) => Number(task.scheduledFor || 0) > Date.now() / 1000);
   const unreadInbox = inbox.filter((event) => event.status === "unread");
+  const historyEntries = useMemo(() => {
+    const taskEntries = rootTasks.map((task) => ({
+      kind: "task",
+      id: "task-" + task.id,
+      timestamp: historyTimestamp(task.updatedAt || task.updated_at || task.completedAt || task.completed_at || task.createdAt || task.created_at),
+      task,
+    }));
+    const notificationEntries = inbox.map((event) => ({
+      kind: "notification",
+      id: "notification-" + event.id,
+      timestamp: historyTimestamp(event.created_at || event.createdAt || event.updated_at || event.updatedAt),
+      event,
+    }));
+    return [...taskEntries, ...notificationEntries].sort((a, b) => b.timestamp - a.timestamp);
+  }, [rootTasks, inbox]);
 
   // Search Filter
   const filteredTasks = useMemo(() => {
@@ -92,30 +108,29 @@ export function ActivityView({
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Activity <span className="text-muted-foreground">Center</span></h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">One durable place for queued work, approvals, failures, and completed runs.</p>
+          <h1 className="text-3xl font-bold tracking-tight">History</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Recent chats, runs, notifications, and outcomes in one quiet timeline.</p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          {[
-            { v: unreadInbox.length, l: "Unread", c: "text-sky-400" },
-            { v: completedTasks.length, l: "Successes", c: "text-primary" },
-            { v: queuedTasks.length, l: "Queued", c: "text-amber-400" },
-            { v: failedTasks.length, l: "Failures", c: "text-rose-400" },
-          ].map((s) => (
-            <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
-              <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
-              <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
-            </div>
-          ))}
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <span>{historyEntries.length} recent items</span>
+          {unreadInbox.length > 0 && <Badge variant="muted">{unreadInbox.length} unread</Badge>}
         </div>
       </div>
 
-      <div className="activity-tabs-scroll flex items-center gap-2" role="tablist" aria-label="Activity views">
-        {activityTabs.map(t => (
-          <UIButton key={t} role="tab" aria-selected={tab === t} variant={tab === t ? "default" : "outline"} size="sm" onClick={() => setTab(t)}>
-            {t}
-          </UIButton>
-        ))}
+      <div className="activity-tabs-scroll flex items-center gap-2" role="tablist" aria-label="History views">
+        <UIButton role="tab" aria-selected={tab === "History"} variant={tab === "History" ? "default" : "outline"} size="sm" onClick={() => setTab("History")}>
+          History
+        </UIButton>
+        <details className="history-advanced-tabs">
+          <summary>Advanced history</summary>
+          <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Advanced history views">
+            {advancedActivityTabs.map(t => (
+              <UIButton key={t} role="tab" aria-selected={tab === t} variant={tab === t ? "default" : "outline"} size="sm" onClick={() => setTab(t)}>
+                {t}
+              </UIButton>
+            ))}
+          </div>
+        </details>
         <div className="flex-1" />
         {uiState.status !== 'idle' && (
           <Badge variant={uiState.status === 'failed' ? "down" : uiState.status === 'success' ? "up" : "muted"}>
@@ -132,40 +147,72 @@ export function ActivityView({
         {/* MAIN COLUMN */}
         <div className="w2-column">
 
-          {tab === "Inbox" && (
+          {tab === "History" && (
             <div className="flex flex-1 flex-col gap-3">
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
-                <div className="flex items-center gap-3">
-                  <span className="rounded-lg bg-primary/10 p-2 text-primary"><Inbox size={18} /></span>
-                  <div>
-                    <h2 className="font-semibold">Activity inbox</h2>
-                    <p className="text-xs text-muted-foreground">{unreadInbox.length} unread notification{unreadInbox.length === 1 ? "" : "s"}</p>
-                  </div>
+              <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+                <span className="rounded-lg bg-primary/10 p-2 text-primary"><Clock size={18} /></span>
+                <div>
+                  <h2 className="font-semibold">Recent history</h2>
+                  <p className="text-xs text-muted-foreground">Notifications and task outcomes are sorted newest first.</p>
                 </div>
-                {unreadInbox.length > 0 && <UIButton variant="outline" size="sm" onClick={() => markAllInboxRead?.()}>Mark all read</UIButton>}
               </div>
-              <div className="flex flex-col gap-2">
-                {inbox.map((event) => (
-                  <article key={event.id} className={cn("rounded-xl border bg-card p-4", event.status === "unread" ? "border-primary/50 shadow-[0_0_24px_-18px_var(--primary)]" : "border-border")}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          {event.status === "unread" && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
-                          <strong>{event.title}</strong>
-                          <Badge variant={event.severity === "error" ? "down" : event.severity === "success" ? "up" : "muted"}>{event.kind.replaceAll("_", " ")}</Badge>
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2.5">
+                <Search size={16} className="text-muted-foreground" />
+                <input
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  placeholder="Search history..."
+                  aria-label="Search history"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2 overflow-y-auto">
+                {historyEntries
+                  .filter((entry) => {
+                    if (!searchQuery.trim()) return true;
+                    const query = searchQuery.toLowerCase();
+                    const searchText = entry.kind === "task"
+                      ? [entry.task.objective, entry.task.status, entry.task.model, entry.task.workspace].join(" ")
+                      : [entry.event.title, entry.event.body, entry.event.kind, entry.event.severity].join(" ");
+                    return searchText.toLowerCase().includes(query);
+                  })
+                  .map((entry) => entry.kind === "task" ? (
+                    <article key={entry.id} className="rounded-xl border border-border bg-card p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={["failed", "error", "cancelled"].includes(entry.task.status) ? "down" : ["queued", "running", "paused"].includes(entry.task.status) ? "muted" : "up"} className="capitalize">{entry.task.status}</Badge>
+                            <strong className="truncate">{entry.task.objective || "Untitled run"}</strong>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {displayModelName(entry.task.model, models)} - {displayWorkspaceName(entry.task.workspace)}
+                          </p>
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">{event.body}</p>
-                        <time className="mt-2 block text-xs text-muted-foreground">{new Date(Number(event.created_at) * 1000).toLocaleString()}</time>
+                        <time className="shrink-0 text-xs text-muted-foreground">{new Date(entry.timestamp).toLocaleString()}</time>
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        {event.task_id && <UIButton size="sm" onClick={() => { markInboxRead?.(event.id); openTaskDetails?.(event.task_id); }}>Open</UIButton>}
-                        {event.status === "unread" && <UIButton variant="outline" size="sm" onClick={() => markInboxRead?.(event.id)}>Mark read</UIButton>}
-                        <UIButton variant="ghost" size="icon" title="Archive notification" aria-label="Archive notification" onClick={() => archiveInbox?.(event.id)}><Archive size={15} /></UIButton>
+                      <UIButton className="mt-3" variant="outline" size="sm" onClick={() => openTaskDetails?.(entry.task.id)}>Open details</UIButton>
+                    </article>
+                  ) : (
+                    <article key={entry.id} className={cn("rounded-xl border bg-card p-4", entry.event.status === "unread" ? "border-primary/50" : "border-border")}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {entry.event.status === "unread" && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
+                            <strong>{entry.event.title}</strong>
+                            <Badge variant={entry.event.severity === "error" ? "down" : entry.event.severity === "success" ? "up" : "muted"}>{entry.event.kind.replaceAll("_", " ")}</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{entry.event.body}</p>
+                        </div>
+                        <time className="shrink-0 text-xs text-muted-foreground">{new Date(entry.timestamp).toLocaleString()}</time>
                       </div>
-                    </div>
-                  </article>
-                ))}
-                {inbox.length === 0 && <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center text-sm text-muted-foreground">You are all caught up. Task outcomes and approval requests will appear here.</div>}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {entry.event.task_id && <UIButton size="sm" onClick={() => { markInboxRead?.(entry.event.id); openTaskDetails?.(entry.event.task_id); }}>Open details</UIButton>}
+                        {entry.event.status === "unread" && <UIButton variant="outline" size="sm" onClick={() => markInboxRead?.(entry.event.id)}>Mark read</UIButton>}
+                        <UIButton variant="ghost" size="icon" title="Archive notification" aria-label="Archive notification" onClick={() => archiveInbox?.(entry.event.id)}><Archive size={15} /></UIButton>
+                      </div>
+                    </article>
+                  ))}
+                {!historyEntries.length && <div className="rounded-xl border border-dashed border-border bg-card/50 p-10 text-center text-sm text-muted-foreground">No history yet. Task outcomes and notifications will appear here.</div>}
               </div>
             </div>
           )}
@@ -323,6 +370,9 @@ export function ActivityView({
 
         {/* RIGHT COLUMN: Inspector / Monitor */}
         <div className="w2-column">
+          <details className="history-advanced-disclosure">
+            <summary>Execution details{activeTasks.length ? " - " + activeTasks.length + " active" : ""}</summary>
+            <div className="flex flex-col gap-4">
           
           {/* PHASE 3: Active Execution Monitor */}
           <div className="w2-section">
@@ -375,7 +425,8 @@ export function ActivityView({
               </div>
             </div>
           </div>
-
+            </div>
+          </details>
         </div>
 
       </div>
@@ -385,6 +436,12 @@ export function ActivityView({
 }
 
 // --- Helpers ---
+
+function historyTimestamp(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return number > 100000000000 ? number : number * 1000;
+}
 
 // PHASE 4 & 5 & 8: Embedded in RunCard
 function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry, onPriority, onDownloadLogs }) {

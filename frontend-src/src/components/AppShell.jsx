@@ -2,9 +2,13 @@ import React from "react";
 import { Box, Laptop, Menu, ShieldAlert, X } from "lucide-react";
 import { DashSidebar } from "./shell/DashSidebar.jsx";
 import { CommandPalette } from "./CommandPalette.jsx";
+import { HardwareMonitor } from "./shell/HardwareMonitor.jsx";
+import { useSettingsStore } from "../features/settings/settingsStore.js";
 
 export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust, commandPaletteProps }) {
   const nativeRuntime = Boolean(sidebarProps?.desktopOnly) || sidebarProps?.runtimeMode === "native";
+  const showLiveUsage = useSettingsStore((state) => state.hardware?.showLiveUsage === true);
+  const refreshIntervalMs = useSettingsStore((state) => state.hardware?.refreshIntervalMs ?? 2000);
   const mobileSidebarTriggerRef = React.useRef(null);
   const mainContentRef = React.useRef(null);
   const motionKey = `${sidebarProps?.view || "home"}:${sidebarProps?.settingsSection || ""}`;
@@ -85,11 +89,14 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
                 <Menu size={18} />
               </button>
               <span className="ras-mobile-brand text-sm font-semibold text-foreground">Rasputin</span>
-              <span className="ras-mobile-runtime ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                {nativeRuntime ? <Laptop size={12} aria-hidden="true" /> : <Box size={12} aria-hidden="true" />}
-                {nativeRuntime ? "Native" : "Docker"}
-              </span>
+              {!sidebarProps?.desktopOnly && (
+                <span className="ras-mobile-runtime ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  {nativeRuntime ? <Laptop size={12} aria-hidden="true" /> : <Box size={12} aria-hidden="true" />}
+                  {nativeRuntime ? "Native" : "Docker"}
+                </span>
+              )}
             </div>
+            <HardwareMonitor enabled={showLiveUsage} refreshIntervalMs={refreshIntervalMs} />
           </div>
           {children}
         </main>

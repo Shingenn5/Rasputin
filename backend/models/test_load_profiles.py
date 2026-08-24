@@ -191,3 +191,97 @@ def test_command_construction_is_deterministic_and_has_no_runtime_side_effects()
     ]
     assert first.model_path == "C:/models/demo.gguf"
     assert build_command(first) == ["C:/runtime/llama-server.exe", "-m", "C:/models/demo.gguf", "--ctx-size", "4096", "--fit", "on", "--fit-ctx", "4096", "--split-mode", "none", "--parallel", "1", "--threads", "8"]
+
+
+def test_explicit_memory_modes_keep_gpu_preferred_strict_and_cpu_only_explicit():
+    normalized = validate_load_profile({"memoryMode": "cpu_only"}, CAPABILITIES)
+    assert normalized.memory_mode == "cpu_only"
+    assert normalized.gpu_layers == 0
+
+    cpu_plan = resolve_load_plan(
+        {"memory_mode": "cpu_only"},
+        hardware={},
+        model=model(6000),
+        capabilities=CAPABILITIES,
+    )
+    assert cpu_plan.accepted
+    assert cpu_plan.resolved_settings["gpu_layers"] == 0
+    assert cpu_plan.device_allocation == (
+        {"device_id": "cpu", "memory_mb": 6000.0, "capacity_mb": None, "role": "cpu"},
+    )
+
+    strict = resolve_load_plan(
+        {"memory_mode": "gpu_preferred"},
+        hardware={"devices": [gpu("0", 3000)], "host_memory": {"availableMb": 10000}, "safety_margin_mb": 0},
+        model=model(6000),
+        capabilities=CAPABILITIES,
+    )
+    assert strict.blocked
+    assert not any(item["device_id"] == "cpu" for item in strict.device_allocation)
+
+
+def test_hybrid_mode_emits_separate_gpu_and_host_ram_allocations():
+    plan = resolve_load_plan(
+        {"memory_mode": "hybrid"},
+        hardware={
+            "devices": [gpu("0", 3000), gpu("1", 3000)],
+            "host_memory": {"availableMb": 5000, "totalMb": 16000},
+            "host_memory_headroom_mb": 1000,
+            "safety_margin_mb": 0,
+        },
+        model=model(9000),
+        capabilities=CAPABILITIES,
+    )
+
+    assert plan.accepted
+    assert plan.resolved_settings["memory_mode"] == "hybrid"
+    assert plan.resolved_settings["gpu_memory_required_mb"] == 6000.0
+    assert plan.resolved_settings["host_memory_required_mb"] == 3000.0
+    assert [item["device_id"] for item in plan.device_allocation] == ["0", "1", "cpu"]
+    assert plan.device_allocation[-1]["role"] == "host_ram"
+    assert sum(item["memory_mb"] for item in plan.device_allocation[:2]) == 6000.0
+    assert plan.device_allocation[-1]["memory_mb"] == 3000.0
+    assert "--fit" in plan.flags
+    assert "--split-mode" in plan.flags
+    assert any("Hybrid CPU/GPU offload" in warning for warning in plan.warnings)
+
+
+def test_hybrid_mode_can_use_host_ram_without_gpu_snapshot_and_respects_explicit_cpu_layers():
+    host_only = resolve_load_plan(
+        {"memory_mode": "hybrid"},
+        hardware={"host_memory": {"availableMb": 10000}, "host_memory_headroom_mb": 1000},
+        model=model(6000),
+        capabilities=CAPABILITIES,
+    )
+    assert host_only.accepted
+    assert host_only.resolved_settings["gpu_layers"] == 0
+    assert host_only.device_allocation == (
+        {"device_id": "cpu", "memory_mb": 6000.0, "capacity_mb": 9000.0, "role": "host_ram"},
+    )
+
+    explicit_cpu = resolve_load_plan(
+        {"memory_mode": "hybrid", "gpu_layers": 0},
+        hardware={"devices": [gpu("0", 8000)], "host_memory": {"availableMb": 10000}},
+        model=model(6000),
+        capabilities=CAPABILITIES,
+    )
+    assert explicit_cpu.accepted
+    assert explicit_cpu.resolved_settings["gpu_layers"] == 0
+    assert explicit_cpu.device_allocation[0]["role"] == "cpu"
+
+
+def test_hybrid_mode_blocks_when_host_ram_headroom_is_insufficient():
+    plan = resolve_load_plan(
+        {"memory_mode": "hybrid"},
+        hardware={
+            "devices": [gpu("0", 3000), gpu("1", 3000)],
+            "host_memory": {"availableMb": 1500},
+            "host_memory_headroom_mb": 1000,
+            "safety_margin_mb": 0,
+        },
+        model=model(9000),
+        capabilities=CAPABILITIES,
+    )
+
+    assert plan.blocked
+    assert any("GPU plus host-RAM capacity" in reason or "host RAM" in reason for reason in plan.block_reasons)

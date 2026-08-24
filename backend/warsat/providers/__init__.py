@@ -5,7 +5,24 @@ from .docker import DockerProvider
 from .native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME
 
 _docker_provider = DockerProvider()
-_native_llamacpp_provider = NativeLlamaCppProvider()
+
+
+def _native_hardware_snapshot(model=None):
+    # Import lazily to avoid a package-initialization cycle. Native launches
+    # always plan against current host capacity, not a stale download-time
+    # snapshot.
+    from backend import warsat
+
+    snapshot = dict(warsat.hardware_probe())
+    headroom = (model or {}).get("host_memory_headroom_mb")
+    if headroom is not None:
+        snapshot["host_memory_headroom_mb"] = headroom
+    return snapshot
+
+
+_native_llamacpp_provider = NativeLlamaCppProvider(
+    hardware_snapshot_provider=_native_hardware_snapshot,
+)
 
 def get_provider(model: dict) -> DeploymentProvider:
     """

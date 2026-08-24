@@ -38,10 +38,13 @@ DOCUMENTED_FLAGS = frozenset(
 _EXPERIMENTAL_FLAGS = frozenset({"--split-mode", "--tensor-split", "--cpu-moe", "--n-cpu-moe"})
 _CACHE_TYPES = frozenset({"f16", "q8_0", "q4_0"})
 _SPLIT_MODES = frozenset({"none", "layer", "row", "tensor"})
+_MEMORY_MODES = frozenset({"gpu_preferred", "hybrid", "cpu_only"})
 _PROFILE_KEYS = frozenset(
     {
         "context_length",
         "contextLength",
+        "memory_mode",
+        "memoryMode",
         "context",
         "ctx_size",
         "ctxSize",
@@ -105,6 +108,7 @@ class LoadProfileError(ValueError):
 @dataclass(frozen=True)
 class RequestedLoadProfile:
     context_length: int | None = None
+    memory_mode: str = "gpu_preferred"
     gpu_layers: int | str | None = None
     fit: str = "auto"
     fit_target: int | None = None
@@ -143,6 +147,7 @@ class RequestedLoadProfile:
 
         return cls(
             context_length=pick("context_length", "contextLength", "context", "ctx_size", "ctxSize"),
+            memory_mode=pick("memory_mode", "memoryMode", default="gpu_preferred"),
             gpu_layers=pick("gpu_layers", "gpuLayers", "n_gpu_layers"),
             fit=pick("fit", default="auto"),
             fit_target=pick("fit_target", "fitTarget"),
@@ -167,6 +172,7 @@ class RequestedLoadProfile:
     def to_dict(self) -> dict[str, Any]:
         return {
             "context_length": self.context_length,
+            "memory_mode": self.memory_mode,
             "gpu_layers": self.gpu_layers,
             "fit": self.fit,
             "fit_target": self.fit_target,
@@ -311,6 +317,11 @@ def validate_load_profile(
     capabilities = capabilities or {}
     errors: list[str] = []
     try:
+        memory_mode = _choice(requested.memory_mode, name="memory_mode", allowed=set(_MEMORY_MODES), default="gpu_preferred")
+    except LoadProfileError as exc:
+        errors.extend(exc.errors)
+        memory_mode = "gpu_preferred"
+    try:
         context = None if requested.context_length is None else int(_number(requested.context_length, name="context_length", integer=True, minimum=1))
     except LoadProfileError as exc:
         errors.extend(exc.errors)
@@ -323,6 +334,8 @@ def validate_load_profile(
     except (LoadProfileError, ValueError):
         errors.append("gpu_layers must be a non-negative integer or auto")
         gpu_layers = "auto"
+    if memory_mode == "cpu_only":
+        gpu_layers = 0
     try:
         fit = _bool_choice(requested.fit, name="fit")
         kv_offload = _bool_choice(requested.kv_offload, name="kv_offload")
@@ -383,6 +396,7 @@ def validate_load_profile(
         raise LoadProfileError(errors)
     return RequestedLoadProfile(
         context_length=context,
+        memory_mode=memory_mode,
         gpu_layers=gpu_layers,
         fit=fit,
         fit_target=fit_target,
@@ -418,6 +432,10 @@ def _device_id(device: Mapping[str, Any], position: int) -> str:
 
 def _device_free_mb(device: Mapping[str, Any]) -> float | None:
     value = _first(device, "free_mb", "freeMemoryMb", "memoryFreeMb", "free_vram_mb", "freeVramMb", "free_memory_mb")
+    if value is None:
+        volatile = device.get("volatile")
+        if isinstance(volatile, Mapping):
+            value = _first(volatile, "free_mb", "freeMemoryMb", "memoryFreeMb", "free_vram_mb", "freeVramMb", "free_memory_mb")
     if value is None:
         return None
     try:
@@ -539,8 +557,14 @@ def resolve_load_plan(
         raw = RequestedLoadProfile.from_mapping(profile)
         return ResolvedLoadPlan(raw.to_dict(), {}, (), (str(engine),), (), block_reasons=tuple(exc.errors))
 
+    capability_profile = hardware.get("capabilityProfile") or hardware.get("capability_profile") or {}
+    detected_hardware = hardware.get("detectedHardware") or hardware.get("detected_hardware") or {}
     if hardware.get("devices") is not None or hardware.get("gpus") is not None:
         devices_raw = hardware.get("devices") or hardware.get("gpus") or []
+    elif isinstance(capability_profile, Mapping) and capability_profile.get("devices") is not None:
+        devices_raw = capability_profile.get("devices") or []
+    elif isinstance(detected_hardware, Mapping) and detected_hardware.get("gpus") is not None:
+        devices_raw = detected_hardware.get("gpus") or []
     elif any(key in hardware for key in ("id", "device_id", "free_mb", "freeVramMb", "memoryFreeMb")):
         devices_raw = [hardware]
     else:
@@ -577,11 +601,44 @@ def resolve_load_plan(
     kv_mb = _kv_memory_mb(model, planning_context, requested.parallel_slots)
     overhead = float(_first(model, "runtime_overhead_mb", "runtimeOverheadMb", default=0) or 0)
     required_mb = (model_mb or 0.0) + kv_mb + max(0.0, overhead)
+    host_memory = _first(hardware, "host_memory", "hostMemory", "ram")
+    if not isinstance(host_memory, Mapping) and isinstance(capability_profile, Mapping):
+        host_memory = capability_profile.get("cpu")
+    host_memory = host_memory if isinstance(host_memory, Mapping) else {}
+    host_available_mb = _first(host_memory, "available_mb", "availableMb", "memoryAvailableMb")
+    host_total_mb = _first(host_memory, "total_mb", "totalMb", "memoryTotalMb")
+    host_headroom_mb = _first(
+        hardware,
+        "host_memory_headroom_mb",
+        "hostMemoryHeadroomMb",
+        "ram_headroom_mb",
+        default=2048,
+    )
+    try:
+        host_available_mb = None if host_available_mb is None else max(0.0, float(host_available_mb))
+    except (TypeError, ValueError):
+        host_available_mb = None
+    try:
+        host_total_mb = None if host_total_mb is None else max(0.0, float(host_total_mb))
+    except (TypeError, ValueError):
+        host_total_mb = None
+    try:
+        host_headroom_mb = max(0.0, float(host_headroom_mb))
+    except (TypeError, ValueError):
+        host_headroom_mb = 2048.0
+    host_capacity_mb = (
+        max(0.0, host_available_mb - host_headroom_mb)
+        if host_available_mb is not None
+        else None
+    )
+    hybrid_cpu_mb = 0.0
+    hybrid_gpu_required_mb = 0.0
+    hybrid_gpu_devices: list[Mapping[str, Any]] = []
     if model_mb is None and requested.gpu_layers != 0:
         block_reasons.append("model GPU memory requirement is unknown")
     if (requested.cpu_moe != "auto" or requested.n_cpu_moe is not None) and not bool(_first(model, "is_moe", "isMoE", default=False)):
         block_reasons.append("MoE CPU placement controls require a MoE model")
-    if not devices and requested.gpu_layers != 0:
+    if not devices and requested.gpu_layers != 0 and requested.memory_mode != "hybrid":
         block_reasons.append("no GPU device snapshot was supplied")
 
     usable = {}
@@ -605,7 +662,62 @@ def resolve_load_plan(
     split_mode = explicit_split or "none"
     allocation_devices: list[Mapping[str, Any]] = []
 
-    if requested.gpu_layers == 0:
+    if requested.memory_mode == "hybrid" and requested.gpu_layers != 0:
+        if requested.split_mode in {"row", "tensor"}:
+            block_reasons.append("hybrid CPU/GPU offload supports layer split only")
+        if host_capacity_mb is None:
+            block_reasons.append("host RAM availability is unknown for hybrid CPU/GPU offload")
+        elif not devices:
+            if required_mb <= host_capacity_mb:
+                requested_gpu_layers = 0
+                hybrid_cpu_mb = required_mb
+                fit_reasons.append("hybrid mode fell back to host RAM because no GPU snapshot was supplied")
+            else:
+                block_reasons.append(
+                    f"hybrid mode requires {required_mb:g} MiB of host RAM but only {host_capacity_mb:g} MiB is available after headroom"
+                )
+        elif not block_reasons:
+            total_gpu_capacity = sum(usable.values())
+            if required_mb > total_gpu_capacity + (host_capacity_mb or 0.0):
+                block_reasons.append(
+                    f"hybrid mode requires {required_mb:g} MiB but GPU plus host-RAM capacity provides {total_gpu_capacity + (host_capacity_mb or 0.0):g} MiB"
+                )
+            elif single_fit is not None:
+                allocation_devices = [single_fit]
+                hybrid_gpu_devices = [single_fit]
+                hybrid_gpu_required_mb = required_mb
+                fit_reasons.append(
+                    f"hybrid model fits entirely on single GPU {single_fit['device_id']}; host RAM remains available as headroom"
+                )
+            elif len(devices) >= 2 and _supports(capabilities, "--split-mode") and total_gpu_capacity > 0:
+                split_mode = "layer"
+                allocation_devices = devices
+                hybrid_gpu_devices = devices
+                hybrid_gpu_required_mb = min(required_mb, total_gpu_capacity)
+                hybrid_cpu_mb = max(0.0, required_mb - hybrid_gpu_required_mb)
+                warnings.append(
+                    "Hybrid CPU/GPU offload uses host RAM for the layers that do not fit in VRAM; performance may be lower."
+                )
+                fit_reasons.append(
+                    f"hybrid mode assigns {hybrid_gpu_required_mb:g} MiB to GPU layers and {hybrid_cpu_mb:g} MiB to host RAM"
+                )
+            else:
+                primary = preferred[0] if preferred else None
+                if primary is None or usable[primary["device_id"]] <= 0:
+                    block_reasons.append("hybrid mode has no usable GPU capacity")
+                else:
+                    allocation_devices = [primary]
+                    hybrid_gpu_devices = [primary]
+                    hybrid_gpu_required_mb = min(required_mb, usable[primary["device_id"]])
+                    hybrid_cpu_mb = max(0.0, required_mb - hybrid_gpu_required_mb)
+                    warnings.append(
+                        "Hybrid CPU/GPU offload uses host RAM for the layers that do not fit in VRAM; performance may be lower."
+                    )
+        if hybrid_cpu_mb > 0 and host_capacity_mb is not None and hybrid_cpu_mb > host_capacity_mb:
+            block_reasons.append(
+                f"hybrid mode needs {hybrid_cpu_mb:g} MiB of host RAM but only {host_capacity_mb:g} MiB is available after headroom"
+            )
+    elif requested.gpu_layers == 0:
         split_mode = "none"
         allocation_devices = []
         fit_reasons.append("explicit gpu_layers=0 selects CPU-only execution")
@@ -653,7 +765,30 @@ def resolve_load_plan(
     if requested.main_gpu is not None and allocation_devices and str(requested.main_gpu) != allocation_devices[0]["device_id"]:
         warnings.append("main_gpu is a preferred device; the resolved allocation reflects the fit planner.")
 
-    if allocation_devices and split_mode in {"layer", "row", "tensor"}:
+    if requested.memory_mode == "hybrid" and requested.gpu_layers != 0 and not block_reasons:
+        allocations = []
+        if hybrid_gpu_devices:
+            total_capacity = sum(usable[item["device_id"]] for item in hybrid_gpu_devices)
+            remaining = hybrid_gpu_required_mb
+            for index, item in enumerate(hybrid_gpu_devices):
+                capacity = usable[item["device_id"]]
+                amount = remaining if index == len(hybrid_gpu_devices) - 1 else round(hybrid_gpu_required_mb * capacity / total_capacity, 2)
+                amount = min(amount, capacity)
+                remaining = max(0.0, remaining - amount)
+                allocations.append({
+                    "device_id": item["device_id"],
+                    "memory_mb": amount,
+                    "capacity_mb": capacity,
+                    "role": "gpu_layers",
+                })
+        if hybrid_cpu_mb > 0:
+            allocations.append({
+                "device_id": "cpu",
+                "memory_mb": round(hybrid_cpu_mb, 2),
+                "capacity_mb": host_capacity_mb,
+                "role": "host_ram",
+            })
+    elif allocation_devices and split_mode in {"layer", "row", "tensor"}:
         total_capacity = sum(usable[item["device_id"]] for item in allocation_devices)
         allocations = []
         remaining = required_mb
@@ -672,12 +807,17 @@ def resolve_load_plan(
     resolved = requested.to_dict()
     resolved.update({
         "context_length": context,
-        "gpu_layers": 0 if requested.gpu_layers == 0 else requested.gpu_layers,
+        "gpu_layers": 0 if requested.gpu_layers == 0 or (requested.memory_mode == "hybrid" and not hybrid_gpu_devices) else requested.gpu_layers,
         "fit": requested.fit if requested.fit != "auto" else ("on" if allocation_devices else "off"),
         "fit_ctx": requested.fit_ctx or context,
         "split_mode": split_mode,
         "kv_cache_mb": round(kv_mb, 2),
         "required_memory_mb": round(required_mb, 2),
+        "gpu_memory_required_mb": round(hybrid_gpu_required_mb if requested.memory_mode == "hybrid" else required_mb, 2),
+        "host_memory_required_mb": round(hybrid_cpu_mb if requested.memory_mode == "hybrid" else 0.0, 2),
+        "host_memory_available_mb": round(host_available_mb, 2) if host_available_mb is not None else None,
+        "host_memory_headroom_mb": round(host_headroom_mb, 2),
+        "memory_allocations": allocations,
     })
     try:
         flags = _canonical_flags(resolved, capabilities) if not block_reasons else ()

@@ -1,534 +1,314 @@
-<div align="center">
-  <h1>Rasputin</h1>
-  <p><b>Private, local-first AI workbench for agentic coding, model routing, and brokered research.</b></p>
+# Rasputin Desktop
 
-  ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
-  ![FastAPI](https://img.shields.io/badge/FastAPI-005571.svg?style=for-the-badge&logo=fastapi)
-  ![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
-  ![Python](https://img.shields.io/badge/python-3670A0.svg?style=for-the-badge&logo=python&logoColor=ffdd54)
-</div>
+Rasputin is a Windows desktop AI workstation for local model inference and agentic coding.
+This branch, codex/desktop-llamacpp, is shaped to be used like LM Studio: install a normal
+application, browse a model catalog, download an exact model variant, load it with native
+llama.cpp, and use it in chat or coding tasks.
 
-Rasputin runs on your own computer. It combines a FastAPI backend, React frontend, local and remote
-model providers, durable tasks, workspaces, approvals, memory, and an explicit permission model.
-The Docker deployment is the supported cross-platform server for Windows, macOS, and Linux. A
-managed native server and a desktop application are also available on Windows.
+The packaged application is the daily-driver path. You do not launch a terminal, manage a
+localhost server, start Docker, install Python or Node, or deploy downloaded models into
+containers.
 
-## Choose the right installation
+![Windows](https://img.shields.io/badge/platform-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![Electron](https://img.shields.io/badge/desktop-Electron-47848F?style=for-the-badge&logo=electron&logoColor=white)
+![llama.cpp](https://img.shields.io/badge/inference-llama.cpp-111318?style=for-the-badge)
+![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-orange?style=for-the-badge)
 
-| Platform | Recommended path | Host requirements | Default URL |
-| --- | --- | --- | --- |
-| Windows | Rasputin Desktop installer for the local daily-driver; Docker Server for shared/server mode | Desktop: no Python, Node, Docker, WSL, or separate llama.cpp; source builds use Python 3.12+ and Node 22+ | Desktop: internal loopback; Docker http://127.0.0.1:8787 |
-| macOS | Docker Server | Docker Desktop; Git or curl/unzip for installation | http://127.0.0.1:8787 |
-| Linux | Docker Server | Docker Engine plus the Compose v2 plugin; Git or curl/unzip for installation | http://127.0.0.1:8787 |
+## What changed on this branch
 
-Docker is the supported shared/server boundary on every platform. The managed Native Server and
-packaged Desktop runtime are Windows-specific today. Linux and macOS users can still run the
-backend from source for development, but Docker is the simplest production-like installation.
+- Rasputin launches as a self-contained Electron desktop application.
+- The packaged app boots directly to the main user workspace; there is no login screen in the
+  desktop-only path.
+- Electron owns the bundled backend process, its lifecycle, crash recovery, tray controls, and
+  shutdown.
+- The installer includes the Python backend runtime, the React frontend, and pinned native CPU/CUDA
+  llama.cpp binaries. End users do not install those components separately.
+- Desktop inference uses native llama.cpp and GGUF model artifacts. Desktop model deployment is
+  not Docker-backed.
+- Models has a local catalog and Hugging Face search, hardware-aware fit guidance, exact variant
+  selection, durable download jobs, and load controls.
+- The load planner supports automatic placement plus advanced llama.cpp settings such as context,
+  GPU layers, layer/tensor split, tensor proportions, main GPU, KV-cache offload, KV-cache types,
+  flash attention, batch sizing, and CPU MoE controls when the selected runtime supports them.
+- MCP Servers and integrations are available inside Settings, including local stdio servers,
+  Streamable HTTP servers, guarded tool discovery, approvals, and GitHub repository context.
+- Rasputin has its own application identity and icon instead of presenting as a generic Electron app.
 
-## Contents
+The old Docker/server-oriented README is preserved verbatim in
+[README.legacy.md](README.legacy.md) for rollback or reference.
 
-- [Choose the right installation](#choose-the-right-installation)
-- [Quick start: Docker Server](#quick-start-docker-server)
-- [Installation preflight](#installation-preflight)
-- [Docker lifecycle commands](#docker-lifecycle-commands)
-- [First login and safe setup](#first-login-and-safe-setup)
-- [Upgrades, backup, and restore](#upgrades-backup-and-restore)
-- [Optional Docker integrations](#optional-docker-integrations)
-- [LAN and private remote access](#lan-and-private-remote-access)
-- [Windows-native options](#windows-native-options)
-- [Source development on any platform](#source-development-on-any-platform)
-- [Verification and troubleshooting](#verification-and-troubleshooting)
-- [v1 release boundary](#v1-release-boundary)
-- [Documentation index](docs/README.md)
+## Product boundary
 
-## Architecture and privacy
+| Area | Desktop behavior |
+| --- | --- |
+| Normal launch | Open Rasputin from the Start menu or installed shortcut |
+| User-managed server | None; the internal loopback backend is started and owned by Electron |
+| Inference engine | Bundled native llama-server from llama.cpp |
+| Model format | GGUF-first for local native inference |
+| Model deployment | Native child processes; no Docker containers |
+| Network exposure | Loopback-only by default; no LAN listener |
+| Data | Local application data and a user-owned model library |
+| Supported packaged platform | Windows x64 |
 
-Approved local folders flow through Rasputin to explicitly registered model endpoints. Models do
-not receive unrestricted internet access: web search is brokered and audited, and Action Skills run
-in fresh networkless Docker containers. Docker control, remote models, Host Shell, risky file moves,
-and LAN publishing are opt-in capabilities. Read [THREAT_MODEL.md](THREAT_MODEL.md) before changing
-security-sensitive settings.
+The backend still communicates with the Electron renderer over an authenticated loopback HTTP
+connection. This is an internal implementation boundary, not a server that the user needs to
+launch, configure, or keep running separately.
 
-## v1 release boundary
+## Install and run
 
-The finite Rasputin v1 finish line is documented in
-[RASPUTIN_V1_RELEASE_CONTRACT.md](docs/RASPUTIN_V1_RELEASE_CONTRACT.md). It defines the ten
-completion slices, required evidence, supported deployment paths, explicit non-goals, and the
-maintenance-only stop rule. New capabilities belong in a post-v1 backlog once that contract is
-complete.
+### Using the Windows installer
 
-## What Docker runs and what it stores
+Run the Rasputin-Setup-<version>.exe installer and launch Rasputin from the installed shortcut.
+The installer includes the application runtime and bundled llama.cpp; Docker, WSL, Python, Node,
+and a separate llama.cpp installation are not prerequisites.
 
-The standard Compose deployment contains one rasputin-wrapper service. The image includes Python,
-the built frontend, Git, and the runtime dependencies; Python and Node do not need to be installed
-on a Docker-only host.
+The current local build artifact is produced at:
 
-| Data | Location | Persistence |
-| --- | --- | --- |
-| Accounts, settings, tasks, approvals, memory | Docker named volume rasputin-data | Persistent across rebuilds and docker compose down |
-| Approved project files | ./workspace on the host, mounted at /app/workspace | Host files; approve folders in the UI |
-| Optional local model files | ./models on the host, read-only at /app/models | Host files |
-| Hugging Face and llama.cpp caches | Named Docker volumes | Persistent model-weight caches |
-| Optional TLS leaf certificate | ./data/tls on the host | Ignored local files; never commit keys |
+~~~text
+dist/electron/Rasputin-Setup-0.2.0.exe
+~~~
 
-Do not use docker compose down -v unless you intentionally want to delete the application volume.
-The data/, workspace/, and models/ directories are created by the launchers and are ignored by Git.
+This branch does not yet publish a signed public release or an automatic update channel. The
+current installer is unsigned, so Windows may show a publisher warning during installation.
 
-## Quick start: Docker Server
+### First launch
 
-Docker Server is the recommended first installation for Windows, macOS, and Linux.
+1. Open Rasputin normally.
+2. The application starts its private Desktop Runtime and opens the main workspace directly.
+3. Open **Models** to choose a model, or open **Settings** to configure integrations, MCP servers,
+   workspaces, and safety controls.
+
+The default native data directory is:
+
+~~~text
+%LOCALAPPDATA%\Rasputin\data
+~~~
+
+It contains application state, the model library, durable model-download jobs, installed-artifact
+metadata, preferences, audit data, and local configuration. Electron settings and desktop logs are
+kept in the user-local Rasputin application directories. Application upgrades do not delete model
+weights or user data.
+
+## Model workflow
+
+Rasputin's desktop model flow is designed around the same user journey as a local model manager.
+
+### 1. Browse the catalog
+
+Open **Models → Library**. The catalog can show locally cached models or search Hugging Face. It
+supports:
+
+- model-purpose and runtime filters;
+- popularity sorting by downloads, likes, trending, or recent updates;
+- VRAM range filters and a “use my largest GPU” shortcut;
+- exact model IDs or Hugging Face URLs;
+- hardware-aware fit results with blockers and next actions.
+
+The fit advisor prefers a single fitting GPU. It only treats combined VRAM as a valid multi-GPU
+option when the model, GGUF artifact, hardware snapshot, and native llama.cpp placement evidence
+support layer sharding.
+
+### 2. Select an exact variant
+
+Open a model result and choose the exact GGUF quantization and required companion files. Rasputin
+keeps model identity, revision, quantization, file set, size, compatibility, and integrity data
+separate from the running model process.
+
+### 3. Download and install
+
+Start the download from the selected variant. Desktop downloads are durable and expose progress,
+pause, resume, cancel, retry, verification, and installation states. Completed artifacts are
+registered in the local model library and can be loaded without re-downloading them.
+
+### 4. Plan and load with llama.cpp
+
+Load the completed artifact from the download card or Models library. Automatic placement considers
+the model size, context length, KV-cache cost, available GPU memory, and compatible devices before
+starting the native llama.cpp process.
+
+Advanced load profiles can express:
+
+- context and fit context;
+- CPU-only, single-GPU, or multi-GPU execution;
+- GPU layer count and preferred main GPU;
+- layer, row, or explicitly validated tensor split;
+- tensor-split proportions;
+- KV-cache placement and K/V cache precision;
+- flash attention, batch, and micro-batch sizes;
+- MoE CPU placement where the model and runtime support it.
+
+Rasputin keeps “installed” and “loaded” separate. A model can be present in the library without
+running, and each running instance has its own health, endpoint, device allocation, resolved
+settings, and lifecycle state.
+
+## Chat and agentic coding
+
+Once a model is loaded, use it from the main workspace for:
+
+- normal local chat;
+- code generation, refactoring, repair, and review tasks;
+- approved workspace access and direct native folders;
+- task planning, durable task state, worktrees, approvals, and audit history;
+- capability-aware routing that avoids starting tool-dependent work against an incompatible model.
+
+Desktop mode keeps the existing Rasputin safety boundaries: workspace approval, explicit capability
+permissions, audit events, Host Shell isolation, and visible recovery errors. Docker-backed model
+deployment and Docker control are not part of the packaged desktop workflow.
+
+## MCP Servers
+
+Open **Settings → MCP Servers** to register and manage MCP availability for agentic coding.
+
+Supported desktop flows include:
+
+- local stdio MCP servers;
+- Streamable HTTP MCP endpoints;
+- working-directory and approved-workspace checks;
+- environment-variable secret references rather than plaintext secret values;
+- server start, stop, restart, discovery, and protocol tests;
+- tool, resource, and prompt discovery;
+- tool classification, approval gates, audit events, and guarded execution.
+
+Rasputin's installer contains Rasputin, its backend, and llama.cpp. It does not bundle every
+third-party MCP server package. A stdio server must already be available as a local executable or
+package-manager command, or the server must expose a reachable Streamable HTTP endpoint.
+
+## GitHub and other connections
+
+Open **Settings → Integrations** to configure connectors. GitHub support is intentionally bounded:
+
+1. Save a GitHub token in Connector Center; credentials are stored locally and masked from the UI.
+2. Use **Settings → Security** to enable GitHub read access explicitly.
+3. Check the connection before using it.
+4. Load read-only repository context from task details, including repository metadata, pull
+   requests, issues, and checks where available.
+
+GitHub credentials stay in the backend. Rasputin only exposes the supported read operations to the
+agent and records the relevant audit events.
+
+## Security and privacy
+
+- The packaged desktop runtime binds to loopback only.
+- Electron removes inherited Docker and TLS server settings from the desktop backend environment.
+- The renderer has no Node.js integration and uses context isolation and sandboxing.
+- The desktop process owns only the backend process it launched.
+- External access, remote models, GitHub, MCP tools, Host Shell, and other privileged capabilities
+  remain policy- and approval-controlled.
+- Closing the window can minimize Rasputin to the tray; the tray can restart or quit the runtime.
+- Uninstall preserves user data by default.
+
+## Build the installer from source
+
+The following commands are for contributors and release work. An installed user does not need this
+toolchain.
 
 ### Prerequisites
 
-Install and start one of the following before launching Rasputin:
-
-- Windows or macOS: [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-- Linux: [Docker Engine](https://docs.docker.com/engine/install/) and the
-  [Docker Compose v2 plugin](https://docs.docker.com/compose/install/). Verify with docker version
-  and docker compose version.
-
-On Linux, a non-root user normally needs access to the Docker socket. Adding a user to the docker
-group grants root-equivalent control of the machine; use your distribution's documented Docker
-installation procedure and log in again after changing group membership.
-
-The convenience installers also need curl and unzip on macOS/Linux. A manual Git clone avoids unzip.
-
-### Installation preflight
-
-After cloning, run the read-only preflight when you want a machine-specific checklist before the
-first launch. It checks the repository assets, local CLI availability, Docker Compose client, and
-whether ports 8787/8788 are already occupied. It does not read credentials, change `.env`, stop a
-process, or touch Rasputin runtime data. An `in_use` port is informational when an instance is
-already running; choose `WRAPPER_PORT` for a second Docker instance.
-
-Windows PowerShell (source/native development):
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\check_installation.py
-~~~
-
-macOS/Linux (source development):
-
-~~~bash
-python3 scripts/check_installation.py
-~~~
-
-Docker-only users do not need Python or Node; start Docker and use the deployment verifier after
-launch instead.
-
-### Option A: convenience installer
-
-Review the installer before piping it to a shell on a machine you care about. The installer
-downloads the repository, creates a local checkout, builds the image, and starts the server. It
-does not install Docker for you. Use a manual clone when you need to pin and review a specific ref.
-
-macOS/Linux:
-
-~~~bash
-curl -fsSL https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.sh | bash
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-iwr https://raw.githubusercontent.com/Shingenn5/Rasputin/main/install.ps1 -UseBasicParsing | iex
-~~~
-
-The installer places the checkout in a Rasputin folder under the current directory. For a
-reviewable, repeatable install, use the manual clone below instead.
-
-### Option B: manual clone (recommended for upgrades)
-
-macOS/Linux:
-
-~~~bash
-git clone https://github.com/Shingenn5/Rasputin.git
-cd Rasputin
-chmod +x rasputin.sh
-./rasputin.sh config
-./rasputin.sh start --no-open
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-git clone https://github.com/Shingenn5/Rasputin.git
-Set-Location Rasputin
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\rasputin.ps1 config
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\rasputin.ps1 start -NoOpen
-~~~
-
-Open http://127.0.0.1:8787 after the health check succeeds. Omit --no-open/-NoOpen if you
-want the launcher to open the browser automatically.
-
-The launcher builds the image on every start, so the first launch downloads the base images and
-installs the frontend and Python dependencies inside Docker. Later starts use Docker's build cache.
-
-### Configure the Docker deployment
-
-The repository includes .env.example. Copy it to .env only when you need to change defaults;
-Compose loads .env automatically.
-
-macOS/Linux:
-
-~~~bash
-cp .env.example .env
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-Copy-Item .env.example .env
-~~~
-
-Important settings:
-
-| Variable | Default | Use |
-| --- | --- | --- |
-| WRAPPER_PORT | 8787 | Host port; for example WRAPPER_PORT=8790 |
-| WRAPPER_BIND | 127.0.0.1 | Host bind address; keep loopback unless HTTPS/LAN access is intentional |
-| RASPUTIN_HTTPS | 0 | Set automatically by the launchers when data/tls contains a leaf certificate |
-| MAIN_VLLM_BASE_URL | http://host.docker.internal:8000/v1 | Host model endpoint reachable from the wrapper container |
-| RASPUTIN_LOCALHOST_BYPASS | 0 | Development-only compatibility switch; keep disabled for normal use |
-
-For a one-off port change:
-
-~~~bash
-WRAPPER_PORT=8790 ./rasputin.sh start --no-open
-~~~
-
-~~~powershell
-$env:WRAPPER_PORT = "8790"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\rasputin.ps1 start -NoOpen
-~~~
-
-## Docker lifecycle commands
-
-Run these from the repository directory.
-
-| Action | macOS/Linux | Windows PowerShell |
-| --- | --- | --- |
-| Start/rebuild | ./rasputin.sh start | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 start |
-| Start without opening a browser | ./rasputin.sh start --no-open | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 start -NoOpen |
-| Status and health | ./rasputin.sh status | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 status |
-| Recent logs | ./rasputin.sh logs | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 logs |
-| First-run credentials | ./rasputin.sh credentials | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 credentials |
-| Reset admin password | ./rasputin.sh reset-password | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 reset-password |
-| Validate Compose | ./rasputin.sh config | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 config |
-| Stop, keep data | ./rasputin.sh stop | powershell -ExecutionPolicy Bypass -File .\rasputin.ps1 stop |
-
-start rebuilds the local image and recreates the container without removing named volumes. Use
-docker compose ps and docker compose logs --tail 120 rasputin-wrapper directly when the launcher
-is unavailable.
-
-## First login and safe setup
-
-1. Get the generated credentials with the launcher's credentials command, or read them from
-   docker compose logs rasputin-wrapper during the first boot.
-2. Sign in at the local URL and immediately change the generated administrator password in
-   Settings -> Admin.
-3. Register or deploy a model in Models. Docker reaches a model running on the host through
-   host.docker.internal, not 127.0.0.1 inside the container.
-4. Approve a project folder in Workspaces. Docker workspaces must be visible inside the container;
-   approving a new host folder may write a Compose mount override and require a restart.
-5. Review Settings -> Safety before enabling Docker control, remote models, web access, Host Shell,
-   or other capabilities.
-6. Add other local users under Settings -> Accounts only after the administrator account is
-   protected.
-
-Privacy Lock is enabled by default. Remote model routing, Docker control, Host Shell, risky file
-moves, and other privileged actions remain gated by explicit settings and/or approvals.
-
-## Upgrades, backup, and restore
-
-### Upgrade without deleting application data
-
-~~~bash
-git pull --ff-only
-./rasputin.sh start --no-open
-~~~
-
-~~~powershell
-git pull --ff-only
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -NoOpen
-~~~
-
-The named volume is intentionally retained. Never run docker compose down -v as part of a normal
-upgrade.
-
-### Back up the application volume
-
-Stop the server first for a consistent SQLite snapshot, then create a backup directory.
-
-macOS/Linux:
-
-~~~bash
-./rasputin.sh stop
-mkdir -p backups
-docker run --rm -v rasputin-data:/source -v "$PWD/backups:/backup" alpine \
-  sh -c 'tar czf /backup/rasputin-data.tgz -C /source .'
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 stop
-New-Item -ItemType Directory -Force backups | Out-Null
-docker run --rm -v rasputin-data:/source -v "$PWD\backups:/backup" alpine sh -c "tar czf /backup/rasputin-data.tgz -C /source ."
-~~~
-
-Also back up project files under workspace/ and any model files under models/ separately. Keep
-archives private: they can contain accounts, task history, memory, configuration, and secrets.
-
-Restore only after stopping Rasputin and confirming the target volume. A volume restore is
-deliberately not automated by the launcher because replacing application state is destructive.
-
-The bounded application backup format can be rehearsed without touching the active instance:
-
-~~~bash
-./.venv/bin/python scripts/rehearse_restore.py --rehearse
-~~~
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\rehearse_restore.py --rehearse
-~~~
-
-To inspect or apply a specific application backup, provide an absent or empty target directory.
-Inspection is the default; `--apply` is required to materialize the archive, and the target must
-not be the running instance's data directory:
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\rehearse_restore.py C:\path\to\backup.zip C:\path\to\clean-data
-.\.venv\Scripts\python.exe scripts\rehearse_restore.py C:\path\to\backup.zip C:\path\to\clean-data --apply
-~~~
-
-After applying, start Rasputin with `RASPUTIN_DATA_DIR` pointed at the restored target and run the
-health, login, workspace, and model-readiness checks. Workspace source, model caches, TLS keys,
-and other excluded material still require separate backups.
-
-## Optional Docker integrations
-
-### WarSat model deployment
-
-The normal Docker Server does not mount the host Docker socket. WarSat control is an explicit,
-powerful opt-in because the socket can control sibling containers and the host Docker engine.
-
-macOS/Linux:
-
-~~~bash
-./rasputin.sh stop
-./rasputin.sh start --enable-warsat --no-open
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 stop
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -EnableWarSat -NoOpen
-~~~
-
-After signing in, an administrator must also enable Docker control in Settings -> Safety. Run WarSat
-readiness before deploying a model. Each launch brief now shows the model resource manifest and a
-side-effect-free resource-admission decision. A blocked or queued decision locks deployment before
-Docker work; an unmeasured decision means current runtime inventory has not been supplied and is not
-a capacity certificate. GPU support and model images are runtime-specific; the wrapper itself does
-not guarantee that every model image supports every host GPU. vLLM uses the largest fitting single
-GPU by default; combined VRAM requires an explicitly certified backend such as llama.cpp GGUF.
-
-### RAG and search profiles
-
-These profiles add optional services and their own local storage:
-
-~~~bash
-docker compose --profile rag up --build -d
-docker compose --profile search up --build -d
-~~~
-
-Use the same commands in PowerShell. Stop them with docker compose --profile rag --profile search
-down when they are no longer needed.
-
-## LAN and private remote access
-
-Keep the default loopback bind for local use. Do not publish an unencrypted HTTP instance directly
-to a LAN or the public internet.
-
-### Direct private-LAN HTTPS
-
-Install the official [mkcert](https://github.com/FiloSottile/mkcert) binary and Python 3, then
-generate a local certificate containing every hostname/IP clients will use.
-
-macOS/Linux:
-
-~~~bash
-python3 scripts/setup_https.py --output-dir data/tls --name rasputin.home --name 192.168.1.25
-./rasputin.sh start --lan --no-open
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-py -3 scripts\setup_https.py --output-dir data\tls --name rasputin.home --name 192.168.1.25
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -Lan -NoOpen
-~~~
-
-The launchers refuse direct --lan/-Lan mode until both leaf certificate files exist. Install only
-mkcert's public rootCA.pem on trusted client devices. Never copy rootCA-key.pem or expose the
-generated leaf key. mkcert is for private trust, not a public-internet certificate.
-
-### Tailscale or a reverse proxy
-
-For remote access, keep Rasputin bound to loopback and put it behind a reviewed private transport.
-See docs/DEPLOYMENT_MATRIX.md, deploy/Caddyfile.example, and scripts/setup_remote_access.py for
-Tailscale Serve and Caddy planning. Do not enable Tailscale Funnel or expose a raw Docker port
-without an explicit security review.
-
-## Windows-native options
-
-Windows users who need direct access to host folders can run the managed Native Server instead of
-Docker. Docker remains optional for the native backend, but is still required for Action Skills and
-WarSat model containers.
-
-### Native Server
-
-Requirements: Windows PowerShell 5.1 or newer and Python 3.12+. From the repository:
-
-~~~powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\rasputin.ps1 install-cli
-rasputin native -NoOpen
-rasputin native-status
-rasputin native-rebuild -NoOpen
-rasputin native-stop
-~~~
-
-Native Server uses %LOCALAPPDATA%\Rasputin\data by default and listens on http://localhost:8788.
-Do not run two independent native backends against the same data directory. Native workspaces are
-available after approval without Docker mount restarts.
-
-For start-at-login:
-
-~~~powershell
-rasputin native-host-install -Port 8788
-rasputin native-host-status
-rasputin native-host-uninstall
-~~~
-
-This is a current-user startup entry, not a Windows service. The user must remain signed in.
-
-### Desktop
-
-The installed Desktop application is the recommended Windows daily-driver. It owns its packaged
-backend and bundled native llama.cpp runtime; it does not require a terminal, localhost server,
-Docker, WSL, Python, Node, or a separately installed llama.cpp. Downloaded model weights remain
-managed from the in-app catalog.
-
-For repository development only:
+- Windows x64;
+- Python 3.12+;
+- Node.js 22+ and npm;
+- a working virtual environment with the backend requirements installed;
+- network access during the build to fetch the pinned llama.cpp assets and Python/Node packages.
+
+### Development desktop
 
 ~~~powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-npm ci
+npm install
 npm run desktop
 ~~~
 
-Build the self-contained Windows installer with npm run desktop:package. The current package is
-unsigned and may show a Windows publisher warning. See docs/DESKTOP_ARCHITECTURE.md.
+The development desktop reuses the repository Python environment. Keep development data isolated
+from any personal installation by setting RASPUTIN_DATA_DIR before launch.
 
-## Source development on any platform
-
-Docker is recommended for normal use. For backend/frontend development, install Python 3.12+ and
-Node 22+, then create an isolated environment outside the production data store.
-
-macOS/Linux:
-
-~~~bash
-python3.12 -m venv .venv
-./.venv/bin/python -m pip install -r requirements.txt
-npm ci
-npm run build
-RASPUTIN_DATA_DIR="$HOME/.cache/rasputin-dev-data" PORT=8899 ./.venv/bin/python server.py
-~~~
-
-Windows PowerShell:
+### Package the Windows installer
 
 ~~~powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-npm ci
-npm run build
-$env:RASPUTIN_DATA_DIR = "$env:TEMP\rasputin-dev-data"
-$env:PORT = "8899"
-.\.venv\Scripts\python.exe server.py
+npm run desktop:package
 ~~~
 
-Open http://127.0.0.1:8899/#chat. Never point a test instance at the real native data directory
-or the Docker volume.
+Packaging performs these steps:
 
-## Verification and troubleshooting
+1. builds the production React frontend;
+2. stages and verifies the pinned CPU/CUDA llama.cpp runtime;
+3. builds the standalone PyInstaller backend;
+4. packages Electron, the backend, llama.cpp, and the Rasputin icon with electron-builder;
+5. produces an NSIS installer under dist/electron/.
 
-Validate an active Docker instance with:
-
-~~~bash
-./.venv/bin/python scripts/verify_deployment_matrix.py --endpoint docker=http://127.0.0.1:8787
-~~~
+For an unpacked directory useful for local smoke testing:
 
 ~~~powershell
-.\.venv\Scripts\python.exe scripts\verify_deployment_matrix.py --endpoint docker=http://127.0.0.1:8787
+npm run desktop:package:dir
 ~~~
 
-The verifier checks /api/health, frontend serving, and baseline security headers. Add the native
-endpoint on Windows when it is running.
+## Verification commands
 
-For a release-candidate evidence bundle (isolated backend/UI contract tests, docs, frontend build,
-desktop artifacts, and both runtime probes), run:
-
-~~~bash
-./.venv/bin/python scripts/verify_release_candidate.py \
-  --endpoint native=http://127.0.0.1:8788 \
-  --endpoint docker=http://127.0.0.1:8787
-~~~
+Run the focused desktop checks before distributing a build:
 
 ~~~powershell
-.\.venv\Scripts\python.exe scripts\verify_release_candidate.py `
-  --endpoint native=http://127.0.0.1:8788 `
-  --endpoint docker=http://127.0.0.1:8787
+node --check .\desktop\main.cjs
+npm run desktop:check
+npm run desktop:test
+npm run build
 ~~~
 
-The command exits successfully when the automated gates pass, but its JSON still reports known
-boundaries such as a missing live coder-model mission, an unverified stopped active-data upgrade,
-or unverified audio hardware. Do not interpret `passed` as permission to skip those boundaries.
+The release candidate should also pass the backend tests, documentation check, and repository
+safety check used by this branch:
 
-Common fixes:
-
-| Symptom | What to check |
-| --- | --- |
-| Docker command says the engine is unavailable | Start Docker Desktop, or start the Linux Docker service; run docker info |
-| Port 8787 is already in use | Set WRAPPER_PORT to another host port and use that URL |
-| Container is unhealthy | Run ./rasputin.sh logs or rasputin.ps1 logs, then check docker compose ps |
-| No credentials appear | The first-boot log may be gone; run reset-password while the container is running |
-| Host model is unreachable from Docker | Use host.docker.internal, not 127.0.0.1, in the model URL |
-| A new Docker workspace is missing | Approve the folder, allow the mount override, restart, then approve it inside the container |
-| LAN mode is refused | Generate data/tls/rasputin.pem and data/tls/rasputin-key.pem with mkcert first |
-| Linux permission errors | Confirm the Docker user can access the Docker socket and the checkout/workspace directories |
-
-For security-sensitive behavior, read THREAT_MODEL.md. For the full runtime matrix and
-private-remote workflow, read docs/DEPLOYMENT_MATRIX.md.
-
-## Development checks
-
-~~~bash
-npm run build
-./.venv/bin/python -m unittest tests.testBackendSmoke tests.testMultiUser
+~~~powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+.\.venv\Scripts\python.exe scripts\verify_docs.py
 npm run checkRepoSafety
 ~~~
 
-On Windows, replace ./.venv/bin/python with .\.venv\Scripts\python.exe. The Docker harness is
-available as ./scripts/test.sh on macOS/Linux and .\scripts\test.ps1 on Windows.
+Verify the actual packaged executable, not only the source build: install the generated NSIS
+artifact, launch the installed Rasputin.exe, confirm the main workspace appears without a login
+screen, and exercise the model/catalog surface in an isolated test data directory.
 
-## Project status and license
+## Current status and honest boundaries
 
-The repository can be run from source and can build a self-contained Windows application. A
-publicly hosted image, signed desktop installer, automated update channel, and clean-machine release
-certification remain separate release tasks. Track them in docs/REMAINING_WORK.md.
+### Implemented on this branch
 
-Rasputin is licensed under the GNU AGPL v3.0 or later (LICENSE). Contributions and upstream reuse
-follow CONTRIBUTING.md and docs/UPSTREAM_ADOPTION_POLICY.md.
+- Electron desktop lifecycle and tray ownership;
+- direct desktop boot with Rasputin branding and icon;
+- packaged PyInstaller backend;
+- bundled, pinned native llama.cpp runtime selection;
+- desktop-only native model registry and GGUF artifact flow;
+- model catalog, Hugging Face search, exact-variant download controls, and durable job state;
+- hardware-aware placement planning and advanced llama.cpp load-profile validation;
+- local chat, workspaces, tasks, approvals, memory, and agentic coding surfaces;
+- MCP stdio and Streamable HTTP registration, discovery, policy, and audit plumbing;
+- locally stored GitHub connector and read-only repository-context flow.
+
+### Still a release task
+
+The branch is application-ready for continued daily-driver testing, but it is not yet a signed,
+publicly distributed LM Studio replacement. The remaining release gates are:
+
+- clean-machine install, upgrade, migration, and uninstall certification;
+- Authenticode signing and a trusted update channel;
+- live inference certification across representative CPU/CUDA hardware and model sizes;
+- end-to-end third-party MCP server certification;
+- end-to-end agentic coding certification using a real local coder model;
+- a public release artifact and release notes.
+
+These boundaries do not change the desktop product shape: the packaged app remains the supported
+daily-driver path, and Docker is not required for it.
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| desktop/ | Electron main process, backend supervisor, settings, and application assets |
+| frontend-src/ | React source; generated production output is written to frontend/ |
+| backend/ | FastAPI services, model catalog/acquisition, llama.cpp integration, MCP, and connectors |
+| runtime/llama/ | Pinned llama.cpp manifest and bundled-runtime staging documentation |
+| scripts/ | Desktop runtime, backend, installer, packaging, and verification scripts |
+| tests/ | Backend, desktop lifecycle, branding, UI, and integration tests |
+| README.legacy.md | Exact pre-rewrite README kept for rollback/reference |
+
+## License
+
+Rasputin is licensed under the GNU Affero General Public License v3.0 or later. See
+[LICENSE](LICENSE) for the complete terms.

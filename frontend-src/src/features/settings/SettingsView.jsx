@@ -387,7 +387,7 @@ export function SettingsView(props) {
             {effectiveSection === "runtime" && <RuntimeSettings />}
             {effectiveSection === "security" && <SecuritySettings desktopOnly={desktopOnly} />}
             {effectiveSection === "accounts" && <AccountsSettings session={session} />}
-            {effectiveSection === "models" && <ModelSettings models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
+            {effectiveSection === "models" && <ModelSettings desktopOnly={desktopOnly} models={models} modeModelOverrides={modeModelOverrides} setModeModelOverride={setModeModelOverride} />}
             {effectiveSection === "deployments" && <DeploymentSettings />}
             {effectiveSection === "integrations" && <IntegrationSettings />}
             {effectiveSection === "mcp" && (

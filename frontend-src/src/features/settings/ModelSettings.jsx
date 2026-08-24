@@ -24,7 +24,7 @@ const FALLBACK_OPTIONS = [
   ["fail", "Block on mismatch", "Stop and explain the incompatibility instead of switching."],
 ];
 
-export function ModelSettings({ models: availableModels, modeModelOverrides, setModeModelOverride }) {
+export function ModelSettings({ desktopOnly = false, models: availableModels, modeModelOverrides, setModeModelOverride }) {
   const modelSettings = useSettingsStore(state => state.models);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.models);
@@ -48,6 +48,7 @@ export function ModelSettings({ models: availableModels, modeModelOverrides, set
   const performancePreference = modelSettings?.performancePreference || "balanced";
   const maxContextTokens = String(modelSettings?.maxContextTokens ?? "automatic");
   const fallbackBehavior = modelSettings?.fallbackBehavior || "ask";
+  const memoryMode = modelSettings?.memoryMode || "gpu_preferred";
   const defaultEngine = modelSettings?.defaultEngine || "llamacpp";
 
   return (
@@ -129,6 +130,23 @@ export function ModelSettings({ models: availableModels, modeModelOverrides, set
                     <Form.Text className="text-body-secondary">{FALLBACK_OPTIONS.find(([value]) => value === fallbackBehavior)?.[2]}</Form.Text>
                   </Form.Group>
                 </Col>
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label className="fw-medium" htmlFor="model-memory-mode">Memory placement</Form.Label>
+                    <Form.Select id="model-memory-mode" data-testid="model-memory-mode" value={memoryMode} onChange={(event) => handleChange("memoryMode", event.target.value)}>
+                      <option value="gpu_preferred">GPU preferred - require a safe VRAM fit</option>
+                      <option value="hybrid">Hybrid CPU/GPU - use host RAM for non-fitting layers</option>
+                      <option value="cpu_only">CPU only - keep model weights in system RAM</option>
+                    </Form.Select>
+                    <Form.Text className="text-body-secondary">
+                      {memoryMode === "hybrid"
+                        ? "Uses separate VRAM and system-RAM allocations. Host-RAM layers are slower; RAM is not presented as VRAM."
+                        : memoryMode === "cpu_only"
+                          ? "Runs without GPU layer offload."
+                          : "Maximizes GPU residency and blocks unsafe spillover."}
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
               </Row>
 
               <div className="border-top mt-4 pt-3">
@@ -164,9 +182,9 @@ export function ModelSettings({ models: availableModels, modeModelOverrides, set
                   <h5 className="fw-semibold d-flex align-items-center mb-3"><Cpu size={20} className="me-2 text-primary" />Manual inference engine override</h5>
                   <p className="text-body-secondary small mb-3">This legacy setting remains readable for troubleshooting. It is not the primary choice while Selection strategy is Automatic.</p>
                   <div className="d-flex flex-wrap gap-3">
-                    <Form.Check type="radio" id="engine-llamacpp" name="engine" label={<><span className="fw-bold">Llama.cpp</span> <Badge bg="secondary" className="ms-1">GGUF</Badge></>} checked={defaultEngine === "llamacpp"} onChange={() => handleChange("defaultEngine", "llamacpp")} />
-                    <Form.Check type="radio" id="engine-vllm" name="engine" label={<><span className="fw-bold">vLLM</span> <Badge bg="primary" className="ms-1">High Throughput</Badge></>} checked={defaultEngine === "vllm"} onChange={() => handleChange("defaultEngine", "vllm")} />
-                    <Form.Check type="radio" id="engine-ollama" name="engine" label={<span className="fw-bold">Ollama</span>} checked={defaultEngine === "ollama"} onChange={() => handleChange("defaultEngine", "ollama")} />
+                    <Form.Check type="radio" id="engine-llamacpp" name="engine" label={<><span className="fw-bold">Llama.cpp</span> <Badge bg="secondary" className="ms-1">GGUF</Badge></>} checked={desktopOnly || defaultEngine === "llamacpp"} onChange={() => handleChange("defaultEngine", "llamacpp")} />
+                    {!desktopOnly && <Form.Check type="radio" id="engine-vllm" name="engine" label={<><span className="fw-bold">vLLM</span> <Badge bg="primary" className="ms-1">High Throughput</Badge></>} checked={defaultEngine === "vllm"} onChange={() => handleChange("defaultEngine", "vllm")} />}
+                    {!desktopOnly && <Form.Check type="radio" id="engine-ollama" name="engine" label={<span className="fw-bold">Ollama</span>} checked={defaultEngine === "ollama"} onChange={() => handleChange("defaultEngine", "ollama")} />}
                   </div>
                 </Card.Body>
               </Card>

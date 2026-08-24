@@ -16,6 +16,7 @@ from backend.models import compatibility as model_compatibility
 from backend.models import secrets as model_secrets
 from backend.core import security as security
 from backend.core import workspace
+from backend.core import runtime_store
 from backend.core.response import AppError
 from backend.warsat.providers import get_provider, NATIVE_RUNTIME
 from backend.core.datadir import data_dir
@@ -1027,12 +1028,29 @@ def next_port():
     return port
 
 
+def _native_model_with_desktop_preferences(model):
+    resolved = dict(model)
+    saved = runtime_store.get_kv("platform_settings", {})
+    saved = saved if isinstance(saved, dict) else {}
+    model_settings = saved.get("models") if isinstance(saved.get("models"), dict) else {}
+    resource_settings = saved.get("resources") if isinstance(saved.get("resources"), dict) else {}
+
+    supplied = resolved.get("load_profile")
+    profile = dict(supplied) if isinstance(supplied, dict) else {}
+    if "memory_mode" not in profile and "memoryMode" not in profile:
+        profile["memory_mode"] = model_settings.get("memoryMode", "gpu_preferred")
+    resolved["load_profile"] = profile
+    resolved["host_memory_headroom_mb"] = resource_settings.get("hostMemoryHeadroomMb", 2048)
+    return resolved
+
+
 def start_model(key):
     model = get_model(key)
     if not model:
         raise ValueError("model missing")
     if model.get("runtime") == NATIVE_RUNTIME:
         security.require("allow_model_registry_edit")
+        model = _native_model_with_desktop_preferences(model)
     else:
         security.require("allow_docker_control")
     if not model.get("managed"):

@@ -18,7 +18,9 @@ test("Docker workspace setup exposes saved, restart, recheck, and approval steps
 test("native workspace setup remains restart-free", () => {
   assert.match(component, /native \? "ready" : "restart"/);
   assert.match(component, /right now; no mount or restart needed/);
-  assert.match(component, /native && <Button[^>]+>Close<\/Button>/);
+  assert.match(component, /native && \([\s\S]*Start chatting/);
+  assert.match(component, /await selectWorkspace\?\.\(saved\?\.workspace\?\.id/);
+  assert.match(component, /go\?\.\("chat"\)/);
 });
 
 test("workspace roots and explorer entries are keyboard-operable tree items", () => {

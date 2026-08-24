@@ -20,8 +20,16 @@ MODEL_SETTING_ENUMS = {
     "selectionMode": {"automatic", "manual"},
     "performancePreference": {"responsive", "balanced", "maximum_quality"},
     "fallbackBehavior": {"ask", "single_gpu", "fail"},
+    "memoryMode": {"gpu_preferred", "hybrid", "cpu_only"},
 }
-MODEL_SETTING_BOOLEAN_KEYS = {"allowMultiGpu", "automaticBenchmarking"}
+MODEL_SETTING_BOOLEAN_KEYS = {"allowMultiGpu", "automaticBenchmarking", "allowHybridCpuGpu"}
+HARDWARE_SETTING_BOOLEAN_KEYS = {"showLiveUsage"}
+HARDWARE_SETTING_RANGES = {
+    "refreshIntervalMs": (1000, 10000),
+}
+RESOURCE_SETTING_RANGES = {
+    "hostMemoryHeadroomMb": (0, 131072),
+}
 
 
 def _model_setting_error(key: str, value):
@@ -47,6 +55,34 @@ def _model_settings_error(settings: dict):
         if error:
             return error
     return None
+
+
+def _domain_setting_error(domain: str, key: str, value):
+    if domain == "models":
+        return _model_setting_error(key, value)
+    if domain == "hardware":
+        if key in HARDWARE_SETTING_BOOLEAN_KEYS and not isinstance(value, bool):
+            return f"hardware.{key} must be a boolean"
+        if key in HARDWARE_SETTING_RANGES:
+            minimum, maximum = HARDWARE_SETTING_RANGES[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
+                return f"hardware.{key} must be between {minimum} and {maximum}"
+    if domain == "resources" and key in RESOURCE_SETTING_RANGES:
+        minimum, maximum = RESOURCE_SETTING_RANGES[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
+            return f"resources.{key} must be between {minimum} and {maximum}"
+    return None
+
+
+def _domain_settings_error(domain: str, settings: dict):
+    if not isinstance(settings, dict):
+        return f"{domain} settings must be an object"
+    for key, value in settings.items():
+        error = _domain_setting_error(domain, key, value)
+        if error:
+            return error
+    return None
+
 
 DEFAULT_SETTINGS = {
     "general": {
@@ -90,6 +126,8 @@ DEFAULT_SETTINGS = {
         # safety remains enforced by WarSat (for example, mixed-card vLLM
         # tensor parallelism is never enabled without compatibility evidence).
         "allowMultiGpu": True,
+        "memoryMode": "gpu_preferred",
+        "allowHybridCpuGpu": False,
         "automaticBenchmarking": True,
         "fallbackBehavior": "ask",
         "defaultEngine": "llamacpp",
@@ -101,7 +139,12 @@ DEFAULT_SETTINGS = {
         "cpuLimit": 4,
         "memoryLimit": 8192,
         "gpuAllocation": 0,
+        "hostMemoryHeadroomMb": 2048,
         "diskQuota": 50
+    },
+    "hardware": {
+        "showLiveUsage": False,
+        "refreshIntervalMs": 2000,
     },
     "notifications": {
         "emailAlerts": False,
@@ -161,19 +204,20 @@ def get_all_settings(_user=Depends(require_admin)):
 
 @router.post("/import")
 def import_settings(data: dict, _user=Depends(require_admin)):
-    if isinstance(data, dict) and "models" in data:
-        error = _model_settings_error(data["models"])
-        if error:
-            raise HTTPException(status_code=422, detail=error)
+    if isinstance(data, dict):
+        for domain in ("models", "hardware", "resources"):
+            if domain in data:
+                error = _domain_settings_error(domain, data[domain])
+                if error:
+                    raise HTTPException(status_code=422, detail=error)
     store.set_kv("platform_settings", data)
     return {"success": True}
 
 @router.post("/{domain}")
 def update_setting(domain: str, data: SettingUpdate, _user=Depends(require_admin)):
-    if domain == "models":
-        error = _model_setting_error(data.key, data.value)
-        if error:
-            raise HTTPException(status_code=422, detail=error)
+    error = _domain_setting_error(domain, data.key, data.value)
+    if error:
+        raise HTTPException(status_code=422, detail=error)
 
     # Security enforcement flags must land in the core security config —
     # writing them only to platform_settings would leave the toggle cosmetic
@@ -198,7 +242,7 @@ def update_setting(domain: str, data: SettingUpdate, _user=Depends(require_admin
 
 @router.post("/validate/{domain}")
 def validate_setting(domain: str, data: dict, _user=Depends(require_admin)):
-    error = _model_settings_error(data) if domain == "models" else None
+    error = _domain_settings_error(domain, data)
     return {"valid": error is None, **({"error": error} if error else {})}
 
 @router.get("/export")

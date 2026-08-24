@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, Form, Row, Col, Spinner, ProgressBar } from "react-bootstrap";
 import { Server, Cpu, HardDrive, Zap, RefreshCw } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
@@ -6,11 +6,17 @@ import { updateSetting } from "./settingsActions.js";
 
 export function ResourceSettings() {
   const resources = useSettingsStore(state => state.resources);
+  const hardware = useSettingsStore(state => state.hardware || {});
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.resources);
 
   const [cpuLimit, setCpuLimit] = useState(resources?.cpuLimit || 80);
   const [ramLimit, setRamLimit] = useState(resources?.ramLimit || 16);
+  const [hostMemoryHeadroomMb, setHostMemoryHeadroomMb] = useState(resources?.hostMemoryHeadroomMb ?? 2048);
+
+  useEffect(() => {
+    setHostMemoryHeadroomMb(resources?.hostMemoryHeadroomMb ?? 2048);
+  }, [resources?.hostMemoryHeadroomMb]);
 
   const handleBlur = (key, localVal, defaultVal) => {
     const val = parseInt(localVal, 10);
@@ -75,6 +81,20 @@ export function ResourceSettings() {
                 </Col>
                 <Col sm={2} className="text-end fw-bold">{ramLimit} GB</Col>
               </Form.Group>
+              <Form.Group as={Row} className="align-items-center mt-3">
+                <Form.Label column sm={3} className="fw-medium text-muted">Host RAM safety headroom (MB)</Form.Label>
+                <Col sm={7}>
+                  <Form.Control
+                    type="number"
+                    min="0"
+                    max="131072"
+                    value={hostMemoryHeadroomMb}
+                    onChange={(e) => setHostMemoryHeadroomMb(e.target.value)}
+                    onBlur={() => handleBlur("hostMemoryHeadroomMb", hostMemoryHeadroomMb, 2048)}
+                  />
+                </Col>
+                <Col sm={2} className="text-end fw-bold">{hostMemoryHeadroomMb} MB</Col>
+              </Form.Group>
             </Card.Body>
           </Card>
         </Col>
@@ -109,6 +129,20 @@ export function ResourceSettings() {
                   id="cpu-fallback-switch"
                   checked={!!resources?.cpuFallback}
                   onChange={() => handleToggle("cpuFallback")}
+                />
+              </div>
+              <div className="d-flex justify-content-between align-items-center mt-3">
+                <div>
+                  <div className="fw-medium">Always show live hardware usage</div>
+                  <div className="text-muted small">Keep a compact RAM, CPU, and per-GPU usage monitor visible across the app.</div>
+                </div>
+                <Form.Check
+                  type="switch"
+                  id="hardware-monitor-switch"
+                  data-testid="hardware-monitor-switch"
+                  checked={hardware.showLiveUsage === true}
+                  onChange={() => updateSetting("hardware", "showLiveUsage", hardware.showLiveUsage !== true)}
+                  aria-label="Always show live hardware usage"
                 />
               </div>
             </Card.Body>

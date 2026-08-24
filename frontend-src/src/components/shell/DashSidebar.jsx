@@ -1,52 +1,32 @@
 import React, { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import {
-  Activity,
-  Archive,
   Box,
-  Brain,
-  FlaskConical,
-  LayoutDashboard,
+  Clock,
+  FolderOpen,
   Laptop,
   LockKeyhole,
   LogOut,
   MessageSquare,
   PanelLeft,
   Plus,
-  Rocket,
   Settings,
-  Sparkles,
   Trash2,
-  FolderGit2,
 } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { canAccessView, canRunTasks, normalizedRole, roleLabel } from "@/lib/access.js";
 
-/* Grouped navigation modeled on the reference dashboards. */
+/* Keep the daily-driver shell intentionally small. Advanced areas remain
+ * reachable through the command palette and their existing routes, while
+ * these five destinations describe the normal desktop workflow. */
 const NAV_GROUPS = [
   {
-    label: "Workspace",
+    label: "Work",
     items: [
-      { view: "home", label: "Dashboard", icon: LayoutDashboard, testId: "nav-home" },
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
-      { view: "assistant", label: "Assistant", ariaLabel: "Rasputin assistant control plane", icon: Brain, testId: "nav-assistant" },
-      { view: "workspaces", label: "Workspaces", icon: FolderGit2, testId: "nav-workspaces" },
-      { view: "activity", label: "Activity", icon: Activity, testId: "nav-activity" },
-    ],
-  },
-  {
-    label: "Fleet",
-    items: [
-      { view: "models", label: "Models", icon: Sparkles, testId: "nav-models" },
-      { view: "warsat", label: "Warsat", icon: Rocket, testId: "nav-warsat" },
-      { view: "trials", label: "Trials", icon: FlaskConical, testId: "nav-trials" },
-    ],
-  },
-  {
-    label: "Knowledge",
-    items: [
-      { view: "archive", label: "Archive", icon: Archive, testId: "nav-archive" },
-      { view: "memory", label: "Memory", icon: Brain, testId: "nav-memory" },
+      { view: "workspaces", label: "Projects", icon: FolderOpen, testId: "nav-workspaces" },
+      { view: "activity", label: "History", icon: Clock, testId: "nav-activity" },
+      { view: "models", label: "Models", icon: Box, testId: "nav-models" },
     ],
   },
 ];
@@ -191,7 +171,7 @@ export function DashSidebar({
           {expanded && (
             <div className="flex flex-col leading-tight">
               <span className="ras-sidebar-wordmark text-[1rem] font-bold tracking-tight">Rasputin</span>
-              <span className="text-[0.63rem] uppercase tracking-[0.12em] text-sidebar-foreground/45">Operator console</span>
+              <span className="text-[0.63rem] uppercase tracking-[0.12em] text-sidebar-foreground/45">Local AI</span>
             </div>
           )}
         </div>
@@ -216,6 +196,21 @@ export function DashSidebar({
         >
           {expanded ? <><strong className="block text-sidebar-foreground/80">Read-only access</strong><span>Ask an administrator for member access to run tasks.</span></> : <LockKeyhole size={16} className="mx-auto" />}
         </div>}
+
+        <button
+          type="button"
+          data-testid="open-project"
+          onClick={() => go("workspaces")}
+          title={!expanded ? "Open Project" : undefined}
+          aria-label="Open Project"
+          className={cn(
+            "ras-open-project mb-2 flex shrink-0 items-center gap-2.5 rounded-lg border border-sidebar-primary/40 bg-sidebar-primary/10 px-3 py-2 text-sm font-semibold text-sidebar-primary transition-colors hover:bg-sidebar-primary/20",
+            !expanded && "justify-center px-0",
+          )}
+        >
+          <FolderOpen size={18} className="shrink-0" />
+          {expanded && <span>Open Project</span>}
+        </button>
 
         {/* Navigation participates in the sidebar's single unified scroll surface. */}
         <nav className="flex shrink-0 flex-col gap-0.5" aria-label="Workstation and assistant navigation">
@@ -325,7 +320,7 @@ export function DashSidebar({
         {(!expanded || sessions.length === 0) && <div className="min-h-0 flex-1" aria-hidden="true" />}
 
         {/* Runtime identity + privacy state — launch-time facts, never browser toggles. */}
-        <div className={cn("ras-sidebar-footer mt-2 flex shrink-0 flex-col gap-1", !expanded && "is-collapsed")}>
+        <div className={cn("ras-sidebar-footer mt-2 flex shrink-0 flex-col gap-1", !expanded && "is-collapsed", desktopOnly && "hidden")}>
           <div className="ras-runtime-row" title={nativeRuntime ? "Native workstation runtime" : "Docker server runtime"}>
             <RuntimeIcon size={15} aria-hidden="true" />
             {expanded && <span><small>Runtime</small><strong>{nativeRuntime ? "Native workstation" : "Docker server"}</strong></span>}

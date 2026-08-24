@@ -46,6 +46,7 @@ import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { blockerGuidanceForReasons } from "../shared/blockerGuidance.js";
+import { ModelIdentity } from "./ModelIdentity.jsx";
 
 /* ── Tab config ── */
 const modelsTabs = [
@@ -656,7 +657,7 @@ export function ModelsView({
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const modelSettings = useSettingsStore((state) => state.models || {});
-  const [showAllModels, setShowAllModels] = useState(false);
+  const [showAllModels, setShowAllModels] = useState(Boolean(security?.desktopOnly));
   const [advisorRefreshToken, setAdvisorRefreshToken] = useState(0);
   const [hardwareRefreshToken, setHardwareRefreshToken] = useState(0);
   const [localHardware, setLocalHardware] = useState(null);
@@ -770,6 +771,12 @@ export function ModelsView({
   ];
   const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
   const desktopOnly = Boolean(security?.desktopOnly);
+
+  useEffect(() => {
+    if (!desktopOnly) return;
+    setShowAllModels(true);
+    setCatalogRuntime("llamaCppGgufServer");
+  }, [desktopOnly]);
 
   const registeredModels = useMemo(() => (models || []).filter(m => (
     m.key !== "dry-run" && !["mock", "hash-vector"].includes(m.provider)
@@ -1035,10 +1042,10 @@ export function ModelsView({
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-5">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Models <span className="text-muted-foreground">Center</span></h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">Discover, deploy, and manage AI models.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Models</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">Browse, download, and load local models. Advanced placement stays out of the way until you need it.</p>
         </div>
-        <div className="flex min-w-0 flex-wrap justify-end gap-3">
+        <div className={desktopOnly ? "hidden" : "flex min-w-0 flex-wrap justify-end gap-3"}>
           {[
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Reachable now", c: "text-primary" },
@@ -1168,7 +1175,7 @@ export function ModelsView({
                     <option value="vram_desc">VRAM: largest first</option>
                   </select>
                 )}
-                {searchMode === "catalog" && (
+                {searchMode === "catalog" && !desktopOnly && (
                   <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogRuntime} onChange={e => setCatalogRuntime(e.target.value)}>
                     <option value="deployable">Deployable</option>
                     <option value="all">All Runtimes</option>
@@ -1257,10 +1264,12 @@ export function ModelsView({
                 </div>
               )}
 
-              {/* Model list */}
-              {pagedItems.map(item => (
-                <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} hardwareBlocked={normalizedHardware.blocked} hardwareBlockReasons={normalizedHardware.blockedReasons} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} desktopOnly={desktopOnly} />
-              ))}
+              {/* Model catalog */}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="model-catalog-grid">
+                {pagedItems.map(item => (
+                  <CatalogCard key={item.id} item={item} placementFit={catalogPlacementAssessment(item, effectiveHardware)} hardwareBlocked={normalizedHardware.blocked} hardwareBlockReasons={normalizedHardware.blockedReasons} prepareCatalogModelForWarsat={prepareCatalogModelForWarsat} searchMode={searchMode} startDownload={startDownload} activeDownloads={activeDownloads} desktopOnly={desktopOnly} />
+                ))}
+              </div>
 
               {/* Pagination */}
               {displayItems.length > 0 && (
@@ -1691,6 +1700,7 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
   const [variantDetailLoading, setVariantDetailLoading] = useState(false);
   const [variantDetailError, setVariantDetailError] = useState("");
   const [selectedVariantId, setSelectedVariantId] = useState("");
+  const advancedRef = useRef(null);
   const downloadState = (activeDownloads || []).find((dl) => (
     (dl.modelId || dl.model_id || dl.repository) === modelId
   ));
@@ -1700,11 +1710,6 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || null;
   const selectedCompatibility = selectedVariant ? variantCompatibility(selectedVariant) : null;
   const legacyDownloadAvailable = Boolean(variantDetail && variants.length === 0);
-  const downloadDisabled = Boolean(
-    isDownloading
-    || (desktopOnly && isHuggingFace && !selectedVariant && !legacyDownloadAvailable)
-    || (selectedCompatibility && !selectedCompatibility.safe)
-  );
   const itemBlockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
   const blockedReasons = [...new Set([...hardwareBlockReasons, ...itemBlockedReasons])];
   const fitReasons = Array.isArray(item.fitReasons) ? item.fitReasons : [];
@@ -1718,6 +1723,8 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
   const estimateBreakdown = runtimeEnvelope?.breakdown || null;
   const estimateConfidence = runtimeEnvelope?.confidence || runtimeEnvelope?.estimateSource || null;
   const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : n;
+  const contextWindow = contextWindowFor(item);
+
   const loadVariantDetail = async () => {
     setVariantDetailLoading(true);
     setVariantDetailError("");
@@ -1735,132 +1742,175 @@ function CatalogCard({ item, placementFit, hardwareBlocked = false, hardwareBloc
       setVariantDetailLoading(false);
     }
   };
-  const variantIssues = Array.isArray(variantDetail?.variantIssues) ? variantDetail.variantIssues : [];
-  return (
-    <div className="ras-list-item glow-card flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <strong className="text-sm">{item.name}</strong>
-          <div className="truncate text-[0.7rem] text-muted-foreground">{item.modelId || item.id}</div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {item.deployable && <Zap size={13} className="text-primary" />}
-          {item.containerBacked && !desktopOnly && <Badge variant="muted">Managed container</Badge>}
-          <span className="text-[0.7rem] text-muted-foreground">{labelize(item.purpose || "chat")}</span>
-        </div>
-      </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {vramEstimateGb && <Badge variant="muted">Estimated ~{vramEstimateGb} GB VRAM</Badge>}
-        {item.downloads > 0 && <Badge variant="muted">↓ {fmt(item.downloads)}</Badge>}
-        {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
-        {item.license && <Badge variant="muted">{item.license}</Badge>}
-        <Badge variant={placement.kind === "single-gpu-fit" || placement.kind === "measured-multi-gpu" ? "up" : "down"}>
-          {placement.label}
+  const openVariantDetails = async () => {
+    if (advancedRef.current) advancedRef.current.open = true;
+    await loadVariantDetail();
+  };
+
+  const variantIssues = Array.isArray(variantDetail?.variantIssues) ? variantDetail.variantIssues : [];
+  const primaryAction = isHuggingFace && desktopOnly && !variantDetail
+    ? openVariantDetails
+    : isHuggingFace
+      ? () => startDownload(modelId, selectedVariant || null)
+      : item.deployable
+        ? () => prepareCatalogModelForWarsat?.(item)
+        : undefined;
+  const primaryLabel = isDownloading
+    ? "Downloading…"
+    : isHuggingFace && desktopOnly && !variantDetail
+      ? "Choose GGUF variant"
+      : isHuggingFace && desktopOnly && selectedVariant
+        ? "Download selected GGUF"
+        : isHuggingFace && desktopOnly && legacyDownloadAvailable
+          ? "Download weights"
+          : item.deployable && desktopOnly
+            ? "Download model"
+            : item.deployable
+              ? "Deploy via Warsat"
+              : isHuggingFace
+                ? "Download weights"
+                : "View details";
+  const primaryDisabled = Boolean(
+    isDownloading
+    || (isHuggingFace && desktopOnly && variantDetail && variants.length > 0 && !selectedVariant)
+    || (selectedCompatibility && !selectedCompatibility.safe)
+    || (item.deployable && !desktopOnly && blocked)
+  );
+  const stateLabel = downloadStateName === "completed"
+    ? "Downloaded"
+    : item.readyWithinThreeMinutes || item.loaded
+      ? "Ready"
+      : placement.label;
+  const parameterLabel = item.parameterCountB ? item.parameterCountB + "B parameters" : null;
+
+  return (
+    <article className="ras-list-item glow-card flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4" data-testid="model-catalog-card">
+      <div className="flex items-start justify-between gap-3">
+        <ModelIdentity item={item} />
+        <Badge variant={downloadStateName === "completed" || item.readyWithinThreeMinutes ? "up" : blocked ? "down" : "muted"}>
+          {stateLabel}
         </Badge>
       </div>
 
-      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        Largest single GPU: {placement.largestSingleGpuGb == null ? "unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"}
-        {" · "}Optional combined pool: {placement.aggregateVramGb == null ? "unknown" : placement.aggregateVramGb.toFixed(1) + " GB"}
-        {placement.reasons?.[0] && <div className="mt-1">{placement.reasons[0]}</div>}
-        {estimateRange && <div className="mt-1">Estimated range: {typeof estimateRange === "object" ? String(estimateRange.min ?? "?") + "–" + String(estimateRange.max ?? "?") + " GB" : String(estimateRange)}</div>}
-        {estimateConfidence && <div className="mt-1">Confidence: {String(estimateConfidence)}</div>}
-        {estimateBreakdown && <div className="mt-1">Estimator includes runtime overhead and cache headroom.</div>}
+      <div className="flex min-h-10 flex-wrap items-center gap-1.5">
+        <Badge variant="muted">{labelize(item.purpose || "chat")}</Badge>
+        {item.capabilities?.slice(0, 3).map((capability) => <Badge key={capability} variant="muted">{labelize(capability)}</Badge>)}
+        {item.downloads > 0 && <Badge variant="muted">↓ {fmt(item.downloads)}</Badge>}
+        {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
       </div>
-      {item.summary && <p className="text-xs text-muted-foreground">{item.summary.slice(0, 120)}</p>}
 
-      {(blocked || fitReasons.length > 0) && (
-        <div id={blocked ? blockerDetailsId : undefined} data-testid={blocked ? "model-deployment-blockers" : undefined} role={blocked ? "alert" : undefined} className={"rounded-lg border px-3 py-2 text-xs " + (blocked ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-border bg-muted/30 text-muted-foreground")}>
-          <strong className="mr-1">{blocked ? "Deployment blocked:" : "Why it fits:"}</strong>
-          {blocked ? blockerGuidance.map((entry) => (
-            <div key={entry.raw} className="mt-1">
-              <div><strong>Reason:</strong> {entry.raw}</div>
-              <div><strong>What this means:</strong> {entry.happened}</div>
-              <div><strong>Next step:</strong> {entry.next}</div>
-            </div>
-          )) : fitReasons.join(" ")}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+        {parameterLabel && <div><strong className="text-foreground">{parameterLabel}</strong></div>}
+        {contextWindow > 0 && <div><strong className="text-foreground">{contextWindow.toLocaleString()} context</strong></div>}
+        {vramEstimateGb && <div><strong className="text-foreground">Estimated ~{vramEstimateGb} GB VRAM</strong></div>}
+        {item.license && <div className="truncate" title={item.license}>{item.license}</div>}
+      </div>
 
-      <div className="flex items-center gap-2">
-        {item.deployable && !desktopOnly && (
-          <UIButton size="sm" type="button" disabled={blocked} aria-describedby={blocked ? blockerDetailsId : undefined} title={blocked ? [...blockedReasons, ...placement.reasons].join(" ") : undefined} onClick={() => prepareCatalogModelForWarsat?.(item)}>
-            <Play size={12} /> Deploy via Warsat
+      {item.summary && <p className="m-0 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.summary.slice(0, 180)}</p>}
+
+      <div className="mt-auto flex flex-wrap items-center gap-2">
+        {primaryAction && (
+          <UIButton
+            variant="default"
+            size="sm"
+            type="button"
+            disabled={primaryDisabled}
+            aria-describedby={blocked ? blockerDetailsId : undefined}
+            onClick={primaryAction}
+            data-testid="model-card-primary-action"
+          >
+            {isDownloading ? <Download size={12} /> : item.deployable && !desktopOnly ? <Play size={12} /> : <Download size={12} />}
+            {primaryLabel}
           </UIButton>
         )}
-        {desktopOnly && isHuggingFace && (
-          <span className="text-[0.7rem] text-muted-foreground">Download a GGUF variant for native llama.cpp.</span>
-        )}
-        {isHuggingFace && (
-          <div className="w-full rounded-lg border border-border bg-muted/20 p-2" data-testid="model-variant-picker">
-            <UIButton variant="outline" size="sm" type="button" onClick={loadVariantDetail} disabled={variantDetailLoading || isDownloading} aria-expanded={Boolean(variantDetail)}>
-              <Download size={12} /> {variantDetailLoading ? "Loading GGUF variants…" : variantDetail ? "Refresh GGUF variants" : "Choose GGUF variant"}
-            </UIButton>
-            {variantDetailError && (
-              <div role="alert" className="mt-2 text-xs text-destructive">{variantDetailError}</div>
+        <details ref={advancedRef} className="min-w-0 flex-1 rounded-lg border border-border bg-muted/20 px-3 py-2" data-testid="model-card-advanced">
+          <summary className="cursor-pointer text-xs font-semibold text-foreground">Advanced details</summary>
+          <div className="mt-3 grid gap-3">
+            <div className="text-xs text-muted-foreground">
+              <div>Largest single GPU: <strong className="text-foreground">{placement.largestSingleGpuGb == null ? "unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"}</strong></div>
+              <div>Combined GPU pool: <strong className="text-foreground">{placement.aggregateVramGb == null ? "unknown" : placement.aggregateVramGb.toFixed(1) + " GB"}</strong></div>
+              {placement.reasons?.[0] && <div className="mt-1">{placement.reasons[0]}</div>}
+              {estimateRange && <div className="mt-1">Estimated range: {typeof estimateRange === "object" ? String(estimateRange.min ?? "?") + "–" + String(estimateRange.max ?? "?") + " GB" : String(estimateRange)}</div>}
+              {estimateConfidence && <div className="mt-1">Confidence: {String(estimateConfidence)}</div>}
+              {estimateBreakdown && <div className="mt-1">Estimator includes runtime overhead and cache headroom.</div>}
+            </div>
+
+            {(blocked || fitReasons.length > 0) && (
+              <div id={blocked ? blockerDetailsId : undefined} data-testid={blocked ? "model-deployment-blockers" : undefined} role={blocked ? "alert" : undefined} className={"rounded-lg border px-3 py-2 text-xs " + (blocked ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-border bg-muted/30 text-muted-foreground")}>
+                <strong className="mr-1">{blocked ? "Deployment blocked:" : "Why it fits:"}</strong>
+                {blocked ? blockerGuidance.map((entry) => (
+                  <div key={entry.raw} className="mt-1">
+                    <div><strong>Reason:</strong> {entry.raw}</div>
+                    <div><strong>What this means:</strong> {entry.happened}</div>
+                    <div><strong>Next step:</strong> {entry.next}</div>
+                  </div>
+                )) : fitReasons.join(" ")}
+              </div>
             )}
-            {variantDetail && variants.length > 0 && (
-              <div className="mt-2 grid gap-1.5">
-                <label htmlFor={"variant-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-")} className="text-xs font-medium">Exact GGUF variant</label>
-                <select
-                  id={"variant-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-")}
-                  className="w2-input"
-                  value={selectedVariant?.id || ""}
-                  onChange={(event) => setSelectedVariantId(event.target.value)}
-                  aria-label={"Exact GGUF variant for " + modelId}
-                >
-                  {variants.map((variant) => {
-                    const compatibility = variantCompatibility(variant);
-                    const size = variantTotalBytes(variant);
-                    const mmprojFiles = Array.isArray(variant.mmprojFiles) ? variant.mmprojFiles : [];
-                    return (
-                      <option key={variant.id} value={variant.id}>
-                        {(variant.quantization || "Unknown quantization") + " · " + formatDownloadBytes(size) + " · " + (variant.shardCount || 1) + " shard" + ((variant.shardCount || 1) === 1 ? "" : "s") + " · " + (variant.multimodal || mmprojFiles.length ? "mmproj" : "text-only") + " · " + (compatibility.state === "unknown" ? "Needs review" : labelize(compatibility.state))}
-                      </option>
-                    );
-                  })}
-                </select>
-                {selectedVariant && (
-                  <div className="text-xs text-muted-foreground">
-                    <div>Quantization: <strong className="text-foreground">{selectedVariant.quantization || "unknown"}</strong>{" · "}Size: <strong className="text-foreground">{formatDownloadBytes(variantTotalBytes(selectedVariant))}</strong>{" · "}Shards: <strong className="text-foreground">{selectedVariant.shardCount || 1}</strong></div>
-                    <div>{selectedVariant.multimodal ? "Multimodal" : "Text-only"}{" · "}mmproj: {Array.isArray(selectedVariant.mmprojFiles) && selectedVariant.mmprojFiles.length ? "included" : "not included"}</div>
-                    <div>Compatibility: <strong className={selectedCompatibility?.safe ? "text-amber-300" : "text-destructive"}>{selectedCompatibility?.state === "unknown" ? "Needs review" : labelize(selectedCompatibility?.state || "unknown")}</strong></div>
-                    {selectedCompatibility?.reasons?.map((reason) => <div key={reason}>{reason}</div>)}
+
+            {isHuggingFace && (
+              <div className="grid gap-2" data-testid="model-variant-picker">
+                <UIButton variant="outline" size="sm" type="button" onClick={loadVariantDetail} disabled={variantDetailLoading || isDownloading} aria-expanded={Boolean(variantDetail)}>
+                  <Download size={12} /> {variantDetailLoading ? "Loading GGUF variants…" : variantDetail ? "Refresh GGUF variants" : "Choose GGUF variant"}
+                </UIButton>
+                {variantDetailError && <div role="alert" className="text-xs text-destructive">{variantDetailError}</div>}
+                {variantDetail && variants.length > 0 && (
+                  <div className="grid gap-1.5">
+                    <label htmlFor={"variant-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-")} className="text-xs font-medium">Exact GGUF variant</label>
+                    <select
+                      id={"variant-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-")}
+                      className="w2-input"
+                      value={selectedVariant?.id || ""}
+                      onChange={(event) => setSelectedVariantId(event.target.value)}
+                      aria-label={"Exact GGUF variant for " + modelId}
+                    >
+                      {variants.map((variant) => {
+                        const compatibility = variantCompatibility(variant);
+                        const size = variantTotalBytes(variant);
+                        const mmprojFiles = Array.isArray(variant.mmprojFiles) ? variant.mmprojFiles : [];
+                        return (
+                          <option key={variant.id} value={variant.id}>
+                            {(variant.quantization || "Unknown quantization") + " · " + formatDownloadBytes(size) + " · " + (variant.shardCount || 1) + " shard" + ((variant.shardCount || 1) === 1 ? "" : "s") + " · " + (variant.multimodal || mmprojFiles.length ? "mmproj" : "text-only") + " · " + (compatibility.state === "unknown" ? "Needs review" : labelize(compatibility.state))}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {selectedVariant && (
+                      <div className="text-xs text-muted-foreground">
+                        <div>Quantization: <strong className="text-foreground">{selectedVariant.quantization || "unknown"}</strong>{" · "}Size: <strong className="text-foreground">{formatDownloadBytes(variantTotalBytes(selectedVariant))}</strong>{" · "}Shards: <strong className="text-foreground">{selectedVariant.shardCount || 1}</strong></div>
+                        <div>{selectedVariant.multimodal ? "Multimodal" : "Text-only"}{" · "}mmproj: {Array.isArray(selectedVariant.mmprojFiles) && selectedVariant.mmprojFiles.length ? "included" : "not included"}</div>
+                        <div>Compatibility: <strong className={selectedCompatibility?.safe ? "text-amber-300" : "text-destructive"}>{selectedCompatibility?.state === "unknown" ? "Needs review" : labelize(selectedCompatibility?.state || "unknown")}</strong></div>
+                        {selectedCompatibility?.reasons?.map((reason) => <div key={reason}>{reason}</div>)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {variantDetail && variants.length === 0 && <div className="text-xs text-muted-foreground">No complete GGUF variants were returned; the legacy model download remains available.</div>}
+                {variantIssues.length > 0 && (
+                  <div className="text-xs text-amber-300">
+                    {variantIssues.map((issue, index) => (
+                      <div key={(issue.kind || "issue") + "-" + index}>
+                        <strong>{issue.reason || issue.kind || "Variant issue"}</strong>
+                        {issue.nextAction && <div>{issue.nextAction}</div>}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             )}
-            {variantDetail && variants.length === 0 && (
-              <div className="mt-2 text-xs text-muted-foreground">No complete GGUF variants were returned; the legacy model download remains available.</div>
-            )}
-            {variantIssues.length > 0 && (
-              <div className="mt-2 text-xs text-amber-300">
-                {variantIssues.map((issue, index) => (
-                  <div key={(issue.kind || "issue") + "-" + index}>
-                    <strong>{issue.reason || issue.kind || "Variant issue"}</strong>
-                    {issue.nextAction && <div>{issue.nextAction}</div>}
-                  </div>
-                ))}
-              </div>
+
+            {item.sourceUrl && item.source === "huggingface" && (
+              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-sky-400 no-underline">
+                <ExternalLink size={11} /> Open Hugging Face page
+              </a>
             )}
           </div>
-        )}
-        {isHuggingFace && (
-          <UIButton variant={isDownloading ? "default" : "outline"} size="sm" type="button" disabled={downloadDisabled} onClick={() => startDownload(modelId, selectedVariant || null)}>
-            <Download size={12} /> {isDownloading ? "Downloading…" : selectedVariant ? "Download selected GGUF" : "Download Weights"}
-          </UIButton>
-        )}
-        {item.sourceUrl && item.source === "huggingface" && (
-          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[0.7rem] text-sky-400 no-underline">
-            <ExternalLink size={11} /> HF Page
-          </a>
-        )}
+        </details>
       </div>
-    </div>
+    </article>
   );
 }
-
 
 /* ═══════════════════════════════════════════
    INSTALLED CARD

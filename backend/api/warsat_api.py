@@ -381,7 +381,8 @@ async def warsat_system_metrics(_user=Depends(current_user)):
             except Exception:
                 pass
 
-        if not gpu_metrics:
+        desktop_only = str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
+        if not gpu_metrics and not desktop_only:
             # Containerized wrapper: no local nvidia-smi — read GPU stats
             # through Docker instead.
             try:

@@ -59,6 +59,7 @@ export function WorkspacesView({
   searchWorkspaceKnowledge,
   refreshKnowledgeStats,
   setPrompt,
+  go,
   models,
   modeModelOverrides,
   setModeModelOverride,
@@ -68,6 +69,7 @@ export function WorkspacesView({
   const taskAccess = role !== "viewer";
   const [filter, setFilter] = useState("");
   const [selectedEntry, setSelectedEntry] = useState(null);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
   
   // Preview State
   const [previewMode, setPreviewMode] = useState(false);
@@ -389,7 +391,10 @@ export function WorkspacesView({
         // loop until the modal closed.)
         const plan = await previewMount({ preventDefault: () => {}, currentTarget: formData });
         if (plan?.error) throw new Error(plan.error);
-        await requestMount(plan);
+        const saved = await requestMount(plan);
+        if (native) {
+          await selectWorkspace?.(saved?.workspace?.id || saved?.workspace?.path || plan.hostPath);
+        }
         await loadWorkspaceRoots();
       }, setUiState);
 
@@ -569,7 +574,17 @@ export function WorkspacesView({
           <h1>{activeName || "No workspace selected"}</h1>
           <p>{displayPath(activePath)}</p>
           <div className="workspace-hero-actions">
-            {adminAccess && <button type="button" className="workspace-primary-action" onClick={() => setShowAddModal(true)}><PlusCircle size={16} /> Add folder</button>}
+            <button
+              type="button"
+              className="workspace-primary-action"
+              data-testid="open-project-primary"
+              onClick={() => setShowAddModal(true)}
+              disabled={!adminAccess}
+              aria-label="Open a project folder"
+              title={adminAccess ? "Choose the folder Rasputin should work in" : "Administrator access is required to open a project folder"}
+            >
+              <FolderOpen size={16} /> Open Project
+            </button>
             <button type="button" className="workspace-secondary-action" onClick={loadWorkspaceRoots}><RefreshCw size={15} /> Refresh</button>
           </div>
         </div>
@@ -587,18 +602,6 @@ export function WorkspacesView({
           <div className="w2-header-stat">
             <strong>{activeReadOnly ? "Read Only" : "Read / Write"}</strong>
             <small>Access Mode</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{activeIndexed ? "Indexed" : "Not Indexed"}</strong>
-            <small>Index Status</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{graphStats?.nodes > 0 ? "Built" : "Not Built"}</strong>
-            <small>Graph Status</small>
-          </div>
-          <div className="w2-header-stat">
-            <strong>{ragStats?.docs || 0}</strong>
-            <small>Files Indexed</small>
           </div>
           {adminAccess && <button
             type="button"
@@ -659,7 +662,16 @@ export function WorkspacesView({
         </span>
       </div>
 
-      <div className="w2-main-grid">
+      <details
+        className="project-files-disclosure"
+        open={projectFilesOpen}
+        onToggle={(event) => setProjectFilesOpen(event.currentTarget.open)}
+      >
+        <summary className="project-disclosure-summary">
+          <span>Project files</span>
+          <small>Browse, preview, and switch approved folders</small>
+        </summary>
+        <div className="w2-main-grid">
         
         {/* Left Column: Explorer Sidebar */}
         <div className="w2-column w2-column-nav">
@@ -704,7 +716,7 @@ export function WorkspacesView({
                 onClick={() => setShowAddModal(true)}
               >
                 <PlusCircle size={16} className="w2-tree-icon" style={{ color: 'var(--cc-primary)' }} />
-                <span>Add Folder</span>
+                <span>Open Project</span>
               </button>
             </div>
           </div>
@@ -908,17 +920,20 @@ export function WorkspacesView({
 
                 <div className="w2-card" style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', padding: '10px 16px', gap: '10px 16px' }}>
                   <div className="w2-health-item is-good"><Check size={16}/> Folder Access</div>
-                  <div className={`w2-health-item ${activeIndexed ? 'is-good' : 'is-warn'}`}>
-                    {activeIndexed ? <Check size={16}/> : <AlertTriangle size={16}/>} RAG Index
-                  </div>
-                  <div className={`w2-health-item ${graphStats?.nodes > 0 ? 'is-good' : 'is-warn'}`}>
-                    {graphStats?.nodes > 0 ? <Check size={16}/> : <AlertTriangle size={16}/>} Graph DB
-                  </div>
                   <div className="w2-health-item is-good"><Check size={16}/> Security</div>
-                  <span style={{ color: 'var(--cc-muted)', fontSize: '0.75rem' }}>Select a file from the explorer to preview it.</span>
+                  <span style={{ color: 'var(--cc-muted)', fontSize: '0.75rem' }}>Open a project folder to begin, or browse the current project below.</span>
                 </div>
 
-                <div className="w2-section workspace-operations-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <details
+                  className="project-intelligence-disclosure"
+                  data-testid="project-intelligence-disclosure"
+                  style={{ gridColumn: '1 / -1' }}
+                >
+                  <summary className="project-disclosure-summary">
+                    <span>Project intelligence and actions</span>
+                    <small>RAG, Graphify, task shortcuts, and validation controls</small>
+                  </summary>
+                  <div className="w2-section workspace-operations-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   
                   <div className="w2-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <h2 className="w2-section-title">Knowledge Operations</h2>
@@ -1083,13 +1098,15 @@ export function WorkspacesView({
                     </form>
                   )}
 
-                </div>
+                  </div>
+                </details>
 
               </div>
             </div>
           )}
         </div>
-      </div>
+        </div>
+      </details>
 
       {/* Mode-aware folder picker: browse a verified location, choose access, confirm once. */}
       <Modal show={showAddModal} onHide={resetMountModal} centered size="xl" className="workspace-folder-modal">
@@ -1098,7 +1115,7 @@ export function WorkspacesView({
             <span className="folder-picker-title-icon"><FolderOpen size={22} /></span>
             <span>
               <small>{native ? "Native workspace" : "Docker workspace"}</small>
-              <Modal.Title>Add a project folder</Modal.Title>
+              <Modal.Title>Open a project folder</Modal.Title>
             </span>
           </div>
           <span className={`folder-picker-runtime ${native ? "is-native" : "is-docker"}`}>
@@ -1334,7 +1351,19 @@ export function WorkspacesView({
                 </>
               )}
 
-              {native && <Button variant="primary" size="lg" onClick={resetMountModal} className="px-5">Close</Button>}
+              {native && (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={() => {
+                    resetMountModal();
+                    go?.("chat");
+                  }}
+                  className="px-5"
+                >
+                  Start chatting
+                </Button>
+              )}
             </div>
           )}
         </Modal.Body>

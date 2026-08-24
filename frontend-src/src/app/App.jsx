@@ -67,17 +67,20 @@ const routedViews = new Set([
 
 const routedSettingsSections = new Set(settingsItems.map(([section]) => section));
 
-function parseAppRouteHash() {
+function parseAppRouteHash(defaultView = "home") {
   const raw = window.location.hash.replace(/^#\/?/, "").trim();
-  if (!raw) return { view: "home", section: undefined };
+  if (!raw) return { view: defaultView, section: undefined };
   const [rawView, rawSection] = raw.split("/");
-  const routeView = routedViews.has(rawView) ? rawView : "home";
+  const aliasedView = rawView === "project" ? "workspaces" : rawView === "history" ? "activity" : rawView;
+  const routeView = routedViews.has(aliasedView) ? aliasedView : defaultView;
   const routeSection = routeView === "settings" && routedSettingsSections.has(rawSection) ? rawSection : undefined;
   return { view: routeView, section: routeSection };
 }
 
 function routeHashFor(view, section) {
   if (view === "settings") return `#settings/${section || "general"}`;
+  if (view === "workspaces") return "#project";
+  if (view === "activity") return "#history";
   return `#${view || "home"}`;
 }
 
@@ -393,7 +396,7 @@ export function App() {
   useEffect(() => {
     if (!session) return undefined;
     function applyHashRoute() {
-      const route = parseAppRouteHash();
+      const route = parseAppRouteHash(desktopOnly ? "chat" : "home");
       if (!canAccessRoute(session.role, route.view, route.section)) {
         applyView("home");
         setGlobalStatus("This account does not include this area.");
@@ -409,7 +412,7 @@ export function App() {
       window.removeEventListener("hashchange", applyHashRoute);
       window.removeEventListener("popstate", applyHashRoute);
     };
-  }, [session]);
+  }, [desktopOnly, session]);
 
   useEffect(() => {
     if (modelsQuery.data) setModels(modelsQuery.data);
@@ -541,9 +544,16 @@ export function App() {
     setModeModelOverrides(prefs.modeModelOverrides || {});
     setSubagentCount(Math.max(0, Math.min(Number(prefs.subagents || 0), 4)));
     setWorkspaceExplorer(prefs.workspaceExplorer || {});
-    const route = parseAppRouteHash();
+    const desktopDefaultView = data.security?.desktopOnly ? "chat" : "home";
+    const route = parseAppRouteHash(desktopDefaultView);
     const hasExplicitRoute = Boolean(window.location.hash.replace(/^#\/?/, "").trim());
-    const requestedView = hasExplicitRoute ? route.view : prefs.activeView || "home";
+    const rememberedView = prefs.activeView || desktopDefaultView;
+    const desktopPrimaryViews = new Set(["chat", "workspaces", "activity", "models", "settings"]);
+    const requestedView = hasExplicitRoute
+      ? route.view
+      : data.security?.desktopOnly && !desktopPrimaryViews.has(rememberedView)
+        ? desktopDefaultView
+        : rememberedView;
     const nativeRequestedView = data.security?.desktopOnly && requestedView === "warsat" ? "models" : requestedView;
     const requestedSection = hasExplicitRoute && route.view === "settings" ? route.section || "general" : prefs.activeSettingsSection || "general";
     const routeAllowed = canAccessRoute(activeRole, nativeRequestedView, requestedSection);
@@ -564,7 +574,7 @@ export function App() {
     });
     // Platform settings are administrator-owned. Loading them for a member
     // creates a guaranteed 403 and makes a read-only session look broken.
-    if (data.session?.role === "admin") loadSettings();
+    if (activeRole === "admin") loadSettings();
     // The bootstrap catalog has no VRAM-based fit labels; swap in the
     // hardware-aware copy in the background. This shares the same guarded
     // loader as the WarSat route so an empty result is still terminal.
@@ -1535,9 +1545,11 @@ export function App() {
         readOnly: !!plan.readOnly,
       });
       setMountPlan({ ...saved, saved: true });
-      setGlobalStatus(saved.composeWritten
-        ? `Mount saved and written to ${saved.composeFile}. Restart Rasputin to pick up ${saved.displayName || "the folder"}.`
-        : "Mount request saved. Restart Rasputin with the generated volume before browsing that folder.");
+      setGlobalStatus(saved.registered
+        ? `Project opened: ${saved.displayName || saved.hostPath}.`
+        : saved.composeWritten
+          ? `Mount saved and written to ${saved.composeFile}. Restart Rasputin to pick up ${saved.displayName || "the folder"}.`
+          : "Mount request saved. Restart Rasputin with the generated volume before browsing that folder.");
       loadPendingMounts().catch(() => {});
       return saved;
     } catch (error) {
@@ -2483,11 +2495,10 @@ export function App() {
       commandPaletteProps={{
         commands: [
           { label: "Start a new chat", hint: "Create a clean Rasputin conversation.", keywords: "new message", action: startNewChat },
-          { label: "Open dashboard", hint: "Return to your local overview.", action: () => go("home") },
           { label: "Open chat", hint: "Continue the active conversation.", action: () => go("chat") },
-          { label: "Open workspaces", hint: "Manage mounted folders and access.", action: () => go("workspaces") },
-          { label: "Open activity inbox", hint: "Review queue, approvals, failures, and completions.", keywords: "notifications queue", action: () => go("activity") },
-          { label: "Open models", hint: "Inspect and manage model runtimes.", action: () => go("models") },
+          { label: "Open project", hint: "Choose a folder and work from it.", keywords: "folder workspace", action: () => go("workspaces") },
+          { label: "Open history", hint: "Review conversations, runs, failures, and notifications.", keywords: "activity notifications queue", action: () => go("activity") },
+          { label: "Open models", hint: "Browse, download, and load local models.", action: () => go("models") },
           { label: "Open Rasputin assistant", hint: "Review identity, model packs, plans, and broker handoffs.", keywords: "jarvis friday voice orchestration", action: () => go("assistant") },
           { label: "Open artifacts", hint: "Browse generated files and evidence.", keywords: "archive output", action: () => go("archive") },
           { label: "Open settings", hint: "Configure accounts, security, and integrations.", action: () => go("settings", "general") },
@@ -2637,6 +2648,7 @@ export function App() {
         exportWorkspaceGraphToObsidian={exportWorkspaceGraphToObsidian}
         searchWorkspaceKnowledge={searchWorkspaceKnowledge}
         refreshKnowledgeStats={refreshKnowledgeStats}
+        go={go}
         setPrompt={(prompt, mode) => {
           setObjective(prompt);
           chooseTaskMode(mode === "analyze files" ? "analyze" : mode || "analyze");
