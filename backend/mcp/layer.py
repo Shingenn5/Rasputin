@@ -13,7 +13,6 @@ from backend.rag import vector as rag
 from backend.rag import graph as graphify
 from backend.core import workspace
 from backend.core import task_worktree
-from backend.core import sandbox_exec
 from backend.core import audit as audit
 from backend.core import security as security
 from backend.core import leak_guard as leak_guard
@@ -38,8 +37,8 @@ SAFE_SHELL_ENV_KEYS = {
     "HOME", "USERPROFILE", "COMSPEC", "LANG", "LC_ALL", "PYTHONIOENCODING", "NODE_ENV",
 }
 # Soft backstop against obviously catastrophic commands. Host Shell is a separate
-# per-workspace capability; native Windows also routes through Rasputin_sbx. These
-# lexical patterns are a UX guardrail, not the security boundary.
+# per-workspace capability. These lexical patterns are a UX guardrail, not the
+# security boundary.
 SHELL_DENY_PATTERNS = [
     re.compile(r"rm\s+-rf\s+(/|~|\$HOME)(\s|$)", re.IGNORECASE),
     re.compile(r"rm\s+-rf\s+(\.|\./|\*)\s*$", re.IGNORECASE),
@@ -694,41 +693,15 @@ class McpLayer:
         timeout = max(5, min(int(timeout_seconds or 120), 600))
         audit.log("shell_exec", {"command": command, "cwd": str(base), "timeout": timeout, "shell": shell})
 
-        # Native Windows runs commands AS the low-privilege sandbox account (Rasputin_sbx),
-        # confined to this ACL-granted workspace — not as the operator. Docker/POSIX keep
-        # the direct path (the container or host provides the boundary there). If Host Shell
-        # is on but the sandbox isn't provisioned, fail closed rather than run unsandboxed.
+        # Windows Desktop does not run arbitrary Host Shell commands as the operator.
+        # The old dedicated-account runner was removed; keep this capability explicitly
+        # unavailable until a proven same-user OS boundary (such as AppContainer) exists.
         if _WINDOWS and workspace.is_native():
-            if not sandbox_exec.sandbox_provisioned():
-                raise PermissionError(
-                    "Host Shell is enabled but the sandbox account isn't provisioned yet — "
-                    "re-enable Host Shell to set it up (or run scripts/Provision-Sandbox.ps1)."
-                )
-            r_mode, r_spec = _resolve_shell_invocation(command, shell)
-            command_line = subprocess.list2cmdline(r_spec if r_mode == "exec" else ["cmd.exe", "/c", command])
-            result = await asyncio.to_thread(
-                sandbox_exec.run_as_sandbox, command_line, str(base), timeout, MAX_SHELL_OUTPUT_CHARS)
-            # Fail-closed reporting: a denial outside the workspace surfaces as a clear
-            # boundary message, not a bare "Access is denied" errno the model can't read.
-            boundary_blocked = (
-                result["exit_code"] not in (0, None)
-                and "access is denied" in (result["output"] or "").lower()
+            raise PermissionError(
+                "Host Shell is unavailable in Windows Desktop mode: Rasputin no longer "
+                "runs arbitrary commands as the operator. Use the built-in workspace tools "
+                "or a Docker runtime until an OS-level AppContainer runner is available."
             )
-            output = result["output"]
-            if boundary_blocked:
-                output += (
-                    "\n\n[Sandbox boundary: this command was denied access outside the granted "
-                    "workspace. Host Shell runs as a low-privilege account confined to this folder — "
-                    "keep the work inside the workspace, or run it yourself if it must reach elsewhere.]"
-                )
-            audit.log("shell_exec_done", {
-                "command": command, "exit_code": result["exit_code"], "timed_out": result["timed_out"],
-                "truncated": result["truncated"], "sandbox": True, "boundary_blocked": boundary_blocked})
-            return {
-                "command": command, "cwd": str(base),
-                "exit_code": result["exit_code"], "timed_out": result["timed_out"],
-                "output": output, "truncated": result["truncated"], "boundary_blocked": boundary_blocked,
-            }
 
         mode, spec = _resolve_shell_invocation(command, shell)
         if mode == "exec":

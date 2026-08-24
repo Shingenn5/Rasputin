@@ -88,8 +88,10 @@ Rasputin's knowledge model is more workspace- and evidence-oriented than Odysseu
 - Audit records for trusted and untrusted actions.
 - Privacy Lock and remote-model restrictions.
 - Prompt-injection labeling for retrieved content and tool results.
-- Network-isolated ephemeral Docker containers for skills.
-- A dedicated low-privilege `Rasputin_sbx` Windows account for native host-shell execution.
+- Declarative `SKILL.md` packages governed by the normal model/tool policy in every runtime; the
+  obsolete containerized Python runner has been removed.
+- Native/Desktop Host Shell is fail-closed pending a proven Windows AppContainer runner; it does
+  not create a dedicated Windows account or run as the operator account.
 - Optional local HTTPS and private remote-access paths.
 
 ### 6. What is demonstrably working
@@ -263,10 +265,13 @@ Rasputin applies defense in depth to agent execution:
 3. Host shell requires a separate workspace grant.
 4. Untrusted workspaces still require mutation approval.
 5. Actions are audited.
-6. Skills run in fresh Docker containers with no network.
-7. Native Windows shell runs under a dedicated standard user with workspace-scoped access.
+6. Skills are declarative in every runtime and do not execute Python or require Docker.
+7. Native/Desktop Host Shell is unavailable until AppContainer isolation is proven; no dedicated
+   Windows account is created and no operator-account fallback is allowed.
 
-This is closer to a controlled agent appliance than a conventional self-hosted web app.
+This is closer to a controlled agent appliance than a conventional self-hosted web app. The
+Desktop migration is intentionally conservative: it removes the former account-backed native shell
+path and keeps Host Shell unavailable until a stronger AppContainer boundary is verified.
 
 ### Where Odysseus is stronger
 

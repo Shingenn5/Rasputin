@@ -4555,13 +4555,7 @@ class BackendSmokeTests(unittest.TestCase):
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
 
     def testShellExecRequiresPermissionFlagAndTrustedWorkspace(self):
-        # Enabling Host Shell auto-provisions the sandbox account on native Windows,
-        # which raises a real UAC prompt. Stub that here so this test exercises the
-        # capability gate, not the elevation UX. shell_exec still sees the real
-        # sandbox_provisioned() (False in the isolated data dir) and fails closed.
-        prov = patch("backend.core.sandbox_exec.ensure_provisioned", return_value=True)
-        prov.start()
-        self.addCleanup(prov.stop)
+        from backend.core import workspace
         with tempfile.TemporaryDirectory() as tmp:
             approved = self.assertOk(self.client.post("/api/workspace/approve", json={
                 "path": tmp,
@@ -4599,27 +4593,29 @@ class BackendSmokeTests(unittest.TestCase):
                             "workspace_path": tmp,
                         }))
 
-                # Enabling the separate Host Shell capability unlocks it.
-                self.assertOk(self.client.post("/api/workspace/host-shell", json={
-                    "workspaceId": workspace_id,
-                    "enabled": True,
-                }))
-
                 marker = "rasputin-shell-smoke-ok"
                 if os.name == "nt":
-                    # Native Windows routes host shell through the Rasputin_sbx
-                    # account. This isolated test data dir has no provisioned
-                    # account, so it must FAIL CLOSED, not run as the operator.
-                    # (Real run-as execution is covered by
-                    # testRunAsSandboxExecutesAsAccount where an account exists.)
+                    # Windows Desktop does not provision or invoke a dedicated account.
+                    # Enabling Host Shell is rejected until an OS-level AppContainer
+                    # runner exists, and direct execution remains fail-closed.
+                    blocked = self.client.post("/api/workspace/host-shell", json={
+                        "workspaceId": workspace_id,
+                        "enabled": True,
+                    })
+                    self.assertEqual(blocked.status_code, 503, blocked.text)
+                    workspace.set_host_shell(workspace_id, True)
                     with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
-                        with self.assertRaises(PermissionError):
+                        with self.assertRaisesRegex(PermissionError, "unavailable in Windows Desktop mode"):
                             asyncio.run(McpLayer().call_tool("shell_exec", {
                                 "command": f"echo {marker}",
                                 "workspace_path": tmp,
                             }))
                 else:
                     # POSIX: direct execution (the container/host is the boundary).
+                    self.assertOk(self.client.post("/api/workspace/host-shell", json={
+                        "workspaceId": workspace_id,
+                        "enabled": True,
+                    }))
                     with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
                         result = asyncio.run(McpLayer().call_tool("shell_exec", {
                             "command": f"echo {marker}",
@@ -4642,11 +4638,16 @@ class BackendSmokeTests(unittest.TestCase):
                             "workspace_path": tmp,
                         }))
 
-                # Re-enable so the remaining guardrail assertion still runs.
-                self.assertOk(self.client.post("/api/workspace/host-shell", json={
-                    "workspaceId": workspace_id,
-                    "enabled": True,
-                }))
+                # Keep the capability enabled for the guardrail assertion. On
+                # Windows this is an in-memory test fixture because the endpoint
+                # correctly rejects enabling the unsupported capability.
+                if os.name == "nt":
+                    workspace.set_host_shell(workspace_id, True)
+                else:
+                    self.assertOk(self.client.post("/api/workspace/host-shell", json={
+                        "workspaceId": workspace_id,
+                        "enabled": True,
+                    }))
 
                 # A soft-guardrail-blocked command is rejected pre-execution — the
                 # deny-pattern check runs before routing, on every platform.
@@ -4658,7 +4659,6 @@ class BackendSmokeTests(unittest.TestCase):
                         }))
 
                 # POSIX: a command that outlives its timeout is killed and reported.
-                # (Windows timeout kill is covered by testRunAsSandboxExecutesAsAccount.)
                 if os.name != "nt":
                     with patch("backend.core.security.load", return_value={"allow_shell_execution": True}):
                         timeout_result = asyncio.run(McpLayer().call_tool("shell_exec", {
@@ -4670,93 +4670,6 @@ class BackendSmokeTests(unittest.TestCase):
                     self.assertIsNone(timeout_result["exit_code"])
             finally:
                 self.client.post("/api/workspace/remove", json={"workspaceId": workspace_id})
-
-    @unittest.skipUnless(os.name == "nt", "sandbox account is a Windows-only mechanism")
-    def testSandboxCredentialGuardRoundTrip(self):
-        # The credential layer that gates run-as: a DPAPI blob written for THIS
-        # Windows user loads back; one written for another user is refused. This
-        # verifies the ownerSid guard + CurrentUser decrypt without needing a real
-        # Rasputin_sbx account (we round-trip DPAPI as ourselves).
-        import base64
-        import ctypes
-        from ctypes import wintypes
-        from backend.core import sandbox_exec
-
-        def _dpapi_protect(data):
-            crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-            class DATA_BLOB(ctypes.Structure):
-                _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
-
-            crypt32.CryptProtectData.argtypes = [
-                ctypes.POINTER(DATA_BLOB), ctypes.c_wchar_p, ctypes.POINTER(DATA_BLOB),
-                ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(DATA_BLOB),
-            ]
-            crypt32.CryptProtectData.restype = wintypes.BOOL
-            buf_in = ctypes.create_string_buffer(data, len(data))
-            blob_in = DATA_BLOB(len(data), ctypes.cast(buf_in, ctypes.POINTER(ctypes.c_char)))
-            blob_out = DATA_BLOB()
-            if not crypt32.CryptProtectData(ctypes.byref(blob_in), None, None, None, None, 0x1, ctypes.byref(blob_out)):
-                raise OSError(ctypes.get_last_error(), "CryptProtectData failed")
-            try:
-                return ctypes.string_at(blob_out.pbData, blob_out.cbData)
-            finally:
-                kernel32.LocalFree(blob_out.pbData)
-
-        sid = sandbox_exec._current_user_sid()
-        self.assertTrue(sid and sid.startswith("S-1-"))
-        password = "S3cr3t-Test-Pass!-éç"  # non-ascii, to exercise utf-8
-        blob64 = base64.b64encode(_dpapi_protect(password.encode("utf-8"))).decode()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            cred = Path(tmp) / "sandbox.cred"
-
-            # Missing -> not provisioned.
-            self.assertFalse(sandbox_exec.sandbox_provisioned(cred))
-
-            # Correct owner -> loads and is provisioned.
-            cred.write_text(json.dumps({
-                "account": "Rasputin_sbx", "sid": "S-1-5-21-acct",
-                "ownerSid": sid, "dpapi": blob64, "scope": "CurrentUser",
-            }), encoding="utf-8")
-            account, secret = sandbox_exec.load_sandbox_credential(cred)
-            self.assertEqual(account, "Rasputin_sbx")
-            self.assertEqual(secret, password)
-            self.assertTrue(sandbox_exec.sandbox_provisioned(cred))
-
-            # Different owner SID -> refused (the standard-user auto-provision case).
-            cred.write_text(json.dumps({
-                "account": "Rasputin_sbx", "sid": "S-1-5-21-acct",
-                "ownerSid": "S-1-5-21-9-9-9-9", "dpapi": blob64, "scope": "CurrentUser",
-            }), encoding="utf-8")
-            with self.assertRaises(sandbox_exec.SandboxCredentialMismatch):
-                sandbox_exec.load_sandbox_credential(cred)
-            self.assertFalse(sandbox_exec.sandbox_provisioned(cred))
-
-    @unittest.skipUnless(os.name == "nt", "sandbox account is a Windows-only mechanism")
-    def testRunAsSandboxExecutesAsAccount(self):
-        # Verifies the run-as executor end to end, but only where a real
-        # Rasputin_sbx has been provisioned (this dev box / a provisioned CI).
-        from backend.core import sandbox_exec
-        if not sandbox_exec.sandbox_provisioned():
-            self.skipTest("no provisioned Rasputin_sbx account on this machine")
-
-        work = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"), "Temp")
-
-        # Runs AS the sandbox account (not the operator), captures output, exit 0.
-        who = sandbox_exec.run_as_sandbox("cmd.exe /c whoami", work, 15)
-        self.assertEqual(who["exit_code"], 0)
-        self.assertIn("rasputin_sbx", who["output"].lower())
-        self.assertFalse(who["timed_out"])
-
-        # Non-zero exit propagates.
-        self.assertEqual(sandbox_exec.run_as_sandbox("cmd.exe /c exit 7", work, 15)["exit_code"], 7)
-
-        # A command that outlives its timeout is killed and reported, not left hanging.
-        slow = sandbox_exec.run_as_sandbox("cmd.exe /c ping -n 30 127.0.0.1", work, 3)
-        self.assertTrue(slow["timed_out"])
-        self.assertIsNone(slow["exit_code"])
 
     def testGitToolsRespectTrustAndParseStructuredOutput(self):
         with tempfile.TemporaryDirectory() as tmp:

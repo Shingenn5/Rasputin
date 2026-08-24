@@ -1489,9 +1489,7 @@ export function App() {
       setWorkspace(await api("/api/workspace"));
       await loadWorkspaceRoots(workspace.activePath);
       setGlobalStatus(
-        enabled
-          ? "Host Shell enabled. The agent can run commands on your machine in this workspace."
-          : "Host Shell disabled for this workspace."
+        enabled ? "Host Shell enabled. The agent can run commands on your machine in this workspace." : "Host Shell disabled for this workspace."
       );
     } catch (error) {
       setGlobalStatus(error.message);

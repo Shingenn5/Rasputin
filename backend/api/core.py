@@ -303,6 +303,15 @@ async def ui_config():
     })
 
 
+def _public_security(saved=None):
+    return {
+        **(saved if saved is not None else security.load()),
+        "native": workspace.is_native(),
+        "desktopOnly": os.environ.get("RASPUTIN_DESKTOP_ONLY") == "1",
+        "hostShellAvailable": not (os.name == "nt" and workspace.is_native()),
+    }
+
+
 @system_router.get("/ui/bootstrap")
 
 async def ui_bootstrap(_user=Depends(current_user)):
@@ -325,7 +334,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "rag_stats": rag.stats(),
         "workspace": workspace.get_active(username, is_admin),
         "graph_stats": graphify.stats(),
-        "security": {**security.load(), "native": workspace.is_native(), "desktopOnly": os.environ.get("RASPUTIN_DESKTOP_ONLY") == "1"},
+        "security": _public_security(),
         "audit": {"events": audit.recent(100) if is_admin else []},
         "output": output.get_config(),
         "preferences": preferences.load(username),
@@ -354,12 +363,12 @@ async def setup_status(_user=Depends(current_user)):
 @system_router.get("/security")
 
 async def security_get(_user=Depends(current_user)):
-    return ok({**security.load(), "native": workspace.is_native(), "desktopOnly": os.environ.get("RASPUTIN_DESKTOP_ONLY") == "1"})
+    return ok(_public_security())
 
 @system_router.post("/security")
 
 async def security_post(req: dict, _user=Depends(require_admin)):
-    return ok(security.save(req))
+    return ok(_public_security(security.save(req)))
 
 @system_router.get("/preferences")
 

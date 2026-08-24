@@ -136,6 +136,8 @@ export function WorkspacesView({
   // Native mode has no container: folders are registered directly, so the
   // mount/compose/restart affordances and the docker-control grant don't apply.
   const native = Boolean(security?.native);
+  // Native Windows stays fail-closed until a proven AppContainer runner exists.
+  const hostShellUnavailable = security?.hostShellAvailable === false;
   
   const entries = workspaceBrowse?.entries || [];
   const currentRoot = workspaceBrowse?.root || {};
@@ -442,7 +444,7 @@ export function WorkspacesView({
 
   // --- Host Shell capability ---
   function handleShellToggleClick() {
-    if (!activeId) return;
+    if (!activeId || hostShellUnavailable) return;
     if (activeHostShell) {
       revokeShell();
     } else {
@@ -621,11 +623,13 @@ export function WorkspacesView({
                 type="button"
                 className="workspace-access-option"
                 onClick={handleShellToggleClick}
-                disabled={!activeId || shellBusy}
-                aria-pressed={activeHostShell}
+                disabled={!activeId || shellBusy || hostShellUnavailable}
+                aria-pressed={hostShellUnavailable ? false : activeHostShell}
+                aria-disabled={hostShellUnavailable}
+                title={hostShellUnavailable ? "Unavailable in Native/Desktop mode until AppContainer isolation is ready" : undefined}
               >
-                {activeHostShell ? <AlertTriangle size={15} /> : <Terminal size={15} />}
-                <span><strong>Host Shell</strong><small>{activeHostShell ? "On" : "Off"}</small></span>
+                {activeHostShell && !hostShellUnavailable ? <AlertTriangle size={15} /> : <Terminal size={15} />}
+                <span><strong>Host Shell</strong><small>{hostShellUnavailable ? "Unavailable" : activeHostShell ? "On" : "Off"}</small></span>
               </button>}
             </div>
           </details>
@@ -1043,7 +1047,9 @@ export function WorkspacesView({
                         <h2 className="w2-section-title">Validation Commands</h2>
                         <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', margin: '4px 0 0' }}>
                           Rasputin runs the test command after code edits and can use build or lint checks when a mission requests them.
-                          Commands execute only when Host Shell and the workspace policy allow it.
+                          {hostShellUnavailable
+                            ? " Native/Desktop execution is currently unavailable until AppContainer isolation is ready."
+                            : " Commands execute only when Host Shell and the workspace policy allow it."}
                         </p>
                       </div>
                       <div className="workspace-command-grid">
@@ -1399,9 +1405,9 @@ export function WorkspacesView({
           <ul className="text-muted small" style={{ listStyle: "disc", paddingLeft: "1.25rem" }}>
             {native ? (
               <>
-                <li>On native Windows, commands run as the dedicated low-privilege <code>Rasputin_sbx</code> account, not as your operator account.</li>
-                <li>The sandbox account is granted access to this workspace; Windows ACLs deny normal access outside it. The workspace itself can still be changed or deleted.</li>
-                <li>External network blocking is best-effort and loopback remains reachable, so this is a strong accident guardrail—not an airtight security boundary.</li>
+                <li>Host Shell is unavailable in Native/Desktop mode until Rasputin has a proven Windows AppContainer runner.</li>
+                <li>Rasputin will not create or use a separate Windows account, and it will not run agent commands as your operator account as a fallback.</li>
+                <li>Use approved file and Git tools for governed workspace changes while this isolation work is in progress.</li>
               </>
             ) : (
               <>

@@ -52,8 +52,10 @@ At `http://localhost:8788`, open **Workspaces**, add and approve a normal projec
 it appears and is browsable immediately with no mount request, restart badge, or wrapper restart.
 That is the direct-folder native path; Docker retains its mount → restart → approve flow.
 
-Docker is still required for Skills and WarSat model containers, but not for the native wrapper
-process or its low-privilege Host Shell.
+Docker is not required for the packaged Desktop skill path: Desktop skills are declarative
+instructions governed by the normal model/tool policy. Native/Desktop Host Shell is currently
+unavailable until a proven Windows AppContainer runner exists, and the packaged app does not
+create or use a separate Windows account for it. Docker remains a legacy server/WarSat option.
 
 ### Trusted HTTPS and friendly hostnames
 

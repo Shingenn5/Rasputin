@@ -360,7 +360,10 @@ Rasputin skills are stored as local packages:
 data/skills/<skillName>/SKILL.md
 ```
 
-Built-in Python skills now have matching `SKILL.md` descriptors. Successful sessions can generate a preview skill through `/api/skills/create-from-session`; saving generated skills is explicit.
+Skills are declarative `SKILL.md` instruction packages. Desktop loads their guidance through the
+normal model/tool policy; it does not execute skill-authored Python or require Docker. Successful
+sessions can generate a preview skill through `/api/skills/create-from-session`; saving generated
+skills is explicit. The same declarative boundary applies in server mode.
 
 ## Approval Queue
 

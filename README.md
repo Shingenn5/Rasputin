@@ -148,8 +148,10 @@ Once a model is loaded, use it from the main workspace for:
 - capability-aware routing that avoids starting tool-dependent work against an incompatible model.
 
 Desktop mode keeps the existing Rasputin safety boundaries: workspace approval, explicit capability
-permissions, audit events, Host Shell isolation, and visible recovery errors. Docker-backed model
-deployment and Docker control are not part of the packaged desktop workflow.
+permissions, audit events, and visible recovery errors. Host Shell is deliberately unavailable in
+the packaged desktop until a proven Windows AppContainer runner exists; approved file and Git
+tools remain governed workspace capabilities. Docker-backed model deployment and Docker control
+are not part of the packaged desktop workflow.
 
 ## MCP Servers
 

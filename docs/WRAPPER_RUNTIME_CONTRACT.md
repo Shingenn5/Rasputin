@@ -34,11 +34,11 @@ a native wrapper touches the host FS directly.
 | `core/workspace.py` `mount_plan()` / `save_mount_request()` | compose bind-mount request + restart | register the approved host path directly; no mount/restart | filesystem |
 | `main.py` localhost-bypass startup warning | bypass cannot match the bridge client; no native warning | warns + audits when the explicit bypass is enabled | security |
 | `main.py` `_origin_host_reject()` | skipped (compose binds the public port to host loopback) | enforces loopback/allowlisted Host and Origin | security |
-| `mcp/layer.py` `shell_exec()` via `workspace.is_native()` | direct subprocess inside the wrapper container | Windows: `Rasputin_sbx` run-as + workspace ACL; other native OSes: direct subprocess | execution/security |
+| `mcp/layer.py` `shell_exec()` via `workspace.is_native()` | direct subprocess inside the wrapper container | Windows Desktop/native: blocked pending AppContainer isolation; other native OSes: direct subprocess | execution/security |
 
-`core/sandbox.py` is intentionally **not** runtime-branched: in both modes every Skill runs as
-`docker run -i --rm --network none rasputin-sandbox ...` and calls host tools over its private
-stdio RPC. Phase 4 removed the former `RASPUTIN_API_URL` / `--network host` topology.
+Skills are declarative `SKILL.md` instructions in every runtime. They use the normal model/tool
+policy and do not execute skill-authored Python or launch Docker. The former container image,
+Python wrapper, and private stdio RPC runner have been removed.
 
 ## Verification
 
@@ -74,8 +74,9 @@ review.
   `_runtime_base_url(loopback)` → unchanged
 - Native workspace approval returns `requires_restart=False`; Docker mode continues to produce a
   compose mount request.
-- Native Windows Host Shell routes through `CreateProcessWithLogonW` as `Rasputin_sbx`; Docker mode
-  keeps execution inside the wrapper container. Skills use `--network none` in both modes.
+- Native Windows/Desktop Host Shell is fail-closed pending a proven AppContainer runner; it never
+  falls back to the operator account or creates a dedicated Rasputin Windows account. Docker/server
+  mode retains its legacy wrapper-container shell path. Desktop skills do not require Docker.
 
 **Consequence:** WarSat is *simpler* natively — model endpoints are plain `127.0.0.1:port`, and it
 drives Docker through the host `docker` CLI (`shutil.which("docker")`) with no

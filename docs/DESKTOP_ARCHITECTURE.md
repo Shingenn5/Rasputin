@@ -79,7 +79,8 @@ the development workstation.
 - Electron forces native runtime semantics and removes inherited Docker/TLS environment flags.
 - The desktop process owns only the backend process it launched.
 - Browser renderer code cannot invoke Electron or Node APIs.
-- Existing Rasputin authentication, workspace approval, audit, and Host Shell isolation remain in
-  force; Electron does not bypass them.
+- Existing Rasputin authentication, workspace approval, and audit controls remain in force; Electron
+  does not bypass them. Native/Desktop Host Shell is fail-closed and unavailable until a proven
+  Windows AppContainer runner exists.
 - Docker remains legacy server-mode code only; it is not part of the packaged Desktop runtime,
   model-loading path, or agentic coding path on this branch.

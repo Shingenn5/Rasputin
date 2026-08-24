@@ -1023,8 +1023,7 @@ class AssistantContractTests(unittest.TestCase):
         original_host_shell = workspace.is_host_shell_allowed(".")
         security.save({**original_security, "allow_shell_execution": True})
         try:
-            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
-                workspace.set_host_shell("project-root", True)
+            workspace.set_host_shell("project-root", True)
             created = self.client.post(
                 "/api/assistant/plans",
                 json={"objective": "Open the approved project in VS Code", "requestedOperations": ["open_vscode"]},
@@ -1071,8 +1070,7 @@ class AssistantContractTests(unittest.TestCase):
                 self.assertEqual(repeated.status_code, 200, repeated.text)
                 self.assertEqual(launcher.call_count, 1)
         finally:
-            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
-                workspace.set_host_shell("project-root", original_host_shell)
+            workspace.set_host_shell("project-root", original_host_shell)
             security.save(original_security)
 
     def test_open_vscode_dispatch_fails_closed_when_cli_is_missing(self):
@@ -1080,8 +1078,7 @@ class AssistantContractTests(unittest.TestCase):
         original_host_shell = workspace.is_host_shell_allowed(".")
         security.save({**original_security, "allow_shell_execution": True})
         try:
-            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
-                workspace.set_host_shell("project-root", True)
+            workspace.set_host_shell("project-root", True)
             created = self.client.post(
                 "/api/assistant/plans",
                 json={"objective": "Open the project in VS Code", "requestedOperations": ["open_vscode"]},
@@ -1107,8 +1104,7 @@ class AssistantContractTests(unittest.TestCase):
             self.assertEqual(state.json()["data"]["actionState"], "failed")
             self.assertFalse(state.json()["data"]["policy"]["sideEffects"])
         finally:
-            with patch("backend.core.sandbox_exec.grant_workspace_acl"), patch("backend.core.sandbox_exec.revoke_workspace_acl"):
-                workspace.set_host_shell("project-root", original_host_shell)
+            workspace.set_host_shell("project-root", original_host_shell)
             security.save(original_security)
 
 

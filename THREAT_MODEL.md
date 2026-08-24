@@ -47,7 +47,7 @@ it is not cryptographic tenant isolation from the host administrator.
 | `allow_file_read` | on | RAG ingest, graph build, file preview |
 | `allow_file_write` | on* | `fs_write`/`fs_patch` — *also subject to the approval queue unless the workspace is Trusted (§4) |
 | `allow_file_reorganize` | off | `fs_mkdir`/`fs_move` |
-| `allow_shell_execution` | **off** | `shell_exec` — also requires the workspace's separate Host Shell capability; native Windows then runs as `Rasputin_sbx` |
+| `allow_shell_execution` | **off** | `shell_exec` — also requires the workspace's separate Host Shell capability; Native/Desktop Windows is currently fail-closed pending AppContainer isolation |
 | `allow_web_search` | on | `web_search` (DuckDuckGo scrape, brokered — see §3) |
 | `allow_docker_control` | **off** | WarSat deploys, host folder browsing, mount requests |
 | `allow_remote_models` | **off** | "Privacy Lock" — routing to any non-local model endpoint |
@@ -89,10 +89,10 @@ message path (covers all 25 tools, most importantly `web_search`).
 - `format_conversation` — the operator's own prior turns; already trusted.
 - Tool-call **errors** (`Error executing {tool}: {exc}`) — Rasputin's own
   generated string, not fetched content.
-- **Skills** (`backend/mcp/skills.py`, `backend/core/sandbox.py`) — these
-  are Python *code* the agent writes and runs, not prompt text. Wrapping
-  doesn't apply; the relevant boundary is execution sandboxing (§5), a
-  different risk category.
+- **Skills** (`backend/mcp/skills.py`) — Desktop skills are declarative `SKILL.md`
+  instructions, not agent-authored Python code. Their guidance is handled through
+  the normal model/tool policy and the same capability, approval, and audit
+  checks as other model context in every supported runtime.
 
 Covered by tests in `tests/testBackendSmoke.py` —
 `testGovernedChatPrependsUntrustedContentPolicyToEveryPhase`,
@@ -114,9 +114,10 @@ workspace record). Trusted:
 Trusted Dev Mode does **not** grant shell execution. Host Shell is a second,
 separate per-workspace opt-in (`allow_host_shell`), and the global
 `allow_shell_execution` flag must also be enabled. Every shell call is
-audit-logged and still runs through `SHELL_DENY_PATTERNS`; on native Windows,
-enabling Host Shell also provisions the low-privilege account and grants its
-ACL on that workspace (§5).
+audit-logged and still runs through `SHELL_DENY_PATTERNS`. In packaged
+Desktop/native Windows, Host Shell is currently fail-closed: it is unavailable
+until a proven AppContainer runner exists, with no dedicated-account or
+operator-account fallback.
 
 Privacy Lock (`allow_remote_models`) is independent of Trusted Dev Mode —
 trusting a workspace for local shell/file access has no effect on whether
@@ -125,40 +126,33 @@ externally-visible (`git push` and friends) are not in the current tool
 list at all, so there's nothing to gate yet — add this to Known Gaps if a
 push-capable tool is ever added.
 
-## 5. Execution surfaces — two different isolation levels
+## 5. Execution surfaces — explicit runtime boundaries
 
-It's easy to read the README's "isolated ephemeral Docker sandboxes" line
-and assume it covers all agent-executed code. It covers one of two
-surfaces:
+Rasputin does not claim one isolation level for every execution surface. The
+packaged Desktop path is deliberately conservative while Windows process
+isolation is being migrated.
 
-**Skills** (`backend/core/sandbox.py`, `run_skill_in_sandbox`): each run is
-a fresh `docker run -i --rm --network none rasputin-sandbox python
-/sandbox/wrapper.py`, destroyed after. No host filesystem bind mount, **no
-network** (§6.2 RESOLVED). The skill reaches host tools over a private
-stdio RPC, not HTTP — so the container has no path to the host network,
-the LAN, or the internet. Residual surface: the tool callback still runs
-host tools with the backend's privileges (see §6.2).
+**Desktop Skills** (`backend/mcp/skills.py`): skills are declarative `SKILL.md`
+instructions. They are supplied to the model as governed guidance; they do not
+execute skill-authored Python, launch a child interpreter, or require Docker.
+Tool calls remain subject to server-side capability checks, workspace policy,
+approvals, and audit logging in every supported runtime.
 
 **`shell_exec`** (`backend/mcp/layer.py`) has a runtime-specific boundary:
 
-- **Native Windows:** a Host-Shell-enabled workspace runs through
-  `backend/core/sandbox_exec.py` as the dedicated standard user
-  `Rasputin_sbx`, using `CreateProcessWithLogonW`. Only explicitly enabled
-  workspace trees receive an inherited Modify ACL. Timeout handling uses
-  `taskkill /F /T` as the primary process-tree kill and a Job Object as
-  defense-in-depth. Missing/mismatched credentials or an incomplete ACL fail
-  closed; Access Denied results are labeled as sandbox-boundary failures.
-- **Docker wrapper / native non-Windows:** the fallback remains a direct
-  `asyncio.create_subprocess_*` child of the backend, with a sanitized
-  environment, bounded output, process-tree timeout handling, and the
-  deny-pattern guardrail. In Docker deployment this child is inside the
-  long-lived wrapper container, **not** a fresh disposable container per call;
-  the wrapper's normal bridge network is still available.
+- **Packaged Desktop/native Windows:** Host Shell is unavailable and fail-closed
+  until a proven Windows AppContainer runner is implemented and verified. It
+  never runs as the operator account and does not create a dedicated Rasputin
+  Windows account as a fallback.
+- **Docker wrapper / native non-Windows:** the existing direct subprocess path
+  remains a deployment-specific legacy boundary with sanitized environment,
+  bounded output, process-tree timeout handling, and the deny-pattern guardrail.
+  Docker shell commands run inside the long-lived wrapper container, not a fresh
+  disposable container per call.
 
-**Git tools** also run as direct backend child processes. They retain their
-workspace containment/trust/approval checks, but they are not automatically
-routed through `Rasputin_sbx`. Do not describe every agent execution surface
-as having the same isolation level.
+**Git tools** run as direct backend child processes. They retain their workspace
+containment/trust/approval checks, but they are not an arbitrary-code sandbox.
+Do not describe every agent execution surface as having the same isolation level.
 
 ### 5.1 Opt-in isolated Code tasks
 
@@ -245,38 +239,27 @@ so this bypass is a native-dev convenience only and simply never fires in
 the primary deployment mode. That's intentional (conservative), not a gap,
 but don't extend it to trust proxy headers without real thought.
 
-### 6.2 — RESOLVED 2026-07-12 — Skills sandbox no longer has network
+### 6.2 — Desktop skill migration and fail-closed shell
 
-`run_skill_in_sandbox` previously used `--network host`, so agent-written
-skill code could reach anything the host could reach. It now runs with
-**`--network none`**: the skill calls host tools over a private
-**newline-delimited JSON RPC on stdio** (stdout=container→host, stdin=host→
-container) instead of an HTTP callback. With no network interface, the
-container cannot reach the host's network namespace, the LAN, the internet,
-or link-local endpoints — by construction, not by policy. Verified
-end-to-end: a skill's outbound request fails, multi-call tool round-trips
-work, and large (>64KB) tool results stream intact.
+The packaged Desktop skill path now treats `SKILL.md` files as declarative
+instructions. It does not execute arbitrary Python skill code or depend on a
+Docker daemon. Tool calls requested during a skill-guided task still pass
+through the normal server-side capability, workspace, approval, and audit
+separate compatibility path until that deployment is retired.
 
-**Scope — what this does NOT solve.** The tool callback remains a
-host-privilege surface: a skill can still ask the host to run any tool over
-the RPC, and those tools (file writes, git, etc.) execute with the backend's
-privileges as the operator. Only `shell_exec` among them is itself
-sandboxed (as `Rasputin_sbx`, Phase 3). Skill-issued tool calls are not
-separately allowlisted — a pre-existing property carried over unchanged from
-the HTTP design, tracked as future hardening, not part of this fix. The old
-`/api/sandbox/call-tool` route + `SANDBOX_SECRET_TOKEN` are now unreachable
-dead code (safe to remove).
+The former dedicated-account native Windows shell path has also been retired
+from Desktop. Host Shell remains unavailable until an AppContainer runner is
+proven to provide the required workspace, process, and network boundaries.
 
-### 6.3 — Residual execution caveats after Phases 3–4
+### 6.3 — Residual execution caveats
 
-The native Windows account/ACL model is a strong guardrail against accidental
-machine-wide damage, not an airtight boundary against hostile code. The
-explicitly granted workspace remains writable, the SID-scoped firewall rule is
-best-effort and deliberately leaves loopback reachable, and per-user toolchains
-may be unreadable to `Rasputin_sbx`. Docker/POSIX direct shell and git processes
-retain the backend/container's privileges described in §5. Operators needing a
-VM-grade native boundary still need an external VM/WSL/container arrangement;
-that opt-in hardened mode is not implemented today.
+The Desktop Host Shell migration is not complete: AppContainer process creation,
+workspace access, toolchain availability, network denial, and cleanup all need
+implementation and verification before shell execution can be re-enabled. Until
+then, Desktop fails closed and relies on governed file/Git tools. Docker/POSIX
+direct shell and Git processes retain the deployment-specific privileges
+described in §5. Operators needing a VM-grade native boundary still need an
+external VM/WSL/container arrangement.
 
 ### 6.4 — Prompt-injection wrapper is a mitigation, not a guarantee
 

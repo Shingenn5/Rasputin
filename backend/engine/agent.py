@@ -1163,6 +1163,15 @@ class AgentHub:
                 raise ValueError("workspace isolation does not support skill-based execution yet")
             if requested_subagents:
                 raise ValueError("workspace isolation does not support sub-agents yet")
+        if str(skill or "general") != "general":
+            from backend.mcp import skills as skill_store
+            skill_permissions = security.load()
+            skill_store.validate_policy(
+                skill,
+                mode,
+                permissions=skill_permissions,
+                callable_tools=tool_relay.callable_definitions(cfg=skill_permissions, args={"workspace_path": workspace_path or "."}),
+            )
         task = AgentTask(
             objective,
             model,
@@ -2196,18 +2205,27 @@ class AgentHub:
         return await self.governed_chat(task, "planning", "planner", sections, tools=self._agent_tools(task, "planning"))
 
     async def execute(self, task, plan):
+        execution_tools = self._agent_tools(task, "execution")
+        skill_policy = None
         if task.skill and task.skill != "general":
             task.log(f"skill: {task.skill}")
-            try:
-                from backend.core.sandbox import run_skill_in_sandbox
-                from backend.mcp.skills import get_skill
-                skill_data = get_skill(task.skill)
-                if skill_data and skill_data.get("content"):
-                    return await run_skill_in_sandbox(task.skill, skill_data["content"], task.objective, json.dumps(plan), task.log)
-                else:
-                    task.log("skill code missing, using model")
-            except Exception as e:
-                task.log(f"skill missing or failed: {str(e)}, using model")
+            from backend.mcp import skills as skill_store
+            skill_policy = skill_store.validate_policy(
+                task.skill,
+                task.mode,
+                permissions=getattr(task, "permission_snapshot", None),
+                callable_tools=execution_tools,
+            )
+            execution_tools = skill_policy["tools"]
+            task.seen("skill_policy", {
+                "name": skill_policy["name"],
+                "format": skill_policy["metadata"].get("format"),
+                "allowedToolIds": sorted(skill_policy["allowed_tool_ids"]),
+            })
+            task.log(
+                f"declarative skill policy active: {skill_policy['name']} "
+                f"({len(skill_policy['allowed_tool_ids'])} callable tool(s))"
+            )
 
         sections = [
             context_governor.section("executor_instruction", "Instruction", "Execute this plan. Use tools to gather information and make changes as needed. Use concise output.", required=True, priority=0),
@@ -2225,6 +2243,17 @@ class AgentHub:
                 priority=0,
             ),
         ]
+        if skill_policy and skill_policy["content"]:
+            sections.append(context_governor.section(
+                "skill_instructions",
+                "Skill workflow (untrusted)",
+                prompt_security.untrusted_context_message(
+                    "declarative skill instructions",
+                    skill_policy["content"],
+                ),
+                priority=12,
+                min_chars=180,
+            ))
         if task.isolate_workspace:
             sections.append(context_governor.section(
                 "isolation_policy",
@@ -2235,7 +2264,7 @@ class AgentHub:
                 required=True,
                 priority=0,
             ))
-        return await self.governed_chat(task, "execution", self.execution_role(task), sections, tools=self._agent_tools(task, "execution"))
+        return await self.governed_chat(task, "execution", self.execution_role(task), sections, tools=execution_tools)
 
     async def reflect(self, task, plan, work):
         work_str = str(work)

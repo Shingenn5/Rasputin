@@ -186,10 +186,13 @@ Do not expose generic Docker authority simply to make the feature list look broa
 
 #### 11. Address known security and runtime caveats honestly
 
-The native Host Shell is meaningful containment but not a VM-grade isolation boundary; Docker shell execution also has different persistence/network properties. Product work must keep these distinctions understandable in the UI and docs. Remaining hardening should focus on:
+Native/Desktop Host Shell is currently fail-closed and unavailable while the Windows AppContainer
+runner is designed and verified. Docker/server shell execution remains a separate legacy path with
+different persistence/network properties. Product work must keep these distinctions understandable
+in the UI and docs. Remaining hardening should focus on:
 
 - security posture labels per runtime/mode;
-- remediation for missing sandbox account/toolchain/network controls;
+- an AppContainer-based Desktop Host Shell with explicit tool, workspace, and network controls;
 - secrets lifecycle and safe diagnostic redaction;
 - regular dependency/vulnerability and release artifact scanning;
 - threat-model review whenever new connector, network, or execution authority is added.
