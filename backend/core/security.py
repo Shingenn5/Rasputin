@@ -14,6 +14,10 @@ SECURITY_FILE = DATA_DIR / "security.json"
 _lock = Lock()
 
 
+def _desktop_only():
+    return str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _snake_key(key):
     out = []
     for char in str(key or ""):
@@ -69,14 +73,17 @@ def load():
         
     merged = defaults()
     merged.update(data)
+    if _desktop_only():
+        # A desktop install may inherit server-era persisted settings. Docker
+        # authority is a launch-mode invariant, not a user preference.
+        merged["allow_docker_control"] = False
     return merged
 
 
 def save(data):
     merged = defaults()
     merged.update(_normalize(data))
-    desktop_only = str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
-    if desktop_only:
+    if _desktop_only():
         merged["allow_docker_control"] = False
     with _lock:
         store.set_kv("security", merged)

@@ -35,6 +35,17 @@ class DesktopNativeOnlyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "only native llama.cpp"):
                 get_provider({"managed": True, "runtime": "docker-llamacpp"})
 
+    def test_security_load_ignores_stale_persisted_docker_permission(self):
+        from backend.core import security
+        with patch.dict(os.environ, {"RASPUTIN_DESKTOP_ONLY": "1"}, clear=False),              patch.object(security.store, "get_kv", return_value={"allow_docker_control": True}):
+            loaded = security.load()
+            status = security.offline_status()
+            with self.assertRaises(PermissionError):
+                security.require("allow_docker_control")
+
+        self.assertFalse(loaded["allow_docker_control"])
+        self.assertTrue(status["docker_control_blocked"])
+
     def test_security_save_forces_docker_permission_off(self):
         with tempfile.TemporaryDirectory() as temporary, \
              patch.dict(os.environ, {"RASPUTIN_DESKTOP_ONLY": "1", "RASPUTIN_DATA_DIR": temporary}, clear=False), \
