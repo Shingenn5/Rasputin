@@ -7,7 +7,7 @@ export function LoginShell({ onSubmit, status }) {
       <div className="login-grid" data-testid="login-card">
         <aside className="login-manifesto" aria-label="About Rasputin">
           <div className="login-brand-lockup">
-            <div className="ras-brand-sigil ras-brand-sigil-lg" aria-hidden="true"><span>R</span><i /></div>
+            <div className="ras-brand-sigil ras-brand-sigil-lg" aria-hidden="true"><img src="/static/rasputin-logo.png" alt="" className="ras-brand-logo" /></div>
             <div>
               <strong>Rasputin</strong>
               <span>Private AI operations</span>

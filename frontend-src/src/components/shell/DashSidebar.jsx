@@ -175,7 +175,7 @@ export function DashSidebar({
             title={mobileOpen ? "Close navigation" : collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="ras-brand-sigil shrink-0"
           >
-            <span>R</span><i aria-hidden="true" />
+            <img src="/static/rasputin-logo.png" alt="" className="ras-brand-logo" />
             <PanelLeft size={11} className="ras-brand-toggle-icon" aria-hidden="true" />
           </button>
           {expanded && (

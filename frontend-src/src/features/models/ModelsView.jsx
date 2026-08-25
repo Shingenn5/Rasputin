@@ -15,8 +15,11 @@ import {
   Layers,
   MonitorSpeaker,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Power,
+  RadioTower,
   RefreshCw,
   Search,
   Server,
@@ -42,18 +45,21 @@ import { api, postJson } from "../../api/client.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
+import { Modal } from "../../components/Modal.jsx";
 import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { blockerGuidanceForReasons } from "../shared/blockerGuidance.js";
 import { ModelIdentity } from "./ModelIdentity.jsx";
 import { ModelLoadDialog } from "./ModelLoadDialog.jsx";
+import { ModelServingPanel } from "./ModelServingPanel.jsx";
 
 /* ── Tab config ── */
 const modelsTabs = [
   { id: "library",    label: "Library",     icon: BookOpen },
   { id: "installed",  label: "Installed",   icon: Package },
   { id: "running",    label: "Running",     icon: Activity },
+  { id: "serving",    label: "Serving",     icon: RadioTower },
   { id: "settings",   label: "Settings",    icon: Settings },
 ];
 
@@ -634,10 +640,39 @@ export function ModelsView({
   warsatPlan,
   security,
   openWarsat,
+  go,
 }) {
   const [activeTab, setActiveTab] = useState("library");
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
+  const [modelsRailCollapsed, setModelsRailCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("rasputin-models-rail-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const modelTabRefs = useRef({});
   const executeAction = useReliableAction("ModelsView");
+
+  const focusModelTab = (tabId) => {
+    requestAnimationFrame(() => modelTabRefs.current[tabId]?.focus());
+  };
+
+  const handleModelTabKeyDown = (event, tabId) => {
+    const index = modelsTabs.findIndex((tab) => tab.id === tabId);
+    if (index < 0) return;
+    let nextIndex = index;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % modelsTabs.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + modelsTabs.length) % modelsTabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = modelsTabs.length - 1;
+    else return;
+    event.preventDefault();
+    const nextTab = modelsTabs[nextIndex].id;
+    setActiveTab(nextTab);
+    focusModelTab(nextTab);
+  };
 
   /* catalog state */
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -774,6 +809,15 @@ export function ModelsView({
   ];
   const remoteBlocked = security?.privacyLock || !security?.allowRemoteModels;
   const desktopOnly = Boolean(security?.desktopOnly);
+
+  useEffect(() => {
+    if (!desktopOnly || typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("rasputin-models-rail-collapsed", modelsRailCollapsed ? "1" : "0");
+    } catch {
+      // Storage may be unavailable in a locked-down desktop session.
+    }
+  }, [desktopOnly, modelsRailCollapsed]);
 
   useEffect(() => {
     if (!desktopOnly) return;
@@ -1045,8 +1089,13 @@ export function ModelsView({
   const totalModels = registeredModels.length;
   const healthyCount = reachableModels.length;
 
-  return (
-    <section className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`} id="modelsView" data-app-view="models">
+  const modelsSurface = (
+    <section
+      className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`}
+      id="modelsView"
+      data-app-view="models"
+      data-models-rail-collapsed={desktopOnly && modelsRailCollapsed ? "true" : undefined}
+    >
       <div className="models-page-shell fx-rise mx-auto flex w-full min-w-0 max-w-[1600px] flex-col">
 
       {/* ── Header ── */}
@@ -1076,13 +1125,15 @@ export function ModelsView({
       </div>
 
       {/* ── Tab Bar ── */}
-      <div className="models-page-tabs" role="tablist" aria-label="Model management areas">
+      <div className="models-page-rail">
+        <div id="models-navigation" className="models-page-tabs" role="tablist" aria-orientation={desktopOnly ? "vertical" : "horizontal"} aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
           const desktopItem = {
             library: { label: "Discover", hint: "Browse and download" },
             installed: { label: "My Models", hint: "Local and connected" },
             running: { label: "Loaded", hint: "Active runtime" },
+            serving: { label: "Serving", hint: "APIs, MCP, metrics" },
             settings: { label: "Developer", hint: "Runtime and connections" },
           }[t.id];
           return (
@@ -1092,9 +1143,14 @@ export function ModelsView({
               role="tab"
               aria-selected={activeTab === t.id}
               aria-controls={`models-panel-${t.id}`}
+              tabIndex={activeTab === t.id ? 0 : -1}
+              aria-label={desktopOnly && modelsRailCollapsed ? desktopItem.label : undefined}
+              title={desktopOnly && modelsRailCollapsed ? desktopItem.label : undefined}
               variant={activeTab === t.id ? "default" : "outline"}
               size="sm"
               type="button"
+              ref={(node) => { modelTabRefs.current[t.id] = node; }}
+              onKeyDown={(event) => handleModelTabKeyDown(event, t.id)}
               onClick={() => setActiveTab(t.id)}
             >
               <Icon size={15} />
@@ -1112,6 +1168,22 @@ export function ModelsView({
           </Badge>
         )}
 
+        </div>
+        {desktopOnly && (
+          <button
+            type="button"
+            className="models-rail-toggle"
+            data-testid="models-rail-toggle"
+            aria-expanded={!modelsRailCollapsed}
+            aria-controls="models-navigation"
+            aria-label={modelsRailCollapsed ? "Expand Models navigation" : "Collapse Models navigation to icons"}
+            title={modelsRailCollapsed ? "Expand navigation" : "Collapse to icons"}
+            onClick={() => setModelsRailCollapsed(value => !value)}
+          >
+            {modelsRailCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            <span>{modelsRailCollapsed ? "Expand navigation" : "Collapse to icons"}</span>
+          </button>
+        )}
       </div>
 
       {/* ── Content ── */}
@@ -1410,6 +1482,12 @@ export function ModelsView({
             </div>
           )}
 
+          {activeTab === "serving" && (
+            <div id="models-panel-serving" role="tabpanel" aria-labelledby="models-tab-serving" className="w2-section models-serving-tab" style={{ flex: 1 }}>
+              <ModelServingPanel onOpenModels={() => setActiveTab("running")} />
+            </div>
+          )}
+
           {/* ═══ SETTINGS TAB ═══ */}
           {activeTab === "settings" && (
             <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section models-developer-panel" style={{ flex: 1 }}>
@@ -1542,6 +1620,23 @@ export function ModelsView({
       />
     </section>
   );
+
+  if (desktopOnly) {
+    return (
+      <Modal
+        open={view === "models"}
+        onClose={() => go?.("chat")}
+        title="Models"
+        size="xl"
+        className="studio-models-modal"
+        data-testid="desktop-models-dialog"
+      >
+        {modelsSurface}
+      </Modal>
+    );
+  }
+
+  return modelsSurface;
 }
 
 

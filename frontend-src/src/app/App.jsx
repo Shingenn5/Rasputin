@@ -2576,7 +2576,7 @@ export function App() {
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
-        view={desktopOnly && view === "settings" ? "chat" : view}
+        view={desktopOnly && ["models", "settings"].includes(view) ? "chat" : view}
         selectedModel={selectedModel}
         selectedModelObject={selectedModelObject}
         models={models}
@@ -2820,6 +2820,7 @@ export function App() {
         warsatPlan={warsatPlan}
         security={security}
         openWarsat={() => (desktopOnly ? go("models") : go("warsat"))}
+        go={go}
       />
       <AssistantView
         view={view}

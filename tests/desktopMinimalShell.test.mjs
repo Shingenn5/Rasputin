@@ -5,11 +5,13 @@ import { readFileSync } from "node:fs";
 const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
+const models = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
 const mcp = readFileSync(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url), "utf8");
 const modal = readFileSync(new URL("../frontend-src/src/components/Modal.jsx", import.meta.url), "utf8");
 const history = readFileSync(new URL("../frontend-src/src/features/tasks/TasksView.jsx", import.meta.url), "utf8");
 const projects = readFileSync(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url), "utf8");
 const interfaceCss = readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
+const indexHtml = readFileSync(new URL("../frontend-src/index.html", import.meta.url), "utf8");
 
 test("desktop navigation uses minimal project and history aliases", () => {
   assert.match(app, /rawView === "project" \? "workspaces"/);
@@ -39,11 +41,23 @@ test("desktop shell uses a quiet icon rail and Settings opens as a modal", () =>
   assert.match(settings, /open=\{view === "settings"\}/);
   assert.doesNotMatch(settings, /AccountsSettings/);
   assert.doesNotMatch(settings, /accounts: Users/);
+  assert.match(sidebar, /src="\/static\/rasputin-logo\.png"/);
+  assert.match(indexHtml, /icon\.setAttribute\("href", "\/static\/rasputin-logo\.png"\)/);
+  assert.doesNotMatch(indexHtml, /data:image\/svg\+xml/);
 });
 
 test("desktop Settings closes from the visual backdrop", () => {
   assert.match(modal, /classList\?\.contains\("ras-modal-backdrop"\)/);
   assert.match(settings, /onClose=\{\(\) => go\("chat"\)\}/);
+});
+
+test("desktop Models floats over the chat workspace and closes like Settings", () => {
+  assert.match(app, /desktopOnly && \["models", "settings"\]\.includes\(view\) \? "chat" : view/);
+  assert.match(models, /className="studio-models-modal"/);
+  assert.match(models, /data-testid="desktop-models-dialog"/);
+  assert.match(models, /open=\{view === "models"\}/);
+  assert.match(models, /onClose=\{\(\) => go\?\.\("chat"\)\}/);
+  assert.match(interfaceCss, /\.studio-models-modal > \.ras-modal-body/);
 });
 
 test("History uses one visible view strip instead of nested advanced disclosures", () => {

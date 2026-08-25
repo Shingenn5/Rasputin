@@ -695,7 +695,7 @@ export function HomeView(props) {
             <PanelLeftOpen size={19} />
           </button>
           <div className="cc-logo">
-            <span className="ras-brand-sigil ras-brand-sigil-sm" aria-hidden="true"><span>R</span><i /></span>
+            <span className="ras-brand-sigil ras-brand-sigil-sm" aria-hidden="true"><img src="/static/rasputin-logo.png" alt="" className="ras-brand-logo" /></span>
             <span><strong>Rasputin</strong><small>{activeWorkspaceName || "No workspace selected"}</small></span>
           </div>
         </div>

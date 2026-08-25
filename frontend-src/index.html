@@ -66,8 +66,7 @@
 
           ensure("meta[name='theme-color']", "meta", { name: "theme-color" }).setAttribute("content", cfg.bg);
           var icon = ensure("link[rel='icon']", "link", { rel: "icon" });
-          var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="' + cfg.bg + '"/><path d="M14 32h36M32 14v36M20 20l24 24M44 20 20 44" stroke="' + cfg.accent + '" stroke-width="3" stroke-linecap="round" opacity=".72"/><circle cx="32" cy="32" r="11" fill="none" stroke="' + cfg.accent + '" stroke-width="4"/><text x="32" y="37" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="' + cfg.accent + '">R</text></svg>';
-          icon.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svg));
+          icon.setAttribute("href", "/static/rasputin-logo.png");
           return selected;
         }
         window.rasputinTheme = { apply: apply, normalize: normalize, themes: themes };
@@ -114,13 +113,18 @@
         box-shadow: 0 12px 36px rgba(32, 35, 31, .12);
         animation: loaderPulse 1.2s ease-in-out infinite;
       }
+      .loader-core img {
+        width: 38px;
+        height: 38px;
+        object-fit: contain;
+      }
       @keyframes loaderPulse {
         50% { transform: scale(.96); opacity: .72; }
       }
     </style>
   </head>
   <body>
-    <div id="rasputinLoader" aria-hidden="true"><div class="loader-core">R</div></div>
+    <div id="rasputinLoader" aria-hidden="true"><div class="loader-core"><img src="/static/rasputin-logo.png" alt="" /></div></div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

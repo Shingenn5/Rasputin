@@ -168,7 +168,13 @@ def _system_and_messages(messages):
             if content:
                 system.append(content)
             continue
-        kept.append({"role": "assistant" if role == "assistant" else "user", "content": content})
+        if role == "tool":
+            kept.append({"role": "tool", "content": content, "tool_call_id": message.get("tool_call_id")})
+            continue
+        entry = {"role": "assistant" if role == "assistant" else "user", "content": content}
+        if role == "assistant" and message.get("tool_calls"):
+            entry["tool_calls"] = message["tool_calls"]
+        kept.append(entry)
     return "\n\n".join(system), kept or [{"role": "user", "content": ""}]
 
 
