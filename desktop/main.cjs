@@ -51,12 +51,7 @@ function nativeLogDir() {
 }
 
 function trayImage() {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect width="32" height="32" rx="8" fill="#111318"/>
-      <path d="M8 23V9h8.2c4 0 6.5 2.2 6.5 5.6 0 2.3-1.2 4.1-3.3 5l4.1 3.4h-5.2l-3.4-3H12v3H8zm4-6.5h4c1.7 0 2.6-.6 2.6-1.9s-.9-1.9-2.6-1.9h-4v3.8z" fill="#ff5f57"/>
-    </svg>`;
-  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  return nativeImage.createFromPath(path.join(__dirname, "assets", "rasputin-logo.png"));
 }
 
 function iconPath() {

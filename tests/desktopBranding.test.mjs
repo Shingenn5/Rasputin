@@ -45,6 +45,12 @@ test("desktop startup boots without a credential dialog or login flash", () => {
   assert.match(app, /useState\(false\);[\r\n]+  \/\/ The packaged Desktop Runtime supplies/);
 });
 
+test("desktop tray uses the Rasputin logo PNG instead of the legacy inline icon", () => {
+  assert.match(main, /nativeImage\.createFromPath\(path\.join\(__dirname, ["']assets["'], ["']rasputin-logo\.png["']\)\)/);
+  assert.doesNotMatch(main, /createFromDataURL/);
+  assert.doesNotMatch(main, /<svg|#ff5f57.*R/);
+});
+
 test("Rasputin logo masters are identical transparent RGBA PNGs", () => {
   assert.deepEqual(logo, frontendLogo);
   for (const [label, buffer] of [["desktop", logo], ["frontend", frontendLogo]]) {
