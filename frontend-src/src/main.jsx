@@ -8,6 +8,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "./styles/rasputin.css";
 import "./styles/dashboard.css";
 import "./styles/interface.css";
+import "./styles/secondary-views.css";
 import "./styles/motion.css";
 import { AppProviders } from "./app/AppProviders.jsx";
 import { App } from "./app/App.jsx";
