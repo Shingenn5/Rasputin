@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Cloud,
+  Copy,
   Cpu,
   Database,
   Download,
@@ -12,11 +13,14 @@ import {
   HardDrive,
   KeyRound,
   Layers,
+  Link2,
   MonitorSpeaker,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
+  Pin,
+  PinOff,
   Power,
   RadioTower,
   RefreshCw,
@@ -691,7 +695,7 @@ export function ModelsView({
   openWarsat,
   go,
 }) {
-  const [activeTab, setActiveTab] = useState("installed");
+  const [activeTab, setActiveTab] = useState(() => view === "discover" ? "library" : "installed");
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
   const [modelsRailCollapsed, setModelsRailCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -734,7 +738,7 @@ export function ModelsView({
   const [catalogPurpose, setCatalogPurpose] = useState("all");
   const [catalogRuntime, setCatalogRuntime] = useState("all");
   const [catalogFit, setCatalogFit] = useState("all");
-  const [searchMode, setSearchMode] = useState("catalog");
+  const [searchMode, setSearchMode] = useState(() => view === "discover" ? "browse" : "catalog");
   const [hfQuery, setHfQuery] = useState("");
   const hfSearchInputRef = useRef(null);
   const [hfResults, setHfResults] = useState([]);
@@ -748,7 +752,7 @@ export function ModelsView({
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const modelSettings = useSettingsStore((state) => state.models || {});
-  const [showAllModels, setShowAllModels] = useState(Boolean(security?.desktopOnly));
+  const [showAllModels, setShowAllModels] = useState(() => view === "discover" || Boolean(security?.desktopOnly));
   const [advisorRefreshToken, setAdvisorRefreshToken] = useState(0);
   const [hardwareRefreshToken, setHardwareRefreshToken] = useState(0);
   const [localHardware, setLocalHardware] = useState(null);
@@ -768,9 +772,68 @@ export function ModelsView({
   const [installedSearch, setInstalledSearch] = useState("");
   const [installedCategory, setInstalledCategory] = useState("all");
   const [selectedInstalledKey, setSelectedInstalledKey] = useState("");
+  const [installedInspectorTab, setInstalledInspectorTab] = useState("info");
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    if (typeof window === "undefined") return 350;
+    try {
+      const stored = Number(window.localStorage.getItem("rasputin-model-inspector-width"));
+      return Number.isFinite(stored) ? Math.min(480, Math.max(260, stored)) : 350;
+    } catch {
+      return 350;
+    }
+  });
+  const inspectorResizeRef = useRef(null);
   const installedSearchInputRef = useRef(null);
   const [loadDialogModel, setLoadDialogModel] = useState(null);
   const completedRefreshJobs = useRef(new Set());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem("rasputin-model-inspector-width", String(inspectorWidth));
+    } catch {
+      // Storage may be unavailable in a locked-down desktop session.
+    }
+  }, [inspectorWidth]);
+
+  useEffect(() => () => {
+    const resize = inspectorResizeRef.current;
+    if (!resize) return;
+    window.removeEventListener("pointermove", resize.move);
+    window.removeEventListener("pointerup", resize.end);
+  }, []);
+
+  const startInspectorResize = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = inspectorWidth;
+    const move = (moveEvent) => setInspectorWidth(Math.min(480, Math.max(260, startWidth - (moveEvent.clientX - startX))));
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      inspectorResizeRef.current = null;
+    };
+    inspectorResizeRef.current = { move, end };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+  };
+
+  const handleInspectorResizeKeyDown = (event) => {
+    if (event.key === "Home") setInspectorWidth(260);
+    else if (event.key === "End") setInspectorWidth(480);
+    else if (event.key === "ArrowLeft") setInspectorWidth((width) => Math.min(480, width + 16));
+    else if (event.key === "ArrowRight") setInspectorWidth((width) => Math.max(260, width - 16));
+    else return;
+    event.preventDefault();
+  };
+
+  useEffect(() => {
+    if (view !== "discover") return;
+    setShowAllModels(true);
+    setSearchMode("browse");
+    setPage(1);
+  }, [view]);
 
   useEffect(() => {
     if (!modelsWorkspaceOpen) return undefined;
@@ -1048,9 +1111,9 @@ export function ModelsView({
     advisorRefreshToken,
   ]);
 
-  /* HF search with debounce */
+  /* Available-model browsing and exact Hugging Face search share one bounded request path. */
   useEffect(() => {
-    if (searchMode !== "huggingface") return;
+    if (!["browse", "huggingface"].includes(searchMode)) return;
     // Neither fetch() nor the backend's own HF call had an upper bound the
     // UI could see, so a slow/dropped connection to huggingface.co left the
     // spinner running forever with no error and no way out. Bound it and
@@ -1065,7 +1128,7 @@ export function ModelsView({
         // Fetch enough results to fill several pages at the chosen size.
         const hasVramRange = vramMinGb !== "" || vramMaxGb !== "";
         const hfLimit = String(hasVramRange ? 500 : Math.min(500, Math.max(100, pageSize * 5)));
-        const p = new URLSearchParams({ q: hfQuery, sort: hfSort, limit: hfLimit, fit: "true" });
+        const p = new URLSearchParams({ q: searchMode === "browse" ? "" : hfQuery, sort: hfSort, limit: hfLimit, fit: "true" });
         if (vramMinGb !== "") p.set("min_vram_gb", vramMinGb);
         if (vramMaxGb !== "") p.set("max_vram_gb", vramMaxGb);
         if (catalogPurpose !== "all") {
@@ -1098,7 +1161,7 @@ export function ModelsView({
   }, [hfQuery, hfSort, catalogPurpose, searchMode, pageSize, vramMinGb, vramMaxGb]);
 
   const displayItems = useMemo(() => {
-    const list = searchMode === "huggingface" ? hfResults : filteredCatalog;
+    const list = searchMode === "catalog" ? filteredCatalog : hfResults;
     const hasMin = vramMinGb !== "" && Number.isFinite(Number(vramMinGb));
     const hasMax = vramMaxGb !== "" && Number.isFinite(Number(vramMaxGb));
     const minVram = hasMin ? Number(vramMinGb) : 0;
@@ -1317,11 +1380,14 @@ export function ModelsView({
                   </div>
               <div className="models-catalog-toolbar">
               <div className="models-source-switcher">
-                <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
-                  <HardDrive size={14} /> Catalog
+                {!desktopOnly && <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
+                  <HardDrive size={14} /> Local Catalog
+                </button>}
+                <button className={`w2-button ${searchMode === "browse" ? "primary" : ""}`} data-testid="discover-browse-models" type="button" onClick={() => { setHfQuery(""); setSearchMode("browse"); }}>
+                  <Cloud size={14} /> Browse Catalog
                 </button>
-                <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("huggingface")}>
-                  <Cloud size={14} /> Hugging Face
+                <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} data-testid="discover-search-models" type="button" onClick={openSpecificHuggingFaceModel}>
+                  <Search size={14} /> Search Models
                 </button>
                 <div style={{ flex: 1 }} />
                 {searchMode === "catalog" && (
@@ -1335,8 +1401,8 @@ export function ModelsView({
 
               {/* Search + filters */}
               <div className="model-catalog-filters" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-                <Search size={16} color="var(--cc-muted)" />
-                <input
+                {searchMode !== "browse" && <Search size={16} color="var(--cc-muted)" />}
+                {searchMode !== "browse" && <input
                   ref={hfSearchInputRef}
                   className="w2-input model-catalog-search"
                   style={{ minWidth: "240px", flex: "1 1 320px" }}
@@ -1345,7 +1411,7 @@ export function ModelsView({
                   value={searchMode === "huggingface" ? hfQuery : catalogSearch}
                   onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
                   placeholder={searchMode === "huggingface" ? "Paste org/model or a huggingface.co URL" : "Filter locally cached models by name..."}
-                />
+                />}
                 {searchMode === "huggingface" && (
                   <span className="w-full text-xs text-muted-foreground" data-testid="model-specific-hf-help">
                     Enter an exact model ID or Hugging Face URL, or use ordinary search terms. Exact matches appear first and still require WarSat review.
@@ -1355,7 +1421,7 @@ export function ModelsView({
                   <option value="all">All types</option>
                   {catalogCategories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                 </select>
-                {searchMode === "huggingface" && (
+                {searchMode !== "catalog" && (
                   <select className="w2-input" style={{ width: "130px", flex: "none" }} value={hfSort} onChange={e => setHfSort(e.target.value)}>
                     <option value="popular">Most popular</option>
                     <option value="downloads">Most downloaded</option>
@@ -1433,13 +1499,14 @@ export function ModelsView({
               </div>
 
               {/* Status line */}
-              <div style={{ fontSize: "0.75rem", color: "var(--cc-muted)" }}>
-                {searchMode === "catalog"
-                  ? `${displayItems.length} locally cached model${displayItems.length === 1 ? "" : "s"}`
-                  : hfLoading ? "Searching Hugging Face..." : `${displayItems.length} matching results`}
+              <div className="models-catalog-summary" data-testid="discover-catalog-summary">
+                <strong>{searchMode === "browse" ? "Available Models" : searchMode === "huggingface" ? "Search Results" : "Local Models"}</strong>
+                <span>{searchMode === "catalog"
+                  ? `${displayItems.length} local model${displayItems.length === 1 ? "" : "s"}`
+                  : hfLoading ? "Loading available models..." : `${displayItems.length} model${displayItems.length === 1 ? "" : "s"} with hardware-fit information`}</span>
               </div>
 
-              {searchMode === "huggingface" && hfError && (
+              {searchMode !== "catalog" && hfError && (
                 <div style={{ fontSize: "0.8125rem", color: "var(--ras-danger)", backgroundColor: "color-mix(in srgb, var(--ras-danger) 10%, var(--cc-surface))", border: "1px solid var(--ras-danger)", borderRadius: "6px", padding: "8px 12px" }}>
                   {hfError}
                 </div>
@@ -1459,7 +1526,7 @@ export function ModelsView({
               )}
 
               {/* Model catalog */}
-              <div className={`${desktopOnly ? "studio-model-browser" : ""} models-v3-catalog-stage`}>
+              <div className={`${desktopOnly ? "studio-model-browser" : ""} models-v3-catalog-stage`} data-testid="discover-model-catalog">
                 <div className={desktopOnly ? "studio-model-list" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"} data-testid="model-catalog-grid">
                   {pagedItems.map(item => (
                     <CatalogCard
@@ -1506,7 +1573,7 @@ export function ModelsView({
 
               {!displayItems.length && !modelCatalogLoading && !hfLoading && (
                 <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
-                  {searchMode === "huggingface" ? "No models found. Try broadening your search or choosing a different category." : "No models match. Try different filters."}
+                  {searchMode !== "catalog" ? "No available models found. Try refreshing or choosing a different category." : "No local models match. Try different filters."}
                 </div>
               )}
                 </>
@@ -1517,7 +1584,7 @@ export function ModelsView({
           {/* ═══ INSTALLED TAB ═══ */}
           {activeTab === "installed" && (
             <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section models-v3-panel studio-installed-panel" style={{ flex: 1 }}>
-              <div className="models-inventory-workbench">
+              <div className="models-inventory-workbench" style={{ "--models-inspector-width": `${inspectorWidth}px` }}>
                 <section className="models-inventory-main" aria-labelledby="models-inventory-title">
                   <div className="models-inventory-toolbar">
                     <div className="models-inventory-heading">
@@ -1549,13 +1616,14 @@ export function ModelsView({
                     </div>
                   </div>
 
-                  <div className="studio-installed-list models-inventory-table" data-testid="studio-installed-list" role="table" aria-label="Installed models">
+                  <div className="studio-installed-list models-inventory-table" data-testid="studio-installed-list" data-table-kind="installed-model-table" role="table" aria-label="Installed models">
                     <div className="studio-installed-head" role="row">
-                      <span role="columnheader">Device</span>
-                      <span role="columnheader">Arch</span>
-                      <span role="columnheader">Params</span>
-                      <span role="columnheader">Publisher</span>
                       <span role="columnheader">Model</span>
+                      <span role="columnheader">Developer</span>
+                      <span role="columnheader">Params</span>
+                      <span role="columnheader">Context</span>
+                      <span role="columnheader">Format</span>
+                      <span role="columnheader">Fit</span>
                       <span role="columnheader">Actions</span>
                     </div>
                     {filteredInstalledModels.map(model => (
@@ -1569,6 +1637,10 @@ export function ModelsView({
                         executeAction={executeAction}
                         setUiState={setUiState}
                         onConfigureLoad={setLoadDialogModel}
+                        onOpenActions={() => {
+                          setSelectedInstalledKey(model.key);
+                          setInstalledInspectorTab("actions");
+                        }}
                       />
                     ))}
                   </div>
@@ -1584,8 +1656,23 @@ export function ModelsView({
                   </footer>
                 </section>
 
+                <button
+                  type="button"
+                  className="models-inspector-resizer"
+                  data-testid="models-inspector-resizer"
+                  role="separator"
+                  aria-label="Resize model inspector"
+                  aria-orientation="vertical"
+                  aria-valuemin={260}
+                  aria-valuemax={480}
+                  aria-valuenow={inspectorWidth}
+                  onPointerDown={startInspectorResize}
+                  onKeyDown={handleInspectorResizeKeyDown}
+                />
                 <InstalledModelInspector
                   model={selectedInstalledModel}
+                  activeTab={installedInspectorTab}
+                  onTabChange={setInstalledInspectorTab}
                   allModels={models}
                   onUseInChat={(model) => {
                     setSelectedModel?.(model.key);
@@ -2059,7 +2146,7 @@ function StudioModelDetail({ item }) {
 
 function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, activeDownloads, desktopOnly = false }) {
   const modelId = item.modelId || item.id;
-  const isHuggingFace = searchMode === "huggingface" || item.source === "huggingface";
+  const isHuggingFace = searchMode !== "catalog" || item.source === "huggingface";
   const [variantDetail, setVariantDetail] = useState(null);
   const [variantDetailLoading, setVariantDetailLoading] = useState(false);
   const [variantDetailError, setVariantDetailError] = useState("");
@@ -2291,17 +2378,19 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
 /* ═══════════════════════════════════════════
    INSTALLED CARD
    ═══════════════════════════════════════════ */
-function InstalledCard({ model, allModels, selected = false, onSelect, runModelAction, executeAction, setUiState, onConfigureLoad }) {
-  const name = displayModelName(model, allModels);
+function InstalledCard({ model, allModels, selected = false, onSelect, runModelAction, executeAction, setUiState, onConfigureLoad, onOpenActions }) {
+  const name = model.name || displayModelName(model, allModels);
   const secondary = displayModelSecondary(model, allModels);
   const st = runtimeStatus(model);
   const isHealthy = isModelHealthy(model);
   const mismatch = modelMismatchLine(model);
-  const ctx = contextWindowFor(model);
-
+  const context = contextWindowFor(model);
   const [busy, setBusy] = useState(null);
   const nativeRuntime = model.runtime === "native-llamacpp";
   const isRunning = ["running", "reachable"].includes(String(model.container_status || model.runtime_status || "").toLowerCase());
+  const developer = installedModelPublisher(model);
+  const fit = mismatch ? "Review" : isHealthy ? "Ready" : model.managed ? "Available" : "Check";
+
   const runAction = async (key, actionName, op) => {
     setBusy(key);
     try {
@@ -2310,20 +2399,19 @@ function InstalledCard({ model, allModels, selected = false, onSelect, runModelA
       setBusy(null);
     }
   };
-  const handleTest = () => runAction("test", "TestHealth", "test");
-  const handleDiscover = () => runAction("discover", "Discover", "discover");
   const handleRuntime = () => nativeRuntime && !isRunning
     ? onConfigureLoad?.(model)
     : runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
-  const device = String(model.runtime || model.provider || "").includes("remote") ? "Remote" : "Local";
 
   return (
     <div
+      id={`installed-model-row-${String(model.key).replace(/[^a-zA-Z0-9_-]/g, "-")}`}
       className={`studio-installed-row models-inventory-row ${selected ? "is-selected" : ""}`}
       data-testid="installed-model-row"
       data-model-key={model.key}
       role="row"
       aria-selected={selected}
+      aria-controls="installed-model-inspector"
       tabIndex={selected ? 0 : -1}
       onClick={onSelect}
       onKeyDown={(event) => {
@@ -2333,50 +2421,97 @@ function InstalledCard({ model, allModels, selected = false, onSelect, runModelA
         }
       }}
     >
-      <span className="models-inventory-device" role="cell"><i style={{ background: statusColor(st) }} aria-hidden="true" />{device}</span>
-      <span className="models-inventory-chip" role="cell">{installedModelArchitecture(model)}</span>
-      <span className="models-inventory-chip" role="cell">{installedModelParameters(model)}</span>
-      <span className="models-inventory-publisher" role="cell">{installedModelPublisher(model)}</span>
       <span className="studio-installed-model" role="cell">
-        <PublisherLogo item={model} size="sm" />
+        <PublisherLogo item={model} size="md" />
         <span>
           <strong>{name}</strong>
           <small>{secondary || model.model || model.key}</small>
-          {mismatch && <small className="studio-installed-warning"><AlertTriangle size={11} /> {mismatch}</small>}
-          {!mismatch && <small>{labelize(model.role || "chat")}{ctx > 0 ? ` · ${ctx.toLocaleString()} context` : ""}</small>}
         </span>
       </span>
+      <span className="models-inventory-developer" role="cell" title={developer}>{developer}</span>
+      <span className="models-inventory-chip" role="cell">{installedModelParameters(model)}</span>
+      <span className="models-inventory-context" role="cell">{context > 0 ? context.toLocaleString() : "Default"}</span>
+      <span className="models-inventory-chip" role="cell">{installedModelFormat(model)}</span>
+      <span className={`models-inventory-fit is-${fit.toLowerCase()}`} role="cell"><i style={{ background: statusColor(st) }} aria-hidden="true" />{fit}</span>
       <span className="studio-installed-actions" role="cell">
         {model.managed && (
-          <Button onClick={handleRuntime} loading={busy === "start" || busy === "stop"} loadingLabel={isRunning ? "Stopping…" : "Starting…"} icon={isRunning ? <Power size={12} /> : <Play size={12} />} spinnerSize={12}>
+          <Button
+            onClick={(event) => { event?.stopPropagation?.(); handleRuntime(); }}
+            loading={busy === "start" || busy === "stop"}
+            loadingLabel={isRunning ? "Stopping…" : "Starting…"}
+            icon={isRunning ? <Power size={12} /> : <Play size={12} />}
+            spinnerSize={12}
+          >
             {isRunning ? "Stop" : nativeRuntime ? "Load" : "Start"}
           </Button>
         )}
-        <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} aria-label={`Test ${name}`}>Test</Button>
-        <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Inspecting…" icon={<Search size={12} />} spinnerSize={12} aria-label={`Inspect ${name}`}>Info</Button>
+        <button
+          type="button"
+          className="models-row-actions-trigger"
+          aria-label={`Open actions for ${name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenActions?.();
+          }}
+        >
+          •••
+        </button>
       </span>
+      {mismatch && <span className="sr-only"><AlertTriangle size={11} /> {mismatch}</span>}
     </div>
   );
 }
 
-function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad }) {
-  const [activeInspectorTab, setActiveInspectorTab] = useState("info");
-  const [busy, setBusy] = useState(false);
+function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, activeTab, onTabChange }) {
+  const [busy, setBusy] = useState("");
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [inference, setInference] = useState({
+    systemPrompt: "",
+    reasoningEnabled: false,
+    reasoningEffort: "unrestricted",
+    temperature: 0.8,
+    limitResponse: false,
+    maxTokens: 2048,
+    contextOverflow: "truncate-middle",
+    stopStrings: "",
+    cpuThreads: "",
+  });
 
   useEffect(() => {
-    setActiveInspectorTab("info");
+    setDeleteArmed(false);
+    if (!model?.key || typeof window === "undefined") return;
+    try {
+      const pins = JSON.parse(window.localStorage.getItem("rasputin-pinned-models") || "[]");
+      setPinned(Array.isArray(pins) && pins.includes(model.key));
+      const saved = JSON.parse(window.localStorage.getItem(`rasputin-inference-${model.key}`) || "null");
+      setInference((current) => saved && typeof saved === "object" ? { ...current, ...saved } : {
+        systemPrompt: "",
+        reasoningEnabled: false,
+        reasoningEffort: "unrestricted",
+        temperature: 0.8,
+        limitResponse: false,
+        maxTokens: 2048,
+        contextOverflow: "truncate-middle",
+        stopStrings: "",
+        cpuThreads: "",
+      });
+    } catch {
+      setPinned(false);
+    }
   }, [model?.key]);
 
   if (!model) {
     return (
-      <aside className="models-model-inspector is-empty" data-testid="installed-model-inspector">
+      <aside id="installed-model-inspector" className="models-model-inspector is-empty" data-testid="installed-model-inspector">
         <Cpu size={24} aria-hidden="true" />
-        <p>Select a model to inspect its runtime, source, and inference profile.</p>
+        <p>Select a model to inspect its developer, runtime, source, and inference profile.</p>
       </aside>
     );
   }
 
-  const name = displayModelName(model, allModels);
+  const name = model.name || displayModelName(model, allModels);
+  const developer = installedModelPublisher(model);
   const st = runtimeStatus(model);
   const healthy = isModelHealthy(model);
   const nativeRuntime = model.runtime === "native-llamacpp";
@@ -2384,7 +2519,22 @@ function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction
   const path = installedModelPath(model);
   const context = contextWindowFor(model);
   const mismatch = modelMismatchLine(model);
-  const tabs = ["info", "load", "inference"];
+  const modelId = String(model.model || model.key);
+  const sourceUrl = model.sourceUrl || model.source_url || (modelId.includes("/") ? `https://huggingface.co/${modelId}` : "");
+  const capabilities = Array.isArray(model.capabilities) && model.capabilities.length ? model.capabilities : ["Text"];
+  const tabs = ["info", "load", "inference", "actions"];
+
+  const updateInference = (patch) => {
+    setInference((current) => {
+      const next = { ...current, ...patch };
+      try {
+        window.localStorage.setItem(`rasputin-inference-${model.key}`, JSON.stringify(next));
+      } catch {
+        // Local preferences remain usable for this session when storage is unavailable.
+      }
+      return next;
+    });
+  };
 
   const handleLoad = async () => {
     if (isRunning) return;
@@ -2392,45 +2542,87 @@ function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction
       onConfigureLoad?.(model);
       return;
     }
-    setBusy(true);
+    setBusy("load");
     try {
       await executeAction("StartModel", model.key, async () => runModelAction?.("start", model.key), setUiState);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
 
-  const facts = activeInspectorTab === "info" ? [
-    ["Model", model.model || model.key],
-    ["File", installedModelFile(model)],
+  const handleStop = async () => {
+    setBusy("stop");
+    try {
+      await executeAction("StopModel", model.key, async () => runModelAction?.("stop", model.key), setUiState);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const copyValue = async (value, label) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setUiState({ status: "success", message: `${label} copied.` });
+    } catch {
+      setUiState({ status: "failed", message: `Unable to copy ${label.toLowerCase()}.` });
+    }
+  };
+
+  const togglePinned = () => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem("rasputin-pinned-models") || "[]");
+      const pins = new Set(Array.isArray(stored) ? stored : []);
+      if (pins.has(model.key)) pins.delete(model.key);
+      else pins.add(model.key);
+      window.localStorage.setItem("rasputin-pinned-models", JSON.stringify([...pins]));
+      setPinned(pins.has(model.key));
+      setUiState({ status: "success", message: pins.has(model.key) ? "Model pinned." : "Model unpinned." });
+    } catch {
+      setUiState({ status: "failed", message: "Unable to update pinned models." });
+    }
+  };
+
+  const handleDelete = async () => {
+    setBusy("delete");
+    try {
+      await executeAction("DeleteModel", model.key, async () => runModelAction?.("delete", model.key), setUiState);
+      setDeleteArmed(false);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const infoFacts = [
+    ["Developer", developer],
+    ["Family", model.family || model.model_family || installedModelArchitecture(model)],
+    ["Architecture", installedModelArchitecture(model)],
+    ["Parameters", installedModelParameters(model)],
     ["Format", installedModelFormat(model)],
     ["Quantization", installedModelQuantization(model)],
-    ["Arch", installedModelArchitecture(model)],
-    ["Domain", labelize(model.role || "chat")],
-    ["Size on disk", installedModelSize(model)],
-  ] : activeInspectorTab === "load" ? [
-    ["Runtime", model.runtime || model.provider || "Local"],
-    ["Device", nativeRuntime ? "Automatic GPU placement" : "Managed endpoint"],
-    ["State", labelize(st)],
-    ["Compatibility", mismatch || (healthy ? "Ready" : "Needs health check")],
-  ] : [
     ["Context", context > 0 ? context.toLocaleString() + " tokens" : "Runtime default"],
-    ["Role", labelize(model.role || "chat")],
-    ["Endpoint", model.baseUrl || model.base_url || "Native llama.cpp"],
-    ["Availability", healthy ? "Reachable" : labelize(st)],
+    ["Modalities", capabilities.map(labelize).join(", ")],
+    ["Purpose", labelize(model.purpose || model.role || "chat")],
+    ["License", model.license || "Not declared"],
+    ["Downloads", Number(model.downloads || 0).toLocaleString()],
+    ["Size on disk", installedModelSize(model)],
+    ["Hardware fit", mismatch || (healthy ? "Ready on this workstation" : "Check runtime")],
   ];
 
   return (
-    <aside className="models-model-inspector" data-testid="installed-model-inspector" aria-label={`${name} model inspector`}>
+    <aside id="installed-model-inspector" className="models-model-inspector" data-testid="installed-model-inspector" aria-label={`${name} model inspector`}>
       <header className="models-inspector-header">
         <div className="models-inspector-title">
-          <PublisherLogo item={model} size="md" />
-          <div><strong>{name}</strong><small>{model.model || model.key}</small></div>
+          <PublisherLogo item={model} size="lg" />
+          <div><strong>{name}</strong><small>{developer} · {modelId}</small></div>
         </div>
         <span className={`models-inspector-status ${healthy ? "is-ready" : ""}`}>{healthy ? "Ready" : labelize(st)}</span>
         <div className="models-inspector-primary-actions">
           <button type="button" className="w2-button" onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
-          {model.managed && <Button onClick={handleLoad} disabled={isRunning} loading={busy} loadingLabel="Loading…" icon={<Download size={13} />}>{isRunning ? "Loaded" : "Load Model"}</Button>}
+          {model.managed && (
+            isRunning
+              ? <Button onClick={handleStop} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={13} />}>Stop Model</Button>
+              : <Button onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>Load Model</Button>
+          )}
         </div>
       </header>
 
@@ -2438,22 +2630,86 @@ function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction
         {tabs.map((tab) => (
           <button
             key={tab}
+            id={`model-inspector-tab-${tab}`}
             type="button"
             role="tab"
-            aria-selected={activeInspectorTab === tab}
-            onClick={() => setActiveInspectorTab(tab)}
+            aria-selected={activeTab === tab}
+            aria-controls={`model-inspector-panel-${tab}`}
+            tabIndex={activeTab === tab ? 0 : -1}
+            onClick={() => onTabChange?.(tab)}
           >
             {labelize(tab)}
           </button>
         ))}
       </div>
 
-      <section className="models-inspector-section">
-        <h3>{activeInspectorTab === "info" ? "Model Information" : activeInspectorTab === "load" ? "Load Profile" : "Inference Profile"}</h3>
-        <dl className="models-inspector-facts">
-          {facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
-        </dl>
-      </section>
+      {activeTab === "info" && (
+        <section id="model-inspector-panel-info" role="tabpanel" aria-labelledby="model-inspector-tab-info" className="models-inspector-section">
+          <h3>Model Information</h3>
+          <p className="models-inspector-summary">{model.summary || model.description || `A ${labelize(model.role || "chat")} model trained by ${developer}.`}</p>
+          <dl className="models-inspector-facts">
+            {infoFacts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
+          </dl>
+        </section>
+      )}
+
+      {activeTab === "load" && (
+        <section id="model-inspector-panel-load" role="tabpanel" aria-labelledby="model-inspector-tab-load" className="models-inspector-section">
+          <h3>Load Profile</h3>
+          <div className="models-inspector-callout"><Gauge size={16} /><span><strong>Automatic placement</strong><small>Rasputin selects a fitting GPU and preserves combined VRAM when this model needs it.</small></span></div>
+          <dl className="models-inspector-facts">
+            {[
+              ["Runtime", model.runtime || model.provider || "Local"],
+              ["Device", nativeRuntime ? "Automatic GPU placement" : "Managed endpoint"],
+              ["State", labelize(st)],
+              ["Compatibility", mismatch || (healthy ? "Ready" : "Needs health check")],
+              ["Source file", installedModelFile(model)],
+            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
+          </dl>
+          {model.managed && <button type="button" className="models-inspector-wide-action" onClick={() => onConfigureLoad?.(model)}><SlidersHorizontal size={14} /> Configure advanced load settings</button>}
+        </section>
+      )}
+
+      {activeTab === "inference" && (
+        <section id="model-inspector-panel-inference" role="tabpanel" aria-labelledby="model-inspector-tab-inference" className="models-inspector-section models-inference-panel">
+          <div className="models-inference-heading"><h3>System Prompt</h3><span>{inference.systemPrompt.length.toLocaleString()} characters</span></div>
+          <textarea aria-label="System prompt" value={inference.systemPrompt} onChange={(event) => updateInference({ systemPrompt: event.target.value })} placeholder={'Example, "Only answer in rhymes"'} />
+          <div className="models-inference-group">
+            <h3>Reasoning</h3>
+            <label className="models-control-row"><span>Reasoning budget</span><input type="checkbox" checked={inference.reasoningEnabled} onChange={(event) => updateInference({ reasoningEnabled: event.target.checked })} /></label>
+            <label className="models-control-row"><span>Effort</span><select value={inference.reasoningEffort} onChange={(event) => updateInference({ reasoningEffort: event.target.value })}><option value="unrestricted">Unrestricted</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+          </div>
+          <div className="models-inference-group">
+            <h3>Generation Settings</h3>
+            <label className="models-control-stack"><span>Temperature <output>{Number(inference.temperature).toFixed(1)}</output></span><input type="range" min="0" max="2" step="0.1" value={inference.temperature} onChange={(event) => updateInference({ temperature: Number(event.target.value) })} /></label>
+            <label className="models-control-row"><span>Limit response length</span><input type="checkbox" checked={inference.limitResponse} onChange={(event) => updateInference({ limitResponse: event.target.checked })} /></label>
+            {inference.limitResponse && <label className="models-control-row"><span>Maximum tokens</span><input className="models-compact-input" type="number" min="64" step="64" value={inference.maxTokens} onChange={(event) => updateInference({ maxTokens: Number(event.target.value) })} /></label>}
+            <label className="models-control-row"><span>Context overflow</span><select value={inference.contextOverflow} onChange={(event) => updateInference({ contextOverflow: event.target.value })}><option value="truncate-middle">Truncate Middle</option><option value="truncate-oldest">Truncate Oldest</option><option value="stop">Stop Generation</option></select></label>
+            <label className="models-control-stack"><span>Stop strings</span><input type="text" value={inference.stopStrings} onChange={(event) => updateInference({ stopStrings: event.target.value })} placeholder="Enter strings separated by commas" /></label>
+            <label className="models-control-row"><span>CPU threads</span><input className="models-compact-input" type="number" min="1" value={inference.cpuThreads} onChange={(event) => updateInference({ cpuThreads: event.target.value })} placeholder="Auto" /></label>
+          </div>
+          <p className="models-inference-note">Saved locally for this model. Runtime-specific GPU and context settings remain in Load Model.</p>
+        </section>
+      )}
+
+      {activeTab === "actions" && (
+        <section id="model-inspector-panel-actions" role="tabpanel" aria-labelledby="model-inspector-tab-actions" className="models-inspector-section models-actions-panel">
+          <h3>Model Actions</h3>
+          <button type="button" onClick={togglePinned}>{pinned ? <PinOff size={15} /> : <Pin size={15} />}<span><strong>{pinned ? "Unpin model" : "Pin model"}</strong><small>{pinned ? "Remove it from your priority models." : "Keep it at the top of your model workflow."}</small></span></button>
+          <button type="button" onClick={() => copyValue(modelId, "Model ID")}><Copy size={15} /><span><strong>Copy model ID</strong><small>{modelId}</small></span></button>
+          {path && <button type="button" onClick={() => copyValue(path, "Model path")}><HardDrive size={15} /><span><strong>Copy absolute path</strong><small>{path}</small></span></button>}
+          {sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer"><Link2 size={15} /><span><strong>Show on web</strong><small>Open the developer source page.</small></span></a>}
+          {!deleteArmed ? (
+            <button type="button" className="is-danger" onClick={() => setDeleteArmed(true)}><Trash2 size={15} /><span><strong>Delete model</strong><small>Remove this model from Rasputin.</small></span></button>
+          ) : (
+            <div className="models-delete-confirm" role="alert">
+              <p>Delete {name}? This removes its registry entry and may stop a running model.</p>
+              <button type="button" onClick={() => setDeleteArmed(false)}>Cancel</button>
+              <Button onClick={handleDelete} loading={busy === "delete"} loadingLabel="Deleting…">Confirm Delete</Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="models-inspector-spacer" />
       <details className="models-inspector-disclosure">
@@ -2469,7 +2725,6 @@ function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction
     </aside>
   );
 }
-
 
 /* ═══════════════════════════════════════════
    ACTIVE MODEL CARD

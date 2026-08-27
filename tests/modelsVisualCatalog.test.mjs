@@ -11,7 +11,14 @@ const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashS
 
 test("desktop Discover Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /data-testid="model-catalog-grid"/);
+  assert.match(models, /useState\(\(\) => view === "discover" \? "library" : "installed"\)/);
   assert.match(models, /setShowAllModels\(true\)/);
+  assert.match(models, /setSearchMode\("browse"\)/);
+  assert.match(models, /q: searchMode === "browse" \? "" : hfQuery/);
+  assert.match(models, /data-testid="discover-browse-models"/);
+  assert.match(models, /data-testid="discover-search-models"/);
+  assert.match(models, /data-testid="discover-model-catalog"/);
+  assert.match(models, /<strong>\{searchMode === "browse" \? "Available Models"/);
   assert.match(models, /setCatalogRuntime\("llamaCppGgufServer"\)/);
   assert.match(models, /searchMode === "catalog" && !desktopOnly/);
   assert.match(models, /className="models-page-shell/);

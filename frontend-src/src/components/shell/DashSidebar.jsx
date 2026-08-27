@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   BrainCircuit,
@@ -28,7 +28,6 @@ const NAV_GROUPS = [
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
 
-      { view: "activity", label: "History", icon: Clock, testId: "nav-activity" },
       { view: "discover", label: "Discover Models", icon: Search, testId: "nav-discover" },
       { view: "models", label: "Models", icon: Box, testId: "nav-models" },
     ],
@@ -71,6 +70,10 @@ export function DashSidebar({
     items: group.items.filter((item) => canAccessView(role, item.view) && (!desktopOnly || item.view !== "warsat")),
   })).filter((group) => group.items.length > 0);
   const asideRef = useRef(null);
+  const historyTriggerRef = useRef(null);
+  const historySearchRef = useRef(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
   const wasMobileOpenRef = useRef(mobileOpen);
   const reducedMotion = motionMode === "reduced";
   // Collapsed mode is a deliberate, persistent rail. It never relies on hover
@@ -91,9 +94,31 @@ export function DashSidebar({
     }
   }, [mobileOpen, mobileTriggerRef]);
 
+  useEffect(() => {
+    if (!historyOpen) return undefined;
+    historySearchRef.current?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setHistoryOpen(false);
+        setHistoryQuery("");
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [historyOpen]);
+
+  useEffect(() => {
+    if (!historyOpen) historyTriggerRef.current?.focus();
+  }, [historyOpen]);
+
   const isActive = (item) =>
     view === item.view && (item.view !== "settings" || settingsSection === item.section);
   const sessions = (recentSessions || []).slice(0, 12);
+  const normalizedHistoryQuery = historyQuery.trim().toLowerCase();
+  const filteredSessions = normalizedHistoryQuery
+    ? sessions.filter((item) => ((item.title || "") + " " + (item.model || "") + " " + (item.workspacePath || "")).toLowerCase().includes(normalizedHistoryQuery))
+    : sessions;
   const projects = (workspaceRoots || []).slice(0, 8);
   const nativeRuntime = desktopOnly || runtimeMode === "native";
   const RuntimeIcon = nativeRuntime ? Laptop : Box;
@@ -125,11 +150,6 @@ export function DashSidebar({
         )}
         <Icon size={18} className={cn("shrink-0", active && "text-sidebar-primary")} />
         {expanded && <span className="flex-1 truncate text-left">{item.label}</span>}
-        {expanded && item.testId === "nav-activity" && (runningCount || taskCount) > 0 && (
-          <span className="rounded-full bg-sidebar-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-sidebar-primary">
-            {runningCount || taskCount}
-          </span>
-        )}
       </button>
     );
   };
@@ -241,6 +261,30 @@ export function DashSidebar({
             </div>
           ))}
 
+          {/* History stays lightweight: recent chats live in a popover instead of
+           * taking a permanent destination in the primary navigation. */}
+          <button
+            ref={historyTriggerRef}
+            type="button"
+            data-testid="history-drawer-trigger"
+            aria-label="Recent chats"
+            aria-expanded={historyOpen}
+            aria-controls="history-drawer"
+            title={!expanded ? "Recent chats" : undefined}
+            onClick={() => setHistoryOpen((open) => !open)}
+            className={cn(
+              "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              historyOpen && "is-active bg-sidebar-accent text-sidebar-foreground",
+              !expanded && "justify-center px-0",
+            )}
+          >
+            <Clock size={18} className={cn("shrink-0", historyOpen && "text-sidebar-primary")} />
+            {expanded && <span className="flex-1 truncate text-left">Recent chats</span>}
+            {(runningCount || taskCount) > 0 && (
+              <span className={cn("rounded-full bg-sidebar-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-sidebar-primary", !expanded && "absolute -right-0.5 -top-1 px-1.5 py-0")}>{runningCount || taskCount}</span>
+            )}
+          </button>
+
           {/* Settings — pinned with the primary nav, always reachable */}
           <div className="mt-auto pt-2">
             <button
@@ -297,72 +341,7 @@ export function DashSidebar({
           </section>
         )}
 
-        {/* Recent chats continue naturally in the unified sidebar flow. */}
-        {expanded && sessions.length > 0 && (
-          <div className="-mr-1 mt-3 flex shrink-0 flex-col pr-1">
-            <div className="flex shrink-0 items-center justify-between gap-2 px-3 pb-1">
-              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">
-                Recent Chats
-              </span>
-              {taskAccess && <span className="flex items-center gap-2">
-                {emptySessionCount > 0 && <button
-                  type="button"
-                  data-testid="sidebar-clear-empty-chats"
-                  onClick={() => cleanupEmptySessions?.()}
-                  title={`Remove ${emptySessionCount} empty chat${emptySessionCount === 1 ? "" : "s"}`}
-                  aria-label={`Remove ${emptySessionCount} empty chat${emptySessionCount === 1 ? "" : "s"}`}
-                  className="flex items-center gap-1 text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
-                >
-                  <Trash2 size={11} aria-hidden="true" /> {emptySessionCount}
-                </button>}
-                <button
-                  type="button"
-                  onClick={() => go("sessions")}
-                  className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground"
-                >
-                  All
-                </button>
-              </span>}
-            </div>
-            <div className="flex flex-col gap-0.5">
-              {sessions.map((s) => {
-                const active = s.id === activeSessionId;
-                return (
-                  <div
-                    key={s.id}
-                    className={cn(
-                      "group/session flex shrink-0 items-center rounded-lg transition-colors",
-                      active
-                        ? "bg-sidebar-accent text-sidebar-foreground"
-                        : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      title={s.title || "Untitled chat"}
-                      onClick={() => resumeSession?.(s.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 truncate px-3 py-1.5 text-left text-[0.8rem]"
-                    >
-                      <MessageSquare size={14} className="shrink-0 opacity-70" />
-                      <span className="truncate">{s.title || "Untitled chat"}</span>
-                    </button>
-                    {taskAccess && <button
-                      type="button"
-                      data-testid={`sidebar-delete-chat-${s.id}`}
-                      aria-label={`Delete ${s.title || "Untitled chat"}`}
-                      title={s.isEmpty ? "Delete empty chat" : "Delete chat"}
-                      onClick={() => deleteSession?.(s)}
-                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/50 transition-colors hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring"
-                    >
-                      <Trash2 size={13} aria-hidden="true" />
-                    </button>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {(!expanded || sessions.length === 0) && <div className="min-h-0 flex-1" aria-hidden="true" />}
+        <div className="min-h-0 flex-1" aria-hidden="true" />
 
         {/* Runtime identity + privacy state — launch-time facts, never browser toggles. */}
         <div className={cn("ras-sidebar-footer mt-2 flex shrink-0 flex-col gap-1", !expanded && "is-collapsed", desktopOnly && "hidden")}>
@@ -392,6 +371,70 @@ export function DashSidebar({
           </button>}
         </div>
       </aside>
+      {historyOpen && (
+        <>
+          <button
+            type="button"
+            data-testid="history-drawer-scrim"
+            aria-label="Close recent chats"
+            onClick={() => setHistoryOpen(false)}
+            className="fixed inset-0 z-40 cursor-default bg-black/25 sm:bg-transparent"
+          />
+          <section
+            id="history-drawer"
+            data-testid="history-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-drawer-title"
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 flex w-[min(360px,calc(100vw-1rem))] flex-col border-r border-sidebar-border bg-sidebar px-4 py-4 text-sidebar-foreground shadow-2xl shadow-black/40 sm:left-[220px]",
+              collapsed && "sm:left-[54px]",
+            )}
+          >
+            <header className="flex items-start justify-between gap-3 border-b border-sidebar-border pb-3">
+              <div>
+                <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">Workspace memory</p>
+                <h2 id="history-drawer-title" className="mt-1 text-base font-semibold">Recent chats</h2>
+              </div>
+              <button type="button" data-testid="history-drawer-close" aria-label="Close recent chats" onClick={() => setHistoryOpen(false)} className="grid size-8 place-items-center rounded-lg text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground">&#215;</button>
+            </header>
+            <label className="relative mt-3 block">
+              <span className="sr-only">Search recent chats</span>
+              <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sidebar-foreground/40" />
+              <input
+                ref={historySearchRef}
+                data-testid="history-search"
+                type="search"
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+                placeholder="Search recent chats"
+                className="w-full rounded-lg border border-sidebar-border bg-sidebar-accent/55 py-2 pl-9 pr-3 text-sm text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/35 focus:border-sidebar-primary/60 focus:ring-2 focus:ring-sidebar-primary/20"
+              />
+            </label>
+            <div className="mt-3 flex items-center justify-between text-[0.67rem] text-sidebar-foreground/45">
+              <span>{filteredSessions.length} of {sessions.length} recent chats</span>
+              {taskAccess && emptySessionCount > 0 && <button type="button" data-testid="sidebar-clear-empty-chats" onClick={() => cleanupEmptySessions?.()} className="flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-sidebar-accent hover:text-sidebar-foreground"><Trash2 size={12} aria-hidden="true" />Clear {emptySessionCount} empty</button>}
+            </div>
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto" data-testid="history-session-list">
+              {filteredSessions.length > 0 ? filteredSessions.map((s) => {
+                const active = s.id === activeSessionId;
+                return (
+                  <div key={s.id} data-testid={"history-session-" + s.id} className={cn("group/session flex items-center rounded-lg border border-transparent", active ? "bg-sidebar-accent text-sidebar-foreground" : "text-sidebar-foreground/65 hover:border-sidebar-border hover:bg-sidebar-accent/60 hover:text-sidebar-foreground")}>
+                    <button type="button" title={s.title || "Untitled chat"} onClick={() => { resumeSession?.(s.id); setHistoryOpen(false); }} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left">
+                      <MessageSquare size={15} className="shrink-0 opacity-65" aria-hidden="true" />
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{s.title || "Untitled chat"}</span><span className="mt-0.5 block truncate text-[0.65rem] text-sidebar-foreground/40">{s.model || "Local session"}</span></span>
+                    </button>
+                    {taskAccess && <button type="button" data-testid={"sidebar-delete-chat-" + s.id} aria-label={"Delete " + (s.title || "Untitled chat")} title={s.isEmpty ? "Delete empty chat" : "Delete chat"} onClick={() => deleteSession?.(s)} className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/40 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring"><Trash2 size={13} aria-hidden="true" /></button>}
+                  </div>
+                );
+              }) : <div className="rounded-lg border border-dashed border-sidebar-border px-3 py-6 text-center text-sm text-sidebar-foreground/45">{historyQuery ? "No chats match that search." : "No recent chats yet."}</div>}
+            </div>
+            <footer className="mt-3 border-t border-sidebar-border pt-3">
+              <button type="button" data-testid="history-view-all" onClick={() => { setHistoryOpen(false); go("activity"); }} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-primary hover:bg-sidebar-primary/10"><span>View all activity</span><span aria-hidden="true">-&gt;</span></button>
+            </footer>
+          </section>
+        </>
+      )}
     </div>
   );
 }

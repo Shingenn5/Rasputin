@@ -18,10 +18,10 @@ test("Models workspace v3 adds a distinct command-console hierarchy", () => {
 });
 
 test("My Models opens as a dense selectable inventory with a persistent inspector", () => {
-  assert.match(models, /useState\("installed"\)/);
+  assert.match(models, /useState\(\(\) => view === "discover" \? "library" : "installed"\)/);
   assert.match(models, /className="models-inventory-workbench"/);
   assert.match(models, /role="table" aria-label="Installed models"/);
-  for (const heading of ["Device", "Arch", "Params", "Publisher", "Model", "Actions"]) {
+  for (const heading of ["Model", "Developer", "Params", "Context", "Format", "Fit", "Actions"]) {
     assert.match(models, new RegExp(`role="columnheader">${heading}<`));
   }
   assert.match(models, /data-testid="installed-model-row"/);
@@ -32,7 +32,14 @@ test("My Models opens as a dense selectable inventory with a persistent inspecto
   assert.match(models, /event\.ctrlKey \|\| event\.metaKey/);
   assert.match(models, /if \(view === "discover"\) setActiveTab\("library"\)/);
   assert.doesNotMatch(models, /data-testid="models-search-button"/);
-  assert.match(models, /<PublisherLogo item=\{model\} size="sm" \/>/);
+  assert.match(models, /<PublisherLogo item=\{model\} size="md" \/>/);
+  assert.match(models, /data-table-kind="installed-model-table"/);
+  assert.match(models, /data-testid="models-inspector-resizer"/);
+  assert.match(models, /aria-valuemin=\{260\}/);
+  assert.match(models, /const tabs = \["info", "load", "inference", "actions"\]/);
+  assert.match(models, /Reasoning budget/);
+  assert.match(models, /Delete model/);
+  assert.match(models, /runModelAction\?\.\("delete", model\.key\)/);
   assert.match(models, /Use in New Chat/);
   assert.match(models, /Load Model/);
 });
