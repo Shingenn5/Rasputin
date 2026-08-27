@@ -65,6 +65,43 @@ test("Discover Models mirrors the dense inventory and persistent inspector contr
   assert.match(models, /License/);
 });
 
+test("Discover search is explicit and accepts names, model IDs, and Hugging Face URLs", () => {
+  assert.match(models, /const \[hfSearchDraft, setHfSearchDraft\] = useState\(""\)/);
+  assert.match(models, /function normalizeHuggingFaceSearchInput/);
+  assert.match(models, /className="models-catalog-search-form" role="search" onSubmit=\{submitHfSearch\}/);
+  assert.match(models, /data-testid="model-specific-hf-submit"/);
+  assert.match(models, /searchMode === "huggingface" && !hfQuery\.trim\(\)/);
+  assert.match(models, /press Enter or Search/);
+});
+
+test("Discover hardware includes CPU, system RAM, GPU facts, and readable native options", () => {
+  assert.match(models, /function systemHardwareSummary/);
+  assert.match(models, /data-testid="model-system-hardware"/);
+  assert.match(models, /logical CPU threads/);
+  assert.match(models, /GB system RAM/);
+  assert.match(models, /GB VRAM/);
+  assert.match(styles, /models-hardware-summary/);
+  assert.match(styles, /models-workspace-v3 select \{ color-scheme: dark;/);
+  assert.match(styles, /select option \{ background-color: #111815; color: #eef7f2;/);
+});
+
+test("Discover downloads start directly and expose Stop in the same controls", () => {
+  assert.match(models, /function preferredDownloadVariant/);
+  assert.match(models, /const downloadCatalogItem = async \(item\)/);
+  assert.match(models, /onDownload=\{\(\) => \{/);
+  assert.match(models, /if \(activelyDownloading\) onDownloadAction\?\.\("cancel", jobId\)/);
+  assert.match(models, /<Square size=\{12\} \/> Stop/);
+  assert.match(models, /aria-label=\{"Stop download for " \+ modelLabel\}/);
+  assert.doesNotMatch(models, /Review before downloading/);
+  assert.match(styles, /models-discover-row-action\.is-stop/);
+});
+
+test("Discover typography has readable route-scoped minimums", () => {
+  assert.match(styles, /is-discover-route \.models-discover-model strong \{ font-size: \.84rem;/);
+  assert.match(styles, /is-discover-route \.models-discover-head \{ font-size: \.65rem;/);
+  assert.match(styles, /is-discover-route \.models-discover-inspector \.models-inspector-facts dt \{ font-size: \.68rem;/);
+});
+
 test("Models inventory uses the forge-green workspace language and responsive inspector layout", () => {
   assert.match(styles, /--models-forge:\s*#4f8a70/);
   assert.match(styles, /models-inventory-workbench[^}]*grid-template-columns/s);

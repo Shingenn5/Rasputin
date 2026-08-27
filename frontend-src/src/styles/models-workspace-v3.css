@@ -673,6 +673,74 @@
 .models-workspace-v3 .models-discover-guidance strong { color: var(--ras-warn); font-size: .58rem; }
 .models-workspace-v3 .models-discover-guidance span { color: var(--dash-muted); font-size: .56rem; line-height: 1.4; }
 
+/* Discover stays compact without shrinking core text below comfortable desktop reading sizes. */
+.models-workspace-v3.is-discover-route .models-source-switcher .w2-button,
+.models-workspace-v3.is-discover-route .model-catalog-filters .w2-input,
+.models-workspace-v3.is-discover-route .model-catalog-filters .w2-button { font-size: .8rem; }
+.models-workspace-v3.is-discover-route .models-catalog-summary { font-size: .72rem; }
+.models-workspace-v3.is-discover-route .models-catalog-summary strong { font-size: .82rem; }
+.models-workspace-v3.is-discover-route .models-discover-head { font-size: .65rem; }
+.models-workspace-v3.is-discover-route .models-discover-model strong { font-size: .84rem; }
+.models-workspace-v3.is-discover-route .models-discover-model small { font-size: .66rem; }
+.models-workspace-v3.is-discover-route .models-discover-row :is(.models-inventory-developer, .models-inventory-context, .models-inventory-fit, .models-discover-downloads) { font-size: .68rem; }
+.models-workspace-v3.is-discover-route .models-discover-row .models-inventory-chip { font-size: .65rem; }
+.models-workspace-v3.is-discover-route .models-discover-row-action { min-height: 31px; font-size: .68rem; }
+.models-workspace-v3.is-discover-route .models-discover-row-action.is-stop { border-color: color-mix(in srgb, var(--ras-danger) 58%, var(--dash-border)); background: color-mix(in srgb, var(--ras-danger) 10%, var(--dash-panel-2)); color: var(--ras-danger); }
+.models-workspace-v3.is-discover-route .models-catalog-pagination,
+.models-workspace-v3.is-discover-route .models-catalog-pagination button,
+.models-workspace-v3.is-discover-route .models-catalog-pagination select { font-size: .7rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-title strong { font-size: .9rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-title small,
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-status { font-size: .65rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-primary-actions button,
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-primary-actions > a { font-size: .72rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-tabs button { font-size: .7rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-section h3 { font-size: .76rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-summary { font-size: .72rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-facts dt { font-size: .68rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-facts dd { font-size: .66rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-callout strong { font-size: .72rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-callout small,
+.models-workspace-v3.is-discover-route .models-discover-variant-picker > label,
+.models-workspace-v3.is-discover-route .models-discover-variant-picker select,
+.models-workspace-v3.is-discover-route .models-inspector-wide-action { font-size: .68rem; }
+
+.models-workspace-v3 .models-catalog-search-form {
+  display: flex;
+  min-width: 280px;
+  flex: 1 1 440px;
+  align-items: center;
+  gap: 7px;
+}
+.models-workspace-v3 .models-catalog-search-form .model-catalog-search { min-width: 180px; flex: 1 1 auto; }
+.models-workspace-v3 .models-catalog-search-form .w2-button { min-height: 34px; flex: 0 0 auto; }
+
+/* Chromium's native popup otherwise inherits light option surfaces with dark-theme white text. */
+.models-workspace-v3 select { color-scheme: dark; background-color: var(--dash-panel-2); color: var(--dash-text); }
+.models-workspace-v3 select option { background-color: #111815; color: #eef7f2; }
+
+.models-workspace-v3 .models-hardware-summary {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 7px;
+  margin-bottom: 4px;
+}
+.models-workspace-v3 .models-hardware-summary > div {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--models-v3-line);
+  border-radius: 7px;
+  padding: 8px 9px;
+  background: var(--models-v3-panel);
+  color: var(--models-forge-bright);
+}
+.models-workspace-v3 .models-hardware-summary > div > span { display: grid; min-width: 0; gap: 2px; }
+.models-workspace-v3 .models-hardware-summary strong { overflow: hidden; color: var(--dash-text); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.models-workspace-v3 .models-hardware-summary small { color: var(--dash-muted); font-size: .66rem; }
+
 
 @media (max-width: 1250px) {
   .models-workspace-v3 .models-inventory-workbench { grid-template-columns: minmax(500px, 1fr) 7px var(--models-inspector-width, 310px); }

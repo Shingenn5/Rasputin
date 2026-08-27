@@ -238,6 +238,7 @@ test("specific Hugging Face action opens and focuses exact-model search", () => 
   assert.match(source, /hfSearchInputRef\.current\?\.focus\(\)/);
   assert.match(source, /data-testid="use-specific-hf-model"/);
   assert.match(source, /onUseSpecificModel=\{openSpecificHuggingFaceModel\}/);
-  assert.match(source, /Paste org\/model or a huggingface\.co URL/);
-  assert.match(source, /Exact matches appear first and still require WarSat review/);
+  assert.match(source, /Model name, org\/model, or Hugging Face URL/);
+  assert.match(source, /then press Enter or Search\. Exact matches appear first/);
+  assert.match(source, /data-testid="model-specific-hf-submit"/);
 });

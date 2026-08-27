@@ -29,6 +29,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Square,
   Trash2,
   Users,
   Wrench,
@@ -219,6 +220,39 @@ export function normalizeHardwareSnapshot(snapshot) {
     checkMessages,
     raw: snapshot,
   };
+}
+
+export function systemHardwareSummary(hardware) {
+  const snapshot = normalizeHardwareSnapshot(hardware);
+  const cpu = snapshot.capabilityProfile?.cpu || {};
+  const detected = snapshot.detectedHardware || {};
+  const gpus = Array.isArray(detected.gpus) ? detected.gpus : [];
+  return {
+    processor: String(cpu.processor || detected.processor || detected.cpu || "Unknown CPU"),
+    logicalCores: Number(cpu.logicalCores ?? cpu.logical_cores ?? detected.logicalCores ?? detected.logical_cores) || null,
+    memoryTotalGb: Number.isFinite(Number(cpu.memoryTotalMb ?? cpu.memory_total_mb))
+      ? Number(cpu.memoryTotalMb ?? cpu.memory_total_mb) / 1024
+      : null,
+    memoryAvailableGb: Number.isFinite(Number(cpu.memoryAvailableMb ?? cpu.memory_available_mb))
+      ? Number(cpu.memoryAvailableMb ?? cpu.memory_available_mb) / 1024
+      : null,
+    gpus,
+  };
+}
+
+export function normalizeHuggingFaceSearchInput(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  try {
+    const candidate = /^https?:\/\//i.test(input) ? new URL(input) : null;
+    if (candidate && /(^|\.)huggingface\.co$/i.test(candidate.hostname)) {
+      const segments = candidate.pathname.split("/").filter(Boolean);
+      return segments.slice(0, 2).join("/").replace(/\.git$/i, "");
+    }
+  } catch {
+    // Keep ordinary search terms intact when the input only resembles a URL.
+  }
+  return input.replace(/^huggingface\.co\//i, "").replace(/\.git$/i, "");
 }
 
 export function advisorStateForInputs({
@@ -452,6 +486,30 @@ export function variantCompatibility(variant) {
     reasons: [...new Set(reasons)],
   };
 }
+export function preferredDownloadVariant(variants, preferMultimodal = false) {
+  const options = Array.isArray(variants) ? variants.filter(Boolean) : [];
+  if (!options.length) return null;
+  const preferredQuantizations = ["Q4_K_M", "Q5_K_M", "Q5_K_S", "Q4_K_S", "Q6_K", "Q8_0", "F16"];
+  const safeOptions = options.filter((variant) => variantCompatibility(variant).safe);
+  const candidates = safeOptions.length ? safeOptions : options;
+  return [...candidates].sort((left, right) => {
+    const leftQuant = String(left?.quantization || "").toUpperCase();
+    const rightQuant = String(right?.quantization || "").toUpperCase();
+    const leftRank = preferredQuantizations.indexOf(leftQuant);
+    const rightRank = preferredQuantizations.indexOf(rightQuant);
+    const quantizationOrder = (leftRank < 0 ? preferredQuantizations.length : leftRank)
+      - (rightRank < 0 ? preferredQuantizations.length : rightRank);
+    if (quantizationOrder) return quantizationOrder;
+    const leftModalityPenalty = Boolean(left?.multimodal) === preferMultimodal ? 0 : 1;
+    const rightModalityPenalty = Boolean(right?.multimodal) === preferMultimodal ? 0 : 1;
+    if (leftModalityPenalty !== rightModalityPenalty) return leftModalityPenalty - rightModalityPenalty;
+    const leftSize = variantTotalBytes(left);
+    const rightSize = variantTotalBytes(right);
+    return (Number.isFinite(leftSize) ? leftSize : Number.MAX_SAFE_INTEGER)
+      - (Number.isFinite(rightSize) ? rightSize : Number.MAX_SAFE_INTEGER);
+  })[0];
+}
+
 export function downloadControlAvailability(download) {
   const state = downloadJobState(download);
   return {
@@ -627,7 +685,7 @@ function ModelDownloadProgress({ download, onDownloadAction, onLoadArtifact, loa
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
           {controls.canPause && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("pause", jobId)} aria-label={"Pause download for " + modelLabel}>Pause</UIButton>}
           {controls.canResume && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("resume", jobId)} aria-label={"Resume download for " + modelLabel}>Resume</UIButton>}
-          {controls.canCancel && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("cancel", jobId)} aria-label={"Cancel download for " + modelLabel}>Cancel</UIButton>}
+          {controls.canCancel && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("cancel", jobId)} aria-label={"Stop download for " + modelLabel}><Square size={12} /> Stop</UIButton>}
           {controls.canRetry && <UIButton variant="outline" size="sm" type="button" onClick={() => onDownloadAction?.("retry", jobId)} aria-label={"Retry download for " + modelLabel}>Retry</UIButton>}
         </div>
       )}
@@ -740,6 +798,7 @@ export function ModelsView({
   const [catalogFit, setCatalogFit] = useState("all");
   const [searchMode, setSearchMode] = useState(() => view === "discover" ? "browse" : "catalog");
   const [hfQuery, setHfQuery] = useState("");
+  const [hfSearchDraft, setHfSearchDraft] = useState("");
   const hfSearchInputRef = useRef(null);
   const [hfResults, setHfResults] = useState([]);
   const [hfLoading, setHfLoading] = useState(false);
@@ -891,6 +950,7 @@ export function ModelsView({
   const effectiveHardware = warsatHardware || localHardware;
   const normalizedHardware = useMemo(() => normalizeHardwareSnapshot(effectiveHardware), [effectiveHardware]);
   const gpuCapacity = useMemo(() => hardwarePlacementCapacity(effectiveHardware), [effectiveHardware]);
+  const systemHardware = useMemo(() => systemHardwareSummary(effectiveHardware), [effectiveHardware]);
   const totalVramGb = gpuCapacity.aggregateVramGb || 0;
 
   useEffect(() => {
@@ -1115,6 +1175,11 @@ export function ModelsView({
   /* Available-model browsing and exact Hugging Face search share one bounded request path. */
   useEffect(() => {
     if (!["browse", "huggingface"].includes(searchMode)) return;
+    if (searchMode === "huggingface" && !hfQuery.trim()) {
+      setHfResults([]);
+      setHfLoading(false);
+      return;
+    }
     // Neither fetch() nor the backend's own HF call had an upper bound the
     // UI could see, so a slow/dropped connection to huggingface.co left the
     // spinner running forever with no error and no way out. Bound it and
@@ -1200,6 +1265,21 @@ export function ModelsView({
     setPage(1);
     requestAnimationFrame(() => hfSearchInputRef.current?.focus());
   };
+  const submitHfSearch = (event) => {
+    event?.preventDefault?.();
+    const query = normalizeHuggingFaceSearchInput(hfSearchDraft);
+    if (!query) {
+      setHfResults([]);
+      setHfError("Enter a model name, org/model ID, or Hugging Face URL.");
+      requestAnimationFrame(() => hfSearchInputRef.current?.focus());
+      return;
+    }
+    setHfSearchDraft(query);
+    setHfQuery(query);
+    setHfError("");
+    setSearchMode("huggingface");
+    setPage(1);
+  };
   const handleAdvisorRefresh = () => {
     setAdvisorRefreshToken((value) => value + 1);
     if (!warsatHardware) setHardwareRefreshToken((value) => value + 1);
@@ -1210,8 +1290,10 @@ export function ModelsView({
       await postJson("/api/models/download", body);
       setDownloadRefreshToken((value) => value + 1);
       setUiState({ status: "success", message: "Started download of " + (variant?.id || modelId) });
+      return true;
     } catch (e) {
       setUiState({ status: "failed", message: "Failed to start download: " + (e.message || "unknown error") });
+      return false;
     }
   };
   const onDownloadAction = async (action, jobId) => {
@@ -1221,6 +1303,38 @@ export function ModelsView({
       setDownloadRefreshToken((value) => value + 1);
     } catch (e) {
       setDownloadError("Unable to " + action + " download: " + (e.message || "unknown error"));
+    }
+  };
+
+  const downloadCatalogItem = async (item) => {
+    const modelId = catalogModelId(item);
+    const existing = catalogDownloadFor(item, activeDownloads);
+    const existingState = existing ? downloadJobState(existing) : "";
+    if (existing && !["completed", "failed", "cancelled"].includes(existingState)) {
+      await onDownloadAction("cancel", downloadJobIdentity(existing));
+      return;
+    }
+    if (existingState === "completed") {
+      setSelectedCatalogId(item.id || item.modelId);
+      setDiscoverInspectorTab("download");
+      return;
+    }
+    if (searchMode === "catalog" && item.source !== "huggingface") {
+      await prepareCatalogModelForWarsat?.(item);
+      return;
+    }
+    setUiState({ status: "running", message: "Choosing a balanced GGUF download for " + modelId + "..." });
+    try {
+      const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
+      const detail = await api("/api/model-catalog/model/" + encodedModelId);
+      if (detail?.error) throw new Error(detail.error);
+      const variants = Array.isArray(detail?.variants) ? detail.variants : [];
+      const capabilities = [...(item.capabilities || []), ...(item.modalities || [])]
+        .map((value) => String(value).toLowerCase());
+      const preferred = preferredDownloadVariant(variants, capabilities.some((value) => ["vision", "image", "multimodal"].includes(value)));
+      await startDownload(modelId, preferred);
+    } catch (error) {
+      setUiState({ status: "failed", message: "Failed to start download: " + (error?.message || "unknown error") });
     }
   };
 
@@ -1384,7 +1498,7 @@ export function ModelsView({
                 {!desktopOnly && <button className={`w2-button ${searchMode === "catalog" ? "primary" : ""}`} type="button" onClick={() => setSearchMode("catalog")}>
                   <HardDrive size={14} /> Local Catalog
                 </button>}
-                <button className={`w2-button ${searchMode === "browse" ? "primary" : ""}`} data-testid="discover-browse-models" type="button" onClick={() => { setHfQuery(""); setSearchMode("browse"); }}>
+                <button className={`w2-button ${searchMode === "browse" ? "primary" : ""}`} data-testid="discover-browse-models" type="button" onClick={() => { setHfQuery(""); setHfSearchDraft(""); setHfError(""); setSearchMode("browse"); }}>
                   <Cloud size={14} /> Browse Catalog
                 </button>
                 <button className={`w2-button ${searchMode === "huggingface" ? "primary" : ""}`} data-testid="discover-search-models" type="button" onClick={openSpecificHuggingFaceModel}>
@@ -1403,19 +1517,34 @@ export function ModelsView({
               {/* Search + filters */}
               <div className="model-catalog-filters" style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
                 {searchMode !== "browse" && <Search size={16} color="var(--cc-muted)" />}
-                {searchMode !== "browse" && <input
-                  ref={hfSearchInputRef}
-                  className="w2-input model-catalog-search"
-                  style={{ minWidth: "240px", flex: "1 1 320px" }}
-                  aria-label={searchMode === "huggingface" ? "Hugging Face model ID, URL, or search terms" : "Search models"}
-                  data-testid="model-specific-hf-input"
-                  value={searchMode === "huggingface" ? hfQuery : catalogSearch}
-                  onChange={e => searchMode === "huggingface" ? setHfQuery(e.target.value) : setCatalogSearch(e.target.value)}
-                  placeholder={searchMode === "huggingface" ? "Paste org/model or a huggingface.co URL" : "Filter locally cached models by name..."}
-                />}
+                {searchMode === "huggingface" ? (
+                  <form className="models-catalog-search-form" role="search" onSubmit={submitHfSearch}>
+                    <input
+                      ref={hfSearchInputRef}
+                      className="w2-input model-catalog-search"
+                      aria-label="Hugging Face model ID, URL, or search terms"
+                      data-testid="model-specific-hf-input"
+                      value={hfSearchDraft}
+                      onChange={(event) => setHfSearchDraft(event.target.value)}
+                      placeholder="Model name, org/model, or Hugging Face URL"
+                    />
+                    <button className="w2-button primary" type="submit" data-testid="model-specific-hf-submit">
+                      <Search size={14} /> Search
+                    </button>
+                  </form>
+                ) : searchMode !== "browse" ? (
+                  <input
+                    className="w2-input model-catalog-search"
+                    style={{ minWidth: "240px", flex: "1 1 320px" }}
+                    aria-label="Search models"
+                    value={catalogSearch}
+                    onChange={(event) => setCatalogSearch(event.target.value)}
+                    placeholder="Filter locally cached models by name..."
+                  />
+                ) : null}
                 {searchMode === "huggingface" && (
                   <span className="w-full text-xs text-muted-foreground" data-testid="model-specific-hf-help">
-                    Enter an exact model ID or Hugging Face URL, or use ordinary search terms. Exact matches appear first and still require WarSat review.
+                    Enter a model name, exact org/model ID, or Hugging Face URL, then press Enter or Search. Exact matches appear first.
                   </span>
                 )}
                 <select className="w2-input" style={{ width: "140px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
@@ -1448,6 +1577,17 @@ export function ModelsView({
               <details className="model-hardware-filters">
                 <summary><SlidersHorizontal size={14} /> Hardware</summary>
                 <div className="model-vram-filter" data-testid="model-vram-filter">
+                <div className="models-hardware-summary" data-testid="model-system-hardware">
+                  <div><Cpu size={15} /><span><strong>{systemHardware.processor}</strong><small>{systemHardware.logicalCores ? `${systemHardware.logicalCores} logical CPU threads` : "CPU thread count unavailable"}</small></span></div>
+                  <div><Database size={15} /><span><strong>{systemHardware.memoryTotalGb == null ? "System RAM unavailable" : `${systemHardware.memoryTotalGb.toFixed(1)} GB system RAM`}</strong><small>{systemHardware.memoryAvailableGb == null ? "Available RAM unavailable" : `${systemHardware.memoryAvailableGb.toFixed(1)} GB currently available`}</small></span></div>
+                  {systemHardware.gpus.map((gpu, index) => {
+                    const totalMb = Number(gpu.memoryTotalMb ?? gpu.memory_total_mb);
+                    const freeMb = Number(gpu.memoryFreeMb ?? gpu.memory_free_mb);
+                    return (
+                      <div key={`${gpu.name || "gpu"}-${index}`}><Gauge size={15} /><span><strong>{gpu.name || `GPU ${index + 1}`}</strong><small>{Number.isFinite(totalMb) ? `${(totalMb / 1024).toFixed(1)} GB VRAM` : "VRAM unavailable"}{Number.isFinite(freeMb) ? `, ${(freeMb / 1024).toFixed(1)} GB free` : ""}</small></span></div>
+                    );
+                  })}
+                </div>
                 <span className="model-vram-filter__capacity" data-testid="model-placement-capacity">
                   Largest single GPU: <strong>{gpuCapacity.largestSingleGpuGb ? gpuCapacity.largestSingleGpuGb.toFixed(1) + " GB" : "unknown"}</strong>
                   {" Â· "}Optional combined layer-sharding pool: <strong>{totalVramGb > 0 ? totalVramGb.toFixed(1) + " GB" : "unknown"}</strong>
@@ -1562,7 +1702,12 @@ export function ModelsView({
                               placementFit={catalogPlacementAssessment(item, effectiveHardware)}
                               activeDownloads={activeDownloads}
                               onSelect={() => setSelectedCatalogId(itemId)}
-                              onOpenDownload={() => {
+                              onDownload={() => {
+                                setSelectedCatalogId(itemId);
+                                downloadCatalogItem(item);
+                              }}
+                              onDownloadAction={onDownloadAction}
+                              onManage={() => {
                                 setSelectedCatalogId(itemId);
                                 setDiscoverInspectorTab("download");
                               }}
@@ -1611,6 +1756,8 @@ export function ModelsView({
                       prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
                       searchMode={searchMode}
                       startDownload={startDownload}
+                      downloadCatalogItem={downloadCatalogItem}
+                      onDownloadAction={onDownloadAction}
                       activeDownloads={activeDownloads}
                     />
                   </div>
@@ -2248,7 +2395,7 @@ function CatalogPagination({ total, currentPage, pageCount, pageSize, onPageChan
   );
 }
 
-function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onSelect, onOpenDownload }) {
+function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onSelect, onDownload, onDownloadAction, onManage }) {
   const modelId = catalogModelId(item);
   const modelName = String(item?.name || modelId.split("/").pop() || modelId);
   const developer = catalogPublisher(item);
@@ -2257,6 +2404,7 @@ function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onS
   const downloadState = download ? downloadJobState(download) : "";
   const activelyDownloading = Boolean(download && !["completed", "failed", "cancelled"].includes(downloadState));
   const downloaded = downloadState === "completed";
+  const jobId = downloadJobIdentity(download);
   const placement = placementFit || catalogPlacementAssessment(item, null);
   const fitReady = downloaded || item?.readyWithinThreeMinutes || item?.loaded || placement.canDeploy;
   const fitLabel = downloaded ? "Downloaded" : activelyDownloading ? labelize(downloadState) : placement.label;
@@ -2295,15 +2443,18 @@ function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onS
       <div className="studio-installed-actions" role="cell">
         <button
           type="button"
-          className="models-discover-row-action"
+          className={`models-discover-row-action ${activelyDownloading ? "is-stop" : ""}`}
           data-testid="discover-row-download"
-          aria-label={`Open download options for ${modelName}`}
+          aria-label={activelyDownloading ? `Stop download for ${modelName}` : downloaded ? `Manage downloaded model ${modelName}` : `Download ${modelName}`}
+          disabled={activelyDownloading && !jobId}
           onClick={(event) => {
             event.stopPropagation();
-            onOpenDownload();
+            if (activelyDownloading) onDownloadAction?.("cancel", jobId);
+            else if (downloaded) onManage?.();
+            else onDownload?.();
           }}
         >
-          <Download size={12} /> {activelyDownloading ? labelize(downloadState) : downloaded ? "Manage" : "Download"}
+          {activelyDownloading ? <><Square size={12} /> Stop</> : downloaded ? <><CheckCircle2 size={12} /> Manage</> : <><Download size={12} /> Download</>}
         </button>
       </div>
     </div>
@@ -2320,6 +2471,8 @@ function DiscoverModelInspector({
   prepareCatalogModelForWarsat,
   searchMode,
   startDownload,
+  downloadCatalogItem,
+  onDownloadAction,
   activeDownloads,
 }) {
   const [variantDetail, setVariantDetail] = useState(null);
@@ -2379,33 +2532,35 @@ function DiscoverModelInspector({
     }
   };
 
+  const activeDownloadId = downloadJobIdentity(activeDownload);
   const runPrimaryAction = async () => {
     onTabChange("download");
+    if (isDownloading) {
+      await onDownloadAction?.("cancel", activeDownloadId);
+      return;
+    }
     if (!isHuggingFace) {
       await prepareCatalogModelForWarsat?.(item);
       return;
     }
-    if (!variantDetail) {
-      await loadVariantDetail();
+    if (selectedVariant) {
+      await startDownload(modelId, selectedVariant);
       return;
     }
-    await startDownload(modelId, selectedVariant || null);
+    await downloadCatalogItem?.(item);
   };
 
   const primaryLabel = isDownloading
-    ? labelize(activeDownloadState)
+    ? "Stop"
     : downloaded
       ? "Downloaded"
       : !isHuggingFace
         ? "Prepare model"
-        : !variantDetail
-          ? "Choose GGUF"
-          : variants.length
-            ? "Download selected"
-            : "Download weights";
-  const primaryDisabled = isDownloading || downloaded || (variants.length > 0 && !selectedVariant) || (selectedCompatibility && !selectedCompatibility.safe);
+        : "Download";
+  const primaryDisabled = downloaded || (isDownloading && !activeDownloadId);
+  const exactDownloadDisabled = downloaded || isDownloading || (variants.length > 0 && !selectedVariant);
   const fitReady = downloaded || item.readyWithinThreeMinutes || item.loaded || placement.canDeploy;
-  const fitStatus = downloaded ? "Downloaded" : fitReady ? placement.label : "Needs review";
+  const fitStatus = downloaded ? "Downloaded" : fitReady ? placement.label : "Fit uncertain";
 
   const handleTabKeyDown = (event, tab) => {
     const index = tabs.indexOf(tab);
@@ -2434,7 +2589,7 @@ function DiscoverModelInspector({
         <span className={`models-inspector-status ${fitReady ? "is-ready" : ""}`}>{fitStatus}</span>
         <div className="models-inspector-primary-actions">
           <button className="w2-button primary" type="button" data-testid="discover-download-action" onClick={runPrimaryAction} disabled={primaryDisabled}>
-            <Download size={13} /> {primaryLabel}
+            {isDownloading ? <Square size={13} /> : <Download size={13} />} {primaryLabel}
           </button>
           {item.sourceUrl ? (
             <a className="w2-button" href={item.sourceUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Source</a>
@@ -2527,7 +2682,7 @@ function DiscoverModelInspector({
               {variantDetail && variants.length === 0 && <p className="models-inspector-summary">No complete GGUF variants were returned. The original model weights remain available.</p>}
               {variantIssues.map((issue, index) => <div key={(issue.kind || "issue") + index} className="models-discover-warning">{issue.reason || issue.kind}{issue.nextAction ? ` ú ${issue.nextAction}` : ""}</div>)}
               {variantDetail && (
-                <button className="models-inspector-wide-action is-primary" type="button" onClick={() => startDownload(modelId, selectedVariant || null)} disabled={primaryDisabled}>
+                <button className="models-inspector-wide-action is-primary" type="button" onClick={() => startDownload(modelId, selectedVariant || null)} disabled={exactDownloadDisabled}>
                   <Download size={13} /> {variants.length ? "Download selected GGUF" : "Download model weights"}
                 </button>
               )}
@@ -2543,7 +2698,7 @@ function DiscoverModelInspector({
           <h3>Hardware fit</h3>
           <div className="models-inspector-callout">
             {blocked ? <AlertTriangle size={16} /> : <Gauge size={16} />}
-            <span><strong>{blocked ? "Review before downloading" : "Fits your current hardware"}</strong><small>{placement.reasons?.[0] || "Rasputin can place this model automatically."}</small></span>
+            <span><strong>{blocked ? "May need a different load profile" : "Fits your current hardware"}</strong><small>{placement.reasons?.[0] || "Downloading is immediate; Rasputin chooses placement when you load the model."}</small></span>
           </div>
           <dl className="models-inspector-facts">
             {[
