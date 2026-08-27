@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Activity,
   AlertTriangle,
-  BookOpen,
   CheckCircle2,
   Cloud,
   Cpu,
@@ -51,12 +50,13 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { blockerGuidanceForReasons } from "../shared/blockerGuidance.js";
 import { ModelIdentity } from "./ModelIdentity.jsx";
+import { PublisherLogo } from "./PublisherLogo.jsx";
 import { ModelLoadDialog } from "./ModelLoadDialog.jsx";
 import { ModelServingPanel } from "./ModelServingPanel.jsx";
+import "../../styles/models-workspace-v3.css";
 
 /* ── Tab config ── */
 const modelsTabs = [
-  { id: "library",    label: "Library",     icon: BookOpen },
   { id: "installed",  label: "Installed",   icon: Package },
   { id: "running",    label: "Running",     icon: Activity },
   { id: "serving",    label: "Serving",     icon: RadioTower },
@@ -156,7 +156,7 @@ export function hardwarePlacementCapacity(hardware) {
 }
 
 export function shouldProbeHardware(view, hasHardware, attempt, refreshToken) {
-  return view === "models" && !hasHardware && attempt !== refreshToken;
+  return ["discover", "models"].includes(view) && !hasHardware && attempt !== refreshToken;
 }
 
 function hardwareStrings(value) {
@@ -465,6 +465,55 @@ function formatDownloadBytes(value) {
   if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB";
   return bytes + " B";
 }
+function installedModelCategory(model) {
+  const blob = [model?.role, model?.purpose, model?.model, model?.name, ...(model?.capabilities || [])]
+    .filter(Boolean).join(" ").toLowerCase();
+  return blob.includes("embed") ? "embedding" : "llm";
+}
+
+function installedModelPath(model) {
+  return String(model?.host_model_path || model?.model_path || model?.modelPath || model?.path || "");
+}
+
+function installedModelFile(model) {
+  const path = installedModelPath(model);
+  return path ? path.split(/[\\/]/).pop() : String(model?.model || model?.key || "Unknown");
+}
+
+function installedModelPublisher(model) {
+  const modelId = String(model?.model || model?.name || "");
+  return String(model?.publisher || (modelId.includes("/") ? modelId.split("/")[0] : "") || model?.provider || "Local");
+}
+
+function installedModelArchitecture(model) {
+  return String(model?.architecture || model?.arch || model?.model_family || model?.family || "—");
+}
+
+function installedModelParameters(model) {
+  const declared = Number(model?.parameterCountB ?? model?.parameter_count_b);
+  if (Number.isFinite(declared) && declared > 0) return `${declared}B`;
+  const match = String(model?.model || model?.name || model?.key || "").match(/(?:^|[-_ ])(\d+(?:\.\d+)?)b(?:[-_ ]|$)/i);
+  return match ? `${match[1]}B` : "—";
+}
+
+function installedModelQuantization(model) {
+  const declared = model?.quantization || model?.quantization_profile || model?.quantizationType;
+  if (declared) return String(declared);
+  const match = installedModelFile(model).match(/(?:^|[-_.])(Q\d(?:_[A-Z0-9]+)+)(?:[-_.]|$)/i);
+  return match ? match[1].toUpperCase() : "—";
+}
+
+function installedModelFormat(model) {
+  if (/\.gguf$/i.test(installedModelFile(model)) || model?.runtime === "native-llamacpp") return "GGUF";
+  if (String(model?.provider || "").includes("openai") || String(model?.runtime || "").includes("external")) return "API";
+  return String(model?.format || "Model").toUpperCase();
+}
+
+function installedModelSize(model) {
+  const value = model?.sizeBytes ?? model?.size_bytes ?? model?.fileSize ?? model?.file_size;
+  return value == null ? "—" : formatDownloadBytes(value);
+}
+
 function variantTotalBytes(variant) {
   const declared = Number(variant?.totalBytes ?? variant?.total_bytes);
   if (Number.isFinite(declared) && declared >= 0) return declared;
@@ -642,7 +691,7 @@ export function ModelsView({
   openWarsat,
   go,
 }) {
-  const [activeTab, setActiveTab] = useState("library");
+  const [activeTab, setActiveTab] = useState("installed");
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
   const [modelsRailCollapsed, setModelsRailCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -654,6 +703,12 @@ export function ModelsView({
   });
   const modelTabRefs = useRef({});
   const executeAction = useReliableAction("ModelsView");
+  const modelsWorkspaceOpen = ["discover", "models"].includes(view);
+
+  useEffect(() => {
+    if (view === "discover") setActiveTab("library");
+    else if (view === "models") setActiveTab((current) => current === "library" ? "installed" : current);
+  }, [view]);
 
   const focusModelTab = (tabId) => {
     requestAnimationFrame(() => modelTabRefs.current[tabId]?.focus());
@@ -710,11 +765,15 @@ export function ModelsView({
   const [downloadRefreshToken, setDownloadRefreshToken] = useState(0);
   const [loadingArtifact, setLoadingArtifact] = useState(null);
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
+  const [installedSearch, setInstalledSearch] = useState("");
+  const [installedCategory, setInstalledCategory] = useState("all");
+  const [selectedInstalledKey, setSelectedInstalledKey] = useState("");
+  const installedSearchInputRef = useRef(null);
   const [loadDialogModel, setLoadDialogModel] = useState(null);
   const completedRefreshJobs = useRef(new Set());
 
   useEffect(() => {
-    if (view !== "models") return undefined;
+    if (!modelsWorkspaceOpen) return undefined;
     let disposed = false;
     let timer;
     const pollDownloads = async () => {
@@ -829,10 +888,49 @@ export function ModelsView({
     m.key !== "dry-run" && !["mock", "hash-vector"].includes(m.provider)
   )), [models]);
   const installedModels = registeredModels;
+  const filteredInstalledModels = useMemo(() => {
+    const query = installedSearch.trim().toLowerCase();
+    return installedModels.filter((model) => {
+      if (installedCategory !== "all" && installedModelCategory(model) !== installedCategory) return false;
+      if (!query) return true;
+      const searchable = [
+        model.key,
+        model.name,
+        model.model,
+        model.provider,
+        model.runtime,
+        model.role,
+        model.architecture,
+        model.arch,
+        model.quantization,
+      ].filter(Boolean).join(" ").toLowerCase();
+      return searchable.includes(query);
+    });
+  }, [installedModels, installedSearch, installedCategory]);
+  const selectedInstalledModel = filteredInstalledModels.find((model) => model.key === selectedInstalledKey)
+    || filteredInstalledModels[0]
+    || null;
   const reachableModels = useMemo(() => registeredModels.filter(m => runtimeStatus(m) === "reachable"), [registeredModels]);
   const runningModels = useMemo(() => registeredModels.filter(m => (
     m.managed && ["running", "reachable"].includes(String(m.container_status || m.runtime_status || "").toLowerCase())
   )), [registeredModels]);
+
+  useEffect(() => {
+    const nextKey = selectedInstalledModel?.key || "";
+    if (nextKey !== selectedInstalledKey) setSelectedInstalledKey(nextKey);
+  }, [selectedInstalledModel, selectedInstalledKey]);
+
+  useEffect(() => {
+    if (view !== "models" || activeTab !== "installed") return undefined;
+    const focusInstalledSearch = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        installedSearchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusInstalledSearch);
+    return () => window.removeEventListener("keydown", focusInstalledSearch);
+  }, [view, activeTab]);
 
   const filteredCatalog = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase();
@@ -851,7 +949,7 @@ export function ModelsView({
 
   useEffect(() => {
     let disposed = false;
-    if (view !== "models") return () => { disposed = true; };
+    if (!modelsWorkspaceOpen) return () => { disposed = true; };
     const terminalState = advisorStateForInputs({
       catalogLoading: modelCatalogLoading,
       hardwareProbeStatus: hardwareProbeState.status,
@@ -1091,32 +1189,32 @@ export function ModelsView({
 
   const modelsSurface = (
     <section
-      className={`w2-layout app-view models-view tw ${view === "models" ? "active" : ""}`}
+      className={`w2-layout app-view models-view models-workspace-v3 tw ${view === "discover" ? "is-discover-route" : ""} ${modelsWorkspaceOpen ? "active" : ""}`}
       id="modelsView"
-      data-app-view="models"
-      data-models-rail-collapsed={desktopOnly && modelsRailCollapsed ? "true" : undefined}
+      data-app-view={view === "discover" ? "discover" : "models"}
+      data-models-rail-collapsed={view === "models" && desktopOnly && modelsRailCollapsed ? "true" : undefined}
     >
       <div className="models-page-shell fx-rise mx-auto flex w-full min-w-0 max-w-[1600px] flex-col">
 
       {/* ── Header ── */}
-      <div className="models-page-header">
-        <div>
-          <h1>Models</h1>
-          <p>Your local model library and native llama.cpp runtime.</p>
+      <div className="models-page-header models-v3-command-band">
+        <div className="models-v3-command-copy">
+          <h1>{view === "discover" ? "Discover Models" : "Models"}</h1>
+          <p>{view === "discover" ? "Find and download a model for your hardware." : "Manage your local model library and native llama.cpp runtime."}</p>
         </div>
         {desktopOnly && (
           <div className="models-header-runtime" aria-label="Native runtime status">
             <span aria-hidden="true" /> Native · llama.cpp
           </div>
         )}
-        <div className={desktopOnly ? "hidden" : "flex min-w-0 flex-wrap justify-end gap-3"}>
+        <div className="models-v3-runtime-metrics">
           {[
             { v: totalModels, l: "Registered", c: "text-foreground" },
             { v: healthyCount, l: "Reachable now", c: "text-primary" },
             { v: runningModels.length, l: desktopOnly ? "Running models" : "Running containers", c: "text-amber-400" },
             { v: catalogItems.length, l: "Cached locally", c: "text-sky-400" },
           ].map((s) => (
-            <div key={s.l} className="glow-card rounded-xl border border-border bg-card px-4 py-2.5 text-center">
+            <div key={s.l} className="models-v3-metric">
               <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
               <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
             </div>
@@ -1125,12 +1223,11 @@ export function ModelsView({
       </div>
 
       {/* ── Tab Bar ── */}
-      <div className="models-page-rail">
+      {view === "models" && <div className="models-page-rail">
         <div id="models-navigation" className="models-page-tabs" role="tablist" aria-orientation={desktopOnly ? "vertical" : "horizontal"} aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
           const desktopItem = {
-            library: { label: "Discover", hint: "Browse and download" },
             installed: { label: "My Models", hint: "Local and connected" },
             running: { label: "Loaded", hint: "Active runtime" },
             serving: { label: "Serving", hint: "APIs, MCP, metrics" },
@@ -1152,8 +1249,9 @@ export function ModelsView({
               ref={(node) => { modelTabRefs.current[t.id] = node; }}
               onKeyDown={(event) => handleModelTabKeyDown(event, t.id)}
               onClick={() => setActiveTab(t.id)}
+              className="models-v3-tab"
             >
-              <Icon size={15} />
+              <span className="models-v3-tab-icon"><Icon size={15} /></span>
               <span>
                 <strong>{desktopItem.label}</strong>
                 {desktopOnly && <small>{desktopItem.hint}</small>}
@@ -1184,15 +1282,15 @@ export function ModelsView({
             <span>{modelsRailCollapsed ? "Expand navigation" : "Collapse to icons"}</span>
           </button>
         )}
-      </div>
+      </div>}
 
       {/* ── Content ── */}
-      <div className={desktopOnly ? "models-page-content" : "w2-main-grid"}>
+      <div className={`${desktopOnly ? "models-page-content" : "w2-main-grid"} models-v3-content`}>
         <div className="w2-column">
 
           {/* ═══ LIBRARY TAB ═══ */}
           {activeTab === "library" && (
-            <div id="models-panel-library" role="tabpanel" aria-labelledby="models-tab-library" className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-library" role="region" aria-label="Discover models" className="w2-section models-v3-panel" style={{ flex: 1 }}>
               {!showAllModels ? (
                 <GuidedRecommendations
                   advisorState={advisorState}
@@ -1361,7 +1459,7 @@ export function ModelsView({
               )}
 
               {/* Model catalog */}
-              <div className={desktopOnly ? "studio-model-browser" : ""}>
+              <div className={`${desktopOnly ? "studio-model-browser" : ""} models-v3-catalog-stage`}>
                 <div className={desktopOnly ? "studio-model-list" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"} data-testid="model-catalog-grid">
                   {pagedItems.map(item => (
                     <CatalogCard
@@ -1418,36 +1516,93 @@ export function ModelsView({
 
           {/* ═══ INSTALLED TAB ═══ */}
           {activeTab === "installed" && (
-            <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section studio-installed-panel" style={{ flex: 1 }}>
-              <div className="models-source-switcher">
-                <h2 style={{ margin: 0, fontSize: "1rem" }}>Local Registry</h2>
-                <div style={{ flex: 1 }} />
-                <button className="w2-button" type="button" onClick={handleScanGguf}><HardDrive size={14} /> Scan GGUF</button>
-                <button className="w2-button" type="button" onClick={handleRefresh}><RefreshCw size={14} /> Refresh</button>
-              </div>
-
-              <div className="studio-installed-list" data-testid="studio-installed-list">
-                {desktopOnly && (
-                  <div className="studio-installed-head" aria-hidden="true">
-                    <span>Model</span><span>Runtime</span><span>Compatibility</span><span>Actions</span>
+            <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section models-v3-panel studio-installed-panel" style={{ flex: 1 }}>
+              <div className="models-inventory-workbench">
+                <section className="models-inventory-main" aria-labelledby="models-inventory-title">
+                  <div className="models-inventory-toolbar">
+                    <div className="models-inventory-heading">
+                      <h2 id="models-inventory-title">My Models</h2>
+                      <label className="models-inventory-category">
+                        <span className="sr-only">Model category</span>
+                        <select value={installedCategory} onChange={(event) => setInstalledCategory(event.target.value)}>
+                          <option value="all">All</option>
+                          <option value="llm">LLMs</option>
+                          <option value="embedding">Text Embedding</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="models-inventory-search">
+                      <Search size={15} aria-hidden="true" />
+                      <span className="sr-only">Filter installed models</span>
+                      <input
+                        ref={installedSearchInputRef}
+                        type="search"
+                        value={installedSearch}
+                        onChange={(event) => setInstalledSearch(event.target.value)}
+                        placeholder="Filter models… (Ctrl + F)"
+                        aria-label="Filter installed models"
+                      />
+                    </label>
+                    <div className="models-inventory-tools">
+                      <button className="w2-button" type="button" onClick={handleScanGguf}><HardDrive size={14} /> Scan GGUF</button>
+                      <button className="w2-button" type="button" onClick={handleRefresh}><RefreshCw size={14} /> Refresh</button>
+                    </div>
                   </div>
-                )}
-                {installedModels.map(model => (
-                  <InstalledCard key={model.key} model={model} allModels={models} runModelAction={runModelAction} executeAction={executeAction} setUiState={setUiState} onConfigureLoad={setLoadDialogModel} />
-                ))}
-              </div>
 
-              {!installedModels.length && (
-                <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
-                  No models registered. Use Library to discover, or Settings to connect endpoints.
-                </div>
-              )}
+                  <div className="studio-installed-list models-inventory-table" data-testid="studio-installed-list" role="table" aria-label="Installed models">
+                    <div className="studio-installed-head" role="row">
+                      <span role="columnheader">Device</span>
+                      <span role="columnheader">Arch</span>
+                      <span role="columnheader">Params</span>
+                      <span role="columnheader">Publisher</span>
+                      <span role="columnheader">Model</span>
+                      <span role="columnheader">Actions</span>
+                    </div>
+                    {filteredInstalledModels.map(model => (
+                      <InstalledCard
+                        key={model.key}
+                        model={model}
+                        allModels={models}
+                        selected={selectedInstalledModel?.key === model.key}
+                        onSelect={() => setSelectedInstalledKey(model.key)}
+                        runModelAction={runModelAction}
+                        executeAction={executeAction}
+                        setUiState={setUiState}
+                        onConfigureLoad={setLoadDialogModel}
+                      />
+                    ))}
+                  </div>
+
+                  {!filteredInstalledModels.length && (
+                    <div className="models-inventory-empty">
+                      {installedModels.length ? "No installed models match this filter." : "No models registered. Use Discover to download a model, or Developer to connect an endpoint."}
+                    </div>
+                  )}
+                  <footer className="models-inventory-footer">
+                    <span>{filteredInstalledModels.length} of {installedModels.length} models</span>
+                    <span>{reachableModels.length} reachable · {runningModels.length} loaded</span>
+                  </footer>
+                </section>
+
+                <InstalledModelInspector
+                  model={selectedInstalledModel}
+                  allModels={models}
+                  onUseInChat={(model) => {
+                    setSelectedModel?.(model.key);
+                    go?.("chat");
+                  }}
+                  runModelAction={runModelAction}
+                  executeAction={executeAction}
+                  setUiState={setUiState}
+                  onConfigureLoad={setLoadDialogModel}
+                />
+              </div>
             </div>
           )}
 
           {/* ═══ RUNNING TAB ═══ */}
           {activeTab === "running" && (
-            <div id="models-panel-running" role="tabpanel" aria-labelledby="models-tab-running" className="w2-section" style={{ flex: 1 }}>
+            <div id="models-panel-running" role="tabpanel" aria-labelledby="models-tab-running" className="w2-section models-v3-panel models-v3-running" style={{ flex: 1 }}>
               <ActiveModelCard
                 model={activeModel}
                 models={models}
@@ -1483,14 +1638,14 @@ export function ModelsView({
           )}
 
           {activeTab === "serving" && (
-            <div id="models-panel-serving" role="tabpanel" aria-labelledby="models-tab-serving" className="w2-section models-serving-tab" style={{ flex: 1 }}>
+            <div id="models-panel-serving" role="tabpanel" aria-labelledby="models-tab-serving" className="w2-section models-v3-panel models-serving-tab" style={{ flex: 1 }}>
               <ModelServingPanel onOpenModels={() => setActiveTab("running")} />
             </div>
           )}
 
           {/* ═══ SETTINGS TAB ═══ */}
           {activeTab === "settings" && (
-            <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section models-developer-panel" style={{ flex: 1 }}>
+            <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section models-v3-panel models-developer-panel" style={{ flex: 1 }}>
               <header className="models-developer-header" data-testid="models-developer-header">
                 <div className="models-runtime-state">
                   <span aria-hidden="true" />
@@ -1624,9 +1779,9 @@ export function ModelsView({
   if (desktopOnly) {
     return (
       <Modal
-        open={view === "models"}
+        open={modelsWorkspaceOpen}
         onClose={() => go?.("chat")}
-        title="Models"
+        title={view === "discover" ? "Discover Models" : "Models"}
         size="xl"
         className="studio-models-modal"
         data-testid="desktop-models-dialog"
@@ -1995,7 +2150,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
 
   return (
     <article
-      className={"ras-list-item glow-card flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 " + (selected ? "is-selected" : "")}
+      className={"ras-list-item glow-card models-v3-model-card flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 " + (selected ? "is-selected" : "")}
       data-testid="model-catalog-card"
       tabIndex={onSelect ? 0 : undefined}
       aria-selected={onSelect ? selected : undefined}
@@ -2136,7 +2291,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
 /* ═══════════════════════════════════════════
    INSTALLED CARD
    ═══════════════════════════════════════════ */
-function InstalledCard({ model, allModels, runModelAction, executeAction, setUiState, onConfigureLoad }) {
+function InstalledCard({ model, allModels, selected = false, onSelect, runModelAction, executeAction, setUiState, onConfigureLoad }) {
   const name = displayModelName(model, allModels);
   const secondary = displayModelSecondary(model, allModels);
   const st = runtimeStatus(model);
@@ -2144,53 +2299,174 @@ function InstalledCard({ model, allModels, runModelAction, executeAction, setUiS
   const mismatch = modelMismatchLine(model);
   const ctx = contextWindowFor(model);
 
-  const [busy, setBusy] = useState(null); // which action is in flight
+  const [busy, setBusy] = useState(null);
   const nativeRuntime = model.runtime === "native-llamacpp";
   const isRunning = ["running", "reachable"].includes(String(model.container_status || model.runtime_status || "").toLowerCase());
-  const runAction = async (key, name, op) => {
+  const runAction = async (key, actionName, op) => {
     setBusy(key);
     try {
-      await executeAction(name, model.key, async () => runModelAction?.(op, model.key), setUiState);
+      await executeAction(actionName, model.key, async () => runModelAction?.(op, model.key), setUiState);
     } finally {
       setBusy(null);
     }
   };
   const handleTest = () => runAction("test", "TestHealth", "test");
   const handleDiscover = () => runAction("discover", "Discover", "discover");
-  const handleRuntime = () => nativeRuntime && !isRunning ? onConfigureLoad?.(model) : runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
+  const handleRuntime = () => nativeRuntime && !isRunning
+    ? onConfigureLoad?.(model)
+    : runAction(isRunning ? "stop" : "start", isRunning ? "StopModel" : "StartModel", isRunning ? "stop" : "start");
+  const device = String(model.runtime || model.provider || "").includes("remote") ? "Remote" : "Local";
 
   return (
-    <div className="studio-installed-row ras-list-item border border-border bg-card">
-      <div className="studio-installed-model">
-        <Cpu size={18} style={{ color: statusColor(st) }} />
-        <div>
-          <strong className="text-sm">{name}</strong>
-          {secondary && <div className="text-[0.7rem] text-muted-foreground">{secondary}</div>}
-          <div className="studio-installed-meta">{model.model || "Local model"}</div>
-        </div>
-      </div>
-
-      <div className="studio-installed-runtime">
-        <Badge variant={isHealthy ? "up" : "down"}>{isHealthy ? "Healthy" : labelize(st)}</Badge>
-        <span>{model.runtime || model.provider || "local"}</span>
-        <small>{labelize(model.role || "chat")}{ctx > 0 ? ` · ${ctx.toLocaleString()} context` : ""}</small>
-      </div>
-
-      <div className="studio-installed-compatibility">
-        {mismatch && <div className="studio-installed-warning"><AlertTriangle size={13} /> {mismatch}</div>}
-        <CompatibilitySummary model={model} />
-      </div>
-
-      <div className="studio-installed-actions">
+    <div
+      className={`studio-installed-row models-inventory-row ${selected ? "is-selected" : ""}`}
+      data-testid="installed-model-row"
+      data-model-key={model.key}
+      role="row"
+      aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect?.();
+        }
+      }}
+    >
+      <span className="models-inventory-device" role="cell"><i style={{ background: statusColor(st) }} aria-hidden="true" />{device}</span>
+      <span className="models-inventory-chip" role="cell">{installedModelArchitecture(model)}</span>
+      <span className="models-inventory-chip" role="cell">{installedModelParameters(model)}</span>
+      <span className="models-inventory-publisher" role="cell">{installedModelPublisher(model)}</span>
+      <span className="studio-installed-model" role="cell">
+        <PublisherLogo item={model} size="sm" />
+        <span>
+          <strong>{name}</strong>
+          <small>{secondary || model.model || model.key}</small>
+          {mismatch && <small className="studio-installed-warning"><AlertTriangle size={11} /> {mismatch}</small>}
+          {!mismatch && <small>{labelize(model.role || "chat")}{ctx > 0 ? ` · ${ctx.toLocaleString()} context` : ""}</small>}
+        </span>
+      </span>
+      <span className="studio-installed-actions" role="cell">
         {model.managed && (
-          <Button onClick={handleRuntime} loading={busy === "start" || busy === "stop"} loadingLabel={isRunning ? "Stopping…" : "Starting…"} icon={isRunning ? <Power size={12} /> : <Play size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
+          <Button onClick={handleRuntime} loading={busy === "start" || busy === "stop"} loadingLabel={isRunning ? "Stopping…" : "Starting…"} icon={isRunning ? <Power size={12} /> : <Play size={12} />} spinnerSize={12}>
             {isRunning ? "Stop" : nativeRuntime ? "Load" : "Start"}
           </Button>
         )}
-        <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Test</Button>
-        <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Discovering…" icon={<Search size={12} />} spinnerSize={12} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>Info</Button>
-      </div>
+        <Button onClick={handleTest} loading={busy === "test"} loadingLabel="Testing…" icon={<CheckCircle2 size={12} />} spinnerSize={12} aria-label={`Test ${name}`}>Test</Button>
+        <Button onClick={handleDiscover} loading={busy === "discover"} loadingLabel="Inspecting…" icon={<Search size={12} />} spinnerSize={12} aria-label={`Inspect ${name}`}>Info</Button>
+      </span>
     </div>
+  );
+}
+
+function InstalledModelInspector({ model, allModels, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad }) {
+  const [activeInspectorTab, setActiveInspectorTab] = useState("info");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setActiveInspectorTab("info");
+  }, [model?.key]);
+
+  if (!model) {
+    return (
+      <aside className="models-model-inspector is-empty" data-testid="installed-model-inspector">
+        <Cpu size={24} aria-hidden="true" />
+        <p>Select a model to inspect its runtime, source, and inference profile.</p>
+      </aside>
+    );
+  }
+
+  const name = displayModelName(model, allModels);
+  const st = runtimeStatus(model);
+  const healthy = isModelHealthy(model);
+  const nativeRuntime = model.runtime === "native-llamacpp";
+  const isRunning = ["running", "reachable"].includes(String(model.container_status || model.runtime_status || "").toLowerCase());
+  const path = installedModelPath(model);
+  const context = contextWindowFor(model);
+  const mismatch = modelMismatchLine(model);
+  const tabs = ["info", "load", "inference"];
+
+  const handleLoad = async () => {
+    if (isRunning) return;
+    if (nativeRuntime) {
+      onConfigureLoad?.(model);
+      return;
+    }
+    setBusy(true);
+    try {
+      await executeAction("StartModel", model.key, async () => runModelAction?.("start", model.key), setUiState);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const facts = activeInspectorTab === "info" ? [
+    ["Model", model.model || model.key],
+    ["File", installedModelFile(model)],
+    ["Format", installedModelFormat(model)],
+    ["Quantization", installedModelQuantization(model)],
+    ["Arch", installedModelArchitecture(model)],
+    ["Domain", labelize(model.role || "chat")],
+    ["Size on disk", installedModelSize(model)],
+  ] : activeInspectorTab === "load" ? [
+    ["Runtime", model.runtime || model.provider || "Local"],
+    ["Device", nativeRuntime ? "Automatic GPU placement" : "Managed endpoint"],
+    ["State", labelize(st)],
+    ["Compatibility", mismatch || (healthy ? "Ready" : "Needs health check")],
+  ] : [
+    ["Context", context > 0 ? context.toLocaleString() + " tokens" : "Runtime default"],
+    ["Role", labelize(model.role || "chat")],
+    ["Endpoint", model.baseUrl || model.base_url || "Native llama.cpp"],
+    ["Availability", healthy ? "Reachable" : labelize(st)],
+  ];
+
+  return (
+    <aside className="models-model-inspector" data-testid="installed-model-inspector" aria-label={`${name} model inspector`}>
+      <header className="models-inspector-header">
+        <div className="models-inspector-title">
+          <PublisherLogo item={model} size="md" />
+          <div><strong>{name}</strong><small>{model.model || model.key}</small></div>
+        </div>
+        <span className={`models-inspector-status ${healthy ? "is-ready" : ""}`}>{healthy ? "Ready" : labelize(st)}</span>
+        <div className="models-inspector-primary-actions">
+          <button type="button" className="w2-button" onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
+          {model.managed && <Button onClick={handleLoad} disabled={isRunning} loading={busy} loadingLabel="Loading…" icon={<Download size={13} />}>{isRunning ? "Loaded" : "Load Model"}</Button>}
+        </div>
+      </header>
+
+      <div className="models-inspector-tabs" role="tablist" aria-label="Model inspector sections">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeInspectorTab === tab}
+            onClick={() => setActiveInspectorTab(tab)}
+          >
+            {labelize(tab)}
+          </button>
+        ))}
+      </div>
+
+      <section className="models-inspector-section">
+        <h3>{activeInspectorTab === "info" ? "Model Information" : activeInspectorTab === "load" ? "Load Profile" : "Inference Profile"}</h3>
+        <dl className="models-inspector-facts">
+          {facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
+        </dl>
+      </section>
+
+      <div className="models-inspector-spacer" />
+      <details className="models-inspector-disclosure">
+        <summary><SlidersHorizontal size={14} /> Domain Control</summary>
+        <div><span>Purpose</span><strong>{labelize(installedModelCategory(model))}</strong></div>
+        <div><span>Compatibility</span><strong>{mismatch || "No mismatch detected"}</strong></div>
+      </details>
+      <details className="models-inspector-disclosure" open={Boolean(path)}>
+        <summary><HardDrive size={14} /> Source File</summary>
+        <div><span>Path</span><strong title={path || "No local source path"}>{path || "Managed endpoint — no local file"}</strong></div>
+        <div><span>Override</span><strong>{nativeRuntime ? "Available in Load Model" : "Managed externally"}</strong></div>
+      </details>
+    </aside>
   );
 }
 

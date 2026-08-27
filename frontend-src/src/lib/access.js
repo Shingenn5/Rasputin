@@ -1,5 +1,5 @@
 const ROLE_VIEWS = {
-  admin: new Set(["home", "chat", "workspaces", "activity", "models", "assistant", "warsat", "archive", "trials", "settings", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"]),
+  admin: new Set(["home", "chat", "workspaces", "activity", "discover", "models", "assistant", "warsat", "archive", "trials", "settings", "agents", "sessions", "approvals", "memory", "skills", "telegram", "schedules"]),
   member: new Set(["home", "chat", "workspaces", "activity", "assistant", "archive", "settings", "sessions"]),
   viewer: new Set(["home", "workspaces", "assistant", "archive", "settings"]),
 };

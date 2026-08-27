@@ -12,6 +12,7 @@ import {
   MessageSquare,
   PanelLeft,
   Plus,
+  Search,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const NAV_GROUPS = [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
 
       { view: "activity", label: "History", icon: Clock, testId: "nav-activity" },
+      { view: "discover", label: "Discover Models", icon: Search, testId: "nav-discover" },
       { view: "models", label: "Models", icon: Box, testId: "nav-models" },
     ],
   },

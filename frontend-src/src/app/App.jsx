@@ -50,6 +50,7 @@ const routedViews = new Set([
   "chat",
   "workspaces",
   "activity",
+  "discover",
   "models",
   "assistant",
   "warsat",
@@ -550,7 +551,7 @@ export function App() {
     const route = parseAppRouteHash(desktopDefaultView);
     const hasExplicitRoute = Boolean(window.location.hash.replace(/^#\/?/, "").trim());
     const rememberedView = prefs.activeView || desktopDefaultView;
-    const desktopPrimaryViews = new Set(["chat", "workspaces", "activity", "models", "settings"]);
+    const desktopPrimaryViews = new Set(["chat", "workspaces", "activity", "discover", "models", "settings"]);
     const requestedView = hasExplicitRoute
       ? route.view
       : data.security?.desktopOnly && !desktopPrimaryViews.has(rememberedView)
@@ -581,7 +582,7 @@ export function App() {
     // hardware-aware copy in the background. This shares the same guarded
     // loader as the WarSat route so an empty result is still terminal.
     loadModelCatalog(false, { automatic: true }).catch(() => {});
-    if (nativeRequestedView === "models") {
+    if (["discover", "models"].includes(nativeRequestedView)) {
       loadWarsatHardware().catch(() => {});
     }
   }
@@ -972,7 +973,7 @@ export function App() {
     if (nextView === "warsat") {
       loadWarsat().catch((error) => setGlobalStatus(error.message));
     }
-    if (nextView === "models") {
+    if (["discover", "models"].includes(nextView)) {
       loadWarsatHardware().catch((error) => setGlobalStatus(error.message));
     }
     setMobileSidebarOpen(false);
@@ -2576,7 +2577,7 @@ export function App() {
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
-        view={desktopOnly && ["models", "settings"].includes(view) ? "chat" : view}
+        view={desktopOnly && ["discover", "models", "settings"].includes(view) ? "chat" : view}
         selectedModel={selectedModel}
         selectedModelObject={selectedModelObject}
         models={models}

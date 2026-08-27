@@ -4,10 +4,12 @@ import { readFileSync } from "node:fs";
 
 const models = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
 const identity = readFileSync(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url), "utf8");
+const publisherLogo = readFileSync(new URL("../frontend-src/src/features/models/PublisherLogo.jsx", import.meta.url), "utf8");
 const loader = readFileSync(new URL("../frontend-src/src/features/models/ModelLoadDialog.jsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
 
-test("desktop Models opens into a native llama.cpp visual catalog", () => {
+test("desktop Discover Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /data-testid="model-catalog-grid"/);
   assert.match(models, /setShowAllModels\(true\)/);
   assert.match(models, /setCatalogRuntime\("llamaCppGgufServer"\)/);
@@ -15,7 +17,8 @@ test("desktop Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /className="models-page-shell/);
   assert.match(models, /className="models-page-tabs"/);
   assert.match(models, /const desktopItem = \{/);
-  assert.match(models, /library: \{ label: "Discover", hint: "Browse and download" \}/);
+  assert.match(sidebar, /view: "discover", label: "Discover Models"/);
+  assert.doesNotMatch(models, /id: "library",\s+label: "Library"/);
   assert.match(models, /settings: \{ label: "Developer", hint: "Runtime and connections" \}/);
   assert.match(models, /className="models-catalog-toolbar"/);
   assert.match(models, /aria-label="Refresh model catalog"/);
@@ -29,7 +32,11 @@ test("model cards use generated identity and collapse advanced details", () => {
   assert.match(models, /<ModelIdentity item=\{item\}/);
   assert.match(models, /<details ref=\{advancedRef\}/);
   assert.match(models, /<summary[^>]*>Advanced details<\/summary>/);
-  assert.match(identity, /<Avatar name=\{\x60\$\{publisher\}\/\$\{modelName\}\x60\}/);
+  assert.match(identity, /<PublisherLogo item=\{\{ \.\.\.item, publisher, modelId \}\}/);
+  assert.match(publisherLogo, /id: "qwen"/);
+  assert.match(publisherLogo, /id: "deepseek"/);
+  assert.match(publisherLogo, /id: "meta"/);
+  assert.match(publisherLogo, /aria-label=\{`\$\{brand\.label\} logo`\}/);
   assert.doesNotMatch(identity, /<img/);
 });
 

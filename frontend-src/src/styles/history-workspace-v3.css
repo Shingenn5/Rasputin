@@ -1,0 +1,35 @@
+/* History workspace v3: activity ledger composition */
+.activity-view .history-v3-header { position: relative; background: linear-gradient(100deg, color-mix(in srgb, var(--ras-primary) 8%, var(--dash-bg)), var(--dash-bg) 58%); }
+.activity-view .history-v3-header::after { content: "LIVE ACTIVITY LEDGER"; color: var(--ras-primary); font: 700 .55rem/1 ui-monospace, monospace; letter-spacing: .18em; opacity: .75; }
+.activity-view .history-v3-toolbar { border: 1px solid var(--dash-border); border-radius: 12px; padding: 6px; background: color-mix(in srgb, var(--dash-panel) 92%, transparent); box-shadow: inset 0 1px rgba(255,255,255,.025); }
+.activity-view .history-v3-toolbar .history-view-tab { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: .68rem; letter-spacing: .01em; }
+.activity-view .history-v3-toolbar .history-view-tab svg { opacity: .7; }
+.activity-view .history-v3-toolbar .history-view-tab small { min-width: 1.1em; margin-left: auto; color: var(--dash-faint); font-size: .58rem; font-variant-numeric: tabular-nums; }
+.activity-view .history-v3-toolbar .history-view-tab.is-active { border-color: color-mix(in srgb, var(--ras-primary) 55%, transparent); background: linear-gradient(105deg, color-mix(in srgb, var(--ras-primary) 22%, var(--dash-panel)), color-mix(in srgb, var(--ras-primary) 8%, transparent)); box-shadow: 0 0 18px color-mix(in srgb, var(--ras-primary) 10%, transparent); }
+.activity-view .history-v3-content { min-width: 0; }
+.activity-view .history-stream-command { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 360px); align-items: center; gap: 10px; border-radius: 10px; padding: 9px 11px; background: linear-gradient(120deg, var(--dash-panel), color-mix(in srgb, var(--ras-primary) 5%, var(--dash-panel))); }
+.activity-view .history-stream-title { display: flex; align-items: center; gap: 8px; color: var(--dash-text); font-size: .75rem; }
+.activity-view .history-stream-title svg { color: var(--ras-primary); }
+.activity-view .history-stream-title span { color: var(--dash-muted); font: 600 .62rem ui-monospace, monospace; }
+.activity-view .history-search-field { min-height: 30px; border: 1px solid var(--dash-border); border-radius: 7px; padding: 5px 9px; background: var(--dash-bg); }
+.activity-view .history-search-field input { font-size: .7rem; }
+.activity-view .history-stream-list { position: relative; gap: 4px; padding-left: 18px; }
+.activity-view .history-stream-list::before { content: ""; position: absolute; top: 5px; bottom: 5px; left: 5px; width: 1px; background: linear-gradient(var(--ras-primary), var(--dash-border) 40%, transparent); opacity: .7; }
+.activity-view .history-timeline-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-radius: 8px; padding: 9px 10px 9px 13px; background: color-mix(in srgb, var(--dash-panel) 90%, transparent); transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.activity-view .history-timeline-row:hover { border-color: color-mix(in srgb, var(--ras-primary) 40%, var(--dash-border)); background: color-mix(in srgb, var(--ras-primary) 6%, var(--dash-panel)); transform: translateX(2px); }
+.activity-view .history-status-signal { position: absolute; top: 15px; left: -17px; width: 8px; height: 8px; border: 2px solid var(--dash-bg); border-radius: 50%; background: var(--ras-safe); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ras-safe) 30%, transparent); }
+.activity-view .history-status-signal.running, .activity-view .history-status-signal.queued, .activity-view .history-status-signal.paused, .activity-view .history-status-signal.info { background: var(--ras-warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ras-warn) 25%, transparent); }
+.activity-view .history-status-signal.failed, .activity-view .history-status-signal.error, .activity-view .history-status-signal.cancelled { background: var(--ras-danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ras-danger) 25%, transparent); }
+.activity-view .history-timeline-row time { font-size: .6rem; white-space: nowrap; }
+.activity-view .history-timeline-row strong { font-size: .76rem; }
+.activity-view .history-timeline-row p { margin-top: 2px; font-size: .63rem; }
+.activity-view .history-row-action { align-self: center; min-height: 26px; padding: 4px 7px; font-size: .62rem; }
+.activity-view .history-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; grid-column: 1 / -1; }
+.activity-view .history-timeline-notification.is-unread { border-color: color-mix(in srgb, var(--ras-primary) 52%, var(--dash-border)); background: color-mix(in srgb, var(--ras-primary) 7%, var(--dash-panel)); }
+.activity-view .history-v3-inspector { border-left: 1px solid color-mix(in srgb, var(--ras-primary) 18%, var(--dash-border)); padding-left: 10px; }
+.activity-view .history-v3-inspector .w2-card { border-radius: 9px; padding: 10px; box-shadow: none; }
+.activity-view .history-v3-inspector .w2-section-title { font-size: .63rem; letter-spacing: .08em; }
+.activity-view .history-v3-inspector [style*="padding: 12px"] { padding: 8px !important; }
+.activity-view .history-run-ledger-row { border-radius: 10px; padding: 10px 11px; box-shadow: none; }
+@media (max-width: 780px) { .activity-view .history-stream-command { grid-template-columns: 1fr; gap: 7px; } .activity-view .history-v3-header::after { display:none; } .activity-view .history-stream-list { padding-left: 14px; } .activity-view .history-status-signal { left: -13px; } }
+@media (prefers-reduced-motion: reduce) { .activity-view .history-timeline-row { transition: none; } }

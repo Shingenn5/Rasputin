@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import {
   Pause, Play, RefreshCw, Square, Users, Search, 
-  Activity, AlertTriangle, CheckCircle, Clock, 
+  Activity, AlertTriangle, CheckCircle, Clock, History as HistoryIcon, ListFilter,
   Server, Database, HardDrive, Download, Eye, FileText, Archive, ChevronUp, ChevronDown
 } from "lucide-react";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
@@ -9,6 +9,9 @@ import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
 import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
+import "../../styles/history-workspace-v3.css";
+
+const activityIcons = { History: HistoryIcon, "All Runs": ListFilter, Active: Activity, Queue: Clock, Completed: CheckCircle, Failed: AlertTriangle, Scheduled: Clock, "System Events": Server, "Audit Log": FileText };
 
 const activityGroups = [
   { label: "Timeline", items: ["History"] },
@@ -78,6 +81,7 @@ export function ActivityView({
     }));
     return [...taskEntries, ...notificationEntries].sort((a, b) => b.timestamp - a.timestamp);
   }, [rootTasks, inbox]);
+  const tabCounts = { History: historyEntries.length, "All Runs": tasks.length, Active: activeTasks.length, Queue: queuedTasks.length, Completed: completedTasks.length, Failed: failedTasks.length, Scheduled: scheduledTasks.length, "System Events": auditEvents?.length || 0, "Audit Log": localAudit.length };
 
   // Search Filter
   const filteredTasks = useMemo(() => {
@@ -109,7 +113,7 @@ export function ActivityView({
       <div className="history-page-shell fx-rise mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-5 p-7">
 
       {/* Header */}
-      <div className="history-page-header flex flex-wrap items-start justify-between gap-5">
+      <div className="history-page-header history-v3-header flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">History</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">Recent chats, runs, notifications, and outcomes in one quiet timeline.</p>
@@ -120,7 +124,7 @@ export function ActivityView({
         </div>
       </div>
 
-      <div className="history-toolbar">
+      <div className="history-toolbar history-v3-toolbar">
         <div className="activity-tabs-scroll" role="tablist" aria-label="History views" data-testid="history-view-tabs">
           {activityGroups.map((group) => (
             <div className="history-nav-group" role="presentation" key={group.label}>
@@ -134,7 +138,8 @@ export function ActivityView({
                   className={cn("history-view-tab", tab === item && "is-active")}
                   onClick={() => setTab(item)}
                 >
-                  {item}
+                  {React.createElement(activityIcons[item] || Activity, { size: 14, "aria-hidden": true })}
+                  <span>{item}</span><small>{tabCounts[item] || 0}</small>
                 </button>
               ))}
             </div>
@@ -157,25 +162,27 @@ export function ActivityView({
         <div className="w2-column">
 
           {tab === "History" && (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
-                <span className="rounded-lg bg-primary/10 p-2 text-primary"><Clock size={18} /></span>
-                <div>
-                  <h2 className="font-semibold">Recent history</h2>
-                  <p className="text-xs text-muted-foreground">Notifications and task outcomes are sorted newest first.</p>
+            <div className="history-v3-content flex flex-1 flex-col gap-3">
+              <div className="history-stream-command rounded-xl border border-border bg-card">
+                <div className="history-stream-title">
+                  <span className="rounded-lg bg-primary/10 p-2 text-primary"><Clock size={18} /></span>
+                  <div>
+                    <h2 className="font-semibold">Recent history</h2>
+                    <p className="text-xs text-muted-foreground">Notifications and task outcomes, newest first.</p>
+                  </div>
+                </div>
+                <div className="history-search-field flex items-center gap-2">
+                  <Search size={16} className="text-muted-foreground" />
+                  <input
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    placeholder="Search history..."
+                    aria-label="Search history"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2.5">
-                <Search size={16} className="text-muted-foreground" />
-                <input
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  placeholder="Search history..."
-                  aria-label="Search history"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2 overflow-y-auto">
+              <div className="history-stream-list flex flex-col gap-2 overflow-y-auto">
                 {historyEntries
                   .filter((entry) => {
                     if (!searchQuery.trim()) return true;
@@ -186,7 +193,8 @@ export function ActivityView({
                     return searchText.toLowerCase().includes(query);
                   })
                   .map((entry) => entry.kind === "task" ? (
-                    <article key={entry.id} className="rounded-xl border border-border bg-card p-4">
+                    <article key={entry.id} className="history-timeline-row history-timeline-task rounded-xl border border-border bg-card p-4">
+                      <span className={cn("history-status-signal", entry.task.status)} aria-hidden="true" />
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
@@ -199,10 +207,11 @@ export function ActivityView({
                         </div>
                         <time className="shrink-0 text-xs text-muted-foreground">{new Date(entry.timestamp).toLocaleString()}</time>
                       </div>
-                      <UIButton className="mt-3" variant="outline" size="sm" onClick={() => openTaskDetails?.(entry.task.id)}>Open details</UIButton>
+                      <UIButton className="history-row-action" variant="outline" size="sm" onClick={() => openTaskDetails?.(entry.task.id)}>Open details</UIButton>
                     </article>
                   ) : (
-                    <article key={entry.id} className={cn("rounded-xl border bg-card p-4", entry.event.status === "unread" ? "border-primary/50" : "border-border")}>
+                    <article key={entry.id} className={cn("history-timeline-row history-timeline-notification rounded-xl border bg-card p-4", entry.event.status === "unread" && "is-unread")}>
+                      <span className={cn("history-status-signal", entry.event.severity || "info")} aria-hidden="true" />
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
@@ -214,7 +223,7 @@ export function ActivityView({
                         </div>
                         <time className="shrink-0 text-xs text-muted-foreground">{new Date(entry.timestamp).toLocaleString()}</time>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="history-row-actions">
                         {entry.event.task_id && <UIButton size="sm" onClick={() => { markInboxRead?.(entry.event.id); openTaskDetails?.(entry.event.task_id); }}>Open details</UIButton>}
                         {entry.event.status === "unread" && <UIButton variant="outline" size="sm" onClick={() => markInboxRead?.(entry.event.id)}>Mark read</UIButton>}
                         <UIButton variant="ghost" size="icon" title="Archive notification" aria-label="Archive notification" onClick={() => archiveInbox?.(entry.event.id)}><Archive size={15} /></UIButton>
@@ -378,7 +387,7 @@ export function ActivityView({
         </div>
 
         {/* RIGHT COLUMN: Inspector / Monitor */}
-        <aside className="w2-column history-inspector" aria-label="Execution summary">
+        <aside className="w2-column history-inspector history-v3-inspector" aria-label="Execution summary">
           <header className="history-inspector-heading">
             <span>Execution summary</span>
             <Badge variant={activeTasks.length ? "muted" : "up"}>{activeTasks.length ? activeTasks.length + " active" : "Idle"}</Badge>
@@ -462,7 +471,7 @@ function RunCard({ task, models, onCancel, onPause, onResume, onDetails, onRetry
   const statusVariant = isFailed ? "down" : isActive ? "muted" : "up";
   return (
     <div className={cn(
-      "ras-list-item glow-card rounded-2xl border bg-card p-4",
+      "ras-list-item history-run-ledger-row glow-card rounded-2xl border bg-card p-4",
       isFailed ? "border-rose-500/40" : "border-border",
     )}>
       <div className="flex items-start justify-between gap-3">

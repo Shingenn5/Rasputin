@@ -26,6 +26,7 @@ const icons = {
   Workspaces: Folder,
   Activity,
   Knowledge: Brain,
+  "Discover Models": Search,
   Models: Sparkles,
   Warsat: Satellite,
   Archive: FileText,

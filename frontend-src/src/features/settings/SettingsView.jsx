@@ -35,6 +35,7 @@ import { NotificationSettings } from "./NotificationSettings.jsx";
 import { AuditSettings } from "./AuditSettings.jsx";
 import { DiagnosticsSettings } from "./DiagnosticsSettings.jsx";
 import { AboutSettings } from "./AboutSettings.jsx";
+import "../../styles/settings-workspace-v3.css";
 
 const iconMap = {
   general: Settings2,
@@ -330,13 +331,13 @@ export function SettingsView(props) {
 
   return (
     <section className={`app-view settings-view tw ${view === "settings" ? "active" : ""}`} id="settingsShell" data-app-view="settings">
-      <header className="settings-command-hero">
+      <header className="settings-command-hero settings-command-banner-v3">
         <div className="settings-hero-copy">
           <span className="control-eyebrow"><span className="signal-dot" /> System control</span>
           <h1>Shape your Rasputin.</h1>
           <p>One control plane for local intelligence, runtime policy, and the boundaries your agents operate within.</p>
         </div>
-        <div className="settings-posture" aria-label="Current system posture">
+        <div className="settings-posture settings-posture-v3" aria-label="Current system posture">
           <div><span>Runtime</span><strong>{security?.native ? "Native" : "Container"}</strong></div>
           <div><span>Models</span><strong>{models?.length || 0} ready</strong></div>
           <div><span>Guardrails</span><strong className="is-safe">Enforced</strong></div>
@@ -383,7 +384,7 @@ export function SettingsView(props) {
         </div>
       )}
 
-      <div className="settings-control-grid">
+      <div className="settings-control-grid settings-control-grid-v3">
         <nav className="settings-control-rail" aria-label="Settings sections">
           {isAdmin && (
             <div className="settings-scope-toggle mb-3" role="group" aria-label="Settings view">
@@ -473,7 +474,7 @@ export function SettingsView(props) {
             </span>
           </div>
 
-          <div className="settings-context-strip">
+          <div className="settings-context-strip settings-context-strip-v3">
             <div><span>Validation</span><p>{activeInspector.validation}</p></div>
             <div><span>Operational impact</span><p><ShieldAlert size={13} /> {activeInspector.impact}</p></div>
             <div><span>Connected systems</span><p>{activeInspector.deps.length ? activeInspector.deps.join(" · ") : "Isolated configuration"}</p></div>

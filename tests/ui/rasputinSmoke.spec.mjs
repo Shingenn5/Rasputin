@@ -155,15 +155,15 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   expect(sessionsBody.ok).toBe(true);
   expect(sessionsBody.data.sessions.some((session) => !sessionIdsBefore.has(session.id))).toBe(true);
 
-  await page.locator("[data-testid='nav-models']").click();
+  await page.locator("[data-testid='nav-discover']").click();
   await expect(page.locator("#modelsView")).toBeVisible();
-  await expect(page.locator("#models-tab-library")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#models-panel-library")).toHaveAttribute("aria-label", "Discover models");
   await expect(page.locator("[data-testid='model-vram-filter']")).toBeVisible();
   await expect(page.locator("[data-testid='model-vram-filter']")).toContainText("Detected sharded pool");
   await expect(page.locator("#modelsView")).toContainText("Quick Start");
   await expect(page.locator("#models-panel-library")).toContainText(/locally cached model/);
 
-  await page.getByRole("tab", { name: "Installed" }).click();
+  await page.locator("[data-testid='nav-models']").click();
   await expect(page.locator("#models-panel-installed")).toBeVisible();
   await expect(page.locator("#models-panel-installed")).toContainText(/Local Registry|No models registered/);
 
@@ -757,9 +757,9 @@ test("models catalog can prepare approve and complete a safe Warsat deployment Q
   await page.goto("/");
   await waitForAppReady(page);
 
-  await page.locator("[data-testid='nav-models']").click();
+  await page.locator("[data-testid='nav-discover']").click();
   await expect(page.locator("#modelsView")).toBeVisible();
-  await expect(page.locator("#models-tab-library")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#models-panel-library")).toHaveAttribute("aria-label", "Discover models");
   const catalogCard = page.locator(".ras-list-item").filter({ hasText: "Qwen2.5 Coder" });
   await expect(catalogCard).toBeVisible();
   await catalogCard.getByRole("button", { name: "Deploy via Warsat" }).click();

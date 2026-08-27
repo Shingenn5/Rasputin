@@ -1,5 +1,5 @@
 import React from "react";
-import { Avatar } from "../../components/Avatar.jsx";
+import { PublisherLogo } from "./PublisherLogo.jsx";
 
 function modelParts(item) {
   const modelId = String(item?.modelId || item?.id || item?.name || "Model");
@@ -12,7 +12,7 @@ export function ModelIdentity({ item, size = "lg" }) {
   const { modelId, publisher, modelName } = modelParts(item);
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <Avatar name={`${publisher}/${modelName}`} kind="model" size={size} title={`${publisher} ${modelName}`} />
+      <PublisherLogo item={{ ...item, publisher, modelId }} size={size} />
       <div className="min-w-0">
         <h3 className="truncate text-base font-semibold text-foreground">{modelName}</h3>
         <div className="truncate text-xs text-muted-foreground">{publisher}</div>

@@ -19,7 +19,7 @@ test("desktop navigation uses minimal project and history aliases", () => {
   assert.match(app, /if \(view === "workspaces"\) return "#project"/);
   assert.match(app, /if \(view === "activity"\) return "#history"/);
   assert.match(app, /const desktopDefaultView = data\.security\?\.desktopOnly \? "chat" : "home"/);
-  assert.match(app, /desktopPrimaryViews = new Set\(\["chat", "workspaces", "activity", "models", "settings"\]\)/);
+  assert.match(app, /desktopPrimaryViews = new Set\(\["chat", "workspaces", "activity", "discover", "models", "settings"\]\)/);
 });
 
 test("desktop command palette describes the simplified primary workflow", () => {
@@ -51,11 +51,13 @@ test("desktop Settings closes from the visual backdrop", () => {
   assert.match(settings, /onClose=\{\(\) => go\("chat"\)\}/);
 });
 
-test("desktop Models floats over the chat workspace and closes like Settings", () => {
-  assert.match(app, /desktopOnly && \["models", "settings"\]\.includes\(view\) \? "chat" : view/);
+test("desktop Discover and Models are separate modal routes over the chat workspace", () => {
+  assert.match(app, /desktopOnly && \["discover", "models", "settings"\]\.includes\(view\) \? "chat" : view/);
+  assert.match(sidebar, /view: "discover", label: "Discover Models", icon: Search, testId: "nav-discover"/);
   assert.match(models, /className="studio-models-modal"/);
   assert.match(models, /data-testid="desktop-models-dialog"/);
-  assert.match(models, /open=\{view === "models"\}/);
+  assert.match(models, /open=\{modelsWorkspaceOpen\}/);
+  assert.match(models, /title=\{view === "discover" \? "Discover Models" : "Models"\}/);
   assert.match(models, /onClose=\{\(\) => go\?\.\("chat"\)\}/);
   assert.match(interfaceCss, /\.studio-models-modal > \.ras-modal-body/);
 });

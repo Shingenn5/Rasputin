@@ -3,6 +3,7 @@ export const navItems = [
   { view: "chat", label: "Chat", testId: "nav-chat" },
   { view: "workspaces", label: "Workspaces", testId: "nav-workspaces" },
   { view: "activity", label: "Activity", testId: "nav-activity" },
+  { view: "discover", label: "Discover Models", testId: "nav-discover" },
   { view: "models", label: "Models", testId: "nav-models" },
   { view: "warsat", label: "Warsat", testId: "nav-warsat" },
   { view: "archive", label: "Archive", testId: "nav-archive" },

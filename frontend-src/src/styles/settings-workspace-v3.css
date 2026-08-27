@@ -1,0 +1,115 @@
+/* Settings workspace v3: compact command-center treatment. Scoped to Settings only. */
+.settings-view {
+  gap: 12px !important;
+  padding: 14px !important;
+  background: radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--dash-accent) 7%, transparent), transparent 34%), var(--dash-bg);
+}
+.settings-view .settings-command-banner-v3 {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 112px;
+  padding: 16px 18px;
+  border-radius: 12px 4px 12px 4px;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--dash-sidebar) 96%, var(--dash-accent) 4%), var(--dash-sidebar));
+  box-shadow: 0 12px 28px color-mix(in srgb, #000 12%, transparent);
+}
+.settings-view .settings-hero-copy h1 {
+  margin: 6px 0 3px;
+  font-size: clamp(1.55rem, 2.5vw, 2.35rem);
+  letter-spacing: -0.04em;
+}
+.settings-view .settings-hero-copy p { max-width: 520px; margin-top: 6px; font-size: .68rem; }
+.settings-view .settings-posture-v3 { gap: 5px; }
+.settings-view .settings-posture-v3 > div {
+  min-width: 78px;
+  padding: 7px 9px;
+  border-radius: 7px 2px 7px 2px;
+  background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 5%, transparent);
+}
+.settings-view .settings-posture-v3 strong { font-size: .68rem; }
+.settings-view .settings-posture-v3 span { font-size: .52rem; }
+.settings-view .settings-hero-actions { gap: 4px; }
+.settings-view .settings-hero-actions button { min-height: 30px; padding: 0 8px; border-radius: 6px 2px 6px 2px; font-size: .62rem; }
+.settings-view .settings-control-grid-v3 {
+  grid-template-columns: 194px minmax(0, 1fr);
+  border-radius: 12px 4px 12px 4px;
+  box-shadow: 0 10px 26px color-mix(in srgb, #000 6%, transparent);
+}
+.settings-view .settings-control-rail {
+  padding: 10px 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dash-sidebar) 98%, var(--dash-accent) 2%), var(--dash-sidebar));
+}
+.settings-view .settings-scope-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 8px !important; }
+.settings-view .settings-scope-toggle button { min-height: 27px; padding: 0 4px; font-size: .59rem; }
+.settings-view .settings-search { min-height: 32px; border-radius: 7px 2px 7px 2px; }
+.settings-view .settings-search input { font-size: .66rem; }
+.settings-view .settings-rail-scroll { margin-top: 9px; }
+.settings-view .settings-nav-group { margin-bottom: 9px; }
+.settings-view .settings-nav-group > span { margin: 0 7px 3px; font-size: .5rem; }
+.settings-view .settings-nav-item {
+  grid-template-columns: 25px 1fr 2px;
+  min-height: 36px;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 6px 2px 6px 2px;
+}
+.settings-view .settings-nav-icon { width: 24px; height: 24px; border-radius: 6px 2px 6px 2px; }
+.settings-view .settings-nav-item strong { font-size: .67rem; }
+.settings-view .settings-nav-item small { display: none; }
+.settings-view .settings-nav-item i { width: 2px; }
+.settings-view .settings-nav-item.is-active i { height: 17px; }
+.settings-view .settings-control-stage { padding: 14px; }
+.settings-view .settings-stage-heading {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 9px;
+  padding: 0 0 10px;
+}
+.settings-view .settings-stage-icon { width: 34px; height: 34px; border-radius: 9px 2px 9px 2px; }
+.settings-view .settings-stage-heading h2 { font-size: 1.12rem; }
+.settings-view .settings-stage-heading p { font-size: .64rem; }
+.settings-view .settings-validation { padding: 4px 7px; font-size: .57rem; }
+.settings-view .settings-context-strip-v3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 9px;
+  border: 0;
+  border-bottom: 1px solid var(--dash-border);
+  border-radius: 0;
+  background: transparent;
+}
+.settings-view .settings-context-strip-v3 > div { padding: 5px 8px 8px 0; }
+.settings-view .settings-context-strip-v3 span { font-size: .48rem; }
+.settings-view .settings-context-strip-v3 p { margin-top: 2px; font-size: .58rem; }
+.settings-view .settings-panel-surface {
+  min-height: 0;
+  padding: 11px;
+  border-radius: 9px 3px 9px 3px;
+  background: color-mix(in srgb, var(--dash-surface) 98%, transparent);
+  box-shadow: none;
+}
+.settings-view .settings-panel-surface .card { border-radius: 8px 2px 8px 2px !important; }
+.settings-view .settings-panel-surface .card-body { padding: .65rem !important; }
+.settings-view .settings-panel-surface .card-header { padding: .55rem .65rem !important; }
+.settings-view .settings-panel-surface .mb-4 { margin-bottom: .55rem !important; }
+.settings-view .settings-panel-surface .g-4 { --bs-gutter-x: .55rem; --bs-gutter-y: .55rem; }
+.settings-view .settings-panel-surface .form-control,
+.settings-view .settings-panel-surface .form-select { min-height: 32px; font-size: .72rem; }
+@media (max-width: 900px) {
+  .settings-view .settings-command-banner-v3 { grid-template-columns: 1fr auto; }
+  .settings-view .settings-posture-v3 { display: none; }
+  .settings-view .settings-control-grid-v3 { grid-template-columns: 176px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .settings-view .settings-command-banner-v3 { grid-template-columns: 1fr; min-height: 0; padding: 14px; }
+  .settings-view .settings-hero-actions { overflow-x: auto; }
+  .settings-view .settings-control-grid-v3 { grid-template-columns: 1fr; }
+  .settings-view .settings-control-rail { padding: 8px; }
+  .settings-view .settings-nav-item { min-height: 33px; }
+  .settings-view .settings-control-stage { padding: 11px; }
+  .settings-view .settings-context-strip-v3 { grid-template-columns: 1fr; }
+  .settings-view .settings-context-strip-v3 > div { border-right: 0; border-bottom: 1px solid var(--dash-border); }
+  .settings-view .settings-context-strip-v3 > div:last-child { border-bottom: 0; }
+}
+@scope (html[data-motion="reduced"]) {
+  .settings-view .settings-command-banner-v3 *, .settings-view .settings-control-grid-v3 * { animation: none !important; transition: none !important; }
+}
