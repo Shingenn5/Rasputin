@@ -44,6 +44,27 @@ test("My Models opens as a dense selectable inventory with a persistent inspecto
   assert.match(models, /Load Model/);
 });
 
+test("Discover Models mirrors the dense inventory and persistent inspector contract", () => {
+  assert.match(models, /data-testid="discover-model-workbench"/);
+  assert.match(models, /role="table"\s+aria-label="Available models"/);
+  for (const heading of ["Model", "Developer", "Params", "Context", "Downloads", "Fit", "Actions"]) {
+    assert.match(models, new RegExp(`role="columnheader">${heading}<`));
+  }
+  assert.match(models, /data-table-kind="discover-model-table"/);
+  assert.match(models, /data-testid="discover-model-row"/);
+  assert.match(models, /aria-controls="discover-model-inspector"/);
+  assert.match(models, /data-testid="discover-model-inspector"/);
+  assert.match(models, /data-testid="discover-inspector-tabs"/);
+  assert.match(models, /data-testid="discover-inspector-resizer"/);
+  assert.match(models, /aria-label="Resize discover model inspector"/);
+  assert.match(models, /data-testid="discover-row-download"/);
+  assert.match(models, /data-testid="discover-download-action"/);
+  assert.match(models, /data-testid="discover-variant-picker"/);
+  assert.match(models, /Purpose/);
+  assert.match(models, /Modalities/);
+  assert.match(models, /License/);
+});
+
 test("Models inventory uses the forge-green workspace language and responsive inspector layout", () => {
   assert.match(styles, /--models-forge:\s*#4f8a70/);
   assert.match(styles, /models-inventory-workbench[^}]*grid-template-columns/s);
@@ -53,6 +74,10 @@ test("Models inventory uses the forge-green workspace language and responsive in
   assert.match(styles, /model-publisher-logo\.is-qwen/);
   assert.match(styles, /models-workspace-v3\.models-view \.models-page-tabs \{ gap: 0;/);
   assert.match(styles, /models-page-tabs > \.models-v3-tab[^}]*margin-top: 0/s);
+  assert.match(styles, /models-discover-head/);
+  assert.match(styles, /models-discover-row\.is-selected/);
+  assert.match(styles, /models-discover-workbench/);
+  assert.match(styles, /models-catalog-pagination\.is-compact/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
 });

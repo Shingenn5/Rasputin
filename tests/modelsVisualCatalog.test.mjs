@@ -18,6 +18,11 @@ test("desktop Discover Models opens into a native llama.cpp visual catalog", () 
   assert.match(models, /data-testid="discover-browse-models"/);
   assert.match(models, /data-testid="discover-search-models"/);
   assert.match(models, /data-testid="discover-model-catalog"/);
+  assert.match(models, /data-table-kind="discover-model-table"/);
+  assert.match(models, /data-testid="discover-model-row"/);
+  assert.match(models, /data-testid="discover-model-inspector"/);
+  assert.match(models, /data-testid="discover-inspector-resizer"/);
+  assert.match(models, /<PublisherLogo item=\{item\} size="md" \/>/);
   assert.match(models, /<strong>\{searchMode === "browse" \? "Available Models"/);
   assert.match(models, /setCatalogRuntime\("llamaCppGgufServer"\)/);
   assert.match(models, /searchMode === "catalog" && !desktopOnly/);
@@ -49,8 +54,11 @@ test("model cards use generated identity and collapse advanced details", () => {
 
 
 test("desktop model catalog exposes selection details and a real llama.cpp loader", () => {
-  assert.match(models, /studio-model-browser/);
-  assert.match(models, /<StudioModelDetail item=\{selectedCatalogItem\}/);
+  assert.match(models, /models-discover-workbench/);
+  assert.match(models, /<DiscoverModelInspector/);
+  assert.match(models, /aria-label="Discover model inspector sections"/);
+  assert.match(models, /const tabs = \["info", "download", "fit", "source"\]/);
+  assert.match(models, /data-testid="discover-variant-picker"/);
   assert.match(models, /!desktopOnly && \(/);
   assert.match(models, /model-hardware-filters/);
   assert.match(models, /<ModelLoadDialog/);

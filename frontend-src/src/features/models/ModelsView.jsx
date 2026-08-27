@@ -769,6 +769,7 @@ export function ModelsView({
   const [downloadRefreshToken, setDownloadRefreshToken] = useState(0);
   const [loadingArtifact, setLoadingArtifact] = useState(null);
   const [selectedCatalogId, setSelectedCatalogId] = useState("");
+  const [discoverInspectorTab, setDiscoverInspectorTab] = useState("info");
   const [installedSearch, setInstalledSearch] = useState("");
   const [installedCategory, setInstalledCategory] = useState("all");
   const [selectedInstalledKey, setSelectedInstalledKey] = useState("");
@@ -1526,30 +1527,116 @@ export function ModelsView({
               )}
 
               {/* Model catalog */}
-              <div className={`${desktopOnly ? "studio-model-browser" : ""} models-v3-catalog-stage`} data-testid="discover-model-catalog">
-                <div className={desktopOnly ? "studio-model-list" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"} data-testid="model-catalog-grid">
-                  {pagedItems.map(item => (
-                    <CatalogCard
-                      key={item.id || item.modelId}
-                      item={item}
-                      selected={desktopOnly && selectedCatalogItem === item}
-                      onSelect={desktopOnly ? () => setSelectedCatalogId(item.id || item.modelId) : undefined}
-                      placementFit={catalogPlacementAssessment(item, effectiveHardware)}
+              <div className="models-v3-catalog-stage" data-testid="discover-model-catalog">
+                {desktopOnly && (
+                  <div
+                    className="models-inventory-workbench models-discover-workbench"
+                    style={{ "--models-inspector-width": `${inspectorWidth}px` }}
+                    data-testid="discover-model-workbench"
+                  >
+                    <section className="models-inventory-main" aria-labelledby="discover-catalog-title">
+                      <h2 id="discover-catalog-title" className="sr-only">Available models</h2>
+                      <div
+                        className="models-discover-list models-inventory-table"
+                        data-testid="discover-model-table"
+                        data-table-kind="discover-model-table"
+                        role="table"
+                        aria-label="Available models"
+                      >
+                        <div className="models-discover-head" role="row">
+                          <span role="columnheader">Model</span>
+                          <span role="columnheader">Developer</span>
+                          <span role="columnheader">Params</span>
+                          <span role="columnheader">Context</span>
+                          <span role="columnheader">Downloads</span>
+                          <span role="columnheader">Fit</span>
+                          <span role="columnheader">Actions</span>
+                        </div>
+                        {pagedItems.map((item) => {
+                          const itemId = item.id || item.modelId;
+                          return (
+                            <DiscoverCatalogRow
+                              key={itemId}
+                              item={item}
+                              selected={selectedCatalogItem === item}
+                              placementFit={catalogPlacementAssessment(item, effectiveHardware)}
+                              activeDownloads={activeDownloads}
+                              onSelect={() => setSelectedCatalogId(itemId)}
+                              onOpenDownload={() => {
+                                setSelectedCatalogId(itemId);
+                                setDiscoverInspectorTab("download");
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      {!displayItems.length && (modelCatalogLoading || hfLoading) && <SkeletonList count={5} />}
+                      {!displayItems.length && !modelCatalogLoading && !hfLoading && (
+                        <div className="models-inventory-empty">
+                          {searchMode !== "catalog" ? "No available models found. Try refreshing or choosing a different category." : "No local models match. Try different filters."}
+                        </div>
+                      )}
+                      <CatalogPagination
+                        total={displayItems.length}
+                        currentPage={currentPage}
+                        pageCount={pageCount}
+                        pageSize={pageSize}
+                        onPageChange={setPage}
+                        onPageSizeChange={setPageSize}
+                        compact
+                      />
+                    </section>
+
+                    <button
+                      type="button"
+                      className="models-inspector-resizer"
+                      data-testid="discover-inspector-resizer"
+                      role="separator"
+                      aria-label="Resize discover model inspector"
+                      aria-orientation="vertical"
+                      aria-valuemin={260}
+                      aria-valuemax={480}
+                      aria-valuenow={inspectorWidth}
+                      onPointerDown={startInspectorResize}
+                      onKeyDown={handleInspectorResizeKeyDown}
+                    />
+                    <DiscoverModelInspector
+                      key={selectedCatalogItem?.id || selectedCatalogItem?.modelId || "empty"}
+                      item={selectedCatalogItem}
+                      activeTab={discoverInspectorTab}
+                      onTabChange={setDiscoverInspectorTab}
+                      placementFit={selectedCatalogItem ? catalogPlacementAssessment(selectedCatalogItem, effectiveHardware) : null}
                       hardwareBlocked={normalizedHardware.blocked}
                       hardwareBlockReasons={normalizedHardware.blockedReasons}
                       prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
                       searchMode={searchMode}
                       startDownload={startDownload}
                       activeDownloads={activeDownloads}
-                      desktopOnly={desktopOnly}
                     />
-                  ))}
-                </div>
-                {desktopOnly && <StudioModelDetail item={selectedCatalogItem} />}
+                  </div>
+                )}
+                {!desktopOnly && (
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="model-catalog-grid">
+                    {pagedItems.map(item => (
+                      <CatalogCard
+                        key={item.id || item.modelId}
+                        item={item}
+                        placementFit={catalogPlacementAssessment(item, effectiveHardware)}
+                        hardwareBlocked={normalizedHardware.blocked}
+                        hardwareBlockReasons={normalizedHardware.blockedReasons}
+                        prepareCatalogModelForWarsat={prepareCatalogModelForWarsat}
+                        searchMode={searchMode}
+                        startDownload={startDownload}
+                        activeDownloads={activeDownloads}
+                        desktopOnly={desktopOnly}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Pagination */}
-              {displayItems.length > 0 && (
+              {!desktopOnly && displayItems.length > 0 && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", padding: "6px 0" }}>
                   <button className="w2-button" type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
                     Prev
@@ -1567,11 +1654,11 @@ export function ModelsView({
               )}
 
               {/* Loading skeletons while the catalog/search is in flight and nothing is shown yet */}
-              {!displayItems.length && (modelCatalogLoading || hfLoading) && (
+              {!desktopOnly && !displayItems.length && (modelCatalogLoading || hfLoading) && (
                 <SkeletonList count={5} />
               )}
 
-              {!displayItems.length && !modelCatalogLoading && !hfLoading && (
+              {!desktopOnly && !displayItems.length && !modelCatalogLoading && !hfLoading && (
                 <div style={{ padding: "32px", textAlign: "center", color: "var(--cc-muted)", backgroundColor: "var(--cc-surface)", borderRadius: "8px" }}>
                   {searchMode !== "catalog" ? "No available models found. Try refreshing or choosing a different category." : "No local models match. Try different filters."}
                 </div>
@@ -2104,6 +2191,398 @@ function GuidedRecommendations({
 /* ═══════════════════════════════════════════
    CATALOG CARD
    ═══════════════════════════════════════════ */
+function catalogModelId(item) {
+  return String(item?.modelId || item?.id || item?.name || "Unknown model");
+}
+
+function catalogPublisher(item) {
+  const modelId = catalogModelId(item);
+  return String(item?.publisher || item?.developer || item?.author || item?.organization || item?.provider || modelId.split("/")[0] || "Community");
+}
+
+function catalogParameterLabel(item) {
+  const declared = Number(item?.parameterCountB ?? item?.parameter_count_b);
+  if (Number.isFinite(declared) && declared > 0) return `${declared}B`;
+  const match = catalogModelId(item).match(/(?:^|[-_ ])(\d+(?:\.\d+)?)b(?:[-_ ]|$)/i);
+  return match ? `${match[1]}B` : "-";
+}
+
+function catalogModelFormat(item) {
+  if (item?.format) return String(item.format).toUpperCase();
+  if ((item?.runtimeOptions || []).some((option) => option.protocolId === "llamaCppGgufServer")) return "GGUF";
+  return item?.source === "huggingface" ? "HF" : "Model";
+}
+
+function compactCatalogMetric(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "-";
+  if (number >= 1e9) return (number / 1e9).toFixed(1) + "B";
+  if (number >= 1e6) return (number / 1e6).toFixed(1) + "M";
+  if (number >= 1e3) return (number / 1e3).toFixed(1) + "K";
+  return number.toLocaleString();
+}
+
+function catalogDownloadFor(item, activeDownloads) {
+  const modelId = catalogModelId(item);
+  return (activeDownloads || []).find((download) => (
+    (download.modelId || download.model_id || download.repository) === modelId
+  )) || null;
+}
+
+function CatalogPagination({ total, currentPage, pageCount, pageSize, onPageChange, onPageSizeChange, compact = false }) {
+  if (!total) return null;
+  return (
+    <footer className={`models-catalog-pagination ${compact ? "is-compact" : ""}`}>
+      <span>{total.toLocaleString()} models � Page {currentPage} of {pageCount}</span>
+      <div>
+        <button className="w2-button" type="button" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>Prev</button>
+        <button className="w2-button" type="button" disabled={currentPage >= pageCount} onClick={() => onPageChange(currentPage + 1)}>Next</button>
+        <label>
+          <span className="sr-only">Models per page</span>
+          <select className="w2-input" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+            {[10, 20, 40, 80].map((count) => <option key={count} value={count}>{count} / page</option>)}
+          </select>
+        </label>
+      </div>
+    </footer>
+  );
+}
+
+function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onSelect, onOpenDownload }) {
+  const modelId = catalogModelId(item);
+  const modelName = String(item?.name || modelId.split("/").pop() || modelId);
+  const developer = catalogPublisher(item);
+  const context = contextWindowFor(item);
+  const download = catalogDownloadFor(item, activeDownloads);
+  const downloadState = download ? downloadJobState(download) : "";
+  const activelyDownloading = Boolean(download && !["completed", "failed", "cancelled"].includes(downloadState));
+  const downloaded = downloadState === "completed";
+  const placement = placementFit || catalogPlacementAssessment(item, null);
+  const fitReady = downloaded || item?.readyWithinThreeMinutes || item?.loaded || placement.canDeploy;
+  const fitLabel = downloaded ? "Downloaded" : activelyDownloading ? labelize(downloadState) : placement.label;
+
+  return (
+    <div
+      className={`models-discover-row ${selected ? "is-selected" : ""}`}
+      data-testid="discover-model-row"
+      role="row"
+      tabIndex={0}
+      aria-selected={selected}
+      aria-controls="discover-model-inspector"
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <div className="models-discover-model" role="cell">
+        <PublisherLogo item={item} size="md" />
+        <span>
+          <strong>{modelName}</strong>
+          <small title={modelId}>{modelId}</small>
+        </span>
+      </div>
+      <span className="models-inventory-developer" role="cell" title={developer}>{developer}</span>
+      <span className="models-inventory-chip" role="cell">{catalogParameterLabel(item)}</span>
+      <span className="models-inventory-context" role="cell">{context > 0 ? context.toLocaleString() : "-"}</span>
+      <span className="models-discover-downloads" role="cell">{compactCatalogMetric(item?.downloads)}</span>
+      <span className={`models-inventory-fit ${fitReady ? "is-ready" : "is-review"}`} role="cell">
+        <i style={{ background: fitReady ? "var(--models-forge-bright)" : "var(--ras-warn)" }} />
+        {fitLabel}
+      </span>
+      <div className="studio-installed-actions" role="cell">
+        <button
+          type="button"
+          className="models-discover-row-action"
+          data-testid="discover-row-download"
+          aria-label={`Open download options for ${modelName}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenDownload();
+          }}
+        >
+          <Download size={12} /> {activelyDownloading ? labelize(downloadState) : downloaded ? "Manage" : "Download"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DiscoverModelInspector({
+  item,
+  activeTab,
+  onTabChange,
+  placementFit,
+  hardwareBlocked = false,
+  hardwareBlockReasons = [],
+  prepareCatalogModelForWarsat,
+  searchMode,
+  startDownload,
+  activeDownloads,
+}) {
+  const [variantDetail, setVariantDetail] = useState(null);
+  const [variantDetailLoading, setVariantDetailLoading] = useState(false);
+  const [variantDetailError, setVariantDetailError] = useState("");
+  const [selectedVariantId, setSelectedVariantId] = useState("");
+
+  if (!item) {
+    return (
+      <aside id="discover-model-inspector" className="models-model-inspector is-empty" data-testid="discover-model-inspector">
+        <Search size={24} />
+        <p>Select a model to review its developer, hardware fit, available GGUF files, and download options.</p>
+      </aside>
+    );
+  }
+
+  const modelId = catalogModelId(item);
+  const modelName = String(item.name || modelId.split("/").pop() || modelId);
+  const developer = catalogPublisher(item);
+  const isHuggingFace = searchMode !== "catalog" || item.source === "huggingface";
+  const placement = placementFit || catalogPlacementAssessment(item, null);
+  const itemBlockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
+  const blockedReasons = [...new Set([...hardwareBlockReasons, ...itemBlockedReasons])];
+  const blocked = hardwareBlocked || blockedReasons.length > 0 || !placement.canDeploy;
+  const guidance = blockerGuidanceForReasons([...blockedReasons, ...(blocked ? placement.reasons || [] : [])]);
+  const variants = Array.isArray(variantDetail?.variants) ? variantDetail.variants : [];
+  const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || null;
+  const selectedCompatibility = selectedVariant ? variantCompatibility(selectedVariant) : null;
+  const variantIssues = Array.isArray(variantDetail?.variantIssues) ? variantDetail.variantIssues : [];
+  const activeDownload = catalogDownloadFor(item, activeDownloads);
+  const activeDownloadState = activeDownload ? downloadJobState(activeDownload) : "";
+  const isDownloading = Boolean(activeDownload && !["completed", "failed", "cancelled"].includes(activeDownloadState));
+  const downloaded = activeDownloadState === "completed";
+  const context = contextWindowFor(item);
+  const updated = item.lastModified || item.updatedAt || item.updated_at;
+  const capabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
+  const modalities = Array.isArray(item.modalities) ? item.modalities : capabilities.filter((capability) => ["text", "image", "audio", "vision"].includes(String(capability).toLowerCase()));
+  const vramEstimate = catalogVramEstimateGb(item);
+  const tabs = ["info", "download", "fit", "source"];
+
+  const loadVariantDetail = async () => {
+    if (!isHuggingFace) return;
+    setVariantDetailLoading(true);
+    setVariantDetailError("");
+    try {
+      const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
+      const detail = await api("/api/model-catalog/model/" + encodedModelId);
+      setVariantDetail(detail);
+      const nextVariants = Array.isArray(detail?.variants) ? detail.variants : [];
+      setSelectedVariantId((current) => current && nextVariants.some((variant) => variant.id === current)
+        ? current
+        : (nextVariants[0]?.id || ""));
+    } catch (error) {
+      setVariantDetailError("Unable to load exact GGUF variants: " + (error?.message || "unknown error"));
+    } finally {
+      setVariantDetailLoading(false);
+    }
+  };
+
+  const runPrimaryAction = async () => {
+    onTabChange("download");
+    if (!isHuggingFace) {
+      await prepareCatalogModelForWarsat?.(item);
+      return;
+    }
+    if (!variantDetail) {
+      await loadVariantDetail();
+      return;
+    }
+    await startDownload(modelId, selectedVariant || null);
+  };
+
+  const primaryLabel = isDownloading
+    ? labelize(activeDownloadState)
+    : downloaded
+      ? "Downloaded"
+      : !isHuggingFace
+        ? "Prepare model"
+        : !variantDetail
+          ? "Choose GGUF"
+          : variants.length
+            ? "Download selected"
+            : "Download weights";
+  const primaryDisabled = isDownloading || downloaded || (variants.length > 0 && !selectedVariant) || (selectedCompatibility && !selectedCompatibility.safe);
+  const fitReady = downloaded || item.readyWithinThreeMinutes || item.loaded || placement.canDeploy;
+  const fitStatus = downloaded ? "Downloaded" : fitReady ? placement.label : "Needs review";
+
+  const handleTabKeyDown = (event, tab) => {
+    const index = tabs.indexOf(tab);
+    let nextIndex = index;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    onTabChange(nextTab);
+    requestAnimationFrame(() => document.getElementById(`discover-inspector-tab-${nextTab}`)?.focus());
+  };
+
+  return (
+    <aside id="discover-model-inspector" className="models-model-inspector models-discover-inspector" data-testid="discover-model-inspector">
+      <header className="models-inspector-header">
+        <div className="models-inspector-title">
+          <PublisherLogo item={item} size="lg" />
+          <div>
+            <strong>{modelName}</strong>
+            <small>{developer} � {modelId}</small>
+          </div>
+        </div>
+        <span className={`models-inspector-status ${fitReady ? "is-ready" : ""}`}>{fitStatus}</span>
+        <div className="models-inspector-primary-actions">
+          <button className="w2-button primary" type="button" data-testid="discover-download-action" onClick={runPrimaryAction} disabled={primaryDisabled}>
+            <Download size={13} /> {primaryLabel}
+          </button>
+          {item.sourceUrl ? (
+            <a className="w2-button" href={item.sourceUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Source</a>
+          ) : (
+            <button className="w2-button" type="button" disabled><ExternalLink size={13} /> Source</button>
+          )}
+        </div>
+      </header>
+
+      <div className="models-inspector-tabs" role="tablist" aria-label="Discover model inspector sections" data-testid="discover-inspector-tabs">
+        {tabs.map((tab) => (
+          <button
+            key={tab}
+            id={`discover-inspector-tab-${tab}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`discover-inspector-panel-${tab}`}
+            tabIndex={activeTab === tab ? 0 : -1}
+            onClick={() => onTabChange(tab)}
+            onKeyDown={(event) => handleTabKeyDown(event, tab)}
+          >
+            {tab === "download" ? "Files" : labelize(tab)}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "info" && (
+        <section id="discover-inspector-panel-info" role="tabpanel" aria-labelledby="discover-inspector-tab-info" className="models-inspector-section">
+          <h3>Model information</h3>
+          <p className="models-inspector-summary">{item.summary || item.description || `A ${labelize(item.purpose || "chat")} model published by ${developer}.`}</p>
+          <dl className="models-inspector-facts">
+            {[
+              ["Developer", developer],
+              ["Family", item.family || item.modelFamily || item.architecture || item.arch || "-"],
+              ["Parameters", catalogParameterLabel(item)],
+              ["Architecture", item.architecture || item.arch || "-"],
+              ["Context", context > 0 ? context.toLocaleString() + " tokens" : "-"],
+              ["Format", catalogModelFormat(item)],
+              ["Purpose", labelize(item.purpose || "chat")],
+              ["Modalities", modalities.length ? modalities.map(labelize).join(", ") : "Text"],
+              ["License", item.license || "Not listed"],
+              ["Downloads", Number(item.downloads || 0).toLocaleString()],
+              ["Likes", Number(item.likes || 0).toLocaleString()],
+            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
+          </dl>
+          {capabilities.length > 0 && <div className="studio-model-capabilities">{capabilities.map((capability) => <Badge key={capability} variant="muted">{labelize(capability)}</Badge>)}</div>}
+        </section>
+      )}
+
+      {activeTab === "download" && (
+        <section id="discover-inspector-panel-download" role="tabpanel" aria-labelledby="discover-inspector-tab-download" className="models-inspector-section models-discover-download-panel">
+          <h3>Download files</h3>
+          {activeDownload && (
+            <div className="models-inspector-callout">
+              {downloaded ? <CheckCircle2 size={16} /> : <Download size={16} />}
+              <span><strong>{downloaded ? "Download complete" : labelize(activeDownloadState)}</strong><small>{trustedDownloadProgress(activeDownload) ? Math.round(Number(activeDownload.progress)) + "% complete" : "Rasputin is tracking this download."}</small></span>
+            </div>
+          )}
+          {isHuggingFace ? (
+            <div className="models-discover-variant-picker" data-testid="discover-variant-picker">
+              <button className="models-inspector-wide-action" type="button" onClick={loadVariantDetail} disabled={variantDetailLoading || isDownloading}>
+                <Download size={13} /> {variantDetailLoading ? "Loading GGUF files." : variantDetail ? "Refresh GGUF files" : "Choose a GGUF file"}
+              </button>
+              {variantDetailError && <div role="alert" className="models-discover-error">{variantDetailError}</div>}
+              {variantDetail && variants.length > 0 && (
+                <>
+                  <label>
+                    <span>Exact GGUF variant</span>
+                    <select value={selectedVariant?.id || ""} onChange={(event) => setSelectedVariantId(event.target.value)} aria-label={`Exact GGUF variant for ${modelName}`}>
+                      {variants.map((variant) => {
+                        const compatibility = variantCompatibility(variant);
+                        return <option key={variant.id} value={variant.id}>{variant.quantization || "Unknown"} � {formatDownloadBytes(variantTotalBytes(variant))} � {labelize(compatibility.state)}</option>;
+                      })}
+                    </select>
+                  </label>
+                  {selectedVariant && (
+                    <dl className="models-inspector-facts">
+                      {[
+                        ["Quantization", selectedVariant.quantization || "Unknown"],
+                        ["Size", formatDownloadBytes(variantTotalBytes(selectedVariant))],
+                        ["Shards", selectedVariant.shardCount || 1],
+                        ["Modality", selectedVariant.multimodal ? "Multimodal" : "Text-only"],
+                        ["Compatibility", labelize(selectedCompatibility?.state || "unknown")],
+                      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                    </dl>
+                  )}
+                </>
+              )}
+              {variantDetail && variants.length === 0 && <p className="models-inspector-summary">No complete GGUF variants were returned. The original model weights remain available.</p>}
+              {variantIssues.map((issue, index) => <div key={(issue.kind || "issue") + index} className="models-discover-warning">{issue.reason || issue.kind}{issue.nextAction ? ` � ${issue.nextAction}` : ""}</div>)}
+              {variantDetail && (
+                <button className="models-inspector-wide-action is-primary" type="button" onClick={() => startDownload(modelId, selectedVariant || null)} disabled={primaryDisabled}>
+                  <Download size={13} /> {variants.length ? "Download selected GGUF" : "Download model weights"}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="models-inspector-callout"><HardDrive size={16} /><span><strong>Local catalog model</strong><small>Prepare this entry with Rasputin's native model workflow.</small></span></div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "fit" && (
+        <section id="discover-inspector-panel-fit" role="tabpanel" aria-labelledby="discover-inspector-tab-fit" className="models-inspector-section">
+          <h3>Hardware fit</h3>
+          <div className="models-inspector-callout">
+            {blocked ? <AlertTriangle size={16} /> : <Gauge size={16} />}
+            <span><strong>{blocked ? "Review before downloading" : "Fits your current hardware"}</strong><small>{placement.reasons?.[0] || "Rasputin can place this model automatically."}</small></span>
+          </div>
+          <dl className="models-inspector-facts">
+            {[
+              ["Estimated VRAM", vramEstimate ? `~${vramEstimate} GB` : "Unknown"],
+              ["Largest GPU", placement.largestSingleGpuGb == null ? "Unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"],
+              ["Combined pool", placement.aggregateVramGb == null ? "Unknown" : placement.aggregateVramGb.toFixed(1) + " GB"],
+              ["Placement", placement.mode ? labelize(placement.mode) : "Automatic"],
+              ["Assessment", placement.label || "Needs review"],
+            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+          </dl>
+          {guidance.length > 0 && (
+            <div className="models-discover-guidance">
+              {guidance.map((entry) => <div key={entry.raw}><strong>{entry.raw}</strong><span>{entry.next}</span></div>)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "source" && (
+        <section id="discover-inspector-panel-source" role="tabpanel" aria-labelledby="discover-inspector-tab-source" className="models-inspector-section">
+          <h3>Source and provenance</h3>
+          <dl className="models-inspector-facts">
+            {[
+              ["Model ID", modelId],
+              ["Developer", developer],
+              ["Source", item.source === "huggingface" || isHuggingFace ? "Hugging Face" : labelize(item.source || "Rasputin catalog")],
+              ["License", item.license || "Not listed"],
+              ["Updated", updated ? new Date(updated).toLocaleDateString() : "Not listed"],
+              ["Format", catalogModelFormat(item)],
+            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
+          </dl>
+          {item.sourceUrl && <a className="models-inspector-wide-action" href={item.sourceUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Open model source</a>}
+        </section>
+      )}
+    </aside>
+  );
+}
+
+
 function StudioModelDetail({ item }) {
   if (!item) {
     return <aside className="studio-model-detail"><p>Select a model to see its details.</p></aside>;

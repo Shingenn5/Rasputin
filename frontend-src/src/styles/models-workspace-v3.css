@@ -507,8 +507,177 @@
 .models-workspace-v3 .models-delete-confirm p { margin: 0 0 8px; color: var(--dash-text); font-size: .61rem; line-height: 1.4; }
 .models-workspace-v3 .models-delete-confirm > button { min-height: 28px; margin-right: 6px; border: 1px solid var(--dash-border); border-radius: 5px; padding: 4px 8px; background: var(--dash-panel-2); color: var(--dash-text); font-size: .58rem; }
 
+/* Discover Models uses the same dense table and resizable inspector language. */
+.models-workspace-v3.is-discover-route .models-catalog-toolbar {
+  gap: 6px;
+  padding: 7px 9px;
+}
+.models-workspace-v3.is-discover-route .model-catalog-filters { gap: 6px; }
+.models-workspace-v3.is-discover-route .models-v3-catalog-stage {
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.models-workspace-v3 .models-discover-workbench {
+  height: clamp(480px, calc(100dvh - 340px), 680px);
+}
+.models-workspace-v3 .models-discover-head,
+.models-workspace-v3 .models-discover-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.7fr) minmax(92px, .72fr) 54px 66px 72px minmax(78px, .58fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.models-workspace-v3 .models-discover-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-height: 34px;
+  border-bottom: 1px solid var(--dash-border-strong);
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--dash-panel) 97%, black);
+  color: var(--dash-muted);
+  font-size: .54rem;
+  letter-spacing: .055em;
+}
+.models-workspace-v3 .models-discover-row {
+  position: relative;
+  min-height: 58px;
+  border-bottom: 1px solid var(--models-v3-line);
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--dash-text);
+  cursor: default;
+  transition: background-color 100ms ease, box-shadow 100ms ease;
+}
+.models-workspace-v3 .models-discover-row:hover { background: var(--models-v3-panel-raised); }
+.models-workspace-v3 .models-discover-row.is-selected {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--models-forge) 29%, var(--dash-panel)), color-mix(in srgb, var(--models-forge) 11%, var(--dash-panel)));
+  box-shadow: inset 3px 0 var(--models-forge);
+}
+.models-workspace-v3 .models-discover-row:focus-visible { z-index: 1; outline: 2px solid var(--models-forge-bright); outline-offset: -2px; }
+.models-workspace-v3 .models-discover-model {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.models-workspace-v3 .models-discover-model > span { display: grid; min-width: 0; gap: 1px; }
+.models-workspace-v3 .models-discover-model strong,
+.models-workspace-v3 .models-discover-model small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models-workspace-v3 .models-discover-model strong { color: #f0f4f1; font-size: .72rem; font-weight: 680; }
+.models-workspace-v3 .models-discover-model small { color: var(--dash-faint); font-family: var(--ras-font-mono); font-size: .54rem; }
+.models-workspace-v3 .models-discover-downloads { color: var(--dash-muted); font-family: var(--ras-font-mono); font-size: .59rem; }
+.models-workspace-v3 .models-discover-row-action {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--models-forge) 34%, var(--dash-border-strong));
+  border-radius: 5px;
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--models-forge) 9%, var(--dash-panel-2));
+  color: var(--models-forge-bright);
+  font-size: .57rem;
+  font-weight: 680;
+}
+.models-workspace-v3 .models-discover-row-action:hover,
+.models-workspace-v3 .models-discover-row-action:focus-visible {
+  border-color: var(--models-forge-bright);
+  background: var(--models-forge-soft);
+  color: #f1f7f3;
+  outline: 0;
+}
+.models-workspace-v3 .models-catalog-pagination {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 0;
+  color: var(--dash-muted);
+  font-size: .62rem;
+}
+.models-workspace-v3 .models-catalog-pagination.is-compact {
+  justify-content: space-between;
+  border-top: 1px solid var(--models-v3-line);
+  padding: 6px 10px;
+}
+.models-workspace-v3 .models-catalog-pagination > div { display: flex; align-items: center; gap: 5px; }
+.models-workspace-v3 .models-catalog-pagination button { min-height: 27px; padding: 3px 8px; font-size: .58rem; }
+.models-workspace-v3 .models-catalog-pagination select { width: 92px; min-height: 27px; padding: 3px 22px 3px 6px; font-size: .58rem; }
+.models-workspace-v3 .models-discover-inspector .models-inspector-primary-actions > a {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--dash-border-strong);
+  border-radius: 5px;
+  padding: 4px 8px;
+  background: var(--dash-panel-2);
+  color: var(--dash-text);
+  font-size: .62rem;
+  text-decoration: none;
+}
+.models-workspace-v3 .models-discover-inspector .studio-model-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+.models-workspace-v3 .models-discover-variant-picker { display: grid; gap: 9px; }
+.models-workspace-v3 .models-discover-variant-picker > label { display: grid; gap: 5px; color: var(--dash-muted); font-size: .6rem; }
+.models-workspace-v3 .models-discover-variant-picker select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--dash-border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--dash-panel-2) 88%, black);
+  color: var(--dash-text);
+  font-size: .58rem;
+}
+.models-workspace-v3 .models-inspector-wide-action.is-primary {
+  border-color: color-mix(in srgb, var(--models-forge) 60%, var(--dash-border));
+  background: var(--models-forge-soft);
+  color: var(--models-forge-bright);
+}
+.models-workspace-v3 .models-discover-error,
+.models-workspace-v3 .models-discover-warning {
+  border: 1px solid color-mix(in srgb, var(--ras-danger) 45%, var(--dash-border));
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--ras-danger) 8%, var(--dash-panel));
+  color: var(--ras-danger);
+  font-size: .57rem;
+  line-height: 1.4;
+}
+.models-workspace-v3 .models-discover-warning {
+  border-color: color-mix(in srgb, var(--ras-warn) 45%, var(--dash-border));
+  background: color-mix(in srgb, var(--ras-warn) 8%, var(--dash-panel));
+  color: var(--ras-warn);
+}
+.models-workspace-v3 .models-discover-guidance { display: grid; gap: 6px; margin-top: 9px; }
+.models-workspace-v3 .models-discover-guidance > div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 32%, var(--models-v3-line));
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--ras-warn) 6%, var(--dash-panel));
+}
+.models-workspace-v3 .models-discover-guidance strong { color: var(--ras-warn); font-size: .58rem; }
+.models-workspace-v3 .models-discover-guidance span { color: var(--dash-muted); font-size: .56rem; line-height: 1.4; }
+
+
 @media (max-width: 1250px) {
   .models-workspace-v3 .models-inventory-workbench { grid-template-columns: minmax(500px, 1fr) 7px var(--models-inspector-width, 310px); }
+  .models-workspace-v3 .models-discover-head,
+  .models-workspace-v3 .models-discover-row { grid-template-columns: minmax(190px, 1.45fr) minmax(82px, .65fr) 48px 58px 62px 70px auto; gap: 6px; }
   .models-workspace-v3 .studio-installed-head,
   .models-workspace-v3 .studio-installed-row { grid-template-columns: minmax(190px, 1.5fr) minmax(82px, .7fr) 48px 58px 48px 64px auto; gap: 6px; }
   .models-workspace-v3 .studio-installed-actions button { padding-inline: 5px; }
@@ -517,6 +686,8 @@
 @media (max-width: 1050px) {
   .models-workspace-v3 .models-inventory-toolbar { grid-template-columns: auto minmax(160px, 1fr); }
   .models-workspace-v3 .models-inventory-tools { grid-column: 1 / -1; }
+  .models-workspace-v3 .models-discover-head,
+  .models-workspace-v3 .models-discover-row { grid-template-columns: minmax(180px, 1.4fr) minmax(76px, .62fr) 44px 52px 56px 66px auto; }
   .models-workspace-v3 .models-inventory-workbench { grid-template-columns: minmax(0, 1fr) 7px minmax(260px, var(--models-inspector-width, 280px)); }
   .models-workspace-v3 .studio-installed-head,
   .models-workspace-v3 .studio-installed-row { grid-template-columns: minmax(180px, 1.45fr) minmax(80px, .7fr) 46px 56px 46px 62px auto; }
@@ -525,6 +696,7 @@
 
 @media (max-width: 900px) {
   .models-workspace-v3 .models-v3-runtime-metrics { flex: 1 1 100%; }
+  .models-workspace-v3 .models-discover-workbench { height: auto; min-height: 0; }
   .models-workspace-v3 .models-v3-metric { min-width: 0; flex: 1 1 0; }
   .models-workspace-v3 .models-inventory-workbench { display: flex; overflow-y: auto; flex-direction: column; }
   .models-workspace-v3 .models-inventory-main { min-height: 420px; border-right: 0; border-bottom: 1px solid var(--models-v3-line); }
@@ -534,6 +706,20 @@
 
 @media (max-width: 640px) {
   .models-workspace-v3 .models-v3-command-band { align-items: flex-start; flex-wrap: wrap; }
+  .models-workspace-v3 .models-discover-head { display: none; }
+  .models-workspace-v3 .models-discover-row {
+    min-height: 116px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 6px 8px;
+  }
+  .models-workspace-v3 .models-discover-model { grid-column: 1 / 3; grid-row: 1; }
+  .models-workspace-v3 .models-discover-row .studio-installed-actions { grid-column: 3; grid-row: 1; }
+  .models-workspace-v3 .models-discover-row .models-inventory-developer { grid-column: 1; grid-row: 2; }
+  .models-workspace-v3 .models-discover-row .models-inventory-chip { grid-column: 2; grid-row: 2; }
+  .models-workspace-v3 .models-discover-row .models-inventory-context { grid-column: 3; grid-row: 2; }
+  .models-workspace-v3 .models-discover-row .models-discover-downloads { grid-column: 1; grid-row: 3; }
+  .models-workspace-v3 .models-discover-row .models-inventory-fit { grid-column: 2 / 4; grid-row: 3; justify-self: end; }
+  .models-workspace-v3 .models-catalog-pagination.is-compact { align-items: flex-start; flex-direction: column; gap: 5px; }
   .models-workspace-v3 .models-v3-runtime-metrics { width: 100%; min-width: 0; }
   .models-workspace-v3 .models-v3-metric { padding-inline: 5px; }
   .models-workspace-v3 .models-v3-metric > div:last-child { font-size: .47rem; letter-spacing: .035em; }
