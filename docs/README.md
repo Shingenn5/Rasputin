@@ -11,6 +11,7 @@ competing "current" roadmaps from forming.
 | --- | --- | --- |
 | Install or run Rasputin | [`README.md`](../README.md) | User-facing commands and platform guidance |
 | Join the project as a coding agent | [`CODEX_ONBOARDING.md`](CODEX_ONBOARDING.md) | Repository map, test workflow, and agent gotchas |
+| Inherit or maintain the codebase | [`MAINTAINER_HANDOFF.md`](MAINTAINER_HANDOFF.md) | First-day workflow, ownership boundaries, maintenance baseline, and handoff acceptance |
 | Understand the architecture | [`RASPUTIN_ARCHITECTURE_GUIDE.md`](RASPUTIN_ARCHITECTURE_GUIDE.md) | Runtime and frontend architecture reference |
 | Deploy or troubleshoot a runtime | [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) | Docker, native, desktop, and remote-access matrix |
 | Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md), [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md), [`RASPUTIN_V1_OPERATOR_RUNBOOK.md`](RASPUTIN_V1_OPERATOR_RUNBOOK.md), and `scripts/verify_release_candidate.py` | Operational release steps, human evidence checklist, automated evidence, and explicit remaining boundaries |
@@ -23,6 +24,8 @@ These are the documents to consult before starting implementation work.
 | Document | Scope | Status |
 | --- | --- | --- |
 | [`CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`](CODING_AGENT_IMPLEMENTATION_CHECKLIST.md) | Coding-agent capability and verification queue | Active working checklist |
+| [`MAINTAINER_HANDOFF.md`](MAINTAINER_HANDOFF.md) | Maintainer entry point, ownership map, code-health targets, and transfer acceptance | Current handoff contract |
+| [`CSS_OWNERSHIP.md`](CSS_OWNERSHIP.md) | Global cascade, stylesheet owners, and behavior-preserving extraction order | Current refactoring contract |
 | [`ADAPTIVE_CONTEXT_AND_THROUGHPUT.md`](ADAPTIVE_CONTEXT_AND_THROUGHPUT.md) | Evidence-bound context sizing and child-work budgets | Implemented policy contract; measured runtime evidence remains bounded |
 | [`RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md`](RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md) | Release-readiness gaps and evidence requirements | Current readiness report |
 | [`RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md`](RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md) | Independent fresh-user audit of the rebuilt model-orchestration and UI/UX revision | P1/P2 fixed and independently re-verified |

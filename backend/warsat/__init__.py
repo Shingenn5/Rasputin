@@ -1,3 +1,11 @@
+"""Plan and operate governed local-model deployments through WarSat.
+
+This package boundary combines hardware discovery, runtime protocol selection,
+capacity-aware tuning, deployment validation, and container lifecycle actions.
+Planning functions return reviewable data; mutating operations must continue to
+honor the approval and security checks enforced by their API callers.
+"""
+
 import json
 import os
 import platform
@@ -1403,6 +1411,14 @@ def _probe_failure_log_tail(container_name, limit=15):
 
 
 def make_plan(payload):
+    """Return a validated, reviewable deployment plan for a model request.
+
+    The planner may reroute incompatible model formats, select an available
+    host port, and derive single- or multi-GPU tuning from current inventory.
+    It does not start a runtime; deployment remains a separate governed action.
+    Invalid or unsafe requests raise `AppError` with an operator-facing reason.
+    """
+
     protocol = get_protocol(payload.get("protocolId") or payload.get("protocol_id"))
     model_ref = str(payload.get("modelRef") or payload.get("model_ref") or "").strip()
     model_path = str(payload.get("modelPath") or payload.get("model_path") or "").strip()

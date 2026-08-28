@@ -1190,6 +1190,6 @@ That path follows the real runtime: Docker -> Python server -> API -> frontend s
 
 The frontend build uses compiled Bootstrap CSS from the local npm package instead of compiling Bootstrap SCSS. This avoids Sass deprecation noise in normal production builds.
 
-The current CSS bundle is larger than a fully custom minimal stylesheet because Bootstrap supplies a real component system. Rasputin-specific CSS is kept small in `rasputin.css`; Bootstrap CSS is the external styling library layer.
+The current CSS bundle combines Bootstrap's external component layer with a large accumulated Rasputin-specific layer. `frontend-src/src/styles/rasputin.css` is a maintenance hotspot and should be split by feature behind visual and interaction tests; do not treat its current size as an intentional architecture boundary.
 
 The current frontend is componentized and Bootstrap-based. Vite splits preview, runtime, model, workspace, task, and vendor code into separate chunks so normal app boot is not forced into one oversized bundle.

@@ -1,4 +1,11 @@
-import json
+"""Shared SQLite persistence for Rasputin's owner-scoped runtime state.
+
+This module owns schema creation and low-level storage helpers used across API,
+agent, workspace, approval, memory, and model-runtime features. Callers should
+use the feature-specific stores where they exist instead of issuing SQL here.
+Tests must redirect it with `RASPUTIN_DATA_DIR` before importing the backend.
+"""
+
 import json
 import os
 import sqlite3
@@ -51,6 +58,13 @@ def connect():
 
 
 def init_db():
+    """Create and migrate the shared runtime schema idempotently.
+
+    Schema changes run under the process-local store lock and a SQLite
+    transaction. The function may be called repeatedly during startup and
+    tests; migrations must therefore remain backward-compatible and repeatable.
+    """
+
     DATA_DIR.mkdir(exist_ok=True)
     with _lock, connect() as conn:
         conn.executescript(

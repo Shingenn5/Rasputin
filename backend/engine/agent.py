@@ -1,3 +1,11 @@
+"""Run Rasputin's governed conversational and coding-agent execution loop.
+
+The agent hub coordinates model selection, bounded context, streamed output,
+tool availability, approval-aware execution, and test-and-repair state. Keep
+failure states explicit: prose-only output must never be reported as completed
+execution when required tools were unavailable.
+"""
+
 import asyncio
 import importlib
 import json
@@ -1734,6 +1742,14 @@ class AgentHub:
         self._trigger_broadcast(task.id)
 
     async def governed_chat(self, task, phase, role, sections, tools=None):
+        """Run one policy-governed model phase and record its task evidence.
+
+        The method selects the phase model, applies context and safety policy,
+        streams model output, executes allowed tool calls, and updates task
+        metrics and failure state. Tool degradation is acceptable for ordinary
+        chat but must fail visibly when an execution phase requires tools.
+        """
+
         model_key = self.phase_model(task, role)
         model = model_registry.get_model(model_key) or {}
         minimal_inference = phase == "chat" and model_compatibility.default_profile(model) == "minimal"

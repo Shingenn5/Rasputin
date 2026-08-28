@@ -46,6 +46,7 @@ containers and sandboxed skills. Python 3.12, Node with root-level `package.json
 | `tests/testBackendSmoke.py` | The backend suite (unittest; 107 test methods; environment-dependent sandbox tests may skip) |
 | `tests/ui/`, `playwright.config.mjs` | Playwright UI tests |
 | `docs/` | Plans and findings — see §6 for which ones are current |
+| `docs/MAINTAINER_HANDOFF.md` | First-day maintainer workflow, ownership map, and handoff acceptance |
 | `THREAT_MODEL.md` | **Read before any security-adjacent change** |
 
 ## 3. Build, run, test
@@ -59,6 +60,9 @@ npm run build                                     # vite build → frontend/
 
 # Documentation contract check (from repo root):
 C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_docs.py
+
+# Tracked maintenance surface and documentation-coverage inputs:
+C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\audit_repository.py
 
 # Release-candidate evidence (isolated tests plus native/Docker probes):
 C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788 --endpoint docker=http://127.0.0.1:8787

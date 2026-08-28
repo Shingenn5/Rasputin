@@ -18,6 +18,13 @@ REQUIRED_ONBOARDING_SNIPPETS = (
     "npm run build",
     "RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py",
 )
+REQUIRED_HANDOFF_SNIPPETS = (
+    "scripts\\audit_repository.py",
+    "npm.cmd run checkRepoSafety",
+    "## Ownership map",
+    "## Commenting standard",
+    "## Definition of handoff-ready",
+)
 
 
 def markdown_files(root: Path) -> list[Path]:
@@ -134,6 +141,19 @@ def validate(root: Path, *, check_project_contracts: bool = True) -> dict:
             for snippet in REQUIRED_ONBOARDING_SNIPPETS:
                 if snippet not in content:
                     errors.append({"kind": "missing-onboarding-command", "file": "docs/CODEX_ONBOARDING.md", "detail": snippet})
+
+        handoff = root / "docs" / "MAINTAINER_HANDOFF.md"
+        if not handoff.is_file():
+            errors.append({"kind": "missing-required-file", "file": "docs/MAINTAINER_HANDOFF.md"})
+        else:
+            content = handoff.read_text(encoding="utf-8")
+            for snippet in REQUIRED_HANDOFF_SNIPPETS:
+                if snippet not in content:
+                    errors.append({
+                        "kind": "missing-handoff-contract",
+                        "file": "docs/MAINTAINER_HANDOFF.md",
+                        "detail": snippet,
+                    })
 
         ledger = root / "docs" / "RASPUTIN_IMPLEMENTATION_LEDGER.md"
         if not ledger.is_file():
