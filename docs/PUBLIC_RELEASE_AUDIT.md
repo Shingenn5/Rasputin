@@ -64,14 +64,8 @@ scanner.
 |---|---|
 | Remote | `https://github.com/Shingenn5/Rasputin.git` |
 | Package author | `Shingenn5` |
-| Submodule | `token-optimizer` |
-| Submodule upstream | `https://github.com/alexgreensh/token-optimizer` |
-| Submodule gitlink | `7e8d2d17fb97264c0114b9f98ac6b57e43d9bf57` |
 
 The README and installers consistently reference the current GitHub repository.
-The `token-optimizer` submodule has its own license and security documentation;
-its pinned revision and license must be verified as part of the final release
-bill of materials.
 
 ## Tooling gaps
 

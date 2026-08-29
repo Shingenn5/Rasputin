@@ -162,7 +162,7 @@ UI libs        lucide-react (icons) · framer-motion (motion) · recharts (chart
                react-markdown + rehype-sanitize (markdown)
 Class utils    clsx · tailwind-merge · class-variance-authority
 Heavy features pyodide (in-browser Python) · pdfjs-dist (PDF)
-Fonts          @fontsource/rajdhani
+Fonts          @fontsource-variable/atkinson-hyperlegible-next
 Testing        Playwright (npm run testUi)
 ```
 

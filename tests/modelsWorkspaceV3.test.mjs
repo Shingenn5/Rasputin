@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 
 const models = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
+const modelIdentity = readFileSync(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../frontend-src/src/styles/models-workspace-v3.css", import.meta.url), "utf8");
 
 test("Models workspace v3 adds a distinct command-console hierarchy", () => {
@@ -35,6 +36,7 @@ test("My Models opens as a dense selectable inventory with a persistent inspecto
   assert.match(models, /<PublisherLogo item=\{model\} size="md" \/>/);
   assert.match(models, /data-table-kind="installed-model-table"/);
   assert.match(models, /data-testid="models-inspector-resizer"/);
+  assert.match(models, /!desktopOnly && activeTab !== "installed"/);
   assert.match(models, /aria-valuemin=\{260\}/);
   assert.match(models, /const tabs = \["info", "load", "inference", "actions"\]/);
   assert.match(models, /Reasoning budget/);
@@ -80,7 +82,10 @@ test("Discover hardware includes CPU, system RAM, GPU facts, and readable native
   assert.match(models, /logical CPU threads/);
   assert.match(models, /GB system RAM/);
   assert.match(models, /GB VRAM/);
-  assert.match(styles, /models-hardware-summary/);
+  assert.match(models, /models-hardware-fit-facts/);
+  assert.match(styles, /models-hardware-summary[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/s);
+  assert.match(styles, /model-vram-filter__capacity[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/s);
+  assert.match(styles, /models-hardware-fit-facts[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /models-workspace-v3 select \{ color-scheme: dark;/);
   assert.match(styles, /select option \{ background-color: #111815; color: #eef7f2;/);
 });
@@ -97,9 +102,14 @@ test("Discover downloads start directly and expose Stop in the same controls", (
 });
 
 test("Discover typography has readable route-scoped minimums", () => {
+  assert.match(styles, /is-discover-route \.models-page-header p \{ font-size: \.82rem;/);
   assert.match(styles, /is-discover-route \.models-discover-model strong \{ font-size: \.84rem;/);
   assert.match(styles, /is-discover-route \.models-discover-head \{ font-size: \.65rem;/);
-  assert.match(styles, /is-discover-route \.models-discover-inspector \.models-inspector-facts dt \{ font-size: \.68rem;/);
+  assert.match(styles, /is-discover-route \.models-discover-inspector \.models-inspector-facts dt \{ font-size: \.75rem;/);
+  assert.match(modelIdentity, /model-identity__name/);
+  assert.match(styles, /model-identity__name \{[^}]*font-size: 1rem;/);
+  assert.match(styles, /model-identity__id \{ font-size: \.75rem;/);
+  assert.match(styles, /data-testid="model-catalog-grid"\][^}]*minmax\(280px, 1fr\)/);
 });
 
 test("Models inventory uses the forge-green workspace language and responsive inspector layout", () => {
@@ -111,11 +121,13 @@ test("Models inventory uses the forge-green workspace language and responsive in
   assert.match(styles, /model-publisher-logo\.is-qwen/);
   assert.match(styles, /models-workspace-v3\.models-view \.models-page-tabs \{ gap: 0;/);
   assert.match(styles, /models-page-tabs > \.models-v3-tab[^}]*margin-top: 0/s);
+  assert.match(styles, /models-catalog-toolbar \.models-source-switcher[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /models-discover-head/);
   assert.match(styles, /models-discover-row\.is-selected/);
   assert.match(styles, /models-discover-workbench/);
   assert.match(styles, /models-catalog-pagination\.is-compact/);
   assert.match(styles, /@media \(max-width: 1050px\)/);
+  assert.match(styles, /@media \(max-width: 1050px\)[\s\S]*models-inventory-workbench \{ display: flex; overflow-y: auto; flex-direction: column;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
 });
 

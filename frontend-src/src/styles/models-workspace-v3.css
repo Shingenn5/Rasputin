@@ -79,14 +79,33 @@
 .models-workspace-v3 .models-page-tabs [aria-selected="true"] .models-v3-tab-icon { color: var(--models-forge-bright); }
 .models-workspace-v3 .models-page-tabs [role="tab"][aria-selected="true"] small { color: color-mix(in srgb, var(--models-forge-bright) 68%, var(--dash-muted)); }
 .models-workspace-v3 .models-v3-content {
+  display: flex;
+  min-width: 0;
   background: var(--models-v3-canvas);
 }
-.models-workspace-v3 .models-v3-panel { gap: 7px; }
+.models-workspace-v3 .models-v3-content > .w2-column,
+.models-workspace-v3 .models-v3-panel { width: 100%; min-width: 0; }
+.models-workspace-v3 .models-v3-panel { gap: 9px; }
 .models-workspace-v3 .models-catalog-toolbar { border-color: var(--models-v3-line); background: color-mix(in srgb, var(--dash-panel) 78%, transparent); box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
 .models-workspace-v3 .models-catalog-summary { display: flex; min-height: 24px; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--dash-muted); font-size: .64rem; }
 .models-workspace-v3 .models-catalog-summary strong { color: var(--dash-text); font-size: .72rem; letter-spacing: .015em; }
 .models-workspace-v3 .models-v3-catalog-stage { border-color: color-mix(in srgb, var(--models-forge) 18%, var(--models-v3-line)); box-shadow: 0 12px 30px rgb(0 0 0 / 14%); }
-.models-workspace-v3 .models-v3-model-card { position: relative; }
+.models-workspace-v3 .models-v3-model-card { position: relative; min-width: 0; overflow: hidden; font-size: .8125rem; }
+.models-workspace-v3 [data-testid="model-catalog-grid"] { min-width: 0; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.models-workspace-v3 .models-card-heading > .model-identity { flex: 1 1 auto; }
+.models-workspace-v3 .model-identity,
+.models-workspace-v3 .model-identity__copy { min-width: 0; }
+.models-workspace-v3 .model-identity__name { margin: 0; font-size: 1rem; line-height: 1.3; }
+.models-workspace-v3 .model-identity__publisher { font-size: .8125rem; line-height: 1.35; }
+.models-workspace-v3 .model-identity__id { font-size: .75rem; line-height: 1.35; }
+.models-workspace-v3 .models-card-heading > span { max-width: 42%; flex: 0 0 auto; overflow-wrap: anywhere; white-space: normal; text-align: center; }
+.models-workspace-v3 .models-card-facts { min-width: 0; font-size: .8rem; line-height: 1.4; }
+.models-workspace-v3 .models-card-facts > div { min-width: 0; overflow-wrap: anywhere; }
+.models-workspace-v3 .models-v3-model-card > p { font-size: .8125rem; line-height: 1.5; }
+.models-workspace-v3 .models-card-actions > button { max-width: 100%; min-height: 36px; flex: 0 1 auto; padding-inline: 11px; font-size: .8rem; white-space: normal; text-align: center; }
+.models-workspace-v3 .models-card-actions > details { min-width: 0; overflow: hidden; font-size: .8rem; }
+.models-workspace-v3 .models-card-actions > details summary { overflow-wrap: anywhere; }
+.models-workspace-v3 .models-card-actions > details > div { min-width: 0; overflow-wrap: anywhere; }
 .models-workspace-v3 .models-v3-model-card::before {
   position: absolute;
   top: 12px;
@@ -510,7 +529,7 @@
 /* Discover Models uses the same dense table and resizable inspector language. */
 .models-workspace-v3.is-discover-route .models-catalog-toolbar {
   gap: 6px;
-  padding: 7px 9px;
+  padding: 10px;
 }
 .models-workspace-v3.is-discover-route .model-catalog-filters { gap: 6px; }
 .models-workspace-v3.is-discover-route .models-v3-catalog-stage {
@@ -674,11 +693,15 @@
 .models-workspace-v3 .models-discover-guidance span { color: var(--dash-muted); font-size: .56rem; line-height: 1.4; }
 
 /* Discover stays compact without shrinking core text below comfortable desktop reading sizes. */
+.models-workspace-v3.is-discover-route .models-page-header h1 { font-size: 1.2rem; }
+.models-workspace-v3.is-discover-route .models-page-header p { font-size: .82rem; }
+.models-workspace-v3.is-discover-route .models-v3-metric > div:first-child { font-size: 1rem; }
+.models-workspace-v3.is-discover-route .models-v3-metric > div:last-child { font-size: .7rem; line-height: 1.25; }
 .models-workspace-v3.is-discover-route .models-source-switcher .w2-button,
 .models-workspace-v3.is-discover-route .model-catalog-filters .w2-input,
-.models-workspace-v3.is-discover-route .model-catalog-filters .w2-button { font-size: .8rem; }
-.models-workspace-v3.is-discover-route .models-catalog-summary { font-size: .72rem; }
-.models-workspace-v3.is-discover-route .models-catalog-summary strong { font-size: .82rem; }
+.models-workspace-v3.is-discover-route .model-catalog-filters .w2-button { min-height: 36px; font-size: .85rem; }
+.models-workspace-v3.is-discover-route .models-catalog-summary { font-size: .8rem; }
+.models-workspace-v3.is-discover-route .models-catalog-summary strong { font-size: .9rem; }
 .models-workspace-v3.is-discover-route .models-discover-head { font-size: .65rem; }
 .models-workspace-v3.is-discover-route .models-discover-model strong { font-size: .84rem; }
 .models-workspace-v3.is-discover-route .models-discover-model small { font-size: .66rem; }
@@ -688,22 +711,22 @@
 .models-workspace-v3.is-discover-route .models-discover-row-action.is-stop { border-color: color-mix(in srgb, var(--ras-danger) 58%, var(--dash-border)); background: color-mix(in srgb, var(--ras-danger) 10%, var(--dash-panel-2)); color: var(--ras-danger); }
 .models-workspace-v3.is-discover-route .models-catalog-pagination,
 .models-workspace-v3.is-discover-route .models-catalog-pagination button,
-.models-workspace-v3.is-discover-route .models-catalog-pagination select { font-size: .7rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-title strong { font-size: .9rem; }
+.models-workspace-v3.is-discover-route .models-catalog-pagination select { font-size: .76rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-title strong { font-size: 1rem; }
 .models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-title small,
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-status { font-size: .65rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-status { font-size: .75rem; }
 .models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-primary-actions button,
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-primary-actions > a { font-size: .72rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-tabs button { font-size: .7rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-section h3 { font-size: .76rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-summary { font-size: .72rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-facts dt { font-size: .68rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-facts dd { font-size: .66rem; }
-.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-callout strong { font-size: .72rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-primary-actions > a { font-size: .8rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-tabs button { min-height: 34px; font-size: .8rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-section h3 { font-size: .9rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-summary { font-size: .82rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-facts dt { font-size: .75rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-facts dd { font-size: .82rem; }
+.models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-callout strong { font-size: .85rem; }
 .models-workspace-v3.is-discover-route .models-discover-inspector .models-inspector-callout small,
 .models-workspace-v3.is-discover-route .models-discover-variant-picker > label,
 .models-workspace-v3.is-discover-route .models-discover-variant-picker select,
-.models-workspace-v3.is-discover-route .models-inspector-wide-action { font-size: .68rem; }
+.models-workspace-v3.is-discover-route .models-inspector-wide-action { font-size: .78rem; }
 
 .models-workspace-v3 .models-catalog-search-form {
   display: flex;
@@ -722,24 +745,50 @@
 .models-workspace-v3 .models-hardware-summary {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 7px;
-  margin-bottom: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 10px;
 }
 .models-workspace-v3 .models-hardware-summary > div {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: flex-start;
-  gap: 8px;
+  min-height: 82px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
   border: 1px solid var(--models-v3-line);
-  border-radius: 7px;
-  padding: 8px 9px;
+  border-radius: 5px;
+  padding: 10px;
   background: var(--models-v3-panel);
   color: var(--models-forge-bright);
 }
-.models-workspace-v3 .models-hardware-summary > div > span { display: grid; min-width: 0; gap: 2px; }
-.models-workspace-v3 .models-hardware-summary strong { overflow: hidden; color: var(--dash-text); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
-.models-workspace-v3 .models-hardware-summary small { color: var(--dash-muted); font-size: .66rem; }
+.models-workspace-v3 .models-hardware-summary > div > span { display: grid; min-width: 0; align-content: start; gap: 3px; }
+.models-workspace-v3 .models-hardware-summary strong { min-width: 0; color: var(--dash-text); font-size: .85rem; line-height: 1.3; overflow-wrap: anywhere; }
+.models-workspace-v3 .models-hardware-summary small { color: var(--dash-muted); font-size: .78rem; line-height: 1.35; }
+.models-workspace-v3 .models-hardware-summary .models-hardware-fact__label { color: var(--models-forge-bright); font-size: .7rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.models-workspace-v3 .model-hardware-filters > summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 2px 0; font-size: .85rem; }
+.models-workspace-v3 .model-hardware-filters > summary > span { display: inline-flex; align-items: center; gap: 7px; }
+.models-workspace-v3 .model-hardware-filters > summary small { color: var(--dash-muted); font-size: .76rem; font-weight: 500; }
+.models-workspace-v3 .model-hardware-filters .model-vram-filter {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+  padding: 10px 0 0;
+}
+.models-workspace-v3 .model-vram-filter > .models-hardware-summary,
+.models-workspace-v3 .model-vram-filter > .model-vram-filter__capacity { grid-column: 1 / -1; }
+.models-workspace-v3 .model-vram-filter__capacity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.models-workspace-v3 .model-vram-filter__capacity > span { display: flex; min-width: 0; min-height: 54px; align-items: center; justify-content: space-between; gap: 12px; border-left: 3px solid var(--models-forge); padding: 8px 10px; background: color-mix(in srgb, var(--models-forge) 8%, var(--models-v3-panel)); }
+.models-workspace-v3 .model-vram-filter__capacity small { color: var(--dash-muted); font-size: .78rem; line-height: 1.3; }
+.models-workspace-v3 .model-vram-filter__capacity strong { flex: 0 0 auto; color: var(--models-forge-bright); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.models-workspace-v3 .model-vram-filter label { min-width: 0; gap: 5px; font-size: .8rem; }
+.models-workspace-v3 .model-vram-filter input { width: 100%; min-height: 38px; font-size: .85rem; }
+.models-workspace-v3 .model-vram-filter > button { min-height: 38px; padding-inline: 12px; font-size: .8rem; white-space: nowrap; }
+.models-workspace-v3 .models-hardware-fit-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border: 0; background: transparent; }
+.models-workspace-v3 .models-hardware-fit-facts > div { min-height: 66px; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 4px; border: 1px solid var(--models-v3-line); border-radius: 5px; padding: 9px 10px; background: var(--models-v3-panel); }
+.models-workspace-v3 .models-hardware-fit-facts > div:last-child { border-bottom: 1px solid var(--models-v3-line); }
+.models-workspace-v3 .models-hardware-fit-facts :is(dt, dd) { min-width: 0; overflow-wrap: anywhere; text-align: left; }
 
 
 @media (max-width: 1250px) {
@@ -752,11 +801,28 @@
 }
 
 @media (max-width: 1050px) {
+  .models-workspace-v3.is-discover-route .models-catalog-toolbar .models-source-switcher {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .models-workspace-v3.is-discover-route .models-source-switcher .w2-button {
+    min-width: 0;
+    padding-inline: 7px;
+    white-space: normal;
+  }
+  .models-workspace-v3 .models-hardware-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .models-workspace-v3 .model-hardware-filters .model-vram-filter { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .models-workspace-v3 .model-vram-filter > button { width: 100%; white-space: normal; }
   .models-workspace-v3 .models-inventory-toolbar { grid-template-columns: auto minmax(160px, 1fr); }
   .models-workspace-v3 .models-inventory-tools { grid-column: 1 / -1; }
   .models-workspace-v3 .models-discover-head,
   .models-workspace-v3 .models-discover-row { grid-template-columns: minmax(180px, 1.4fr) minmax(76px, .62fr) 44px 52px 56px 66px auto; }
-  .models-workspace-v3 .models-inventory-workbench { grid-template-columns: minmax(0, 1fr) 7px minmax(260px, var(--models-inspector-width, 280px)); }
+  .models-workspace-v3 .models-inventory-workbench { display: flex; overflow-y: auto; flex-direction: column; }
+  .models-workspace-v3 .models-inventory-main { min-height: 420px; border-right: 0; border-bottom: 1px solid var(--models-v3-line); }
+  .models-workspace-v3 .models-inspector-resizer { display: none; }
+  .models-workspace-v3 .models-model-inspector { min-height: 420px; flex: 0 0 auto; overflow: visible; }
   .models-workspace-v3 .studio-installed-head,
   .models-workspace-v3 .studio-installed-row { grid-template-columns: minmax(180px, 1.45fr) minmax(80px, .7fr) 46px 56px 46px 62px auto; }
   .models-workspace-v3 .studio-installed-head { grid-template-columns: minmax(180px, 1.45fr) minmax(80px, .7fr) 46px 56px 46px 62px auto; }
@@ -766,13 +832,16 @@
   .models-workspace-v3 .models-v3-runtime-metrics { flex: 1 1 100%; }
   .models-workspace-v3 .models-discover-workbench { height: auto; min-height: 0; }
   .models-workspace-v3 .models-v3-metric { min-width: 0; flex: 1 1 0; }
-  .models-workspace-v3 .models-inventory-workbench { display: flex; overflow-y: auto; flex-direction: column; }
-  .models-workspace-v3 .models-inventory-main { min-height: 420px; border-right: 0; border-bottom: 1px solid var(--models-v3-line); }
-  .models-workspace-v3 .models-inspector-resizer { display: none; }
-  .models-workspace-v3 .models-model-inspector { min-height: 420px; flex: 0 0 auto; overflow: visible; }
 }
 
 @media (max-width: 640px) {
+  .models-workspace-v3.is-discover-route .models-catalog-toolbar .models-source-switcher { grid-template-columns: minmax(0, 1fr); }
+  .models-workspace-v3 [data-testid="model-catalog-grid"],
+  .models-workspace-v3 .models-hardware-summary,
+  .models-workspace-v3 .models-hardware-fit-facts,
+  .models-workspace-v3 .model-hardware-filters .model-vram-filter,
+  .models-workspace-v3 .model-vram-filter__capacity { grid-template-columns: minmax(0, 1fr); }
+  .models-workspace-v3 .model-hardware-filters > summary { align-items: flex-start; flex-direction: column; gap: 3px; }
   .models-workspace-v3 .models-v3-command-band { align-items: flex-start; flex-wrap: wrap; }
   .models-workspace-v3 .models-discover-head { display: none; }
   .models-workspace-v3 .models-discover-row {

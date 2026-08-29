@@ -87,6 +87,9 @@ The modal/drawer block is first because its selectors are namespaced
 `.ras-modal*` and `.ras-drawer*`, and its component ownership is explicit in
 `components/Modal.jsx`, `components/Drawer.jsx`, and `hooks/useFocusTrap.js`.
 
+Status: extracted to `frontend-src/src/styles/overlays.css`; verification
+evidence is recorded in the commit that introduces the file.
+
 The extraction is accepted only when:
 
 - the original block no longer exists in `rasputin.css`;

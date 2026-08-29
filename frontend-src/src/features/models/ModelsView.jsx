@@ -1742,7 +1742,7 @@ export function ModelsView({
                       data-testid="model-specific-hf-input"
                       value={hfSearchDraft}
                       onChange={(event) => setHfSearchDraft(event.target.value)}
-                      placeholder="Model name, org/model, or Hugging Face URL"
+                      placeholder="Model name, org/model, or Hugging Face URL…"
                     />
                     <button className="w2-button primary" type="submit" data-testid="model-specific-hf-submit">
                       <Search size={14} /> Search
@@ -1755,7 +1755,7 @@ export function ModelsView({
                     aria-label="Search models"
                     value={catalogSearch}
                     onChange={(event) => setCatalogSearch(event.target.value)}
-                    placeholder="Filter locally cached models by name..."
+                    placeholder="Filter locally cached models by name…"
                   />
                 ) : null}
                 {searchMode === "huggingface" && (
@@ -1791,25 +1791,28 @@ export function ModelsView({
               </div>
 
               <details className="model-hardware-filters">
-                <summary><SlidersHorizontal size={14} /> Hardware</summary>
+                <summary>
+                  <span><SlidersHorizontal size={16} /><strong>Hardware</strong></span>
+                  <small>CPU, system RAM & GPU capacity</small>
+                </summary>
                 <div className="model-vram-filter" data-testid="model-vram-filter">
                 <div className="models-hardware-summary" data-testid="model-system-hardware">
-                  <div><Cpu size={15} /><span><strong>{systemHardware.processor}</strong><small>{systemHardware.logicalCores ? `${systemHardware.logicalCores} logical CPU threads` : "CPU thread count unavailable"}</small></span></div>
-                  <div><Database size={15} /><span><strong>{systemHardware.memoryTotalGb == null ? "System RAM unavailable" : `${systemHardware.memoryTotalGb.toFixed(1)} GB system RAM`}</strong><small>{systemHardware.memoryAvailableGb == null ? "Available RAM unavailable" : `${systemHardware.memoryAvailableGb.toFixed(1)} GB currently available`}</small></span></div>
+                  <div className="models-hardware-fact"><Cpu size={17} /><span><small className="models-hardware-fact__label">Processor</small><strong>{systemHardware.processor}</strong><small>{systemHardware.logicalCores ? `${systemHardware.logicalCores} logical CPU threads` : "CPU thread count unavailable"}</small></span></div>
+                  <div className="models-hardware-fact"><Database size={17} /><span><small className="models-hardware-fact__label">System memory</small><strong>{systemHardware.memoryTotalGb == null ? "System RAM unavailable" : `${systemHardware.memoryTotalGb.toFixed(1)} GB system RAM`}</strong><small>{systemHardware.memoryAvailableGb == null ? "Available RAM unavailable" : `${systemHardware.memoryAvailableGb.toFixed(1)} GB currently available`}</small></span></div>
                   {systemHardware.gpus.map((gpu, index) => {
                     const totalMb = Number(gpu.memoryTotalMb ?? gpu.memory_total_mb);
                     const freeMb = Number(gpu.memoryFreeMb ?? gpu.memory_free_mb);
                     return (
-                      <div key={`${gpu.name || "gpu"}-${index}`}><Gauge size={15} /><span><strong>{gpu.name || `GPU ${index + 1}`}</strong><small>{Number.isFinite(totalMb) ? `${(totalMb / 1024).toFixed(1)} GB VRAM` : "VRAM unavailable"}{Number.isFinite(freeMb) ? `, ${(freeMb / 1024).toFixed(1)} GB free` : ""}</small></span></div>
+                      <div className="models-hardware-fact" key={`${gpu.name || "gpu"}-${index}`}><Gauge size={17} /><span><small className="models-hardware-fact__label">GPU {index + 1}</small><strong>{gpu.name || `GPU ${index + 1}`}</strong><small>{Number.isFinite(totalMb) ? `${(totalMb / 1024).toFixed(1)} GB VRAM` : "VRAM unavailable"}{Number.isFinite(freeMb) ? `, ${(freeMb / 1024).toFixed(1)} GB free` : ""}</small></span></div>
                     );
                   })}
                 </div>
-                <span className="model-vram-filter__capacity" data-testid="model-placement-capacity">
-                  Largest single GPU: <strong>{gpuCapacity.largestSingleGpuGb ? gpuCapacity.largestSingleGpuGb.toFixed(1) + " GB" : "unknown"}</strong>
-                  {" · "}Optional combined layer-sharding pool: <strong>{totalVramGb > 0 ? totalVramGb.toFixed(1) + " GB" : "unknown"}</strong>
-                </span>
+                <div className="model-vram-filter__capacity" data-testid="model-placement-capacity">
+                  <span><small>Largest single GPU</small><strong>{gpuCapacity.largestSingleGpuGb ? gpuCapacity.largestSingleGpuGb.toFixed(1) + " GB" : "Unknown"}</strong></span>
+                  <span title="Optional combined layer-sharding pool"><small>Combined layer pool</small><strong>{totalVramGb > 0 ? totalVramGb.toFixed(1) + " GB" : "Unknown"}</strong></span>
+                </div>
                 <label>
-                  <span>VRAM from</span>
+                  <span>Minimum VRAM</span>
                   <input
                     className="w2-input"
                     aria-label="Minimum VRAM GB"
@@ -1822,7 +1825,7 @@ export function ModelsView({
                   />
                 </label>
                 <label>
-                  <span>to</span>
+                  <span>Maximum VRAM</span>
                   <input
                     className="w2-input"
                     aria-label="Maximum VRAM GB"
@@ -1844,11 +1847,11 @@ export function ModelsView({
                     setHfSort("vram_desc");
                   }}
                 >
-                  Use my largest GPU
+                  Use Largest GPU
                 </button>
                 {(vramMinGb !== "" || vramMaxGb !== "") && (
                   <button className="w2-button" type="button" onClick={() => { setVramMinGb(""); setVramMaxGb(""); }}>
-                    Clear VRAM range
+                    Clear Range
                   </button>
                 )}
                 </div>
@@ -1860,7 +1863,7 @@ export function ModelsView({
                 <strong>{searchMode === "browse" ? "Available Models" : searchMode === "huggingface" ? "Search Results" : "Local Models"}</strong>
                 <span>{searchMode === "catalog"
                   ? `${displayItems.length} local model${displayItems.length === 1 ? "" : "s"}`
-                  : hfLoading ? "Loading available models..." : `${displayItems.length} model${displayItems.length === 1 ? "" : "s"} with hardware-fit information`}</span>
+                  : hfLoading ? "Loading available models…" : `${displayItems.length} model${displayItems.length === 1 ? "" : "s"} with hardware-fit information`}</span>
               </div>
 
               {searchMode !== "catalog" && hfError && (
@@ -2283,9 +2286,9 @@ export function ModelsView({
 
         </div>
 
-        {/* The desktop catalog already owns its detail inspector. Avoid a
-            second nested inspector; server mode retains the legacy context column. */}
-        {!desktopOnly && (
+        {/* Discover keeps the server-mode context column. My Models already
+            owns a persistent inspector, so never duplicate it beside the table. */}
+        {!desktopOnly && activeTab !== "installed" && (
           <div className="w2-column">
             <RightPanel
               activeTab={activeTab}
@@ -2355,7 +2358,7 @@ function AdvisorRecommendationCard({ slot, winner, prepareCatalogModelForWarsat,
         : "No measured or catalog estimate is available yet, so treat this as exploratory.";
   return (
     <Card data-testid={"advisor-recommendation-" + slot.key} className={"flex h-full flex-col gap-3 p-4 " + (primary ? "border-primary/50 bg-primary/5" : "")}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="models-card-heading flex min-w-0 items-start justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-primary">{primary ? "Best match for your computer" : slot.label}</div>
           <h3 className="mt-1 text-base font-semibold">{modelName}</h3>
@@ -2917,7 +2920,7 @@ function DiscoverModelInspector({
             {placement.willFit === false ? <AlertTriangle size={16} /> : <Gauge size={16} />}
             <span><strong>{placement.label || "Fit unknown"}</strong><small>{placement.reasons?.[0] || "Refresh the hardware check to calculate model fit."}</small></span>
           </div>
-          <dl className="models-inspector-facts">
+          <dl className="models-inspector-facts models-hardware-fit-facts">
             {[
               ["Estimated VRAM", vramEstimate ? `~${vramEstimate} GB` : "Unknown"],
               ["Largest GPU", placement.largestSingleGpuGb == null ? "Unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"],
@@ -2927,7 +2930,6 @@ function DiscoverModelInspector({
               ["Installed system RAM", placement.installedSystemRamGb == null ? "Unknown" : placement.installedSystemRamGb.toFixed(1) + " GB"],
               ["Safe system RAM now", placement.safeAvailableSystemRamGb == null ? "Unknown" : placement.safeAvailableSystemRamGb.toFixed(1) + " GB"],
               ["Placement", placement.mode ? labelize(placement.mode) : "Automatic"],
-              ["Assessment", placement.label || "Needs review"],
             ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
           </dl>
           {guidance.length > 0 && (
@@ -3119,7 +3121,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
         {item.likes > 0 && <Badge variant="muted">♥ {fmt(item.likes)}</Badge>}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+      <div className="models-card-facts grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         {parameterLabel && <div><strong className="text-foreground">{parameterLabel}</strong></div>}
         {contextWindow > 0 && <div><strong className="text-foreground">{contextWindow.toLocaleString()} context</strong></div>}
         {vramEstimateGb && <div><strong className="text-foreground">Estimated ~{vramEstimateGb} GB VRAM</strong></div>}
@@ -3129,7 +3131,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
 
       {item.summary && <p className="m-0 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.summary.slice(0, 180)}</p>}
 
-      <div className="mt-auto flex flex-wrap items-center gap-2">
+      <div className="models-card-actions mt-auto flex min-w-0 flex-wrap items-center gap-2">
         {primaryAction && (
           <UIButton
             variant="default"

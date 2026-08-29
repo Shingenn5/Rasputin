@@ -11,7 +11,7 @@
  *  - Enter/exit animation via CSS classes; follows Rasputin's explicit
  *    Interface Motion preference through the global motion scope.
  *
- * Vanilla CSS only — see the `.ras-modal*` block in rasputin.css.
+ * Vanilla CSS only — see the `.ras-modal*` block in styles/overlays.css.
  *
  * @param {object}   props
  * @param {boolean}  props.open               Whether the modal is visible.

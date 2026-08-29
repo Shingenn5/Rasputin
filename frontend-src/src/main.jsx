@@ -1,8 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource/rajdhani/500.css";
-import "@fontsource/rajdhani/600.css";
-import "@fontsource/rajdhani/700.css";
+import "@fontsource-variable/atkinson-hyperlegible-next/wght.css";
+import "@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css";
 import "./styles/theme.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./styles/rasputin.css";

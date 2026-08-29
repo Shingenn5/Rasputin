@@ -34,8 +34,6 @@ frontend/
 dist/
 build/
 output/
-token-optimizer/
-
 *.png
 *.webp
 *.webm

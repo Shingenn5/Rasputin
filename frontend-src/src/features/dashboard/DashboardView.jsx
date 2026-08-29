@@ -223,8 +223,8 @@ export function DashboardView({
                 Workstation execution and the Rasputin personality stay separate, while sharing the local safety and context boundaries.
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="navigation" aria-label="Workstation and Assistant modes">
-              <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border bg-background/60 p-3">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2" role="navigation" aria-label="Workstation and Assistant modes">
+              <div className="flex min-w-0 flex-col items-stretch justify-between gap-3 rounded-xl border border-border bg-background/60 p-3 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 items-start gap-3">
                   <Boxes size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
                   <div className="min-w-0">
@@ -232,11 +232,11 @@ export function DashboardView({
                     <p className="mt-0.5 text-xs text-muted-foreground">Chat, coding tasks, workspaces, models, and review.</p>
                   </div>
                 </div>
-                <Button type="button" size="sm" variant="outline" onClick={() => go("chat")} data-testid="dashboard-open-workstation">
+                <Button type="button" size="sm" variant="outline" className="w-full shrink-0 sm:w-auto" onClick={() => go("chat")} data-testid="dashboard-open-workstation">
                   Open workstation
                 </Button>
               </div>
-              <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border bg-background/60 p-3">
+              <div className="flex min-w-0 flex-col items-stretch justify-between gap-3 rounded-xl border border-border bg-background/60 p-3 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 items-start gap-3">
                   <Sparkles size={18} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
                   <div className="min-w-0">
@@ -244,7 +244,7 @@ export function DashboardView({
                     <p className="mt-0.5 text-xs text-muted-foreground">Personality, lasting context, voice, and reviewed handoffs.</p>
                   </div>
                 </div>
-                <Button type="button" size="sm" onClick={() => go("assistant")} data-testid="dashboard-open-assistant">
+                <Button type="button" size="sm" className="w-full shrink-0 sm:w-auto" onClick={() => go("assistant")} data-testid="dashboard-open-assistant">
                   Open Assistant
                 </Button>
               </div>
