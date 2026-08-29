@@ -1,13 +1,13 @@
 /* History workspace v3: activity ledger composition */
-.activity-view .history-v3-header { position: relative; background: linear-gradient(100deg, color-mix(in srgb, var(--ras-primary) 8%, var(--dash-bg)), var(--dash-bg) 58%); }
+.activity-view .history-v3-header { position: relative; background: color-mix(in srgb, var(--ras-primary) 5%, var(--dash-bg)); }
 .activity-view .history-v3-header::after { content: "LIVE ACTIVITY LEDGER"; color: var(--ras-primary); font: 700 .55rem/1 ui-monospace, monospace; letter-spacing: .18em; opacity: .75; }
-.activity-view .history-v3-toolbar { border: 1px solid var(--dash-border); border-radius: 12px; padding: 6px; background: color-mix(in srgb, var(--dash-panel) 92%, transparent); box-shadow: inset 0 1px rgba(255,255,255,.025); }
+.activity-view .history-v3-toolbar { border: 1px solid var(--dash-border); border-radius: 4px; padding: 6px; background: color-mix(in srgb, var(--dash-panel) 92%, transparent); box-shadow: inset 0 1px rgba(255,255,255,.025); }
 .activity-view .history-v3-toolbar .history-view-tab { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; font-size: .68rem; letter-spacing: .01em; }
 .activity-view .history-v3-toolbar .history-view-tab svg { opacity: .7; }
 .activity-view .history-v3-toolbar .history-view-tab small { min-width: 1.1em; margin-left: auto; color: var(--dash-faint); font-size: .58rem; font-variant-numeric: tabular-nums; }
-.activity-view .history-v3-toolbar .history-view-tab.is-active { border-color: color-mix(in srgb, var(--ras-primary) 55%, transparent); background: linear-gradient(105deg, color-mix(in srgb, var(--ras-primary) 22%, var(--dash-panel)), color-mix(in srgb, var(--ras-primary) 8%, transparent)); box-shadow: 0 0 18px color-mix(in srgb, var(--ras-primary) 10%, transparent); }
+.activity-view .history-v3-toolbar .history-view-tab.is-active { border-color: color-mix(in srgb, var(--ras-primary) 55%, transparent); background: color-mix(in srgb, var(--ras-primary) 14%, var(--dash-panel)); box-shadow: none; }
 .activity-view .history-v3-content { min-width: 0; }
-.activity-view .history-stream-command { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 360px); align-items: center; gap: 10px; border-radius: 10px; padding: 9px 11px; background: linear-gradient(120deg, var(--dash-panel), color-mix(in srgb, var(--ras-primary) 5%, var(--dash-panel))); }
+.activity-view .history-stream-command { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 360px); align-items: center; gap: 10px; border-radius: 4px; padding: 9px 11px; background: var(--dash-panel); }
 .activity-view .history-stream-title { display: flex; align-items: center; gap: 8px; color: var(--dash-text); font-size: .75rem; }
 .activity-view .history-stream-title svg { color: var(--ras-primary); }
 .activity-view .history-stream-title span { color: var(--dash-muted); font: 600 .62rem ui-monospace, monospace; }

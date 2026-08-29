@@ -7,6 +7,7 @@ from backend.warsat import resource_broker
 def _profile():
     return {
         "schemaVersion": 1,
+        "cpu": {"memoryTotalMb": 32768, "memoryAvailableMb": 12288, "memoryUsedMb": 20480},
         "devices": [
             {
                 "deviceId": "gpu:0",
@@ -96,6 +97,34 @@ class ResourceBrokerTests(unittest.TestCase):
         unknown = resource_broker.evaluate_admission({"devices": []}, {"packId": "unknown"}, leases=[], now=100.0)
         self.assertEqual(unknown["status"], "unmeasured")
         self.assertIn("resource_envelope_missing", unknown["reasons"])
+
+    def test_system_ram_can_be_ready_queued_or_physically_blocked(self):
+        ready = resource_broker.evaluate_admission(
+            _profile(),
+            {"packId": "ram-ready", "runtime": "vllm", "requestedVramMb": 4000, "requestedRamMb": 8000},
+            leases=[],
+            now=100.0,
+        )
+        queued = resource_broker.evaluate_admission(
+            _profile(),
+            {"packId": "ram-busy", "runtime": "vllm", "requestedVramMb": 4000, "requestedRamMb": 11000},
+            leases=[],
+            now=100.0,
+        )
+        blocked = resource_broker.evaluate_admission(
+            _profile(),
+            {"packId": "ram-too-large", "runtime": "vllm", "requestedVramMb": 4000, "requestedRamMb": 40000},
+            leases=[],
+            now=100.0,
+        )
+
+        self.assertEqual(ready["status"], "ready")
+        self.assertIn("host_memory_fit", ready["reasons"])
+        self.assertEqual(queued["status"], "queued")
+        self.assertIn("host_memory_reserved_or_headroom_required", queued["reasons"])
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertIn("requested_ram_exceeds_observed_host_capacity", blocked["reasons"])
+        self.assertEqual(blocked["capacity"]["hostMemory"]["totalMb"], 32768)
 
     def test_reserve_heartbeat_and_release_are_owner_scoped_and_expiring(self):
         with patch.object(resource_broker.store, "get_kv", return_value=[]), patch.object(resource_broker.store, "set_kv") as saved:

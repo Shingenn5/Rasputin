@@ -24,6 +24,7 @@ MIN_TTL_SECONDS = 15
 MAX_TTL_SECONDS = 3600
 HEADROOM_FRACTION = 0.10
 MIN_HEADROOM_MB = 512
+HOST_MEMORY_HEADROOM_MB = 2048
 COMBINED_RUNTIME_HINTS = {
     "gguf",
     "llama.cpp",
@@ -109,6 +110,51 @@ def _normalize_profile(profile: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(devices, list):
         return []
     return [_device_capacity(item) for item in devices if isinstance(item, dict)]
+
+
+def _host_memory_capacity(profile: dict[str, Any] | None, leases: list[dict[str, Any]]) -> dict[str, Any]:
+    value = profile or {}
+    if isinstance(value.get("capabilityProfile"), dict):
+        value = value["capabilityProfile"]
+    cpu = value.get("cpu") if isinstance(value.get("cpu"), dict) else {}
+    def first_present(*keys: str) -> Any:
+        for key in keys:
+            if cpu.get(key) is not None:
+                return cpu.get(key)
+        return None
+
+    total = _number(first_present("memoryTotalMb", "memory_total_mb", "totalMb"))
+    available = _number(first_present("memoryAvailableMb", "memory_available_mb", "availableMb"))
+    used = _number(first_present("memoryUsedMb", "memory_used_mb", "usedMb"))
+    if available is None and total is not None and used is not None:
+        available = max(0.0, total - used)
+    reserved = sum(int(lease.get("reservedRamMb") or 0) for lease in leases)
+    safe_available = (
+        max(0.0, available - HOST_MEMORY_HEADROOM_MB - reserved)
+        if available is not None
+        else None
+    )
+    return {
+        "totalMb": round(total, 2) if total is not None else None,
+        "availableMb": round(available, 2) if available is not None else None,
+        "safeAvailableMb": round(safe_available, 2) if safe_available is not None else None,
+        "headroomMb": HOST_MEMORY_HEADROOM_MB,
+        "reservedRamMb": reserved,
+    }
+
+
+def _host_memory_gate(capacity: dict[str, Any], requested_ram_mb: int) -> dict[str, Any]:
+    if requested_ram_mb <= 0:
+        return {"status": "ready", "reasons": [], "capacity": capacity}
+    total = capacity.get("totalMb")
+    safe_available = capacity.get("safeAvailableMb")
+    if total is None or safe_available is None:
+        return {"status": "unmeasured", "reasons": ["host_memory_inventory_not_supplied"], "capacity": capacity}
+    if requested_ram_mb > total:
+        return {"status": "blocked", "reasons": ["requested_ram_exceeds_observed_host_capacity"], "capacity": capacity}
+    if requested_ram_mb > safe_available:
+        return {"status": "queued", "reasons": ["host_memory_reserved_or_headroom_required"], "capacity": capacity}
+    return {"status": "ready", "reasons": ["host_memory_fit"], "capacity": capacity}
 
 
 def _normalize_placement(item: dict[str, Any]) -> dict[str, Any] | None:
@@ -218,6 +264,12 @@ def _next_actions_for_reasons(reasons):
             actions.append("Choose a smaller quantization/model, free VRAM, or use a compatible multi-GPU runtime.")
         elif reason == "device_capacity_reserved_or_headroom_required":
             actions.append("Stop another model or wait for VRAM headroom to become available.")
+        elif reason == "requested_ram_exceeds_observed_host_capacity":
+            actions.append("Choose a smaller model/quantization or use a host with more system RAM.")
+        elif reason == "host_memory_reserved_or_headroom_required":
+            actions.append("Close another memory-heavy workload or wait for system RAM headroom to become available.")
+        elif reason == "host_memory_inventory_not_supplied":
+            actions.append("Refresh the hardware snapshot before deploying so current system RAM is known.")
         elif reason == "no_accelerator_observed":
             actions.append("Enable Docker GPU access and refresh the hardware snapshot, or choose CPU mode.")
         elif reason == "no_accelerator_observed_cpu_fallback":
@@ -234,6 +286,23 @@ def _finalize_decision(base):
     return base
 
 
+def _finalize_with_host_memory(base, gate):
+    base.setdefault("capacity", {})["hostMemory"] = gate["capacity"]
+    if base.get("status") != "blocked":
+        gate_status = gate.get("status")
+        if gate_status == "blocked":
+            base["status"] = "blocked"
+            base["placements"] = []
+        elif gate_status == "queued" and base.get("status") in {"ready", "degraded"}:
+            base["status"] = "queued"
+            base["placements"] = []
+        elif gate_status == "unmeasured" and base.get("status") in {"ready", "degraded"}:
+            base["status"] = "unmeasured"
+            base["placements"] = []
+        base["reasons"].extend(gate.get("reasons") or [])
+    return _finalize_decision(base)
+
+
 def evaluate_admission(
     profile: dict[str, Any] | None,
     request: dict[str, Any] | None,
@@ -248,6 +317,8 @@ def evaluate_admission(
     current_leases = [normalize_lease(item, now=now) for item in (leases if leases is not None else active_leases(now=now))]
     current_leases = [item for item in current_leases if item and item["state"] == "active"]
     reserved = _reserved_by_device(current_leases)
+    host_capacity = _host_memory_capacity(profile, current_leases)
+    ram_gate = _host_memory_gate(host_capacity, normalized_request["requestedRamMb"])
     requested_vram = normalized_request["requestedVramMb"]
     requested_devices = normalized_request["deviceIds"]
     runtime = normalized_request["runtime"]
@@ -273,22 +344,22 @@ def evaluate_admission(
     }
     if requested_vram is None and normalized_request["requestedRamMb"] <= 0:
         base["reasons"].append("resource_envelope_missing")
-        return _finalize_decision(base)
+        return _finalize_with_host_memory(base, ram_gate)
     if len(requested_devices) > 1:
         if not normalized_request["allowCombined"]:
             base["status"] = "blocked"
             base["reasons"].append("combined_vram_requires_explicit_opt_in")
-            return _finalize_decision(base)
+            return _finalize_with_host_memory(base, ram_gate)
         if runtime not in COMBINED_RUNTIME_HINTS:
             base["status"] = "blocked"
             base["reasons"].append("runtime_does_not_certify_combined_vram")
-            return _finalize_decision(base)
+            return _finalize_with_host_memory(base, ram_gate)
 
     if requested_vram is None:
         base["status"] = "ready"
         base["placements"] = [{"deviceId": "cpu", "vramMb": 0}]
         base["reasons"].append("cpu_ram_only_request")
-        return _finalize_decision(base)
+        return _finalize_with_host_memory(base, ram_gate)
 
     if not devices:
         if normalized_request["allowCpuFallback"]:
@@ -298,7 +369,7 @@ def evaluate_admission(
         else:
             base["status"] = "blocked"
             base["reasons"].append("no_accelerator_observed")
-        return _finalize_decision(base)
+        return _finalize_with_host_memory(base, ram_gate)
 
     candidates = []
     for device in devices:
@@ -331,13 +402,13 @@ def evaluate_admission(
                 base["status"] = "ready"
                 base["placements"] = placements
                 base["reasons"].append("explicit_runtime_combined_vram_fit")
-                return _finalize_decision(base)
+                return _finalize_with_host_memory(base, ram_gate)
     elif candidates and candidates[0]["safeCanFit"]:
         selected = candidates[0]
         base["status"] = "ready"
         base["placements"] = [{"deviceId": selected["deviceId"], "vramMb": requested_vram}]
         base["reasons"].append("largest_fitting_single_gpu_first")
-        return _finalize_decision(base)
+        return _finalize_with_host_memory(base, ram_gate)
 
     if candidates and any(item["totalCanFit"] for item in candidates):
         base["status"] = "queued"
@@ -346,7 +417,7 @@ def evaluate_admission(
         base["status"] = "blocked"
         base["reasons"].append("requested_vram_exceeds_observed_device_capacity")
     base["capacity"]["candidates"] = candidates
-    return _finalize_decision(base)
+    return _finalize_with_host_memory(base, ram_gate)
 
 
 def _lease_from_decision(request: dict[str, Any], decision: dict[str, Any], *, now: float, ttl_seconds: Any) -> dict[str, Any]:

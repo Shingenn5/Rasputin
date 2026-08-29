@@ -139,6 +139,22 @@ def _estimated_vram_gb(manifest: dict[str, Any], model: dict[str, Any] | None, p
     return None
 
 
+def _estimated_system_ram_gb(manifest: dict[str, Any], model: dict[str, Any] | None, payload: dict[str, Any] | None) -> float | None:
+    payload = payload or {}
+    envelope = manifest.get("runtimeEnvelope") or {}
+    for value in (
+        payload.get("systemRamEstimateGb"),
+        payload.get("system_ram_estimate_gb"),
+        envelope.get("estimatedSystemRamGb"),
+        (model or {}).get("systemRamEstimateGb"),
+        (model or {}).get("system_ram_estimate_gb"),
+    ):
+        parsed = _number(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _capability_profile(profile: Any) -> dict[str, Any] | None:
     if not isinstance(profile, dict):
         return None
@@ -197,6 +213,7 @@ def plan_admission(
         protocol_id,
     )
     estimate_gb = _estimated_vram_gb(manifest, model, payload)
+    system_ram_estimate_gb = _estimated_system_ram_gb(manifest, model, payload)
     profile = _capability_profile(capability_profile)
     device_value = payload.get("deviceIds") or payload.get("device_ids") or payload.get("gpuDevice") or payload.get("gpu_device")
     if isinstance(device_value, str) and device_value.strip().lower() in {"all", "*"}:
@@ -208,11 +225,14 @@ def plan_admission(
     else:
         device_ids = _device_ids(device_value, profile)
     requested_vram_mb = round(estimate_gb * 1024) if estimate_gb is not None else None
-    requested_ram_mb = payload.get("requestedRamMb") or payload.get("requested_ram_mb")
-    try:
-        requested_ram_mb = max(0, int(requested_ram_mb or 0))
-    except (TypeError, ValueError):
-        requested_ram_mb = 0
+    if "requestedRamMb" in payload or "requested_ram_mb" in payload:
+        requested_ram_mb = payload.get("requestedRamMb") if "requestedRamMb" in payload else payload.get("requested_ram_mb")
+        try:
+            requested_ram_mb = max(0, int(requested_ram_mb or 0))
+        except (TypeError, ValueError):
+            requested_ram_mb = 0
+    else:
+        requested_ram_mb = round(system_ram_estimate_gb * 1024) if system_ram_estimate_gb is not None else 0
     request = {
         "ownerId": _text(owner_id) or "admin",
         "workspaceRef": _text(payload.get("workspaceRef") or payload.get("workspace_ref")),

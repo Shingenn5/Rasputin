@@ -11,6 +11,7 @@ from backend.warsat import admission
 def _profile(*sizes):
     return {
         "schemaVersion": 1,
+        "cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000, "memoryUsedMb": 5536},
         "devices": [
             {
                 "deviceId": f"gpu:{index}",
@@ -123,6 +124,41 @@ class WarsatAdmissionIntegrationTests(unittest.TestCase):
         self.assertEqual(request["requestedVramMb"], 12288)
         self.assertEqual(decision["status"], "blocked")
         self.assertIn("requested_vram_exceeds_observed_device_capacity", decision["reasons"])
+
+    def test_admission_derives_and_enforces_system_ram_request(self):
+        profile = _profile(16384)
+        profile["cpu"] = {"memoryTotalMb": 32768, "memoryAvailableMb": 8192}
+        _manifest, queued, request = admission.plan_admission(
+            model={
+                "modelId": "demo/3b",
+                "vramEstimateGb": 4,
+                "systemRamEstimateGb": 8,
+                "recommendedProtocol": "vllmCudaOpenai",
+                "runtimeOptions": [{"protocolId": "vllmCudaOpenai"}],
+            },
+            capability_profile=profile,
+            runtime="vllm",
+            protocol_id="vllmCudaOpenai",
+        )
+        self.assertEqual(request["requestedRamMb"], 8192)
+        self.assertEqual(queued["status"], "queued")
+        self.assertIn("host_memory_reserved_or_headroom_required", queued["reasons"])
+
+        profile["cpu"] = {"memoryTotalMb": 6144, "memoryAvailableMb": 6144}
+        _manifest, blocked, _request = admission.plan_admission(
+            model={
+                "modelId": "demo/3b",
+                "vramEstimateGb": 4,
+                "systemRamEstimateGb": 8,
+                "recommendedProtocol": "vllmCudaOpenai",
+                "runtimeOptions": [{"protocolId": "vllmCudaOpenai"}],
+            },
+            capability_profile=profile,
+            runtime="vllm",
+            protocol_id="vllmCudaOpenai",
+        )
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertIn("requested_ram_exceeds_observed_host_capacity", blocked["reasons"])
 
     def test_combined_vram_requires_a_runtime_manifest_and_explicit_opt_in(self):
         vllm_manifest = resource_manifest.build_manifest({

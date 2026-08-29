@@ -2,7 +2,7 @@
 .settings-view {
   gap: 12px !important;
   padding: 14px !important;
-  background: radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--dash-accent) 7%, transparent), transparent 34%), var(--dash-bg);
+  background: var(--dash-bg);
 }
 .settings-view .settings-command-banner-v3 {
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -10,8 +10,8 @@
   gap: 16px;
   min-height: 112px;
   padding: 16px 18px;
-  border-radius: 12px 4px 12px 4px;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--dash-sidebar) 96%, var(--dash-accent) 4%), var(--dash-sidebar));
+  border-radius: 6px 0 6px 0;
+  background: var(--dash-sidebar);
   box-shadow: 0 12px 28px color-mix(in srgb, #000 12%, transparent);
 }
 .settings-view .settings-hero-copy h1 {
@@ -33,12 +33,12 @@
 .settings-view .settings-hero-actions button { min-height: 30px; padding: 0 8px; border-radius: 6px 2px 6px 2px; font-size: .62rem; }
 .settings-view .settings-control-grid-v3 {
   grid-template-columns: 194px minmax(0, 1fr);
-  border-radius: 12px 4px 12px 4px;
+  border-radius: 6px 0 6px 0;
   box-shadow: 0 10px 26px color-mix(in srgb, #000 6%, transparent);
 }
 .settings-view .settings-control-rail {
   padding: 10px 8px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dash-sidebar) 98%, var(--dash-accent) 2%), var(--dash-sidebar));
+  background: var(--dash-sidebar);
 }
 .settings-view .settings-scope-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 8px !important; }
 .settings-view .settings-scope-toggle button { min-height: 27px; padding: 0 4px; font-size: .59rem; }
@@ -83,11 +83,11 @@
 .settings-view .settings-panel-surface {
   min-height: 0;
   padding: 11px;
-  border-radius: 9px 3px 9px 3px;
+  border-radius: 5px 0 5px 0;
   background: color-mix(in srgb, var(--dash-surface) 98%, transparent);
   box-shadow: none;
 }
-.settings-view .settings-panel-surface .card { border-radius: 8px 2px 8px 2px !important; }
+.settings-view .settings-panel-surface .card { border-radius: 4px !important; }
 .settings-view .settings-panel-surface .card-body { padding: .65rem !important; }
 .settings-view .settings-panel-surface .card-header { padding: .55rem .65rem !important; }
 .settings-view .settings-panel-surface .mb-4 { margin-bottom: .55rem !important; }

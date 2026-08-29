@@ -6,14 +6,14 @@
 :where(.activity-view, .models-view, .settings-view, .studio-settings-modal) {
   --sv-rail-width: 148px;
   --sv-command-height: 44px;
-  --sv-radius: 7px;
+  --sv-radius: 4px;
   --sv-gap: 7px;
   --sv-surface: color-mix(in srgb, var(--dash-panel) 94%, var(--dash-bg));
   --sv-surface-raised: color-mix(in srgb, var(--dash-panel) 88%, var(--ras-primary) 3%);
   --sv-active: color-mix(in srgb, var(--ras-primary) 14%, transparent);
 }
 :where(.activity-view, .models-view) {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dash-bg) 96%, var(--ras-primary) 2%), var(--dash-bg) 140px);
+  background: var(--dash-bg);
 }
 :where(.history-page-header, .models-page-header, .studio-settings-heading) {
   background: color-mix(in srgb, var(--dash-bg) 97%, var(--ras-primary) 1.5%);
@@ -46,7 +46,7 @@
 }
 .activity-view .history-view-tab.is-active {
   border-color: color-mix(in srgb, var(--ras-primary) 22%, var(--dash-border));
-  background: linear-gradient(90deg, var(--sv-active), color-mix(in srgb, var(--sv-active) 30%, transparent));
+  background: var(--sv-active);
   color: var(--dash-text);
   box-shadow: inset 2px 0 var(--ras-primary);
 }
@@ -132,7 +132,7 @@
 .models-view .models-page-tabs [role="tab"]:hover { border-color: var(--dash-border); background: var(--dash-hover); color: var(--dash-text); }
 .models-view .models-page-tabs [role="tab"][aria-selected="true"] {
   border-color: color-mix(in srgb, var(--ras-primary) 22%, var(--dash-border));
-  background: linear-gradient(90deg, var(--sv-active), color-mix(in srgb, var(--sv-active) 28%, transparent));
+  background: var(--sv-active);
   color: var(--dash-text);
   box-shadow: inset 2px 0 var(--ras-primary);
 }
@@ -215,7 +215,7 @@
 .studio-settings-modal .studio-settings-nav button strong { overflow: hidden; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
 .studio-settings-modal .studio-settings-nav button.is-active {
   border-color: color-mix(in srgb, var(--ras-primary) 22%, var(--dash-border));
-  background: linear-gradient(90deg, var(--sv-active), color-mix(in srgb, var(--sv-active) 24%, transparent));
+  background: var(--sv-active);
   color: var(--dash-text);
   box-shadow: inset 2px 0 var(--ras-primary);
 }

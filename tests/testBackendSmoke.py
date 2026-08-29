@@ -1138,7 +1138,15 @@ class BackendSmokeTests(unittest.TestCase):
         asyncio.run(flow())
 
     def testModelCatalogFitScoringAndHardwareHints(self):
-        hardware = {"detectedHardware": {"gpus": [{"memoryTotalMb": 24576}]}}
+        hardware = {
+            "detectedHardware": {"gpus": [{"memoryTotalMb": 24576}]},
+            "capabilityProfile": {
+                "cpu": {
+                    "memoryTotalMb": 65536,
+                    "memoryAvailableMb": 49152,
+                }
+            },
+        }
         payload = model_catalog._catalog_payload(model_catalog._curated_items(), hardware=hardware)
         self.assertTrue(payload["items"])
         fit_item = next(item for item in payload["items"] if item["modelId"] == "Qwen/Qwen2.5-Coder-7B-Instruct")

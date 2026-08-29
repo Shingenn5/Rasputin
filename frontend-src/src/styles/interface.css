@@ -26,22 +26,14 @@ kbd,
 /* Static atmosphere: a restrained technical field instead of animated blobs. */
 .ras-atmosphere {
   background:
-    radial-gradient(900px 520px at 88% -8%, color-mix(in srgb, var(--dash-accent) 8%, transparent), transparent 68%),
     linear-gradient(90deg, color-mix(in srgb, var(--dash-text) 2.6%, transparent) 1px, transparent 1px),
     linear-gradient(0deg, color-mix(in srgb, var(--dash-text) 2.6%, transparent) 1px, transparent 1px),
     var(--dash-bg);
-  background-size: auto, 42px 42px, 42px 42px, auto;
+  background-size: 42px 42px, 42px 42px, auto;
 }
 
 .ras-atmosphere::before {
-  inset: 0 !important;
-  width: auto !important;
-  height: auto !important;
-  border-radius: 0 !important;
-  filter: none !important;
-  animation: none !important;
-  transform: none !important;
-  background: linear-gradient(115deg, color-mix(in srgb, var(--dash-accent) 4%, transparent), transparent 28%) !important;
+  display: none !important;
 }
 
 .ras-atmosphere::after,
@@ -116,11 +108,10 @@ button.ras-brand-sigil:hover {
   overflow-y: auto;
   padding: clamp(18px, 4vw, 54px);
   background:
-    radial-gradient(800px 520px at 16% 4%, color-mix(in srgb, var(--dash-accent) 10%, transparent), transparent 70%),
     linear-gradient(90deg, color-mix(in srgb, var(--dash-text) 3%, transparent) 1px, transparent 1px),
     linear-gradient(0deg, color-mix(in srgb, var(--dash-text) 3%, transparent) 1px, transparent 1px),
     var(--dash-bg) !important;
-  background-size: auto, 44px 44px, 44px 44px, auto !important;
+  background-size: 44px 44px, 44px 44px, auto !important;
 }
 
 .login-grid {
@@ -130,7 +121,7 @@ button.ras-brand-sigil:hover {
   min-height: min(650px, calc(100dvh - 48px));
   overflow: hidden;
   border: 1px solid var(--dash-border-strong);
-  border-radius: 24px 8px 24px 8px;
+  border-radius: 8px 0 8px 0;
   background: var(--dash-panel);
   box-shadow: var(--ras-shadow-overlay);
 }
@@ -141,9 +132,7 @@ button.ras-brand-sigil:hover {
   flex-direction: column;
   padding: clamp(30px, 5vw, 62px);
   overflow: hidden;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--sidebar-primary) 14%, transparent), transparent 40%),
-    var(--sidebar);
+  background: var(--sidebar);
   color: var(--sidebar-foreground);
 }
 
@@ -478,7 +467,7 @@ html[data-theme="rasputin-dark"] .login-submit {
   position: absolute;
   inset: 0 0 0 auto;
   width: 1px;
-  background: linear-gradient(transparent, color-mix(in srgb, var(--sidebar-primary) 32%, transparent), transparent);
+  background: color-mix(in srgb, var(--sidebar-primary) 24%, var(--sidebar-border));
   pointer-events: none;
 }
 
@@ -2131,12 +2120,7 @@ button.workspace-add-folder:focus-visible {
 }
 
 .settings-command-hero::after {
-  position: absolute;
-  inset: auto -10% 0 32%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--dash-accent), transparent);
-  box-shadow: 0 -32px 70px 14px color-mix(in srgb, var(--dash-accent) 9%, transparent);
-  content: "";
+  display: none;
 }
 
 .settings-hero-copy { position: relative; z-index: 1; }
@@ -2245,7 +2229,7 @@ button.workspace-add-folder:focus-visible {
   text-align: left;
 }
 .settings-nav-item:hover { background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 5%, transparent); color: var(--dash-sidebar-text, #fff); }
-.settings-nav-item.is-active { background: linear-gradient(90deg, color-mix(in srgb, var(--dash-accent) 17%, transparent), color-mix(in srgb, var(--dash-accent) 5%, transparent)); color: var(--dash-sidebar-text, #fff); }
+.settings-nav-item.is-active { background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-sidebar-text, #fff); }
 .settings-nav-icon { display: grid; width: 31px; height: 31px; place-items: center; border: 1px solid color-mix(in srgb, currentColor 13%, transparent); border-radius: 8px 3px 8px 3px; background: color-mix(in srgb, currentColor 4%, transparent); }
 .settings-nav-item.is-active .settings-nav-icon { border-color: color-mix(in srgb, var(--dash-accent) 40%, transparent); color: var(--dash-accent); }
 .settings-nav-item strong,
@@ -2349,14 +2333,14 @@ button.workspace-add-folder:focus-visible {
 .workspaces-view .w2-header-stat small { color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 38%, transparent); font-family: var(--ras-font-mono); font-size: 0.54rem; letter-spacing: 0.06em; text-transform: uppercase; }
 .workspaces-view button.w2-header-stat:hover { border-color: color-mix(in srgb, var(--dash-accent) 55%, transparent) !important; background: color-mix(in srgb, var(--dash-accent) 9%, transparent) !important; }
 
-.workspaces-view .workspace-runtime-note { margin: 0; border-radius: 9px 3px 9px 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--dash-accent) 7%, var(--dash-surface)), var(--dash-surface)); }
+.workspaces-view .workspace-runtime-note { margin: 0; border-radius: 4px; background: color-mix(in srgb, var(--dash-accent) 5%, var(--dash-surface)); }
 .workspaces-view .w2-main-grid { grid-template-columns: minmax(255px, 0.7fr) minmax(520px, 2.3fr); gap: 12px; min-height: 540px; }
 .workspaces-view .w2-column { border: 1px solid var(--dash-border); border-radius: 14px 4px 14px 4px; background: color-mix(in srgb, var(--dash-surface) 96%, transparent); box-shadow: 0 12px 32px color-mix(in srgb, #000 5%, transparent); }
 .workspaces-view .w2-column-nav { background: color-mix(in srgb, var(--dash-sidebar) 97%, var(--dash-accent) 3%); color: var(--dash-sidebar-text, #fff); }
 .workspaces-view .w2-column-nav .w2-section-title { color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 45%, transparent); }
 .workspaces-view .w2-column-nav .w2-tree-item { border-radius: 8px 3px 8px 3px; color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 64%, transparent); }
 .workspaces-view .w2-column-nav .w2-tree-item:hover { background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 5%, transparent); color: var(--dash-sidebar-text, #fff); }
-.workspaces-view .w2-column-nav .w2-tree-item.is-active { background: linear-gradient(90deg, color-mix(in srgb, var(--dash-accent) 18%, transparent), color-mix(in srgb, var(--dash-accent) 5%, transparent)); color: var(--dash-sidebar-text, #fff); }
+.workspaces-view .w2-column-nav .w2-tree-item.is-active { background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-sidebar-text, #fff); }
 .workspaces-view .w2-column-nav .w2-input { border-color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 11%, transparent); background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 4%, transparent); color: var(--dash-sidebar-text, #fff); }
 .workspaces-view .w2-column-explorer { background: color-mix(in srgb, var(--dash-bg) 48%, var(--dash-surface)); }
 .workspaces-view .w2-card { border-color: var(--dash-border); border-radius: 11px 4px 11px 4px; background: var(--dash-surface); box-shadow: 0 8px 24px color-mix(in srgb, #000 4%, transparent); }
@@ -2428,7 +2412,7 @@ button.workspace-add-folder:focus-visible {
 .account-add-trigger { display: inline-flex; min-height: 35px; align-items: center; gap: 7px; border: 1px solid color-mix(in srgb, var(--dash-accent) 44%, var(--dash-border)); border-radius: 8px 3px 8px 3px; padding: 0 12px; background: color-mix(in srgb, var(--dash-accent) 8%, var(--dash-panel)); color: var(--dash-accent); font-size: 0.68rem; font-weight: 750; }
 .account-add-trigger:hover:not(:disabled) { background: color-mix(in srgb, var(--dash-accent) 14%, var(--dash-panel)); transform: translateY(-1px); }
 .account-add-trigger:disabled { opacity: 0.45; }
-.account-create-panel { position: relative; display: flex; flex-direction: column; gap: 15px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--dash-accent) 32%, var(--dash-border)); border-radius: 14px 4px 14px 4px; padding: 16px; background: radial-gradient(circle at 100% 0, color-mix(in srgb, var(--dash-accent) 10%, transparent), transparent 32%), color-mix(in srgb, var(--dash-bg) 44%, var(--dash-panel)); box-shadow: 0 16px 38px color-mix(in srgb, #000 8%, transparent); animation: account-panel-arrive 180ms ease-out; }
+.account-create-panel { position: relative; display: flex; flex-direction: column; gap: 15px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--dash-accent) 32%, var(--dash-border)); border-radius: 6px 0 6px 0; padding: 16px; background: color-mix(in srgb, var(--dash-bg) 44%, var(--dash-panel)); box-shadow: 0 16px 38px color-mix(in srgb, #000 8%, transparent); animation: account-panel-arrive 180ms ease-out; }
 .account-create-panel::before { position: absolute; top: 0; left: 18px; width: 72px; height: 2px; background: var(--dash-accent); content: ""; box-shadow: 0 0 15px color-mix(in srgb, var(--dash-accent) 48%, transparent); }
 .account-create-heading { display: grid; grid-template-columns: 38px minmax(0, 1fr) 32px; align-items: center; gap: 10px; }
 .account-create-heading > span:nth-child(2) strong,
@@ -2567,10 +2551,7 @@ button.workspace-add-folder:focus-visible {
 .dash-frame-main {
   position: relative;
   isolation: isolate;
-  background:
-    radial-gradient(900px 520px at 103% -8%, color-mix(in srgb, var(--view-accent) 11%, transparent), transparent 67%),
-    radial-gradient(620px 420px at 42% 112%, color-mix(in srgb, var(--view-accent-2) 4%, transparent), transparent 72%);
-  transition: background 420ms ease;
+  background: transparent;
 }
 
 .dash-frame-main::before,
@@ -2582,27 +2563,11 @@ button.workspace-add-folder:focus-visible {
 }
 
 .dash-frame-main::before {
-  top: 8vh;
-  right: -180px;
-  width: 440px;
-  height: 440px;
-  border: 1px solid color-mix(in srgb, var(--view-accent) 15%, transparent);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 58px color-mix(in srgb, var(--view-accent) 2.5%, transparent),
-    0 0 0 116px color-mix(in srgb, var(--view-accent) 1.6%, transparent),
-    inset 0 0 80px color-mix(in srgb, var(--view-accent) 3%, transparent);
-  animation: ras-orbit-drift 16s ease-in-out infinite alternate;
+  display: none;
 }
 
 .dash-frame-main::after {
-  top: 0;
-  left: 18%;
-  width: 34%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--view-accent) 65%, transparent), transparent);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--view-accent) 35%, transparent);
-  animation: ras-signal-sweep 5.5s ease-in-out infinite;
+  display: none;
 }
 
 .ras-sidebar .ras-nav-item.is-active,
@@ -2611,8 +2576,7 @@ button.workspace-add-folder:focus-visible {
 }
 
 .ras-nav-active {
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--view-accent) 18%, transparent), color-mix(in srgb, var(--view-accent) 4%, transparent)) !important;
+  background: color-mix(in srgb, var(--view-accent) 12%, var(--sidebar-accent)) !important;
   border: 1px solid color-mix(in srgb, var(--view-accent) 18%, transparent);
   box-shadow: inset 3px 0 0 color-mix(in srgb, var(--view-accent) 78%, transparent);
 }
@@ -2625,46 +2589,11 @@ button.workspace-add-folder:focus-visible {
 }
 
 .app-view.active::before {
-  position: absolute;
-  top: clamp(58px, 8vw, 108px);
-  right: clamp(22px, 4vw, 70px);
-  z-index: -1;
-  width: clamp(120px, 16vw, 220px);
-  height: clamp(120px, 16vw, 220px);
-  border: 1px solid color-mix(in srgb, var(--view-accent) 14%, transparent);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 70% 29%, var(--view-accent-2) 0 2px, transparent 3px),
-    radial-gradient(circle at 34% 68%, color-mix(in srgb, var(--view-accent) 78%, transparent) 0 3px, transparent 4px),
-    linear-gradient(90deg, transparent 49.5%, color-mix(in srgb, var(--view-accent) 12%, transparent) 50%, transparent 50.5%),
-    linear-gradient(transparent 49.5%, color-mix(in srgb, var(--view-accent) 12%, transparent) 50%, transparent 50.5%),
-    repeating-radial-gradient(circle, transparent 0 21%, color-mix(in srgb, var(--view-accent) 10%, transparent) 21.5% 22%, transparent 22.5% 42%),
-    conic-gradient(from 0deg, transparent 0 73%, color-mix(in srgb, var(--view-accent) 2%, transparent) 78%, color-mix(in srgb, var(--view-accent) 30%, transparent) 96%, transparent 100%);
-  box-shadow:
-    0 0 0 22px color-mix(in srgb, var(--view-accent) 1.8%, transparent),
-    inset 0 0 48px color-mix(in srgb, var(--view-accent) 3%, transparent);
-  content: "";
-  opacity: 0.72;
-  pointer-events: none;
-  transform: rotate(-12deg);
-  transform-origin: center;
-  animation: ras-radar-scan 8s linear infinite;
+  display: none;
 }
 
 .app-view.active::after {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 5;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 5%, var(--view-accent) 48%, var(--view-accent-2) 62%, transparent 95%);
-  background-size: 220% 100%;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--view-accent) 36%, transparent);
-  content: "";
-  opacity: 0.62;
-  pointer-events: none;
-  animation: ras-tracer 6s linear infinite;
+  display: none;
 }
 
 .app-view.active > * {
@@ -3371,10 +3300,10 @@ html[data-theme="rasputin-dark"] .glow-card:hover { border-color: var(--dash-bor
 html[data-theme="rasputin-dark"] .fx-rise > * { animation-duration: .2s; animation-delay: 0s !important; }
 html[data-theme="rasputin-dark"] :is(.w2-card, .w2-column, .settings-card, .message-card, .model-card, .trial-card) {
   border-color: var(--dash-border);
-  border-radius: 9px;
+  border-radius: 4px;
   box-shadow: none;
 }
-html[data-theme="rasputin-dark"] :is(.w2-button, .w2-input, button, input, select, textarea) { border-radius: 7px; }
+html[data-theme="rasputin-dark"] :is(.w2-button, .w2-input, button, input, select, textarea) { border-radius: 4px; }
 
 @media (min-width: 640px) {
   .ras-desktop-rail { padding: 7px 6px; }
@@ -3733,9 +3662,9 @@ html[data-theme="rasputin-dark"] :is(.w2-button, .w2-input, button, input, selec
 .serving-panel-header {
   flex: 0 0 auto;
   border: 1px solid var(--dash-border);
-  border-radius: 10px;
+  border-radius: 4px;
   padding: 13px 14px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--ras-primary) 9%, var(--dash-panel)), var(--dash-panel));
+  background: color-mix(in srgb, var(--ras-primary) 6%, var(--dash-panel));
 }
 .serving-panel-header h2 { margin: 3px 0 2px; font-size: 1rem; }
 .serving-panel-header p,

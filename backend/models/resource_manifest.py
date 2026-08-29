@@ -220,6 +220,58 @@ def estimate_vram_demand(model=None, *, parameter_count_b=None, quantization="",
     }
 
 
+def estimate_system_ram_demand(model=None, *, vram_estimate=None):
+    """Estimate host RAM needed to stage and run a managed local model.
+
+    GPU fit alone is insufficient: runtimes still map or stage model weights in
+    host memory and keep a host-side process envelope.  This estimate excludes
+    the operating-system safety reserve, which the live capacity check applies
+    separately.  An explicit catalog/runtime estimate remains authoritative.
+    """
+
+    model = dict(model or {})
+    explicit = _first_number(
+        model,
+        "systemRamEstimateGb",
+        "system_ram_estimate_gb",
+        "hostRamEstimateGb",
+        "host_ram_estimate_gb",
+    )
+    if explicit is not None:
+        return {
+            "totalGb": round(explicit, 2),
+            "rangeGb": {"min": round(explicit, 2), "max": round(explicit, 2)},
+            "confidence": "declared",
+            "source": "catalog-explicit-system-ram",
+            "assumptions": ["The catalog or runtime supplied an explicit host RAM estimate."],
+        }
+    estimate = vram_estimate if isinstance(vram_estimate, dict) else estimate_vram_demand(model)
+    weights_gb = _number((estimate or {}).get("weightsGb"))
+    weight_overhead_gb = _number((estimate or {}).get("weightOverheadGb"), 0.0) or 0.0
+    runtime_overhead_gb = _number((estimate or {}).get("runtimeOverheadGb"), 1.0) or 1.0
+    if weights_gb is None:
+        return {
+            "totalGb": None,
+            "rangeGb": None,
+            "confidence": "unknown",
+            "source": "missing-weight-envelope",
+            "assumptions": ["Parameter and quantization metadata are required for a host RAM estimate."],
+        }
+    total = max(2.0, weights_gb + weight_overhead_gb + runtime_overhead_gb)
+    spread = 0.20
+    return {
+        "totalGb": round(total, 2),
+        "rangeGb": {"min": round(total * (1 - spread), 2), "max": round(total * (1 + spread), 2)},
+        "confidence": "estimated",
+        "source": "weight-staging-plus-runtime",
+        "assumptions": [
+            "Host RAM includes one model-weight staging or memory-map envelope.",
+            f"Host runtime overhead is estimated at {runtime_overhead_gb:g} GB.",
+            "The operating-system safety reserve is applied to live available RAM, not added to model demand.",
+        ],
+    }
+
+
 def _measured_kv_cache(model, context_window):
     raw = model.get("kvCache") or model.get("kv_cache") or {}
     if not isinstance(raw, dict):
@@ -254,6 +306,7 @@ def build_manifest(model=None):
         quantization=model.get("quantization"),
         model_id=model_id,
     )
+    system_ram_estimate = estimate_system_ram_demand(model, vram_estimate=estimate)
     measured_kv_vram = kv_cache.get("residentVramGb") if kv_cache.get("status") == "measured" else None
     measured_total_vram = _rounded(
         model.get("measuredRuntimeVramGb")
@@ -325,9 +378,13 @@ def build_manifest(model=None):
         },
         "runtimeEnvelope": {
             "estimatedVramGb": total_vram,
+            "estimatedSystemRamGb": system_ram_estimate.get("totalGb"),
             "estimateSource": envelope_source,
+            "systemRamEstimateSource": system_ram_estimate.get("source"),
             "confidence": envelope_confidence,
+            "systemRamConfidence": system_ram_estimate.get("confidence"),
             "rangeGb": envelope_range,
+            "systemRamRangeGb": system_ram_estimate.get("rangeGb"),
             "breakdown": {
                 "weightsGb": (estimate or {}).get("weightsGb") if estimate else weight_vram,
                 "weightOverheadGb": (estimate or {}).get("weightOverheadGb") if estimate else None,
@@ -335,7 +392,7 @@ def build_manifest(model=None):
                 "kvCacheGb": measured_kv_vram if measured_kv_vram is not None else
                              ((estimate or {}).get("kvCacheGb") if estimate else None),
             },
-            "assumptions": list((estimate or {}).get("assumptions") or []) + (
+            "assumptions": list((estimate or {}).get("assumptions") or []) + list(system_ram_estimate.get("assumptions") or []) + (
                 [f"The declared total VRAM estimate ({explicit_vram:g} GB) overrides the independent {estimate_total:g} GB heuristic for compatibility."]
                 if explicit_vram is not None and estimate_total is not None and abs(explicit_vram - estimate_total) >= 0.01 else
                 ["Measured KV-cache resident VRAM replaces only the estimated KV component."]
@@ -361,6 +418,8 @@ def build_manifest(model=None):
             "label": "unmeasured",
             "availableVramGb": None,
             "headroomGb": None,
+            "availableSystemRamGb": None,
+            "systemRamHeadroomGb": None,
             "basis": "not-evaluated",
             "blockedReasons": [],
         },
@@ -368,7 +427,18 @@ def build_manifest(model=None):
     return manifest
 
 
-def attach_fit(manifest, *, score, label, available_vram_gb=None, headroom_gb=None, basis="catalog-estimate", blocked_reasons=None):
+def attach_fit(
+    manifest,
+    *,
+    score,
+    label,
+    available_vram_gb=None,
+    headroom_gb=None,
+    available_system_ram_gb=None,
+    system_ram_headroom_gb=None,
+    basis="catalog-estimate",
+    blocked_reasons=None,
+):
     """Return a copy with dynamic hardware-fit evidence attached."""
 
     result = deepcopy(manifest or build_manifest())
@@ -378,6 +448,8 @@ def attach_fit(manifest, *, score, label, available_vram_gb=None, headroom_gb=No
         "label": str(label or "unmeasured"),
         "availableVramGb": _rounded(available_vram_gb),
         "headroomGb": _rounded(headroom_gb),
+        "availableSystemRamGb": _rounded(available_system_ram_gb),
+        "systemRamHeadroomGb": _rounded(system_ram_headroom_gb),
         "basis": str(basis or "catalog-estimate"),
         "blockedReasons": [str(item) for item in (blocked_reasons or [])],
     })

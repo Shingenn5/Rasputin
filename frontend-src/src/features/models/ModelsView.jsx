@@ -141,22 +141,52 @@ export function withAdvisorTimeout(requestFactory, timeoutMs = ADVISOR_REQUEST_T
 
 export function hardwarePlacementCapacity(hardware) {
   const detected = hardware?.detectedHardware || hardware?.detected_hardware || hardware || {};
-  const gpus = Array.isArray(detected?.gpus) ? detected.gpus : [];
+  const profile = hardware?.capabilityProfile || hardware?.capability_profile || {};
+  const detectedGpus = Array.isArray(detected?.gpus) ? detected.gpus : [];
+  const profileDevices = Array.isArray(profile?.devices) ? profile.devices : [];
+  const gpus = detectedGpus.length ? detectedGpus : profileDevices;
   const capacities = gpus
     .map((gpu, index) => {
-      const memoryMb = gpu?.memoryTotalMb ?? gpu?.memory_total_mb;
-      const memoryGb = gpu?.memoryGb ?? gpu?.memory_gb;
+      const staticFacts = gpu?.static && typeof gpu.static === "object" ? gpu.static : gpu;
+      const volatileFacts = gpu?.volatile && typeof gpu.volatile === "object" ? gpu.volatile : gpu;
+      const memoryMb = staticFacts?.memoryTotalMb ?? staticFacts?.memory_total_mb;
+      const memoryGb = staticFacts?.memoryGb ?? staticFacts?.memory_gb;
+      const freeMb = volatileFacts?.memoryFreeMb ?? volatileFacts?.memory_free_mb;
+      const freeGb = volatileFacts?.memoryFreeGb ?? volatileFacts?.memory_free_gb;
+      const usedMb = volatileFacts?.memoryUsedMb ?? volatileFacts?.memory_used_mb;
+      const total = memoryMb != null ? Number(memoryMb) / 1024 : Number(memoryGb);
+      let free = freeMb != null ? Number(freeMb) / 1024 : Number(freeGb);
+      if (!Number.isFinite(free) && Number.isFinite(total) && usedMb != null) {
+        free = Math.max(0, total - (Number(usedMb) / 1024));
+      }
+      const safeFree = Number.isFinite(free) && Number.isFinite(total)
+        ? Math.max(0, free - Math.max(0.5, total * 0.10))
+        : null;
       return {
         index,
-        name: gpu?.name || gpu?.model || "GPU " + index,
-        memoryGb: memoryMb != null ? Number(memoryMb) / 1024 : Number(memoryGb),
+        name: staticFacts?.name || staticFacts?.model || "GPU " + index,
+        memoryGb: total,
+        freeGb: Number.isFinite(free) ? free : null,
+        safeFreeGb: Number.isFinite(safeFree) ? safeFree : null,
       };
     })
     .filter((gpu) => Number.isFinite(gpu.memoryGb) && gpu.memoryGb > 0);
+  const safeValues = capacities.map((gpu) => gpu.safeFreeGb);
+  const hasLiveFree = capacities.length > 0 && safeValues.every((value) => Number.isFinite(value));
+  const names = new Set(capacities.map((gpu) => String(gpu.name || "").trim().toLowerCase()));
+  const totals = capacities.map((gpu) => gpu.memoryGb);
+  const matchingGpuSet = capacities.length > 1
+    && names.size === 1
+    && !names.has("")
+    && Math.max(...totals) - Math.min(...totals) <= Math.max(0.25, Math.min(...totals) * 0.02);
   return {
     gpus: capacities,
     largestSingleGpuGb: capacities.reduce((largest, gpu) => Math.max(largest, gpu.memoryGb), 0) || null,
     aggregateVramGb: capacities.reduce((total, gpu) => total + gpu.memoryGb, 0) || null,
+    largestSafeFreeGpuGb: hasLiveFree ? capacities.reduce((largest, gpu) => Math.max(largest, gpu.safeFreeGb), 0) : null,
+    aggregateSafeFreeVramGb: hasLiveFree ? capacities.reduce((total, gpu) => total + gpu.safeFreeGb, 0) : null,
+    hasLiveFree,
+    matchingGpuSet,
   };
 }
 
@@ -295,6 +325,116 @@ export function catalogVramEstimateGb(item) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+
+export function catalogSystemRamEstimateGb(item) {
+  const envelope = runtimeEnvelopeForItem(item);
+  const parsed = Number(
+    envelope?.estimatedSystemRamGb
+    ?? envelope?.estimated_system_ram_gb
+    ?? item?.systemRamEstimateGb
+    ?? item?.system_ram_estimate_gb
+  );
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+
+export function systemMemoryCapacity(hardware) {
+  const snapshot = normalizeHardwareSnapshot(hardware);
+  const detected = snapshot.detectedHardware || {};
+  const profileCpu = snapshot.capabilityProfile?.cpu || {};
+  const host = detected.hostMemory || detected.host_memory || detected;
+  const totalMb = profileCpu.memoryTotalMb ?? profileCpu.memory_total_mb ?? host.memoryTotalMb ?? host.totalMb ?? host.total_mb;
+  const availableMb = profileCpu.memoryAvailableMb ?? profileCpu.memory_available_mb ?? host.memoryAvailableMb ?? host.availableMb ?? host.available_mb;
+  const usedMb = profileCpu.memoryUsedMb ?? profileCpu.memory_used_mb ?? host.memoryUsedMb ?? host.usedMb ?? host.used_mb;
+  const totalGb = Number.isFinite(Number(totalMb)) ? Number(totalMb) / 1024 : null;
+  let availableGb = Number.isFinite(Number(availableMb)) ? Number(availableMb) / 1024 : null;
+  if (availableGb == null && totalGb != null && Number.isFinite(Number(usedMb))) {
+    availableGb = Math.max(0, totalGb - (Number(usedMb) / 1024));
+  }
+  return {
+    totalGb,
+    availableGb,
+    safeAvailableGb: availableGb == null ? null : Math.max(0, availableGb - 2),
+    headroomGb: 2,
+  };
+}
+
+
+function withSystemRamAssessment(gpuAssessment, item, hardware) {
+  const estimate = catalogSystemRamEstimateGb(item);
+  const liveCapacity = systemMemoryCapacity(hardware);
+  const backendCapacity = item?.fitCapacity || {};
+  const backendTotal = Number(backendCapacity.installedSystemRamGb);
+  const backendSafeAvailable = Number(backendCapacity.safeAvailableSystemRamGb);
+  const total = liveCapacity.totalGb ?? (Number.isFinite(backendTotal) && backendTotal > 0 ? backendTotal : null);
+  const safeAvailable = liveCapacity.safeAvailableGb ?? (Number.isFinite(backendSafeAvailable) && backendSafeAvailable >= 0 ? backendSafeAvailable : null);
+  const result = {
+    ...gpuAssessment,
+    vramStatus: gpuAssessment.status,
+    systemRamEstimateGb: estimate,
+    installedSystemRamGb: total,
+    safeAvailableSystemRamGb: safeAvailable,
+    reasons: [...(gpuAssessment.reasons || [])],
+  };
+  if (!estimate) {
+    if (gpuAssessment.status !== "blocked") {
+      result.kind = result.status = "unknown";
+      result.label = "Fit unknown";
+      result.canDeploy = false;
+      result.willFit = null;
+      result.canRunNow = false;
+    }
+    result.reasons.push("System RAM demand is unknown, so overall fit cannot be determined.");
+    return result;
+  }
+  if (total == null) {
+    if (gpuAssessment.status !== "blocked") {
+      result.kind = result.status = "unknown";
+      result.label = "Fit unknown";
+      result.canDeploy = false;
+      result.willFit = null;
+      result.canRunNow = false;
+    }
+    result.reasons.push("Installed system RAM is unavailable; refresh the hardware check.");
+    return result;
+  }
+  if (estimate > total) {
+    result.kind = result.status = "blocked";
+    result.label = "Will not fit";
+    result.canDeploy = false;
+    result.willFit = false;
+    result.canRunNow = false;
+    result.reasons.push("Estimated " + estimate + " GB system RAM exceeds installed RAM (" + total.toFixed(1) + " GB).");
+    return result;
+  }
+  if (safeAvailable == null) {
+    if (gpuAssessment.status !== "blocked" && gpuAssessment.status !== "queued") {
+      result.kind = result.status = "capacity-fit";
+      result.label = "Will fit (availability unknown)";
+      result.canDeploy = true;
+      result.willFit = true;
+      result.canRunNow = false;
+    }
+    result.reasons.push("Estimated " + estimate + " GB system RAM fits installed RAM, but current available RAM was not reported.");
+    return result;
+  }
+  if (estimate > safeAvailable) {
+    if (gpuAssessment.status !== "blocked") {
+      result.kind = result.status = "queued";
+      result.label = "Fits when memory is free";
+      result.canDeploy = true;
+      result.willFit = true;
+      result.canRunNow = false;
+    }
+    result.reasons.push("Estimated " + estimate + " GB system RAM fits installed RAM, but only " + safeAvailable.toFixed(1) + " GB is safely available now.");
+    return result;
+  }
+  result.reasons.push("Estimated " + estimate + " GB system RAM fits " + safeAvailable.toFixed(1) + " GB safely available now.");
+  if (gpuAssessment.status === "queued") result.label = "Fits when memory is free";
+  return result;
+}
+
+
 export function catalogPlacementAssessment(item, hardware, measuredEvidence = null) {
   const capacity = hardwarePlacementCapacity(hardware);
   const estimate = catalogVramEstimateGb(item);
@@ -304,41 +444,115 @@ export function catalogPlacementAssessment(item, hardware, measuredEvidence = nu
   const exact = evidence?.exact === true || evidence?.status === "exact" || evidence?.basis === "measured-exact";
   const multiGpu = placement?.mode === "multi-gpu" || placement?.mode === "multi_gpu" || evidence?.placementMode === "multi-gpu" || evidence?.placement_mode === "multi-gpu";
   const measuredLayerSharding = exact && multiGpu && (protocol.includes("llama") || protocol.includes("gguf"));
+  const llamaLayerSharding = protocol.includes("llama") || protocol.includes("gguf");
+  const matchingVllmTensorParallel = protocol.includes("vllm") && capacity.matchingGpuSet;
+  const combinedPlacement = measuredLayerSharding || llamaLayerSharding || matchingVllmTensorParallel;
   const largest = capacity.largestSingleGpuGb;
+  const installedCapacity = combinedPlacement ? capacity.aggregateVramGb : largest;
+  const safeAvailable = combinedPlacement ? capacity.aggregateSafeFreeVramGb : capacity.largestSafeFreeGpuGb;
   const hasEstimate = Number.isFinite(estimate) && estimate > 0;
-  if (measuredLayerSharding) {
+  const backendStatus = String(item?.fitStatus || item?.resourceManifest?.fit?.status || "").toLowerCase();
+  const backendCapacity = item?.fitCapacity || {};
+  const backendNumber = (value) => value == null || value === "" ? null : Number.isFinite(Number(value)) ? Number(value) : null;
+  if ((!capacity.gpus.length || !hasEstimate) && backendStatus) {
+    const backendWillFit = item?.fitWillFit ?? ["ready", "queued", "capacity-fit"].includes(backendStatus);
+    const backendCanRunNow = item?.fitCanRunNow ?? backendStatus === "ready";
     return {
-      kind: "measured-multi-gpu",
-      label: "Supported multi-GPU / layer sharding",
-      canDeploy: true,
+      kind: backendStatus,
+      status: backendStatus,
+      label: item?.fitLabel || (backendWillFit ? "Will fit" : backendStatus === "blocked" ? "Will not fit" : "Fit unknown"),
+      canDeploy: Boolean(backendWillFit),
+      willFit: backendWillFit,
+      canRunNow: backendCanRunNow,
       largestSingleGpuGb: largest,
       aggregateVramGb: capacity.aggregateVramGb,
-      reasons: ["Exact measured llama.cpp/GGUF evidence supports this device set."],
+      safeAvailableVramGb: backendNumber(backendCapacity.safeAvailableVramGb),
+      systemRamEstimateGb: catalogSystemRamEstimateGb(item) ?? backendNumber(backendCapacity.estimatedSystemRamGb),
+      installedSystemRamGb: backendNumber(backendCapacity.installedSystemRamGb),
+      safeAvailableSystemRamGb: backendNumber(backendCapacity.safeAvailableSystemRamGb),
+      reasons: Array.isArray(item?.fitReasons) && item.fitReasons.length ? item.fitReasons : ["Hardware fit was calculated by the latest server-side probe."],
     };
   }
-  if (hasEstimate && largest != null && estimate <= largest) {
-    return {
-      kind: "single-gpu-fit",
-      label: "Single-GPU fit",
-      canDeploy: true,
+  if (!capacity.gpus.length || !hasEstimate) {
+    return withSystemRamAssessment({
+      kind: "unknown",
+      status: "unknown",
+      label: "Fit unknown",
+      canDeploy: false,
+      willFit: null,
+      canRunNow: false,
       largestSingleGpuGb: largest,
       aggregateVramGb: capacity.aggregateVramGb,
-      reasons: ["Estimated " + estimate + " GB fits on the largest single GPU (" + largest.toFixed(1) + " GB)."],
-    };
+      safeAvailableVramGb: safeAvailable,
+      reasons: [!capacity.gpus.length
+        ? "GPU capacity is unavailable; refresh the hardware check."
+        : "Model VRAM demand is unknown, so fit cannot be determined."],
+    }, item, hardware);
   }
-  const reasons = [];
-  if (!capacity.gpus.length) reasons.push("GPU capacity is unavailable, so placement is unproven.");
-  else if (!hasEstimate) reasons.push("Model VRAM demand is unknown, so placement is unproven.");
-  else if (largest != null && estimate > largest) reasons.push("Estimated " + estimate + " GB exceeds the largest single GPU (" + largest.toFixed(1) + " GB).");
-  reasons.push("Combined VRAM is not treated as a vLLM fit without exact measured llama.cpp/GGUF evidence.");
-  return {
-    kind: "blocked-unproven",
-    label: "Blocked / unproven",
-    canDeploy: false,
+  const placementLabel = measuredLayerSharding
+    ? "measured llama.cpp/GGUF layer sharding"
+    : llamaLayerSharding
+      ? "llama.cpp/GGUF layer sharding"
+      : matchingVllmTensorParallel
+        ? "matching vLLM tensor-parallel GPUs"
+        : "the largest single GPU";
+  if (installedCapacity == null || estimate > installedCapacity) {
+    return withSystemRamAssessment({
+      kind: "blocked",
+      status: "blocked",
+      label: "Will not fit",
+      canDeploy: false,
+      willFit: false,
+      canRunNow: false,
+      largestSingleGpuGb: largest,
+      aggregateVramGb: capacity.aggregateVramGb,
+      safeAvailableVramGb: safeAvailable,
+      reasons: ["Estimated " + estimate + " GB exceeds " + placementLabel + " capacity (" + (installedCapacity || 0).toFixed(1) + " GB)."],
+    }, item, hardware);
+  }
+  if (safeAvailable == null) {
+    return withSystemRamAssessment({
+      kind: "capacity-fit",
+      status: "capacity-fit",
+      label: "Will fit (availability unknown)",
+      canDeploy: true,
+      willFit: true,
+      canRunNow: false,
+      largestSingleGpuGb: largest,
+      aggregateVramGb: capacity.aggregateVramGb,
+      safeAvailableVramGb: null,
+      reasons: ["Estimated " + estimate + " GB fits " + placementLabel + " (" + installedCapacity.toFixed(1) + " GB), but current free VRAM was not reported."],
+    }, item, hardware);
+  }
+  if (estimate <= safeAvailable) {
+    return withSystemRamAssessment({
+      kind: combinedPlacement ? "combined-ready" : "single-gpu-ready",
+      status: "ready",
+      label: "Will fit",
+      canDeploy: true,
+      willFit: true,
+      canRunNow: true,
+      largestSingleGpuGb: largest,
+      aggregateVramGb: capacity.aggregateVramGb,
+      safeAvailableVramGb: safeAvailable,
+      reasons: ["Estimated " + estimate + " GB fits the current safe-free capacity for " + placementLabel + " (" + safeAvailable.toFixed(1) + " GB after headroom)."],
+    }, item, hardware);
+  }
+  return withSystemRamAssessment({
+    kind: "queued",
+    status: "queued",
+    label: "Fits when VRAM is free",
+    canDeploy: true,
+    willFit: true,
+    canRunNow: false,
     largestSingleGpuGb: largest,
     aggregateVramGb: capacity.aggregateVramGb,
-    reasons,
-  };
+    safeAvailableVramGb: safeAvailable,
+    reasons: [
+      "Estimated " + estimate + " GB fits " + placementLabel + " (" + installedCapacity.toFixed(1) + " GB), but only " + safeAvailable.toFixed(1) + " GB is safely free now.",
+      "Stop another GPU workload or wait for VRAM to become available before loading.",
+    ],
+  }, item, hardware);
 }
 
 export function shortlistAdvisorModels(items, limit = 12) {
@@ -1205,12 +1419,14 @@ export function ModelsView({
         setHfResults(d.items || []);
         setHfError(d.error ? `Hugging Face search failed: ${d.error}` : "");
       } catch (err) {
+        const superseded = controller.signal.aborted && controller.signal.reason === "superseded";
+        if (superseded) {
+          return;
+        }
         if (err.name === "AbortError") {
           // Either superseded by a newer search, or the 30s bound tripped.
-          if (!controller.signal.reason || controller.signal.reason !== "superseded") {
-            setHfResults([]);
-            setHfError("Hugging Face search timed out after 30s. Check the container's network access to huggingface.co and try again.");
-          }
+          setHfResults([]);
+          setHfError("Hugging Face search timed out after 30s. Check the container's network access to huggingface.co and try again.");
         } else {
           console.error("HF Search Error:", err);
           setHfResults([]);
@@ -1235,7 +1451,7 @@ export function ModelsView({
     return list.filter(item => {
       if (!item.vramEstimateGb) return !hasMin && !hasMax;
       if (item.vramEstimateGb < minVram || item.vramEstimateGb > maxVram) return false;
-      return catalogFit !== "fits" || catalogPlacementAssessment(item, effectiveHardware).canDeploy;
+      return catalogFit !== "fits" || catalogPlacementAssessment(item, effectiveHardware).willFit === true;
     });
   }, [searchMode, hfResults, filteredCatalog, catalogFit, effectiveHardware, vramMinGb, vramMaxGb]);
 
@@ -2380,7 +2596,7 @@ function CatalogPagination({ total, currentPage, pageCount, pageSize, onPageChan
   if (!total) return null;
   return (
     <footer className={`models-catalog-pagination ${compact ? "is-compact" : ""}`}>
-      <span>{total.toLocaleString()} models ú Page {currentPage} of {pageCount}</span>
+      <span>{total.toLocaleString()} models Â· Page {currentPage} of {pageCount}</span>
       <div>
         <button className="w2-button" type="button" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>Prev</button>
         <button className="w2-button" type="button" disabled={currentPage >= pageCount} onClick={() => onPageChange(currentPage + 1)}>Next</button>
@@ -2406,7 +2622,7 @@ function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onS
   const downloaded = downloadState === "completed";
   const jobId = downloadJobIdentity(download);
   const placement = placementFit || catalogPlacementAssessment(item, null);
-  const fitReady = downloaded || item?.readyWithinThreeMinutes || item?.loaded || placement.canDeploy;
+  const fitReady = downloaded || item?.readyWithinThreeMinutes || item?.loaded || placement.canRunNow;
   const fitLabel = downloaded ? "Downloaded" : activelyDownloading ? labelize(downloadState) : placement.label;
 
   return (
@@ -2511,6 +2727,7 @@ function DiscoverModelInspector({
   const capabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
   const modalities = Array.isArray(item.modalities) ? item.modalities : capabilities.filter((capability) => ["text", "image", "audio", "vision"].includes(String(capability).toLowerCase()));
   const vramEstimate = catalogVramEstimateGb(item);
+  const systemRamEstimate = catalogSystemRamEstimateGb(item);
   const tabs = ["info", "download", "fit", "source"];
 
   const loadVariantDetail = async () => {
@@ -2559,8 +2776,8 @@ function DiscoverModelInspector({
         : "Download";
   const primaryDisabled = downloaded || (isDownloading && !activeDownloadId);
   const exactDownloadDisabled = downloaded || isDownloading || (variants.length > 0 && !selectedVariant);
-  const fitReady = downloaded || item.readyWithinThreeMinutes || item.loaded || placement.canDeploy;
-  const fitStatus = downloaded ? "Downloaded" : fitReady ? placement.label : "Fit uncertain";
+  const fitReady = downloaded || item.readyWithinThreeMinutes || item.loaded || placement.canRunNow;
+  const fitStatus = downloaded ? "Downloaded" : placement.label;
 
   const handleTabKeyDown = (event, tab) => {
     const index = tabs.indexOf(tab);
@@ -2583,7 +2800,7 @@ function DiscoverModelInspector({
           <PublisherLogo item={item} size="lg" />
           <div>
             <strong>{modelName}</strong>
-            <small>{developer} ú {modelId}</small>
+            <small>{developer} Â· {modelId}</small>
           </div>
         </div>
         <span className={`models-inspector-status ${fitReady ? "is-ready" : ""}`}>{fitStatus}</span>
@@ -2662,7 +2879,7 @@ function DiscoverModelInspector({
                     <select value={selectedVariant?.id || ""} onChange={(event) => setSelectedVariantId(event.target.value)} aria-label={`Exact GGUF variant for ${modelName}`}>
                       {variants.map((variant) => {
                         const compatibility = variantCompatibility(variant);
-                        return <option key={variant.id} value={variant.id}>{variant.quantization || "Unknown"} ú {formatDownloadBytes(variantTotalBytes(variant))} ú {labelize(compatibility.state)}</option>;
+                        return <option key={variant.id} value={variant.id}>{variant.quantization || "Unknown"} Â· {formatDownloadBytes(variantTotalBytes(variant))} Â· {labelize(compatibility.state)}</option>;
                       })}
                     </select>
                   </label>
@@ -2680,7 +2897,7 @@ function DiscoverModelInspector({
                 </>
               )}
               {variantDetail && variants.length === 0 && <p className="models-inspector-summary">No complete GGUF variants were returned. The original model weights remain available.</p>}
-              {variantIssues.map((issue, index) => <div key={(issue.kind || "issue") + index} className="models-discover-warning">{issue.reason || issue.kind}{issue.nextAction ? ` ú ${issue.nextAction}` : ""}</div>)}
+              {variantIssues.map((issue, index) => <div key={(issue.kind || "issue") + index} className="models-discover-warning">{issue.reason || issue.kind}{issue.nextAction ? ` Â· ${issue.nextAction}` : ""}</div>)}
               {variantDetail && (
                 <button className="models-inspector-wide-action is-primary" type="button" onClick={() => startDownload(modelId, selectedVariant || null)} disabled={exactDownloadDisabled}>
                   <Download size={13} /> {variants.length ? "Download selected GGUF" : "Download model weights"}
@@ -2697,14 +2914,18 @@ function DiscoverModelInspector({
         <section id="discover-inspector-panel-fit" role="tabpanel" aria-labelledby="discover-inspector-tab-fit" className="models-inspector-section">
           <h3>Hardware fit</h3>
           <div className="models-inspector-callout">
-            {blocked ? <AlertTriangle size={16} /> : <Gauge size={16} />}
-            <span><strong>{blocked ? "May need a different load profile" : "Fits your current hardware"}</strong><small>{placement.reasons?.[0] || "Downloading is immediate; Rasputin chooses placement when you load the model."}</small></span>
+            {placement.willFit === false ? <AlertTriangle size={16} /> : <Gauge size={16} />}
+            <span><strong>{placement.label || "Fit unknown"}</strong><small>{placement.reasons?.[0] || "Refresh the hardware check to calculate model fit."}</small></span>
           </div>
           <dl className="models-inspector-facts">
             {[
               ["Estimated VRAM", vramEstimate ? `~${vramEstimate} GB` : "Unknown"],
               ["Largest GPU", placement.largestSingleGpuGb == null ? "Unknown" : placement.largestSingleGpuGb.toFixed(1) + " GB"],
               ["Combined pool", placement.aggregateVramGb == null ? "Unknown" : placement.aggregateVramGb.toFixed(1) + " GB"],
+              ["Safe VRAM now", placement.safeAvailableVramGb == null ? "Unknown" : placement.safeAvailableVramGb.toFixed(1) + " GB"],
+              ["Estimated system RAM", systemRamEstimate ? `~${systemRamEstimate} GB` : "Unknown"],
+              ["Installed system RAM", placement.installedSystemRamGb == null ? "Unknown" : placement.installedSystemRamGb.toFixed(1) + " GB"],
+              ["Safe system RAM now", placement.safeAvailableSystemRamGb == null ? "Unknown" : placement.safeAvailableSystemRamGb.toFixed(1) + " GB"],
               ["Placement", placement.mode ? labelize(placement.mode) : "Automatic"],
               ["Assessment", placement.label || "Needs review"],
             ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
@@ -2804,6 +3025,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
   const blockerDetailsId = "model-deployment-blockers-" + String(modelId).replace(/[^a-zA-Z0-9_-]/g, "-");
   const runtimeEnvelope = runtimeEnvelopeForItem(item);
   const vramEstimateGb = catalogVramEstimateGb(item);
+  const systemRamEstimateGb = catalogSystemRamEstimateGb(item);
   const estimateRange = runtimeEnvelope?.rangeGb || runtimeEnvelope?.range || null;
   const estimateBreakdown = runtimeEnvelope?.breakdown || null;
   const estimateConfidence = runtimeEnvelope?.confidence || runtimeEnvelope?.estimateSource || null;
@@ -2901,6 +3123,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
         {parameterLabel && <div><strong className="text-foreground">{parameterLabel}</strong></div>}
         {contextWindow > 0 && <div><strong className="text-foreground">{contextWindow.toLocaleString()} context</strong></div>}
         {vramEstimateGb && <div><strong className="text-foreground">Estimated ~{vramEstimateGb} GB VRAM</strong></div>}
+        {systemRamEstimateGb && <div><strong className="text-foreground">Estimated ~{systemRamEstimateGb} GB system RAM</strong></div>}
         {item.license && <div className="truncate" title={item.license}>{item.license}</div>}
       </div>
 

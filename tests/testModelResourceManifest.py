@@ -32,7 +32,7 @@ class ModelResourceManifestTests(unittest.TestCase):
         self.assertEqual(manifest["roleFit"]["purpose"], "coding")
         self.assertTrue(resource_manifest.validate_manifest(manifest)["valid"])
 
-    def test_fit_enrichment_reports_headroom_without_claiming_measurement(self):
+    def test_fit_enrichment_does_not_claim_live_headroom_without_free_vram(self):
         item = catalog._normalize_hf_model({
             "id": "bartowski/Qwen2.5-Coder-32B-Q4_K_M-GGUF",
             "pipeline_tag": "text-generation",
@@ -42,18 +42,15 @@ class ModelResourceManifestTests(unittest.TestCase):
         fitted = catalog._fit_item(item, {"detectedHardware": {"gpus": [
             {"memoryTotalMb": 12288},
             {"memoryTotalMb": 16311},
-        ]}})
+        ]}, "capabilityProfile": {"cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000}}})
         manifest = fitted["resourceManifest"]
 
         self.assertEqual(manifest["identity"]["checksum"], "deadbeef")
         self.assertEqual(manifest["identity"]["license"], "apache-2.0")
-        self.assertEqual(manifest["fit"]["basis"], "catalog-estimate")
-        self.assertAlmostEqual(manifest["fit"]["availableVramGb"], 28599 / 1024, places=2)
-        self.assertAlmostEqual(
-            manifest["fit"]["headroomGb"],
-            28599 / 1024 - fitted["vramEstimateGb"],
-            places=2,
-        )
+        self.assertEqual(manifest["fit"]["basis"], "installed-memory-capacity")
+        self.assertIsNone(manifest["fit"]["availableVramGb"])
+        self.assertIsNone(manifest["fit"]["headroomGb"])
+        self.assertEqual(fitted["fitStatus"], "capacity-fit")
         self.assertEqual(manifest["kvCache"]["status"], "unmeasured")
 
     def test_estimate_distinguishes_precision_and_includes_deployment_overhead(self):
@@ -147,7 +144,7 @@ class ModelResourceManifestTests(unittest.TestCase):
         hardware = {"detectedHardware": {"gpus": [
             {"memoryTotalMb": 12288},
             {"memoryTotalMb": 16384},
-        ]}}
+        ]}, "capabilityProfile": {"cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000}}}
         vllm = {
             "id": "example/14B",
             "modelId": "example/14B",
@@ -161,9 +158,9 @@ class ModelResourceManifestTests(unittest.TestCase):
         vllm_fit = catalog._fit_item(vllm, hardware)
         gguf_fit = catalog._fit_item(gguf, hardware)
 
-        self.assertEqual(vllm_fit["fitLabel"], "Blocked")
+        self.assertEqual(vllm_fit["fitLabel"], "Will not fit")
         self.assertTrue(any("largest detected GPU" in reason for reason in vllm_fit["blockedReasons"]))
-        self.assertNotEqual(gguf_fit["fitLabel"], "Blocked")
+        self.assertNotEqual(gguf_fit["fitLabel"], "Will not fit")
         self.assertTrue(any("aggregate detected VRAM" in reason for reason in gguf_fit["fitReasons"]))
 
         matching_hardware = {"detectedHardware": {"gpus": [
@@ -171,8 +168,89 @@ class ModelResourceManifestTests(unittest.TestCase):
             {"name": "RTX 4090", "memoryTotalMb": 24576},
         ]}}
         matching_vllm = catalog._fit_item({**vllm, "vramEstimateGb": 30}, matching_hardware)
-        self.assertNotEqual(matching_vllm["fitLabel"], "Blocked")
+        self.assertNotEqual(matching_vllm["fitLabel"], "Will not fit")
         self.assertTrue(any("matching vLLM tensor-parallel GPUs" in reason for reason in matching_vllm["fitReasons"]))
+
+    def test_catalog_fit_distinguishes_live_safe_free_vram_from_installed_capacity(self):
+        model = {
+            "id": "example/7B",
+            "modelId": "example/7B",
+            "name": "Example 7B",
+            "deployable": True,
+            "recommendedProtocol": "vllmCudaOpenai",
+            "vramEstimateGb": 12,
+        }
+        ready = catalog._fit_item(model, {"detectedHardware": {"gpus": [
+            {"name": "RTX 4080", "memoryTotalMb": 16384, "memoryFreeMb": 14336},
+        ]}, "capabilityProfile": {"cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000}}})
+        busy = catalog._fit_item(model, {"detectedHardware": {"gpus": [
+            {"name": "RTX 4080", "memoryTotalMb": 16384, "memoryFreeMb": 4096},
+        ]}, "capabilityProfile": {"cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000}}})
+        impossible = catalog._fit_item({**model, "vramEstimateGb": 18}, {"detectedHardware": {"gpus": [
+            {"name": "RTX 4080", "memoryTotalMb": 16384, "memoryFreeMb": 14336},
+        ]}, "capabilityProfile": {"cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000}}})
+
+        self.assertEqual(ready["fitStatus"], "ready")
+        self.assertEqual(ready["fitLabel"], "Will fit")
+        self.assertTrue(ready["fitCanRunNow"])
+        self.assertEqual(busy["fitStatus"], "queued")
+        self.assertEqual(busy["fitLabel"], "Fits when memory is free")
+        self.assertTrue(busy["fitWillFit"])
+        self.assertFalse(busy["fitCanRunNow"])
+        self.assertEqual(impossible["fitStatus"], "blocked")
+        self.assertEqual(impossible["fitLabel"], "Will not fit")
+        self.assertFalse(impossible["fitWillFit"])
+
+    def test_catalog_fit_combines_live_safe_free_vram_only_for_supported_runtime(self):
+        hardware = {"detectedHardware": {"gpus": [
+            {"name": "RTX 3060", "memoryTotalMb": 12288, "memoryFreeMb": 12288},
+            {"name": "RTX 5060 Ti", "memoryTotalMb": 16384, "memoryFreeMb": 16384},
+        ]}, "capabilityProfile": {"cpu": {"memoryTotalMb": 65536, "memoryAvailableMb": 60000}}}
+        base = {
+            "id": "example/14B",
+            "modelId": "example/14B",
+            "name": "Example 14B",
+            "deployable": True,
+            "vramEstimateGb": 22,
+        }
+        gguf = catalog._fit_item({**base, "recommendedProtocol": "llamaCppGgufServer"}, hardware)
+        vllm = catalog._fit_item({**base, "recommendedProtocol": "vllmCudaOpenai"}, hardware)
+
+        self.assertEqual(gguf["fitStatus"], "ready")
+        self.assertTrue(gguf["fitCanRunNow"])
+        self.assertEqual(vllm["fitStatus"], "blocked")
+        self.assertFalse(vllm["fitWillFit"])
+
+    def test_catalog_fit_requires_system_ram_as_well_as_vram(self):
+        model = {
+            "id": "example/3B",
+            "modelId": "example/3B",
+            "name": "Example 3B",
+            "deployable": True,
+            "recommendedProtocol": "vllmCudaOpenai",
+            "vramEstimateGb": 4,
+            "systemRamEstimateGb": 8,
+        }
+        gpu = {"detectedHardware": {"gpus": [
+            {"name": "RTX 4080", "memoryTotalMb": 16384, "memoryFreeMb": 14336},
+        ]}}
+        ready = catalog._fit_item(model, {**gpu, "capabilityProfile": {"cpu": {
+            "memoryTotalMb": 32768, "memoryAvailableMb": 24576,
+        }}})
+        busy = catalog._fit_item(model, {**gpu, "capabilityProfile": {"cpu": {
+            "memoryTotalMb": 32768, "memoryAvailableMb": 8192,
+        }}})
+        impossible = catalog._fit_item({**model, "systemRamEstimateGb": 10}, {
+            **gpu, "capabilityProfile": {"cpu": {"memoryTotalMb": 8192, "memoryAvailableMb": 8192}},
+        })
+
+        self.assertEqual(ready["fitStatus"], "ready")
+        self.assertEqual(ready["fitCapacity"]["safeAvailableSystemRamGb"], 22.0)
+        self.assertEqual(busy["fitStatus"], "queued")
+        self.assertEqual(busy["fitLabel"], "Fits when memory is free")
+        self.assertTrue(any("system RAM" in reason for reason in busy["fitReasons"]))
+        self.assertEqual(impossible["fitStatus"], "blocked")
+        self.assertTrue(any("installed RAM" in reason for reason in impossible["blockedReasons"]))
 
     def test_legacy_catalog_item_is_enriched_on_fit(self):
         fitted = catalog._fit_item({

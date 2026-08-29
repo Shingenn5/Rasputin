@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { blockerGuidanceForReason } from "../frontend-src/src/features/shared/blockerGuidance.js";
 
 const source = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
 const guidanceSource = readFileSync(new URL("../frontend-src/src/features/shared/blockerGuidance.js", import.meta.url), "utf8");
@@ -23,9 +24,17 @@ const {
   normalizeHardwareSnapshot,
   advisorStateForInputs,
   catalogVramEstimateGb,
+  catalogSystemRamEstimateGb,
+  systemMemoryCapacity,
 } = new Function(
-  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout, normalizeHardwareSnapshot, advisorStateForInputs, catalogVramEstimateGb };",
+  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout, normalizeHardwareSnapshot, advisorStateForInputs, catalogVramEstimateGb, catalogSystemRamEstimateGb, systemMemoryCapacity };",
 )();
+
+test("system RAM fit evidence gets host-memory guidance", () => {
+  const guidance = blockerGuidanceForReason("Estimated 2.8 GB system RAM fits 24.6 GB safely available now.");
+  assert.match(guidance.happened, /system RAM demand/);
+  assert.match(guidance.next, /memory-heavy applications/);
+});
 
 function catalogItem(index, overrides = {}) {
   return {
@@ -38,6 +47,16 @@ function catalogItem(index, overrides = {}) {
     downloads: index * 10,
     likes: index,
     ...overrides,
+  };
+}
+
+function withSystemRam(hardware, totalMb = 65536, availableMb = 60000) {
+  return {
+    ...hardware,
+    capabilityProfile: {
+      ...(hardware.capabilityProfile || {}),
+      cpu: { memoryTotalMb: totalMb, memoryAvailableMb: availableMb },
+    },
   };
 }
 
@@ -86,16 +105,17 @@ test("recommendation deployment forwards the selected profile planSeed", () => {
 
 
 test("mixed GPU capacity never treats aggregate VRAM as a single-GPU vLLM fit", () => {
-  const hardware = { detectedHardware: { gpus: [
+  const hardware = withSystemRam({ detectedHardware: { gpus: [
     { memoryTotalMb: 12288 },
     { memoryTotalMb: 16384 },
-  ] } };
+  ] } }, 65536, undefined);
   const capacity = hardwarePlacementCapacity(hardware);
   assert.equal(capacity.largestSingleGpuGb, 16);
   assert.equal(capacity.aggregateVramGb, 28);
   const assessment = catalogPlacementAssessment({ vramEstimateGb: 22, recommendedProtocol: "vllm" }, hardware);
-  assert.equal(assessment.kind, "blocked-unproven");
+  assert.equal(assessment.kind, "blocked");
   assert.equal(assessment.canDeploy, false);
+  assert.equal(assessment.willFit, false);
 });
 
 test("hardware capacity accepts GB fields without dividing them twice", () => {
@@ -107,18 +127,88 @@ test("hardware capacity accepts GB fields without dividing them twice", () => {
   assert.equal(capacity.aggregateVramGb, 28);
 });
 
-test("exact measured llama.cpp multi-GPU evidence is the only combined placement exception", () => {
-  const hardware = { detectedHardware: { gpus: [
+test("llama.cpp multi-GPU placement uses combined installed capacity", () => {
+  const hardware = withSystemRam({ detectedHardware: { gpus: [
     { memoryTotalMb: 12288 },
     { memoryTotalMb: 16384 },
-  ] } };
+  ] } });
   const assessment = catalogPlacementAssessment(
-    { vramEstimateGb: 22, recommendedProtocol: "llamaCppGgufServer" },
+    { vramEstimateGb: 22, systemRamEstimateGb: 14, recommendedProtocol: "llamaCppGgufServer" },
     hardware,
     { exact: true, protocolId: "llamaCppGgufServer", placementMode: "multi-gpu" },
   );
-  assert.equal(assessment.kind, "measured-multi-gpu");
+  assert.equal(assessment.kind, "capacity-fit");
   assert.equal(assessment.canDeploy, true);
+  assert.equal(assessment.willFit, true);
+});
+
+test("live free VRAM separates ready, temporarily busy, and impossible models", () => {
+  const readyHardware = withSystemRam({ detectedHardware: { gpus: [
+    { name: "RTX 4080", memoryTotalMb: 16384, memoryFreeMb: 14336 },
+  ] } });
+  const busyHardware = withSystemRam({ detectedHardware: { gpus: [
+    { name: "RTX 4080", memoryTotalMb: 16384, memoryFreeMb: 4096 },
+  ] } });
+  const ready = catalogPlacementAssessment({ vramEstimateGb: 12, systemRamEstimateGb: 8, recommendedProtocol: "vllm" }, readyHardware);
+  const busy = catalogPlacementAssessment({ vramEstimateGb: 12, systemRamEstimateGb: 8, recommendedProtocol: "vllm" }, busyHardware);
+  const impossible = catalogPlacementAssessment({ vramEstimateGb: 18, systemRamEstimateGb: 8, recommendedProtocol: "vllm" }, readyHardware);
+
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.label, "Will fit");
+  assert.equal(ready.canRunNow, true);
+  assert.equal(busy.status, "queued");
+  assert.equal(busy.label, "Fits when memory is free");
+  assert.equal(busy.willFit, true);
+  assert.equal(busy.canRunNow, false);
+  assert.equal(impossible.status, "blocked");
+  assert.equal(impossible.label, "Will not fit");
+  assert.equal(impossible.willFit, false);
+});
+
+test("llama.cpp uses combined live safe-free VRAM while mixed vLLM does not", () => {
+  const hardware = withSystemRam({ detectedHardware: { gpus: [
+    { name: "RTX 3060", memoryTotalMb: 12288, memoryFreeMb: 12288 },
+    { name: "RTX 5060 Ti", memoryTotalMb: 16384, memoryFreeMb: 16384 },
+  ] } });
+  const gguf = catalogPlacementAssessment({ vramEstimateGb: 22, systemRamEstimateGb: 14, recommendedProtocol: "llamaCppGgufServer" }, hardware);
+  const vllm = catalogPlacementAssessment({ vramEstimateGb: 22, systemRamEstimateGb: 14, recommendedProtocol: "vllmCudaOpenai" }, hardware);
+
+  assert.equal(gguf.status, "ready");
+  assert.equal(gguf.canRunNow, true);
+  assert.equal(vllm.status, "blocked");
+  assert.equal(vllm.willFit, false);
+});
+
+test("system RAM participates in ready, temporarily busy, and impossible fit states", () => {
+  const gpu = { detectedHardware: { gpus: [
+    { name: "RTX 4080", memoryTotalMb: 16384, memoryFreeMb: 14336 },
+  ] } };
+  const item = { vramEstimateGb: 4, systemRamEstimateGb: 8, recommendedProtocol: "vllmCudaOpenai" };
+  const ready = catalogPlacementAssessment(item, withSystemRam(gpu, 32768, 24576));
+  const busy = catalogPlacementAssessment(item, withSystemRam(gpu, 32768, 8192));
+  const impossible = catalogPlacementAssessment({ ...item, systemRamEstimateGb: 10 }, withSystemRam(gpu, 8192, 8192));
+
+  assert.deepEqual(systemMemoryCapacity(withSystemRam(gpu, 32768, 24576)), {
+    totalGb: 32,
+    availableGb: 24,
+    safeAvailableGb: 22,
+    headroomGb: 2,
+  });
+  assert.equal(catalogSystemRamEstimateGb(item), 8);
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.safeAvailableSystemRamGb, 22);
+  assert.equal(busy.status, "queued");
+  assert.equal(busy.label, "Fits when memory is free");
+  assert.equal(impossible.status, "blocked");
+  assert.equal(impossible.label, "Will not fit");
+
+  const backendZero = catalogPlacementAssessment({
+    fitStatus: "queued",
+    fitLabel: "Fits when memory is free",
+    fitWillFit: true,
+    fitCapacity: { installedSystemRamGb: 32, safeAvailableSystemRamGb: 0 },
+  }, {});
+  assert.equal(backendZero.safeAvailableSystemRamGb, 0);
 });
 
 test("fresh Models without a hardware prop probes once and can reach ready or error", async () => {
