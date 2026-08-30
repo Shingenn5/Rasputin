@@ -1,5 +1,7 @@
 # Rasputin Application Readiness Gap Report
 
+> Native direction update — 2026-08-29: current setup and release work targets the Windows native app. Older dated evidence below remains bounded to its recorded run; it does not certify the installed package currently on a user machine.
+
 **Assessment date:** 2026-08-10
 **Basis:** the current repository, implementation inspection, focused backend/UI tests, release-candidate certification, deployment verification, and the project’s current operational documents. The compact source/test map is `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md`.
 
@@ -17,11 +19,11 @@ Today, the central architecture exists. The largest remaining risks are end-to-e
 
 These are foundations to preserve, not rewrite:
 
-- Local-first FastAPI/React application with Docker, Native Server, and Electron Desktop shapes.
+- Windows native FastAPI/React application with installed Electron Desktop and source Native Host workflows.
 - Local accounts, session auth, owner-scoped records, workspace roles, approvals, audit trails, and trusted-workspace controls.
 - Agent modes with bounded execution, token/tool-event streaming, patch-based edits, shell execution, Git status/diff/commit tools, and a test/fix loop.
 - Workspace browsing, RAG/knowledge-graph tools, artifact/archive/inbox surfaces, memory review/job APIs, and bounded conversation summaries.
-- WarSat planning/deployment for local model runtimes, including GPU probing, model health, and multi-GPU planning tests.
+- Native GGUF acquisition, load-profile planning, bundled llama.cpp execution, GPU probing, model health, and placement tests.
 - Persisted model capability probes, conservative mode preflight/fallback, per-deploy parser contracts, Assistant readiness/command-preview contracts, and device-free local voice adapters.
 - Bounded application backup/integrity verification, owner metadata export/deletion confirmation,
   live operational diagnostics, a sarcastic-but-respectful Assistant profile contract, and a
@@ -85,29 +87,29 @@ This is especially important because local OpenAI-compatible runtimes vary by to
 
 #### 3. Product-grade recovery: backup, restore, export, and repair
 
-Rasputin stores the owner’s chats, tasks, approvals, memory, credentials/configuration metadata, workspaces, and model runtime state across local files, SQLite, and (in Docker) volumes. The first recovery slice now exists, but a fully working local-first application still needs a complete recovery story:
+Rasputin stores the owner’s chats, tasks, approvals, memory, credentials/configuration metadata, workspaces, and model runtime state across the native data directory, SQLite, installed model files, and approved external workspaces. The first recovery slice now exists, but a fully working local-first application still needs a complete recovery story:
 
 - one supported backup command/UI flow with scope and secret-handling disclosure (implemented);
 - restore into a clean instance, with version/migration checks and a non-destructive dry-run (isolated restore and migration rehearsal implemented; active-data upgrade rehearsal remains open);
 - export/delete controls for user-owned data (owner-safe metadata export and explicit deletion confirmation implemented);
-- disaster-recovery instructions for Docker volumes and native data;
+- disaster-recovery instructions for native application data, model files, and external workspaces;
 - a tested upgrade/rollback strategy.
 
 **Done when:** a fresh machine or data directory can restore a representative backup and pass health, login, workspace, and model-configuration checks. `scripts/rehearse_restore.py --rehearse` now proves the isolated archive, clean target, SQLite initialization, and restored admin state; a stopped active-instance rehearsal is still required.
 
 #### 4. Installation, updates, and identity
 
-Electron packaging works, but the desktop release boundary is incomplete: the current architecture document explicitly lists production icon, Authenticode signing, update signing/channel metadata, and clean-machine install/upgrade/uninstall verification as remaining gates.
+Electron packaging and the application icon are implemented. The desktop release boundary remains incomplete: Authenticode signing, update signing/channel metadata, and clean-machine install/upgrade/uninstall verification are still required.
 
 Required work:
 
 - signed, versioned installer artifacts and release notes;
 - an update channel with user-visible version/status/failure handling;
 - clean-machine install, upgrade, uninstall, and data-preservation tests;
-- a supported compatibility matrix for Windows, Docker Desktop/WSL, NVIDIA drivers, and native fallback;
-- a clear support path when Docker/WSL is unavailable.
+- a supported compatibility matrix for Windows, NVIDIA drivers, native CPU/CUDA engines, and model formats;
+- clear recovery for a missing/broken bundled engine or incompatible GGUF.
 
-**Done when:** a non-developer can install, update, and recover the supported desktop/server shapes without cloning the repository or manually assembling Python/Node/Docker dependencies.
+**Done when:** a non-developer can install, update, and recover the Windows Desktop app without cloning the repository or manually assembling Python/Node/runtime dependencies.
 
 #### 5. Operational health and diagnostics
 
@@ -115,11 +117,11 @@ Health endpoints exist, and the first consolidated diagnostics view/command is n
 
 - app version, storage location, migration status, and backup freshness;
 - server/desktop ownership and port conflicts;
-- Docker/WSL availability and container health where relevant;
+- bundled inference-engine availability and native model-process health;
 - GPU/runtime/model health, installed capability certification, and logs safe to share;
 - workspace access, Host Shell status, and an explanation of the next blocked permission.
 
-**Done when:** the top recurring failures—stopped model, unavailable tool capability, Docker unavailable, stale runtime owner, and denied workspace action—can be diagnosed from the application with a clear remediation path.
+**Done when:** the top recurring failures—stopped model, unavailable tool capability, bundled engine unavailable, stale runtime owner, and denied workspace action—can be diagnosed from the application with a clear remediation path.
 
 ### P1 — turn existing features into complete workflows
 
@@ -177,12 +179,10 @@ Required work:
 
 #### 10. Define and complete the tool boundary
 
-`docker_control` remains intentionally disabled/implemented as a policy stub while WarSat follows its own approved deployment path. This is safe, but product behavior should be clearer. Decide whether Docker control is:
-
-- permanently out of scope for agents (then remove it from user expectations and explain the WarSat-only path), or
-- a future governed capability (then define explicit operation allowlists, previews, approval classes, rollback, logging, and tests).
-
-Do not expose generic Docker authority simply to make the feature list look broader.
+The product tool boundary is native and governed. Keep model loading separate from arbitrary
+host execution, expose only supported capabilities, and make unavailable operations fail clearly.
+Docker control is retired, not an optional feature or a future prerequisite. Native lifecycle
+errors must lead to artifact, engine, compatibility, or ownership recovery.
 
 #### 11. Address known security and runtime caveats honestly
 
@@ -231,12 +231,12 @@ This keeps the onboarding document, checklist, roadmap, and product claims align
 | 3. Operability | Backup/restore, data export/delete, diagnostics, upgrade/recovery procedure | stable data schema + versioning | clean-store restore and upgrade rehearsal |
 | 4. Productization | signed installer, update channel, clean-machine matrix | Phase 3 recovery plan | independent install/upgrade/uninstall acceptance |
 | 5. Workflow depth | two complete governed connectors; controlled memory workflow | permissions/audit conventions | end-to-end user journeys with revocation |
-| 6. Expansion | measured Trials, collaboration, optional Docker-control decision, broader integrations | trusted base and support model | published measurement/policy contracts |
+| 6. Expansion | measured Trials, collaboration, native lifecycle improvements, broader integrations | trusted base and support model | published measurement/policy contracts |
 
 ## Explicit non-priorities until the above is complete
 
 - Expanding the number of modes, integrations, or agent tools before their current equivalents are reliable end to end.
-- Building generic agent Docker control without a narrow, audited operation model.
+- Reviving retired container infrastructure or generic host-control features.
 - Treating static catalog metadata or synthetic scorecards as proof that a model is suitable for production work.
 - Marketing broad team/public distribution before installation, updates, backup/recovery, support boundaries, and licensing decisions are settled.
 
@@ -246,7 +246,7 @@ This keeps the onboarding document, checklist, roadmap, and product claims align
 - `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` — implementation/verification history and remaining coding workflow proof.
 - `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md` — current source/test evidence and explicit status boundaries.
 - `THREAT_MODEL.md`, `docs/DEPLOYMENT_MATRIX.md`, and `docs/DESKTOP_ARCHITECTURE.md` — security, deployment, and packaging status.
-- `backend/mcp/tools.py` — the intentional `docker_control` policy stub.
+- `backend/warsat/providers/native_llamacpp.py` — native model process lifecycle.
 - `backend/trials/scorecards.py` — current unmeasured scorecard dimensions.
 - `frontend-src/src/features/workspaces/WorkspacesView.jsx` and `tests/ui/rasputinSmoke.spec.mjs` — validation-command UI and current coverage.
 - `tests/testBackendSmoke.py` — coverage for WarSat, streaming, memory, and Git-review capabilities.

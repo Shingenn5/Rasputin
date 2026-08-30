@@ -4,96 +4,45 @@ This guide explains how Rasputin is built, how it runs, where things are stored,
 
 ## 1. Mental Model
 
-Rasputin is a local AI workbench.
-
-The browser UI is only the control surface. The real application is a local FastAPI server that runs inside Docker or directly through Python.
-
-```text
-Browser
-  -> http://127.0.0.1:8787
-  -> Docker port mapping
-  -> FastAPI server inside container
-  -> backend services
-  -> local model endpoints, workspace files, RAG, Graphify, audit log
-```
-
-The important privacy idea:
+Rasputin is a Windows native AI workstation. Electron owns the installed application lifecycle;
+the backend governs model access, workspaces, tools, memory, and audit. A separate Native Host
+supports source/browser development.
 
 ```text
-approved local folders -> Rasputin backend -> local model endpoints
-internet access -> brokered tools only, not direct model access
+Installed Electron app OR source Native Host
+  -> native FastAPI backend on loopback
+  -> catalog / exact GGUF acquisition / model registry / load planning
+  -> native llama.cpp child process and local inference endpoint
+  -> approved host workspaces, governed tools, memory, and audit
 ```
 
-Models do not get direct file-system or internet access. Rasputin gives them curated context through backend tools.
+Models receive curated context through governed tools. Being a native process does not grant
+a model arbitrary filesystem, network, or shell authority. Docker infrastructure is retired
+from the current product; server-era files remain historical implementation context only.
 
 ## 2. Runtime Startup
 
-### Docker Path
+### Installed Desktop
 
-The main Docker files are:
+`desktop/main.cjs` and `desktop/backend-supervisor.cjs` start the packaged backend, wait for
+health, and load the bundled frontend in a sandboxed BrowserWindow. The private port is recorded
+in `desktop-runtime.json`. The tray owns restart and quit. The installed app bundles llama.cpp;
+users download only the models they choose, plus any separately configured third-party tools.
 
-```text
-Dockerfile
-docker-compose.yml
-rasputin.ps1
-rasputin.sh
-```
+Source edits do not update installed binaries. Package and install an update to change the
+installed backend/frontend. Do not start a source backend against Desktop's live data store.
 
-`docker-compose.yml` starts the `rasputin-wrapper` service.
+### Source Native Host
 
-Important Compose details:
+`backend/tools/native_host.py` owns a source-backed server, defaulting to loopback :8788, with
+state in `native-host.json` and saved configuration in `native-host-config.json`. Use its start,
+status, restart, and stop commands. Preserve the current owner and data when updating it.
 
-```yaml
-ports:
-  - "127.0.0.1:${WRAPPER_PORT:-8787}:8787"
-```
+### Isolated verification
 
-This means:
-
-- Rasputin listens on port `8787` inside the container.
-- Docker exposes it only on host `127.0.0.1:8787`.
-- Other machines on your network should not be able to reach it through this binding.
-
-The container does not auto-restart:
-
-```yaml
-restart: "no"
-```
-
-That means Rasputin starts when you start the container. Docker Desktop should not resurrect it automatically after a reboot.
-
-### What Runs Inside The Container
-
-The Dockerfile ends with:
-
-```dockerfile
-CMD ["python", "-u", "server.py"]
-```
-
-So Docker starts Python, and Python starts the web server.
-
-`server.py` reads:
-
-```python
-HOST = os.environ.get("HOST", "127.0.0.1")
-PORT = int(os.environ.get("PORT", "8787"))
-uvicorn.run("backend.main:app", host=HOST, port=PORT)
-```
-
-Inside Docker, Compose sets:
-
-```text
-HOST=0.0.0.0
-PORT=8787
-```
-
-`0.0.0.0` inside the container means "listen on the container network interface." Docker then maps that to host `127.0.0.1:8787`.
-
-Manual URL:
-
-```text
-http://127.0.0.1:8787
-```
+Use a disposable `RASPUTIN_DATA_DIR`, port :8899, the repository virtual environment, and real
+authentication. Never point tests at an active personal store. Detailed commands are maintained
+in [Codex onboarding](CODEX_ONBOARDING.md) and [deployment guidance](DEPLOYMENT_MATRIX.md).
 
 ## 3. Frontend Build
 
@@ -225,8 +174,8 @@ that will be submitted. Read-only access remains the default, and the selected f
 runtime consequence, and primary action stay together in the persistent review bar.
 
 Native mode registers the verified host path directly and reports that it is available immediately.
-Docker mode creates a secure mount request and must describe the real remaining sequence without
-claiming the folder is already usable: save mount, restart Rasputin, then approve the visible mount.
+The retained legacy mount-request implementation belongs to the retired deployment path; it is
+not part of current workspace setup and must not be offered as a native prerequisite.
 Keep quick locations, manual path entry, folder drilling, and the final action fully keyboard-usable.
 
 ## 5. Frontend Source Structure
@@ -397,7 +346,7 @@ They do not store file contents, diffs, prompts, raw model output, secrets, or p
 Telegram is optional and uses outbound Bot API polling only:
 
 ```text
-Rasputin container -> Telegram Bot API
+Native Rasputin backend -> Telegram Bot API
 ```
 
 No webhook is exposed and no public port is required.
@@ -514,20 +463,11 @@ This is safer than raw `dangerouslySetInnerHTML`.
 
 ### SettingsView.jsx
 
-The full-page settings area:
-
-- General
-- Notifications
-- Models
-- Runtime
-- Resources
-- Security
-- Accounts
-- Audit
-- Diagnostics
-- Deployments
-- Integrations
-- About
+The installed Desktop settings surface includes General, Model defaults, Runtime, Hardware,
+Security, Connections, MCP servers, and About. Native Host also exposes administrative diagnostics,
+audit, and notification settings according to role. Account provisioning is a separate flow;
+retained deployment settings/components are legacy code, not part of the native model workflow.
+Use Discover Models and Models for acquisition and lifecycle actions.
 
 Raw/advanced model registry details are behind disclosures instead of being the normal path.
 
@@ -541,7 +481,7 @@ explicit role choice. Creating an account does not grant workspace access; works
 managed separately after the account exists.
 
 The UI mirrors the server-side role model instead of showing controls that will be rejected:
-administrators receive the fleet, deployment, account, and workspace-administration surfaces;
+administrators receive model control, account, and workspace-administration surfaces;
 members receive chat, activity, and their shared workspaces; viewers receive a read-only
 dashboard and shared-workspace browser. Direct hash routes are guarded as well. A signed-in
 administrator cannot demote their own active role, and a workspace's final owner cannot remove
@@ -627,9 +567,12 @@ Handles local admin authentication:
 - logout
 - password change
 - session cookie
-- localhost/test bypass rules
+- loopback-only Desktop administrator sessions and explicit localhost/test bypass rules
 
-The first-run admin password is printed in container/server logs.
+Source Native Host prints fresh-store credentials once and uses password/session authentication.
+Installed Desktop opens without a login screen, supplies the local administrator identity to
+loopback callers, and redacts generated secrets from persistent logs. This does not isolate the
+Desktop API from other local processes; never expose Desktop mode beyond loopback.
 
 ### security.py
 
@@ -639,7 +582,7 @@ Stores safety flags such as:
 - file read permission
 - file write permission
 - web search permission
-- Docker control permission
+- model registry and native runtime permissions
 - approval requirements
 - audit enabled
 
@@ -652,7 +595,7 @@ Records sensitive or important actions.
 Examples:
 
 - model registry edits
-- Docker control attempts
+- model lifecycle actions
 - workspace changes
 - security changes
 - blocked actions
@@ -680,39 +623,19 @@ POST /api/workspace/mount-plan
 POST /api/workspace/mount-apply
 ```
 
-Mount apply is blocked unless Docker control permission is enabled.
+Native workspace approval registers a host folder directly and needs no mount or restart. The mount endpoints are retained server-era interfaces, not the native folder workflow.
 
-### model_registry.py
+### Model registry (`backend/models/registry.py`)
 
-Manages local model definitions.
+The registry stores model identity, role, artifact path, runtime, health, and compatibility
+metadata. The native runtime is `native-llamacpp`; model role and runtime are distinct fields.
+Existing local endpoints can be registered separately, and dry-run fixtures are test aids.
 
-Default model roles:
-
-- `main-vllm`
-- `dry-run`
-- `local-embeddings`
-
-It supports:
-
-- vLLM discovery
-- model health checks
-- registry repair
-- GGUF scan/import
-- Docker-managed model start/stop when explicitly enabled
-
-When Rasputin runs in Docker, local model endpoints like:
-
-```text
-http://127.0.0.1:8000/v1
-```
-
-are translated to:
-
-```text
-http://host.docker.internal:8000/v1
-```
-
-That lets the wrapper container reach a model server running on the host.
+Native capabilities include exact GGUF artifact registration, approved-file import/scan,
+load/stop, health checks, and measured file-size metadata for load planning. Native endpoints
+remain loopback URLs without hostname rewriting. A stopped artifact stays installed.
+Legacy provider records must be recovered to a compatible GGUF rather than treated as a native
+executable model merely because they appear in the registry.
 
 ### models.py
 
@@ -932,81 +855,42 @@ POST /api/output/export-task
 
 ## 8. Data Storage
 
-Generated local state lives under:
+Resolve application state through `backend/core/datadir.py:data_dir()`. The Windows default is
+`%LOCALAPPDATA%\Rasputin\data`; `RASPUTIN_DATA_DIR` overrides it for isolated verification.
+SQLite-backed runtime state, model-download jobs, artifact metadata, preferences, accounts,
+and logs belong to the selected data directory. Some JSON files exist as legacy migration
+inputs; they are not a second authoritative store.
 
-```text
-data/
-workspace/
-models/
-testdata/
-```
-
-These should not be committed.
-
-Important generated files include:
-
-```text
-data/models.json
-data/workspace.json
-data/security.json
-data/preferences.json
-data/audit.jsonl
-data/memory.json
-```
-
-The `models/` folder is mounted read-only in Docker:
-
-```yaml
-./models:/app/models:ro
-```
-
-That is where GGUF model files can be made visible to Rasputin.
-
-The `workspace/` folder is mounted read/write:
-
-```yaml
-./workspace:/app/workspace
-```
-
-Additional folders should go through workspace approval or mount planning.
+Model weights and external workspace sources are separate operational assets. Approve native
+host folders directly and never require a volume mount. Do not commit runtime databases,
+credentials, weights, workspace content, or generated reports. Do not run two owners against
+one store. Recovery rehearsals restore into a separate target.
 
 ## 9. Model Runtime Layout
 
-Rasputin is not the model runtime itself.
-
-It is the wrapper/hub.
-
-Expected model layout:
-
 ```text
-Rasputin wrapper container -> talks to model endpoints
-vLLM container             -> main large model on port 8000
-llama.cpp containers       -> optional GGUF auxiliary models
+Discover Models -> exact compatible GGUF files -> durable native download
+               -> verified installed artifact -> native model registry
+Models / Load  -> profile and hardware plan -> llama-server process
+Chat / tools   -> registered local endpoint -> governed application workflow
+Models / Stop  -> stop owned model process; keep installed files
 ```
 
-Default main endpoint:
+`frontend-src/src/features/models/nativeDeployment.js` selects native acquisition for both
+Desktop and Native Host. `backend/models/desktop_acquisition.py` owns durable exact-artifact
+acquisition. Its historical module name does not restrict it to the Electron presentation.
+`backend/models/load_profiles.py` plans settings, and
+`backend/warsat/providers/native_llamacpp.py` finds and starts the native engine through the
+runtime manifest/service. Native hardware requests use `native_models=true` on the existing
+hardware endpoint. WarSat in a module or URL name does not imply container execution.
 
-```text
-http://127.0.0.1:8000/v1
-```
+A fitting single GPU is preferred automatically; supported layer splitting may use multiple
+GPUs when capacity and compatibility justify it. File size, context, and runtime overhead
+matter. Measured runtime evidence and per-model testing remain necessary; no UI estimate
+certifies every model/device combination.
 
-Inside Docker this becomes:
-
-```text
-http://host.docker.internal:8000/v1
-```
-
-The Models settings page lets you:
-
-- refresh registry
-- test active model
-- discover vLLM models
-- repair obvious model ID mismatch
-- scan GGUF library
-- reveal advanced registry details
-- enable Testing Mode to show `dry-run`
-
-Docker model start/stop is intentionally blocked unless Docker control is enabled.
+If a stale build reports a retired deployment error, update the actual installed package or
+recover the old model entry to a GGUF. The remedy is the correct native artifact/runtime path.
 
 ## 10. Safety Boundaries
 
@@ -1014,17 +898,17 @@ Important defaults:
 
 - privacy lock on
 - remote model endpoints blocked
-- Docker control off
+- native model lifecycle governed by administrator/model permissions
 - shell execution off
 - folder reorganization off
 - writes/moves require approval
-- new folder mounts default read-only
+- newly approved workspace access starts read-only
 
 Path safety:
 
 - file tools operate only inside approved workspace roots
 - path traversal outside approved roots is rejected
-- GGUF imports must be under the mounted model folder or an approved workspace
+- GGUF imports must pass the approved model-path/workspace checks
 
 Internet safety:
 
@@ -1072,119 +956,52 @@ POST /api/preferences persists choices across sessions
 
 ## 12. Testing
 
-Main harness:
+Use the isolated native workflow in [Codex onboarding](CODEX_ONBOARDING.md). Backend smoke,
+focused model/runtime tests, frontend tests, production builds, and live UI checks are separate
+evidence. `tests/ui/rasputinSmoke.spec.mjs` includes older UI selectors; select relevant current
+flows instead of claiming every historic browser test is a current release gate.
 
-```powershell
-.\scripts\test.ps1
-```
+Verify download → registration → load → real response → stop with a small GGUF. Exercise
+keyboard actions and visible retryable load errors. Use fixtures to test failure paths, and
+label them as fixtures. Never substitute a mocked response for real inference evidence.
 
-UI harness:
-
-```powershell
-.\scripts\test.ps1 -Ui
-```
-
-The UI path:
-
-1. runs `npm run build`
-2. builds a test Docker image
-3. starts an isolated wrapper on `http://127.0.0.1:8877`
-4. runs backend smoke tests
-5. runs live API smoke
-6. runs Playwright UI tests
-7. shuts down the test container
-
-UI test file:
-
-```text
-tests/ui/rasputinSmoke.spec.mjs
-```
-
-It verifies:
-
-- home shell
-- settings navigation
-- model registry controls
-- GGUF scan button
-- workspace browser
-- mount plan preview
-- safety/knowledge/audit/task views
-- theme switching
-- sidebar collapse persistence
-- dry-run send flow
-- screenshot generation
-
-Backend smoke tests:
-
-```text
-tests/testBackendSmoke.py
-tests/liveSmoke.py
-```
+`scripts/test.ps1` is a retired infrastructure harness; it is not the native verification path.
 
 ## 13. Development Commands
 
-Install JS dependencies:
-
 ```powershell
 npm install
-```
-
-Build frontend:
-
-```powershell
 npm run build
+npm run desktop:check
+npm run desktop:test
 ```
 
-Run frontend dev server:
+Run a source-backed browser app with the explicitly native controller:
 
 ```powershell
-npm run dev
+.\.venv\Scripts\python.exe -m backend.tools.native_host start --port 8788
+.\.venv\Scripts\python.exe -m backend.tools.native_host status --json
 ```
 
-Run backend directly:
-
-```powershell
-python server.py
-```
-
-Run wrapper in Docker:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -NoOpen
-```
-
-Stop wrapper:
-
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 stop
-```
-
-Run Docker Compose directly:
-
-```powershell
-docker compose up --build
-```
+For isolated tests, set a disposable `RASPUTIN_DATA_DIR` first. For installed app updates,
+use `npm run desktop:package`, verify the package, and install it with operator approval.
+The launcher, store, and network configuration must match the intended target.
 
 ## 14. How To Read The Project
 
-If you want to understand Rasputin by walking through the code, use this order:
+1. `desktop/main.cjs` and `desktop/backend-supervisor.cjs`
+2. `backend/tools/native_host.py` and `server.py`
+3. `backend/main.py` and `backend/api/`
+4. `frontend-src/src/main.jsx` and `frontend-src/src/app/App.jsx`
+5. `frontend-src/src/features/models/ModelsView.jsx`
+6. `backend/models/desktop_acquisition.py`, `registry.py`, and `load_profiles.py`
+7. `backend/runtime/runtime_service.py` and `backend/warsat/providers/native_llamacpp.py`
+8. `backend/engine/agent.py`, `backend/core/workspace.py`, and `backend/core/security.py`
+9. Relevant backend, native runtime, desktop lifecycle, and live UI tests
 
-1. `docker-compose.yml`
-2. `Dockerfile`
-3. `server.py`
-4. `backend/main.py`
-5. `frontend-src/src/main.jsx`
-6. `frontend-src/src/app/App.jsx`
-7. `frontend-src/src/features/chat/HomeView.jsx`
-8. `backend/agent.py`
-9. `backend/model_registry.py`
-10. `backend/workspace.py`
-11. `backend/security.py`
-12. `backend/rag.py`
-13. `backend/graphify.py`
-14. `tests/ui/rasputinSmoke.spec.mjs`
-
-That path follows the real runtime: Docker -> Python server -> API -> frontend shell -> agent/model/workspace systems -> tests.
+The ownership path is Electron/Native Host → native backend → artifact/registry/profile →
+llama.cpp → governed chat/workspace tools. Older headings in this guide may retain a module's
+former name; the current package paths above are the reading authority.
 
 ## 15. Current Known Notes
 

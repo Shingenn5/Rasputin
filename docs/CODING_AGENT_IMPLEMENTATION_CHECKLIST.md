@@ -1,5 +1,7 @@
 # Coding-Agent Competitiveness — Implementation Checklist
 
+> Native direction — 2026-08-29: the current product uses installed Windows Desktop or source Native Host with native GGUF/llama.cpp. Dated completed stages below are historical records, including earlier server-era shell/model tests. They do not make retired infrastructure or Host Shell available in the current app. Use [native deployment](DEPLOYMENT_MATRIX.md) for operational steps; the live coder acceptance remains open.
+
 This is the actionable, checkable source of truth for the coding-agent competitiveness track.
 
 Last derived from plan doc: 2026-07-01.

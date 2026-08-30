@@ -54,7 +54,7 @@ Remote URLs are rejected even when general remote-model access is enabled.
 
 Payloads are bounded at 25 MiB for input audio, 16 MiB for synthesized output,
 and 8,000 characters for synthesis text. The adapter never opens a device,
-executes a command, creates an approval, or starts a model container. The
+executes a command, creates an approval, or starts a model process. The
 existing `POST /api/assistant/voice-preview` endpoint remains the place to
 validate a complete speech-to-text → main model → text-to-speech model pack
 before a voice turn is attempted.

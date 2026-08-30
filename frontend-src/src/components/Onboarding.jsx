@@ -1,9 +1,9 @@
 /**
  * Onboarding.jsx — Phase 7 first-run guided flow.
  *
- * Shows once when the model registry is empty and the `rasputin-onboarded`
+ * Shows when no chat model is ready and the `rasputin-onboarded`
  * localStorage flag is unset. Walks a new operator through what Rasputin is
- * and how to get a first model registered (WarSat scan or the Models registry).
+ * and how to download or import a GGUF model and load it in the native runtime.
  *
  * Self-contained, accessible lightweight overlay — no external Modal dependency.
  * - role="dialog" + aria-modal, Escape skips, primary action is focused on open.
@@ -18,18 +18,18 @@ const STEPS = [
   {
     kicker: "Welcome",
     title: "Welcome to Rasputin",
-    body: "Rasputin runs and orchestrates local AI models for you — chat, agents, and the containers behind them, all on your own hardware. Let's get a first model registered so you can start working.",
+    body: "Rasputin runs local AI models on your own hardware. Download a GGUF model from Discover Models, load it with the built-in llama.cpp runtime, and start chatting.",
   },
   {
     kicker: "Step 1",
-    title: "Get a model registered",
-    body: "Rasputin has no models yet. Use WarSat to scan your machine for runnable models and deploy one, or open the Models registry to connect a local endpoint or an API model. Once a model is registered this guide disappears.",
+    title: "Get your first model ready",
+    body: "Open Discover Models, choose a model and a compatible GGUF variant, then download it. When the download finishes, select Load model. Already have a GGUF file? Open My Models to import it.",
   },
 ];
 
 /**
  * @param {object} props
- * @param {() => void} props.onScanModels - Navigate to WarSat (Scan for Models).
+ * @param {() => void} props.onDiscoverModels - Navigate to Discover Models.
  * @param {() => void} props.onOpenRegistry - Navigate to the Models registry.
  * @param {() => void} props.onConnectLocalEndpoint - Navigate to local endpoint setup.
  * @param {() => void} props.onEnableTestingMode - Enable the safe dry-run route.
@@ -37,7 +37,7 @@ const STEPS = [
  */
 export function Onboarding({
   hasSeededModels = false,
-  onScanModels,
+  onDiscoverModels,
   onOpenRegistry,
   onConnectLocalEndpoint,
   onEnableTestingMode,
@@ -101,8 +101,7 @@ export function Onboarding({
       setStep((value) => Math.min(value + 1, STEPS.length - 1));
       return;
     }
-    // Last step primary = the recommended path: scan with WarSat.
-    onScanModels?.();
+    onDiscoverModels?.();
   }
 
   return (
@@ -134,17 +133,17 @@ export function Onboarding({
         <h1 id="ras-onboarding-title" className="ras-onboarding-title">{current.title}</h1>
         <p id="ras-onboarding-body" className="ras-onboarding-body">
           {step === 1 && hasSeededModels
-            ? "A model is registered, but no chat runtime has passed health yet. Test or repair that route, connect a local endpoint, or use safe Testing Mode."
+            ? "A model is registered, but no chat model is ready yet. Open My Models to load an imported GGUF, or use Discover Models to download one. You can also connect an existing local endpoint."
             : current.body}
         </p>
 
         {isLastStep ? (
           <div className="ras-onboarding-actions">
             <button type="button" ref={primaryRef} className="btn btn-primary ras-onboarding-action" onClick={handlePrimary}>
-              Scan for Models
+              Discover Models
             </button>
             <button type="button" className="btn btn-outline-secondary ras-onboarding-action" onClick={() => onOpenRegistry?.()}>
-              Open Models registry
+              Open My Models
             </button>
             <button type="button" className="btn btn-outline-secondary ras-onboarding-action" onClick={() => onConnectLocalEndpoint?.()}>
               Connect local endpoint

@@ -11,13 +11,13 @@ POST /api/assistant/command-preview
 Example request:
 
 ```json
-{"command":"Please check Docker status"}
+{"command":"Please start coding task"}
 ```
 
 The response identifies the matched allowlisted operation and returns its
 current policy preview. It always reports `execution.mode: preview_only`,
 `execution.started: false`, and `approval.created: false`. No process,
-container, file, microphone, or speaker is started by this endpoint.
+model runtime, file, microphone, or speaker is started by this endpoint.
 
 ## Route states
 

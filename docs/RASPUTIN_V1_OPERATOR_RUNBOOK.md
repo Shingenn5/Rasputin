@@ -15,16 +15,17 @@ workspace paths out of issue reports.
 2. Run the read-only installation check:
 
    - Windows PowerShell:
-     `\.venv\Scripts\python.exe scripts\check_installation.py`
+     `.\.venv\Scripts\python.exe scripts\check_installation.py`
    - Linux/macOS:
      `./.venv/bin/python scripts/check_installation.py`
 
-3. Choose exactly one runtime for the first pass. Docker is the cross-platform
-   path; the native server is the Windows direct-folder path. Use the commands
-   in [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) and do not expose the
-   service beyond loopback while validating.
-4. Sign in through the local login screen. Do not paste a password or token into
-   a terminal transcript.
+3. Choose installed Windows Desktop or an isolated source Native Host. Identify its live owner
+   and recorded URL; never run both on the same store. Follow
+   [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) and remain on loopback.
+   The current product has no container deployment step.
+4. Installed Desktop should open directly into the workspace with its loopback-only local
+   administrator session. Source Native Host requires the local login screen and a session cookie.
+   Do not paste a password or token into a terminal transcript.
 
 ## 2. Workstation and Assistant separation
 
@@ -46,17 +47,17 @@ the separation understandable without relying on hidden developer labels.
 1. In Models, inspect a catalog entry that fits and one that does not. Confirm
    the UI explains “Why it fits?” or the concrete `blockedReasons` before a
    launch action is available.
-2. In WarSat, create a preview only. Confirm resource admission, runtime,
-   placement, parser, and approval state are visible in the plan.
-3. Verify an over-capacity or contradictory placement remains blocked before
-   any container/model process starts. Do not enable privileged Docker control
-   for this evidence pass.
+2. Select a compatible GGUF and open its native Load dialog. Inspect context, memory mode,
+   placement, runtime compatibility, and any blocking reasons before launch.
+3. Verify impossible settings stay blocked before a model process starts. With an approved
+   small model, complete download → register → load → actual response → stop. Record the
+   artifact/runtime/device configuration; do not call this a coder certification.
 
 ## 4. Governed Assistant command
 
-1. Enter a harmless read-only request such as “check docker status” and submit
-   **Preview**. Confirm the route is allowlisted, execution is not started, and
-   the preview explains its operation.
+1. Enter “start coding task” and submit **Preview**. Confirm the operation is allowlisted,
+   no task starts, and the response explains any missing workspace/model capability.
+   This is a preview check, not authorization to dispatch the task.
 2. Enter a host-action request such as “open vscode”. Confirm it is marked for
    review/approval and does not run.
 3. Enter a compound unsafe request containing a shell separator. Confirm it is
@@ -116,7 +117,7 @@ upgrade as **open** even if a separate-target restore passes.
 | Evidence row | Status (`verified`, `partial`, `open`, `blocked`) | Date/runtime | Redacted note or artifact path |
 | --- | --- | --- | --- |
 | Automated regression and docs |  |  |  |
-| Native/Docker deployment |  |  |  |
+| Native Desktop/Host deployment |  |  |  |
 | Model placement/admission |  |  |  |
 | Live coder mission |  |  |  |
 | Live voice turn |  |  |  |
@@ -127,8 +128,8 @@ upgrade as **open** even if a separate-target restore passes.
 
 The automated command is:
 
-- Windows: `\.venv\Scripts\python.exe scripts\verify_release_candidate.py`
-- Linux/macOS: `./.venv/bin/python scripts/verify_release_candidate.py`
+- Windows: `.\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788`
+For Desktop, substitute its recorded loopback URL. Supply the endpoint explicitly so older helper defaults do not select retired infrastructure.
 
 The report is **candidate_with_boundaries** until every required live row is
 green. New capabilities belong in the post-v1 backlog; v1 maintenance is

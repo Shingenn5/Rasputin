@@ -1,6 +1,6 @@
 # Rasputin v1 release contract
 
-**Status:** frozen finish line, established by Slice 1 of the v1 completion batch
+**Status:** native product direction reconciled 2026-08-29; ten-slice acceptance scope retained
 
 **Purpose:** define the smallest useful Rasputin release that can be called a
 dependable local workstation and Assistant platform. This document is a scope
@@ -15,13 +15,15 @@ this document passes; feature presence alone is not sufficient.
 
 ## Supported deployment paths
 
-- **Docker Server:** the supported cross-platform path for Windows, macOS, and
-  Linux through Docker Desktop or Docker Engine plus Compose v2.
-- **Native Server:** a supported Windows-only path for direct access to approved
-  Windows folders.
-- **Windows Desktop:** the Electron shell around the Native Server.
-- **Local model endpoints:** local OpenAI-compatible, vLLM, llama.cpp/GGUF, and
-  registered speech adapters, subject to runtime and hardware evidence.
+- **Windows Desktop:** the native product, with an Electron-owned packaged backend and bundled llama.cpp.
+- **Native Server / Native Host:** the Windows source/browser workflow with approved host folders;
+  it must not share a live data store with Desktop.
+- **Native models:** exact compatible GGUF artifacts, local llama.cpp processes, and explicit
+  installation/loading/health states. Separately registered local endpoints and speech adapters
+  retain their own capability requirements.
+
+Docker Server is retired from the current product. Prior Linux/macOS container evidence is
+historical; neither those platforms nor a container deployment are current release requirements.
 
 Remote model endpoints remain disabled by the default privacy policy. A remote
 endpoint is not required for v1 acceptance.
@@ -34,7 +36,7 @@ endpoint is not required for v1 acceptance.
 2. Choose a trusted workspace with owner and workspace boundaries intact.
 3. Run a governed coding task that can edit multiple files, run a configured
    test, repair a failure, and present a reviewable diff.
-4. Keep shell, Docker, file moves, commits, and other host mutations approval
+4. Keep supported shell, file moves, commits, and other host mutations approval
    gated and auditable.
 5. Expose model fit, placement, runtime, and failure reasons before launch.
 
@@ -67,8 +69,8 @@ tagged:
 | Evidence | Required proof | Authority |
 | --- | --- | --- |
 | Automated regression | Isolated backend, UI-contract, documentation, and artifact checks pass. | `scripts/verify_release_candidate.py` |
-| Native/Docker deployment | Both endpoints pass health, frontend, and security-header probes. | `scripts/verify_deployment_matrix.py` |
-| Model runtime | A selected local model has fresh capability, placement, and measured benchmark evidence. | Warsat/model certificates and registry state |
+| Native deployment | The actual Desktop/Native Host owner passes health, frontend, and security-header probes; installed builds are tested as packages. | `scripts/verify_deployment_matrix.py` |
+| Model runtime | A selected local model has fresh capability, placement, and measured benchmark evidence. | Native runtime/model certificates and registry state |
 | Coder mission | A live model completes edit -> test failure -> repair -> diff review without unapproved host mutation. | Coding acceptance evidence and task review record |
 | Voice turn | A real authenticated browser turn completes local STT -> Assistant -> TTS and plays bounded audio. | Voice readiness API, browser evidence, and audit record |
 | Lasting memory | A memory can be recalled, explained, suppressed, corrected, superseded, and deleted within owner/workspace scope. | Memory API/UI tests and live review evidence |
@@ -90,7 +92,7 @@ explicit non-goals.
 ### Slice 2: Integrate resource admission
 
 Connect resource leases, manifests, benchmarks, and placement decisions to
-model-pack and WarSat launch previews. Oversized or contradictory launches must
+native model and model-pack launch previews. Oversized or contradictory launches must
 be blocked before starting work.
 
 ### Slice 3: Certify the local model fleet
@@ -125,8 +127,8 @@ audit records, and safe fallbacks without granting arbitrary host authority.
 
 ### Slice 9: Complete deployment and recovery
 
-Finish Windows/Linux/Docker onboarding, macOS Docker guidance, clean restore,
-port-conflict handling, and isolated recovery rehearsal.
+Finish Windows Desktop and source Native Host onboarding, packaged update validation,
+clean restore, ownership/port-conflict handling, and isolated recovery rehearsal.
 
 ### Slice 10: Run the release gate and lock scope
 

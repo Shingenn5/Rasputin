@@ -10,7 +10,7 @@ boundaries:
    STT -> Assistant -> TTS turn after the operator has selected or registered
    compatible models.
 
-The readiness route never starts a container, calls a model endpoint, opens a
+The readiness route never starts a model process, calls a model endpoint, opens a
 microphone, or opens a speaker. It returns only redacted model identity and
 endpoint state:
 
@@ -36,7 +36,7 @@ The Assistant capabilities response and GET /api/assistant/voice/profiles
 expose one supported transport profile: a local Whisper-compatible
 speech-to-text gateway plus a local Piper-compatible text-to-speech gateway.
 The profile fixes the request contract without forcing a particular model
-weight or container image:
+model weight or inference-engine binary:
 
 - STT registration uses role speech_to_text and a loopback base URL. The
   adapter sends multipart POST /audio/transcriptions with file and model.

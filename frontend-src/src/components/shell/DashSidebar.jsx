@@ -67,7 +67,7 @@ export function DashSidebar({
   const taskAccess = canRunTasks(role);
   const visibleNavGroups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => canAccessView(role, item.view) && (!desktopOnly || item.view !== "warsat")),
+    items: group.items.filter((item) => canAccessView(role, item.view) && (!(desktopOnly || runtimeMode === "native") || item.view !== "warsat")),
   })).filter((group) => group.items.length > 0);
   const asideRef = useRef(null);
   const historyTriggerRef = useRef(null);

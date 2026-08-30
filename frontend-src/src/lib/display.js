@@ -31,6 +31,14 @@ export function runtimeStatus(model) {
   return model?.runtimeStatus || model?.runtime_status || model?.lastHealth?.status || model?.last_health?.status || "unknown";
 }
 
+export function isManagedModelRunning(model) {
+  if (!model?.managed) return false;
+  // Process state controls Stop even if the endpoint is unhealthy. Never use
+  // saved lastHealth here: it can remain reachable after the process stops.
+  const status = model.containerStatus || model.container_status || model.runtimeStatus || model.runtime_status || "";
+  return ["running", "reachable"].includes(String(status).toLowerCase());
+}
+
 export function isUserFacingModel(model, testingMode) {
   if (!model || model.enabled === false) return false;
   if (model.key === "dry-run") return !!testingMode;

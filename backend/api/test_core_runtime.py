@@ -73,6 +73,13 @@ class LlamaCppRuntimeRoutesTests(IsolatedAsyncioTestCase):
         self.assertEqual(rolled_back["data"], {"version": "b-previous"})
         self.assertEqual(verified["data"], {"ok": True})
 
+    async def test_ready_runtime_status_exposes_native_capabilities(self):
+        from unittest.mock import AsyncMock
+        capabilities = {"flags": {"--split-mode": True, "--fit": True}}
+        with patch.object(core, "_desktop_runtime_call", new=AsyncMock(return_value={"state": "ready"})), patch.object(core, "native_runtime_capabilities", return_value=capabilities):
+            result = await core.llamacpp_runtime_status()
+        self.assertEqual(result["data"]["capabilities"], capabilities)
+
     async def test_install_requires_explicit_selection(self):
         with self.assertRaises(AppError) as raised:
             await core.llamacpp_runtime_install(core.RuntimeInstallIn())

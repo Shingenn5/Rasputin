@@ -23,6 +23,9 @@
  */
 import { useCallback, useEffect, useRef } from "react";
 
+// Only the most recently opened overlay owns keyboard focus.
+const activeFocusTraps = [];
+
 const FOCUSABLE_SELECTOR = [
   "a[href]",
   "area[href]",
@@ -51,13 +54,16 @@ function getFocusable(container) {
 export function useFocusTrap({ active, onClose, initialFocusRef, returnFocusRef }) {
   const containerRef = useRef(null);
   const previouslyFocusedRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const handleKeyDown = useCallback(
     (event) => {
+      if (activeFocusTraps.at(-1) !== containerRef) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        if (typeof onClose === "function") onClose();
+        if (typeof onCloseRef.current === "function") onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -83,11 +89,12 @@ export function useFocusTrap({ active, onClose, initialFocusRef, returnFocusRef 
         first.focus();
       }
     },
-    [onClose],
+    [],
   );
 
   useEffect(() => {
     if (!active) return undefined;
+    activeFocusTraps.push(containerRef);
 
     // Remember where focus was so we can restore it on close.
     previouslyFocusedRef.current =
@@ -96,6 +103,7 @@ export function useFocusTrap({ active, onClose, initialFocusRef, returnFocusRef 
     const container = containerRef.current;
     // Defer initial focus a tick so portal children are mounted.
     const focusTimer = window.setTimeout(() => {
+      if (activeFocusTraps.at(-1) !== containerRef) return;
       const explicit = initialFocusRef?.current;
       if (explicit && typeof explicit.focus === "function") {
         explicit.focus();
@@ -113,6 +121,8 @@ export function useFocusTrap({ active, onClose, initialFocusRef, returnFocusRef 
 
     return () => {
       window.clearTimeout(focusTimer);
+      const index = activeFocusTraps.indexOf(containerRef);
+      if (index !== -1) activeFocusTraps.splice(index, 1);
       document.removeEventListener("keydown", handleKeyDown, true);
       // Restore focus to the caller-provided ref or the remembered element.
       const restoreTarget = returnFocusRef?.current || previouslyFocusedRef.current;
@@ -120,7 +130,10 @@ export function useFocusTrap({ active, onClose, initialFocusRef, returnFocusRef 
         // Defer so we don't fight the element that is unmounting.
         window.setTimeout(() => {
           try {
-            restoreTarget.focus();
+            const activeContainer = activeFocusTraps.at(-1)?.current;
+            if (restoreTarget.isConnected && (!activeContainer || activeContainer.contains(restoreTarget))) {
+              restoreTarget.focus();
+            }
           } catch {
             /* element detached — ignore */
           }

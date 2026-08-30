@@ -2,7 +2,7 @@
 
 Rasputin's identity is owner-scoped and persisted through the existing
 `/api/assistant/profile` contract. The profile changes presentation only; it
-cannot widen context authority, grant model containers host access, or bypass
+cannot widen context authority, grant model processes host access, or bypass
 the approval broker.
 
 ## Supported fields

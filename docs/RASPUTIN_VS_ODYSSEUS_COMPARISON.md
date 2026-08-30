@@ -1,5 +1,7 @@
 # Rasputin vs. Odysseus
 
+> Comparison scope: upstream observations retain the date of the original review. Rasputin runtime wording was reconciled to the Windows native direction on 2026-08-29. Upstream Docker features describe Odysseus, not a Rasputin setup requirement; historical benchmarks are not current release certification.
+
 ## A practical comparison of two self-hosted AI workspaces
 
 > **Assessment date:** July 24, 2026
@@ -23,7 +25,7 @@ Rasputin and [Odysseus](https://github.com/odysseus-dev/odysseus) begin from the
 |---|---|---|
 | Which is the better all-purpose personal AI workspace? | **Odysseus** | Its daily-use surface is dramatically broader. |
 | Which is better for email, calendar, notes, documents, research, and images? | **Odysseus** | These are real first-class product areas, not future placeholders. |
-| Which has the safer agent execution design? | **Rasputin** | Approvals, trusted-workspace boundaries, audit, network-isolated skill containers, and native Windows low-privilege execution are core architecture. |
+| Which has the safer agent execution design? | **Rasputin** | Approvals, trusted-workspace boundaries, audit, declarative skills, and fail-closed native Windows Host Shell are core architecture. |
 | Which is more purpose-built for local coding agents? | **Rasputin** | Patch tools, Git review, task streaming, bounded agent loops, workspace commands, test/fix retries, and coding trials are integrated. |
 | Which has the larger implementation and test footprint? | **Odysseus** | The reviewed branch contains roughly 1,239 relevant files, 746 Python test files, and more than 4,100 discovered Python test functions. |
 | Which is more polished and proven across all claimed environments? | **Neither completely** | Both acknowledge cross-platform and integration gaps. Odysseus has more surface to stabilize; Rasputin has less breadth and several important end-to-end validation gaps. |
@@ -55,15 +57,15 @@ Rasputin is not merely a local chat UI. The current application is a private, mu
 
 This is Rasputin's most coherent competitive lane. It is building toward “give a local model a real repository and let it work safely,” rather than only “chat with files.”
 
-### 3. Local models and WarSat
+### 3. Native local models
 
 - Registration and discovery of local or remote OpenAI-compatible endpoints.
 - Hugging Face and local GGUF catalog scanning.
 - Model health tests, compatibility certification, repair, logs, start/stop, and role routing.
-- WarSat deployment planning for vLLM, llama.cpp/GGUF, and Ollama-compatible protocols.
-- Hardware inspection, runtime discovery, resource profiles, port assignment, command/Compose/Dockerfile previews, and approval-gated deployment.
+- Exact GGUF acquisition and native llama.cpp load planning; separately registered local endpoints retain their own requirements.
+- Host hardware inspection, native runtime discovery, load profiles, device placement, and governed lifecycle operations.
 - Explicit model-tool parser configuration rather than silently assuming that every model speaks the same tool-call format.
-- Docker, native Windows server, and Electron desktop operating modes.
+- Installed Windows Desktop and source Native Host workflows with distinct lifecycle ownership.
 
 WarSat's key advantage is not that it can start a model—Odysseus can do that too. Its advantage is that model deployment is represented as a reviewable plan with security checks and an expected registry result before execution.
 
@@ -287,7 +289,7 @@ Odysseus has features Rasputin should consider:
 
 Odysseus's own threat model says its shell and filesystem tools execute as the application user with no sandbox or egress filtering. For a trusted single-user machine this may be an accepted tradeoff. For a product whose defining promise is allowing autonomous local models to act safely, Rasputin's design is materially stronger.
 
-Rasputin should not become complacent: prompt labeling is not a security boundary, Docker-host control is inherently high-trust, the local administrator remains omnipotent, and not every execution mode has identical isolation. Still, the intended layers are better aligned with high-consequence agent operation.
+Rasputin should not become complacent: prompt labeling is not a security boundary, native process execution still requires explicit boundaries, the local administrator remains omnipotent, and not every execution mode has identical isolation. Still, the intended layers are better aligned with high-consequence agent operation.
 
 ---
 
@@ -338,7 +340,7 @@ Odysseus's Cookbook is its most relevant competitive lesson:
 - Show dependency and launch failures with copyable logs and next actions.
 - Support local and remote model servers through one understandable workflow.
 
-Rasputin already has much of the backend machinery. The opportunity is to make WarSat feel less like a deployment console and more like a guided path to the right working model.
+Rasputin already has much of the backend machinery. The opportunity is to finish the native model workflow as a guided path to a working GGUF model.
 
 ### Priority 3 — Add one polished knowledge deliverable
 
@@ -383,7 +385,7 @@ Choose **Rasputin** if the goal is to let local models operate on repositories o
 
 ### If deciding what Rasputin should become
 
-Do not chase Odysseus feature-for-feature. Finish the controlled local coding/research agent loop, turn WarSat into the best guided local-model deployment experience, and make every successful task produce a reviewable result.
+Do not chase Odysseus feature-for-feature. Finish the controlled local coding/research agent loop, finish the guided native GGUF discovery-to-inference experience, and make every successful task produce a reviewable result.
 
 That gives Rasputin a smaller market surface but a much sharper reason to exist.
 

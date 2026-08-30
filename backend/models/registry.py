@@ -411,8 +411,47 @@ def _parse_model_ids(payload):
     return ids
 
 
+def _native_file_size_metadata(model):
+    """Measure registered GGUF weights for fit planning, including all shards."""
+    if model.get("runtime") != NATIVE_RUNTIME or not model.get("host_model_path"):
+        return {}
+    try:
+        main = Path(model["host_model_path"]).expanduser().resolve()
+        paths = {main}
+        shard = re.match(r"^(.*)-(\d{5})-of-(\d{5})(\.gguf)$", main.name, re.IGNORECASE)
+        if shard:
+            count = int(shard.group(3))
+            if not 1 <= count <= 1000:
+                return {}
+            paths.update(main.with_name(f"{shard.group(1)}-{index:05d}-of-{count:05d}{shard.group(4)}") for index in range(1, count + 1))
+        for entry in model.get("artifact_files") or []:
+            if isinstance(entry, dict) and (entry.get("localPath") or entry.get("local_path")):
+                paths.add(Path(entry.get("localPath") or entry["local_path"]).expanduser().resolve())
+        if model.get("mmproj_path"):
+            paths.add(Path(model["mmproj_path"]).expanduser().resolve())
+        if any(not path.is_file() for path in paths):
+            return {}
+        total = sum(path.stat().st_size for path in paths)
+        if total <= 0:
+            return {}
+        return {"size_bytes": total, "size_mb": total / (1024 * 1024), "memory_estimate_source": "GGUF files on disk; runtime auto-fit applies at load"}
+    except (OSError, TypeError, ValueError):
+        return {}
+
+
+def _artifact_display_name(artifact):
+    repository = str(artifact.get("repository") or "").strip("/")
+    name = repository.rsplit("/", 1)[-1] if repository else Path(str(artifact.get("main_model_path") or artifact.get("host_model_path") or "Model")).stem
+    quantization = str(artifact.get("quantization") or "")
+    return f"{name} ({quantization})" if quantization and quantization.lower() not in name.lower() else name
+
+
 def _public_model(model):
-    item = dict(model)
+    item = {**model, **_native_file_size_metadata(model)}
+    if item.get("runtime") == NATIVE_RUNTIME and item.get("repository"):
+        item.setdefault("publisher", str(item["repository"]).split("/", 1)[0])
+        if item.get("name") == item.get("variant_id"):
+            item["name"] = _artifact_display_name(item)
     profile = item.get("compatibility")
     if profile and not model_compatibility.certification_is_current(item, profile):
         profile = dict(profile)
@@ -952,8 +991,8 @@ def import_gguf(req):
         "context_source": "runtime auto-detection pending"
         if req.get("context") in (None, "", 0, "0")
         else "explicit import setting",
-        "n_gpu_layers": int(req.get("n_gpu_layers") if req.get("n_gpu_layers") is not None else 0),
-        "split_mode": req.get("split_mode") or "layer",
+        "n_gpu_layers": int(req["n_gpu_layers"]) if req.get("n_gpu_layers") is not None else "auto",
+        "split_mode": req.get("split_mode") or "auto",
         "tensor_split": req.get("tensor_split") or "",
         "notes": req.get("notes") or "Imported GGUF for native llama.cpp.",
     }
@@ -973,7 +1012,7 @@ def register_artifact(artifact):
     mmproj_path = mmproj[0].get("localPath") if mmproj else None
     key = f"artifact-{_slug(artifact.get('artifact_id') or Path(main).stem)}"
     return import_gguf({"path": main, "key": key,
-                        "name": artifact.get("variant_id") or Path(main).stem,
+                        "name": _artifact_display_name(artifact),
                         "artifact_id": artifact.get("artifact_id"),
                         "repository": artifact.get("repository"), "revision": artifact.get("revision"),
                         "variant_id": artifact.get("variant_id"), "quantization": artifact.get("quantization"),
@@ -1050,11 +1089,11 @@ def start_model(key, load_profile=None):
         raise ValueError("model missing")
     if model.get("runtime") == NATIVE_RUNTIME:
         security.require("allow_model_registry_edit")
-        model = _native_model_with_desktop_preferences(model)
         if load_profile is not None:
             if not isinstance(load_profile, dict):
                 raise ValueError("load profile must be a mapping")
             model = {**model, "load_profile": dict(load_profile)}
+        model = _native_model_with_desktop_preferences(model)
     else:
         security.require("allow_docker_control")
     if not model.get("managed"):
@@ -1195,8 +1234,8 @@ def certify_model(key):
 
 
 def logs_model(key, limit=120):
-    security.require("allow_docker_control")
     model = get_model(key)
+    security.require("allow_model_registry_edit" if model and model.get("runtime") == NATIVE_RUNTIME else "allow_docker_control")
     if not model or not model.get("managed"):
         return {"ok": False, "message": "model is not managed", "logs": ""}
     try:

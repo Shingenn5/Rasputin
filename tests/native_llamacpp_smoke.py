@@ -142,7 +142,7 @@ def main(argv=None):
         return 0
     finally:
         if process.poll() is None:
-            _terminate(process.pid)
+            _terminate(process.pid, state={"pid": process.pid, "engine": command[0], "command": command})
         capture_thread.join(timeout=2)
 
 

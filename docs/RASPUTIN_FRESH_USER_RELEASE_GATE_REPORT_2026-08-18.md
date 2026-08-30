@@ -1,5 +1,7 @@
 # Rasputin Fresh-User Release-Gate Report
 
+> Historical evidence only. This report records an earlier server-era revision and is not current setup or deployment advice. The current product is Windows native with GGUF/llama.cpp. Follow [native deployment](DEPLOYMENT_MATRIX.md); obsolete runtime blockers and commands below do not apply to current model loading.
+
 **Assessment date:** 2026-08-18
 **Assessed revision:** 07f796f9289bdb903da36a2ba2ceee7e0d0ebf02 (codex/coding-safety-upgrades)
 **Assessment type:** independent, read-only fresh-user acceptance audit

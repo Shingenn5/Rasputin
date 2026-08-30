@@ -1,5 +1,7 @@
 # Project Prometheus — Phase 0 Execution Status
 
+> Historical evidence only. This report records an earlier server-era revision and is not current setup or deployment advice. The current product is Windows native with GGUF/llama.cpp. Follow [native deployment](DEPLOYMENT_MATRIX.md); obsolete runtime blockers and commands below do not apply to current model loading.
+
 > **Branch:** `codex/project-prometheus-phase-0`
 > **Baseline:** `bdb06f7`
 > **Status:** Implementation checkpoint — owner reviewable, not committed

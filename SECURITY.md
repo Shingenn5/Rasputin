@@ -8,7 +8,7 @@ Until a dedicated security contact is published, use the repository's private
 GitHub Security Advisory reporting flow. Include:
 
 - Affected version or commit.
-- Runtime mode: native, Docker, or desktop.
+- Runtime owner: installed Windows Desktop or source Native Host, with its version and recorded URL.
 - Reproduction steps.
 - Expected and observed security boundary.
 - Potential impact.
@@ -28,7 +28,7 @@ supported public release.
 High-risk areas include:
 
 - Workspace and owner isolation.
-- File, shell, Git, Docker, and connector approvals.
+- File, supported shell, Git, native model, and connector permissions and approvals.
 - Authentication, sessions, recovery, and secret storage.
 - Model and tool prompt injection.
 - Remote endpoints and network destinations.

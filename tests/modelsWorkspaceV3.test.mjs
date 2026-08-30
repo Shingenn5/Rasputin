@@ -104,7 +104,7 @@ test("Discover downloads start directly and expose Stop in the same controls", (
 test("Discover typography has readable route-scoped minimums", () => {
   assert.match(styles, /is-discover-route \.models-page-header p \{ font-size: \.82rem;/);
   assert.match(styles, /is-discover-route \.models-discover-model strong \{ font-size: \.84rem;/);
-  assert.match(styles, /is-discover-route \.models-discover-head \{ font-size: \.65rem;/);
+  assert.match(styles, /is-discover-route \.models-discover-head \{ font-size: \.75rem;/);
   assert.match(styles, /is-discover-route \.models-discover-inspector \.models-inspector-facts dt \{ font-size: \.75rem;/);
   assert.match(modelIdentity, /model-identity__name/);
   assert.match(styles, /model-identity__name \{[^}]*font-size: 1rem;/);

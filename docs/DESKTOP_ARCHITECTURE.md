@@ -2,12 +2,12 @@
 
 Status: self-contained Windows desktop packaging with bundled llama.cpp implemented on 2026-08-23.
 
-Rasputin's two supported product shapes share the same FastAPI backend and React frontend:
+The Windows product and its source-development runtime share FastAPI and React:
 
 | Shape | Primary user | Lifecycle | Workspace behavior | Network surface |
 | --- | --- | --- | --- | --- |
 | Rasputin Desktop | One workstation operator | Electron owns the native backend process | Direct host folders | Random loopback-only HTTP port inside Electron |
-| Rasputin Server | Multiple local or LAN users | Docker Compose and the CLI own the service | Explicit server/container mounts | Configured HTTP/HTTPS listener |
+| Source Native Host | Developer/browser operator | Native Host controller owns its process | Direct approved host folders | Loopback :8788 by default |
 
 Electron is a host shell, not a second Rasputin implementation. In repository development it can
 start server.py; in the installed application it starts the PyInstaller backend shipped inside the
@@ -48,11 +48,13 @@ Before starting a Desktop Runtime, Electron checks `desktop-runtime.json`. If a 
 process crashed but left its backend alive, the new app terminates that abandoned process tree and
 removes the stale ownership record. A live Electron owner is never replaced.
 
-On a fresh data store, Electron shows the generated administrator credentials once and can copy
-the password to the clipboard. The password is redacted from the persistent desktop log.
+Electron sets `RASPUTIN_DESKTOP_ONLY=1`. `auth.public_session()` automatically supplies the local
+administrator identity to loopback requests, so installed Desktop opens without a login screen
+or a first-run credentials dialog. This is a single-operator host trust boundary, not isolation
+from other local processes. Generated bootstrap secrets remain redacted from persistent logs.
 
-The legacy `rasputin.ps1 start -Native` command remains the foreground development/headless
-fallback. Do not run it against the same data directory while Rasputin Desktop is open.
+For source/browser development, use the explicit Native Host module commands in
+[deployment guidance](DEPLOYMENT_MATRIX.md) and a separate data directory.
 
 ## Packaging boundary
 
@@ -69,18 +71,19 @@ Repository development reuses `.venv`, or a Python 3.12+ interpreter supplied th
    user-scoped installer while preserving data on uninstall.
 
 The unpacked application, bundled backend, bundled CPU/CUDA engines, and ordinary sandboxed launch
-path have passed local smoke tests. Remaining release gates are a production icon, Authenticode
-signing, update signing/channel metadata, and a clean-machine install/upgrade/uninstall test outside
+path have passed local smoke tests. The application icon is implemented. Remaining release gates
+are Authenticode signing, update signing/channel metadata, and a clean-machine install/upgrade/uninstall test outside
 the development workstation.
 
 ## Security and ownership rules
 
-- Desktop always binds FastAPI to `127.0.0.1`; LAN access belongs to server mode.
+- Desktop always binds FastAPI to `127.0.0.1`; reviewed LAN access belongs to a separately configured Native Host.
 - Electron forces native runtime semantics and removes inherited Docker/TLS environment flags.
 - The desktop process owns only the backend process it launched.
 - Browser renderer code cannot invoke Electron or Node APIs.
-- Existing Rasputin authentication, workspace approval, and audit controls remain in force; Electron
-  does not bypass them. Native/Desktop Host Shell is fail-closed and unavailable until a proven
+- Desktop supplies a loopback-only local administrator session; source Native Host uses password
+  authentication and session cookies. Workspace approval and audit controls apply to both.
+  Native/Desktop Host Shell is fail-closed and unavailable until a proven
   Windows AppContainer runner exists.
-- Docker remains legacy server-mode code only; it is not part of the packaged Desktop runtime,
-  model-loading path, or agentic coding path on this branch.
+- The product uses native model processes. Retained server-era code is historical compatibility,
+  not an alternative installation or model-loading instruction.

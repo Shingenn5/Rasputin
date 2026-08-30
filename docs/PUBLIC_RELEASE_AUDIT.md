@@ -81,7 +81,7 @@ GitHub dependency review for pull requests. Before publication:
 
 1. Run and review the new workflow remotely; local heuristic checks do not
    substitute for its first successful full-history scan.
-2. Generate a dependency license inventory for Python, npm, containers, and the
+2. Generate a dependency license inventory for Python, npm, bundled native engines, and the
    git submodule.
 3. Add dependency vulnerability scanning.
 4. Decide whether generated installers receive an SBOM and provenance

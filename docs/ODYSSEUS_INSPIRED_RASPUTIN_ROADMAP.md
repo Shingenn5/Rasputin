@@ -258,7 +258,7 @@ automatically.
 - Inventory secrets, personal paths, generated state, screenshots, fixtures,
   and large binaries before publishing history.
 - Add dependency-license and secret scanning to CI.
-- Document supported native, Docker, and desktop paths exactly as they work.
+- Document installed Windows Desktop and source Native Host exactly as they work; keep retired infrastructure out of current setup.
 - Run the definitive local-coder mission.
 
 ### Exit criteria
@@ -480,7 +480,7 @@ Rasputin's existing local Git status, diff, and approval services.
 - Include model manifests, certificates, connector metadata without secrets,
   workspace mappings, and schema versions.
 - Add dry-run restore validation and migration reports.
-- Test native-to-Docker and machine-to-machine restoration.
+- Test native package upgrades and native machine-to-machine restoration with preserved data and ownership.
 
 ### Exit criteria
 

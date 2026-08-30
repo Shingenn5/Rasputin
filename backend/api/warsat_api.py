@@ -130,8 +130,8 @@ async def warsat_download_progress(
 
 @warsat_router.get("/hardware")
 
-async def warsat_hardware(_user=Depends(current_user)):
-    return ok(await asyncio.to_thread(warsat.hardware_probe))
+async def warsat_hardware(native_models: bool = False, _user=Depends(current_user)):
+    return ok(await asyncio.to_thread(warsat.hardware_probe, native_models=native_models and workspace.is_native()))
 
 
 @warsat_router.get("/benchmarks")

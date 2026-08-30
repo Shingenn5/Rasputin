@@ -24,6 +24,7 @@ from backend.models import load_profiles as model_load_profiles
 from backend.models import providers as model_providers
 from backend.runtime.runtime_service import LlamaCppRuntimeService
 from backend.runtime.bootstrap import discover_manifest_path
+from backend.warsat.providers.native_llamacpp import native_runtime_capabilities
 
 try:
     from backend.models.desktop_acquisition import DesktopAcquisitionService
@@ -549,7 +550,7 @@ class GgufImportIn(CamelModel):
     role: str = "helper"
     port: int | None = None
     context: int = 4096
-    n_gpu_layers: int = 0
+    n_gpu_layers: int | None = None
     split_mode: str | None = None
     tensor_split: str | None = None
     engine_path: str | None = None
@@ -718,7 +719,10 @@ async def _desktop_runtime_call(operation: str, *args):
 
 @models_router.get("/runtime/llamacpp/status")
 async def llamacpp_runtime_status(_user=Depends(current_user)):
-    return ok(await _desktop_runtime_call("status"))
+    status = await _desktop_runtime_call("status")
+    if status.get("state") == "ready":
+        status["capabilities"] = await asyncio.to_thread(native_runtime_capabilities)
+    return ok(status)
 
 
 @models_router.post("/runtime/llamacpp/select")
@@ -766,7 +770,7 @@ async def model_provider_list(_user=Depends(current_user)):
 @models_router.get("/model-catalog")
 
 async def model_catalog_get(fit: bool = False, _user=Depends(current_user)):
-    hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
+    hardware = await asyncio.to_thread(warsat.hardware_probe, native_models=workspace.is_native()) if fit else None
     return ok(await asyncio.to_thread(model_catalog.local_catalog, hardware))
 
 @models_router.post("/model-catalog/refresh")
@@ -782,7 +786,7 @@ async def model_catalog_search(
     min_vram_gb: float | None = None, max_vram_gb: float | None = None,
     _user=Depends(current_user),
 ):
-    hardware = await asyncio.to_thread(warsat.hardware_probe) if fit else None
+    hardware = await asyncio.to_thread(warsat.hardware_probe, native_models=workspace.is_native()) if fit else None
     return ok(model_catalog.search_hf(
         query=q,
         model_type=type,

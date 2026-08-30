@@ -13,22 +13,22 @@ code and fix this doc.*
 
 ## 1. What Rasputin is
 
-A **local-first, privacy-first AI workbench**: agentic tool-calling loops (chat / plan /
-execute / reflect), persistent RAG + knowledge-graph memory over workspaces, and an explicit
-permission model gating every file/shell/docker/network action. **WarSat** is its model-runtime
-deployment layer — it downloads, containerizes, and deploys local models (vLLM, llama.cpp/GGUF,
-or any OpenAI-compatible endpoint) through the host Docker socket.
+Rasputin is a Windows native AI workstation for local chat, governed coding, and a bounded
+personal Assistant. The installed Electron app owns a packaged FastAPI backend, React frontend,
+SQLite state, and bundled llama.cpp. The source Native Host is a separate browser/headless
+workflow. Both load GGUF models as native processes. Docker infrastructure is retired from the
+product direction; do not suggest it as a requirement, feature, fallback, or troubleshooting step.
 
-**Product direction (locked — don't relitigate):**
-- Rasputin is **first a daily-driver** Elliott uses himself, polished to a high bar; going
-  public is an eventual option.
-- Eventual product = **self-hosted, local open-source models on the customer's own hardware**
-  (data-can't-leave + API-cost-cutting teams). Not hosted SaaS.
-- The repo stays **private**; licensing/packaging must preserve commercial viability.
+**Current direction, confirmed 2026-08-29:**
 
-**Stack:** FastAPI backend (`server.py` + `backend/`), React + Vite frontend
-(`frontend-src/` source → `frontend/` build output), SQLite storage, Docker for model
-containers and sandboxed skills. Python 3.12, Node with root-level `package.json`.
+- The installed Windows app is the daily-driver product; Python/Node are build tools, not end-user requirements.
+- Discover Models → exact GGUF variant → download/import → verify/register → Load → infer → Stop.
+- Filesystem tools operate on approved host folders. Skills are declarative instructions.
+- Keep owner/workspace controls, authentication, native process ownership, and audit boundaries intact.
+- Retained server-era code and historical evidence do not define the current product.
+
+See `docs/DEPLOYMENT_MATRIX.md` for launch/upgrade ownership and
+`docs/WRAPPER_RUNTIME_CONTRACT.md` for native runtime behavior.
 
 ## 2. Repo map
 
@@ -38,12 +38,12 @@ containers and sandboxed skills. Python 3.12, Node with root-level `package.json
 | `backend/api/` | HTTP endpoints (e.g. `warsat_api.py` also hosts workspace/git endpoints) |
 | `backend/engine/agent.py` | The agent loop (`governed_chat`): tool loop, budgets, test-loop |
 | `backend/models/providers.py` | Model I/O: `chat_sync`, streaming, tools-degradation retry |
-| `backend/warsat/` | Model deploy layer (`_build_tuning`, `_runtime_arguments`, protocols) |
+| `backend/warsat/` | Shared hardware/runtime services; native provider plus retained legacy adapters |
 | `backend/mcp/layer.py` | Tool implementations + trust/approval gating (fs, git, shell) |
 | `backend/core/workspace.py` | Workspace registry incl. per-workspace test/build/lint commands |
 | `frontend-src/src/` | React source — **the only frontend you edit** |
 | `frontend/` | Vite build output — **never hand-edit** |
-| `tests/testBackendSmoke.py` | The backend suite (unittest; 107 test methods; environment-dependent sandbox tests may skip) |
+| `tests/testBackendSmoke.py` | Backend smoke suite; test counts change with the current checkout |
 | `tests/ui/`, `playwright.config.mjs` | Playwright UI tests |
 | `docs/` | Plans and findings — see §6 for which ones are current |
 | `docs/MAINTAINER_HANDOFF.md` | First-day maintainer workflow, ownership map, and handoff acceptance |
@@ -64,26 +64,25 @@ C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scri
 # Tracked maintenance surface and documentation-coverage inputs:
 C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\audit_repository.py
 
-# Release-candidate evidence (isolated tests plus native/Docker probes):
-C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788 --endpoint docker=http://127.0.0.1:8787
+# Release-candidate evidence (isolated tests plus the explicitly selected native endpoint):
+C:\Users\elliott\OneDrive\Documents\WrapperProject\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788
 
 # Run an isolated dev instance (never point at real data):
 RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
 # App: http://127.0.0.1:8899/#chat   (hash routes: #home, #chat, #models, #settings/...)
 ```
 
-- `RASPUTIN_DATA_DIR` redirects all sqlite/kv storage; without it native mode uses
-  `%LOCALAPPDATA%\Rasputin\data` and Docker uses its `/app/data` named volume. Always set an
-  isolated override for test instances.
-- **Auth is real** (no longer stubbed — fixed 2026-07-07). Log in via
-  `POST /api/auth/login`; the session is an httponly `rasputin_session` cookie. First-run
-  admin credentials are printed to the server console only when a fresh data store creates the
-  account. In Docker mode, `rasputin.ps1 credentials` works only while that original line remains
-  in the current container logs; otherwise use `rasputin.ps1 reset-password` (native:
-  `python -m backend.tools.reset_password`).
+- `RASPUTIN_DATA_DIR` redirects all runtime storage. Native data defaults to
+  `%LOCALAPPDATA%\Rasputin\data`; tests always use an isolated directory.
+- Source Native Host uses real auth: `POST /api/auth/login` and its httponly session cookie.
+  Fresh-store credentials are printed once; never publish them. Installed Desktop instead sets
+  `RASPUTIN_DESKTOP_ONLY=1` and supplies a local administrator session to loopback callers, so it
+  opens without a login screen. Never use that mode for LAN access. Use the native password-reset
+  helper only for explicitly requested Native Host recovery.
 - UI verification patterns (Playwright + testids + isolated server) live in
   `.claude/skills/verify/SKILL.md`.
-- **Accounts are local and multi-user** (2026-07-13). `backend/core/auth.py` persists appliance
+- **Native Host accounts are local and multi-user** (2026-07-13); Desktop is a single-operator
+  surface. `backend/core/auth.py` persists appliance
   users plus hashed, restart-safe login sessions. Chats/tasks/preferences/memory are owner-scoped;
   workspaces use viewer/contributor/developer/owner membership. Appliance-wide models, security,
   settings, providers, approvals, and WarSat mutations require the `admin` role. The original
@@ -114,49 +113,47 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
    the primary action before calling something done.
 8. Temp/scratch files go outside the repo (session temp dir), never in the repo or `/tmp`.
 
-## 5. Current state (as of 2026-08-10)
+## 5. Current evidence and remaining work
 
-The active effort is making Rasputin a **competitive coding agent**, tracked in
-`docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` (the working plan — read it before picking up
-work). Position:
+The active implementation queue is in `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`;
+its older dated sections are historical evidence, not current deployment instructions.
 
-- **App baseline is healthy:** the isolated running-app audit covered 15+ views in light and dark
-  with zero console/HTTP errors; the current source also includes live diagnostics, bounded
-  backup/export/delete workflows, a separate-target restore rehearsal, an Assistant personality
-  editor, an allowlisted command preview, an explicit push-to-talk/local conversation/playback console,
-  and an accessible Dashboard mode switcher that keeps Workstation and Assistant entry points separate.
-- **Real local-model inference works end-to-end.** Qwen2.5-3B-Instruct deployed through WarSat
-  (vLLM, `toolCallParser=hermes`) ran real chat and a `mode=code` agentic task with genuine
-  tool calls. Two fixes made this work: `chat_sync` drops tools + retries once on a
-  tools-bearing 400 from local runtimes (`backend/models/providers.py`), and the vLLM
-  tool-call parser is **opt-in per deploy** (`toolCallParser` tuning field), never a global
-  hardcode — the parser is model-specific and a wrong one silently corrupts tool calls.
-- **Stage 6 (test loop) backend done:** per-workspace test/build/lint commands
-  (`POST /api/workspace/commands`), edit→test→fix reopens inside `governed_chat`'s single
-  wall-clock budget, 3-reopen cap, skips loudly when no command/shell denied.
-- **Stage 5 (coding review UX) implemented:** backend `POST /api/workspace/git-status` /
-  `git-diff` / `git-restore` (approval-gated), frontend Changes + Terminal tabs on
-  `TaskDetailsDrawer` (touched files → diff viewer → per-file revert). **Verification gap:**
-  Playwright render/interaction tests for those tabs and the keyboard-only/mouse-only passes
-  are not written yet — the drawer only opens from an ACTIVE task ("Open Details",
-  `TasksView.jsx:263,374`).
-- **Tool-less agentic runs now fail visibly:** conversational chat still retries without tools when
-  a local runtime rejects them, but an execution phase records `tools_unavailable` and stops as an
-  error instead of reporting plain prose as completed work. The model catalog now supplies the
-  conservative, non-binding `toolCallParserHint=hermes` for the proven Qwen2.5/vLLM family; parser
-  selection remains opt-in per deploy.
+- On 2026-08-30, the isolated source Native Host on :8902 completed the real UI workflow:
+  Discover search for `bartowski/SmolLM2-135M-Instruct-GGUF` → select Q4_K_M (100.6 MB) →
+  download/register → Load with automatic defaults → Rasputin Chat task `done` → Stop.
+  The response was “I'm ready to help! What's your question?” Load became available again after
+  stopping. No page errors or retired infrastructure API requests occurred; body overflow was zero
+  at widths 1440, 1024, and 390 pixels. This proves one small-model lifecycle, not coder capability.
+- Regression verification passed: 44 frontend tests, the authenticated source/Desktop browser
+  fixture test, 5 Desktop lifecycle tests, 101 focused Python tests plus 4 subtests, and a backend
+  smoke run with 164 passes and 1 legacy-infrastructure skip. Scope and local proof location are in
+  `docs/RASPUTIN_IMPLEMENTATION_LEDGER.md`; browser fixtures are not installed-app certification.
+- The current workstation's installed Desktop was updated and verified on 2026-08-30. Installer
+  build/install succeeded; installed application, package, backend, and frontend hashes matched
+  the tested build. The isolated packaged UI also completed real GGUF download → automatic Load →
+  Chat task `done` → Stop. Live installed health/frontend returned 200, catalog search worked,
+  `#warsat` redirected to `#models`, and the library retained 21 models. The bundled CUDA 12.4
+  engine reported ready without repair. Test listeners/model processes were cleaned up afterward.
+- Installed UI checks used a browser served by the actual Desktop backend; native window/owner
+  identity was confirmed with read-only OS checks. Computer-use was blocked by a sandbox ACL,
+  so native-window UI Automation was not performed. Rollback files and proof JSON are under
+  `%TEMP%\rasputin-native-finish-01a0540b`; see the ledger for exact evidence and scope.
+  Source restarts still do not update installed binaries; this update included installation.
+- Existing tool-loop, workspace/Git, memory, voice, and Assistant contracts remain bounded by
+  their own tests and live evidence. Native Windows Host Shell remains unavailable pending
+  a verified AppContainer runner.
 
-**Open queue (roughly in order):** a live local coder-model edit → test → repair → review mission;
-  a stopped active-data restore/upgrade rehearsal; registered speech models plus browser microphone and
-  speaker verification; daily-driver UI polish and the remaining keyboard/mouse review pass; and
-  signed desktop installation/update evidence.
+Open release work includes a certified local coder edit → test → repair → review mission,
+clean-machine installation and upgrade/recovery evidence, real voice hardware checks,
+and signing/update-channel evidence. The proposal Word document's visual layout also remains
+unverified (its PDF has recorded visual review). Do not revive retired infrastructure to satisfy those rows.
 
 ## 6. Doc freshness map
 
 | Doc | Status |
 |---|---|
-| `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` | **Current** — the working plan; honest `[~]` markers |
-| `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | §4 is current/canonical; later backend path maps still contain pre-package-layout names |
+| `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` | Current queue with explicitly historical implementation records |
+| `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` | Native runtime and frontend architecture; legacy code names are marked where retained |
 | `docs/README.md` | Canonical documentation map and source-of-truth rules |
 | `docs/RASPUTIN_V1_RELEASE_CONTRACT.md` | Frozen ten-slice v1 finish line, evidence matrix, and non-goals |
 | `docs/RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md` | Current release residuals and evidence report; reconcile against code and the implementation ledger |
@@ -171,9 +168,10 @@ work). Position:
   marked `[~]` in the checklist, not checked off.
 - **Ask before irreversible or outward-facing actions** (deletes, pushes, deploys to his real
   instance). Propose before large refactors.
-- **His real instance** runs in Docker on **:8787** — never test against it. Use an isolated
-  `RASPUTIN_DATA_DIR` instance (convention: **:8899**). Model containers WarSat spawns land on
-  their own ports (e.g. Qwen on :8001). Confusing the two instances has burned a session
-  before — check which port you're talking to.
-- Locked decisions in §1 and the rules in §4 are settled; spend effort on execution, not on
-  reopening them.
+- **Identify the actual owner before changing a running app.** Installed Desktop records its
+  private URL and owner PID in `desktop-runtime.json`; Native Host records `native-host.json`
+  and defaults to :8788. Port :8899 is for isolated verification only. Never run both against
+  one data directory. Existing approval to update the selected app remains valid; inspect a
+  changed owner before acting, rather than assuming a familiar port is still the target.
+- Product direction is native. Preserve historical evidence as history; never turn it into
+  current setup, permission, or model-deployment advice.

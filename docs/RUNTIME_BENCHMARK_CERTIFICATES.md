@@ -41,6 +41,6 @@ Use the bounded fleet command after registering the local main and coder roles:
 The command performs local-only health and compatibility probes, writes a
 latency-only certificate for each reachable role, and reports missing,
 non-local, or unreachable assignments as explicit blockers. It never deploys
-containers or contacts remote providers. A ready report is still not a
+model processes or contacts remote providers. A ready report is still not a
 throughput or semantic-quality claim; those require runtime counters and a
 separate objective trial.

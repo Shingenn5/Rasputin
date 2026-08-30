@@ -1453,7 +1453,7 @@ def hf_model_detail(model_id):
     url = f"{HF_API_URL}/{model_id}"
     try:
         with httpx.Client(timeout=HF_FETCH_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url)
+            response = client.get(url, params={"blobs": "true"})
             response.raise_for_status()
             raw = response.json()
     except Exception as exc:

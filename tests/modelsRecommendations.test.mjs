@@ -221,7 +221,7 @@ test("fresh Models without a hardware prop probes once and can reach ready or er
   );
   assert.match(source, /status: snapshot\.blocked \? "blocked" : "ready"/);
   assert.match(source, /setHardwareProbeState\(\{ status: "error"/);
-  assert.match(source, /api\("\/api\/warsat\/hardware"/);
+  assert.match(source, /\/api\/warsat\/hardware\?native_models=true/);
   assert.match(source, /hardwareProbeAttempt = useRef\(-1\)/);
 });
 
@@ -277,7 +277,10 @@ test("runtime envelope estimate takes precedence and is labeled as estimated", (
 });
 
 test("blocked model deployment exposes actionable guidance and accessible linkage", () => {
-  assert.match(guidanceSource, /Docker control/);
+  const retired = blockerGuidanceForReason("Docker control is not enabled");
+  assert.match(retired.happened, /retired deployment workflow/);
+  assert.match(retired.next, /Get GGUF/);
+  assert.doesNotMatch(retired.next, /enable.*docker|safety settings/i);
   assert.match(guidanceSource, /model folder/);
   assert.match(guidanceSource, /multi-GPU/);
   assert.match(guidanceSource, /runtime/);

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download, model_info
 
+from backend.core import workspace
+
 ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = ROOT / "models"
 
@@ -148,8 +150,8 @@ def _download_thread(dl_id: str, model_id: str):
                 has_gguf = any(s.rfilename and s.rfilename.lower().endswith(".gguf") for s in info.siblings)
                 model_name = model_id.split("/")[-1]
                 safe_key = model_name.lower().replace(".", "-").replace("_", "-")
-                desktop_only = str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).lower() in {"1", "true", "yes", "on"}
-                if desktop_only:
+                native_models = workspace.is_native() or str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).lower() in {"1", "true", "yes", "on"}
+                if native_models:
                     gguf_files = sorted(
                         path for path in Path(str(snapshot_path)).rglob("*.gguf")
                         if not path.name.lower().startswith("mmproj")
@@ -169,7 +171,7 @@ def _download_thread(dl_id: str, model_id: str):
                             "host_model_path": gguf_path,
                             "context": 4096,
                             "context_auto": True,
-                            "notes": "Downloaded for the Rasputin Desktop native llama.cpp library.",
+                            "notes": "Downloaded for the native llama.cpp library.",
                         }
                     else:
                         new_model = {

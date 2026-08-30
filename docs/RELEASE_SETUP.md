@@ -1,182 +1,118 @@
-# Rasputin Release Setup Guide
+# Rasputin native setup and release guide
 
-This guide is for a clean local clone. It avoids machine-specific paths and does not require committing any runtime data.
+Updated 2026-08-29. The release target is the Windows native Desktop app with a packaged
+backend and bundled llama.cpp. Native Host is the source/browser workflow. Retired server
+infrastructure and control features have no role in these steps.
 
-## 1. Start The Wrapper (Docker mode)
+## 1. Choose the correct owner
 
-```powershell
-.\rasputin.ps1 start
-```
+For installed use, launch Rasputin and let Electron own its Desktop Runtime. Its port is recorded
+in `%LOCALAPPDATA%\Rasputin\data\desktop-runtime.json`; it need not be 8788.
+For source development, use [Native Host commands](DEPLOYMENT_MATRIX.md) and a separate data
+store if Desktop is running. Never share one live store between the two launchers.
 
-Open the browser manually:
+## 2. Authenticate safely
 
-```text
-http://127.0.0.1:8787
-```
+Installed Desktop opens directly into the workspace. Its supervisor enables a local administrator
+session for loopback requests; it does not require a login screen or a first-run password dialog.
+This single-operator Desktop behavior must never be extended to LAN access.
 
-Rasputin binds to localhost. The manager builds the wrapper, waits for health, prints any
-first-run credentials still present in the current container logs, and opens the browser.
+Source Native Host uses the login screen and real session cookies. On a fresh store, it prints
+generated administrator credentials once. Existing stores retain their accounts and sessions;
+a restart does not generate a replacement password.
 
-### Side-by-side native daily-driver test
-
-Leave Docker on its normal `127.0.0.1:8787` endpoint and launch native on 8788 in a second
-PowerShell window:
-
-```powershell
-# Docker remains detached on its normal port.
-.\rasputin.ps1 start
-
-# Clear any isolated-QA data override, then start the canonical native daily driver.
-Remove-Item Env:\RASPUTIN_DATA_DIR -ErrorAction SilentlyContinue
-.\rasputin.ps1 start -Native -Port 8788
-```
-
-Open:
-
-- Docker: `http://127.0.0.1:8787`
-- Native: `http://localhost:8788`
-
-The different hostnames are intentional: the `rasputin_session` cookie is scoped by hostname, not
-port, so using `127.0.0.1` for both would make the two sessions collide. `-Port` overrides the
-native port only; Docker remains on 8787 (use its existing `WRAPPER_PORT` mechanism if you
-deliberately need a different Docker port).
-
-Native runtime data defaults to `%LOCALAPPDATA%\Rasputin\data`, which means native has a **separate
-admin account** from Docker. On a fresh native store, use the first-boot credentials printed in the
-foreground console. Keep that console open; `Ctrl+C` stops the native process. A leftover
-`RASPUTIN_DATA_DIR` overrides the canonical native store, so clear it as shown above unless the
-override is intentional. If `.venv\Scripts\python.exe` already exists, the launcher reuses it even
-when a system Python is not on `PATH`; Python on `PATH` is needed only to create the venv initially.
-
-At `http://localhost:8788`, open **Workspaces**, add and approve a normal project folder, then verify
-it appears and is browsable immediately with no mount request, restart badge, or wrapper restart.
-That is the direct-folder native path; Docker retains its mount → restart → approve flow.
-
-Docker is not required for the packaged Desktop skill path: Desktop skills are declarative
-instructions governed by the normal model/tool policy. Native/Desktop Host Shell is currently
-unavailable until a proven Windows AppContainer runner exists, and the packaged app does not
-create or use a separate Windows account for it. Docker remains a legacy server/WarSat option.
-
-### Trusted HTTPS and friendly hostnames
-
-Install the official `mkcert` binary, then generate a leaf certificate. Loopback names and the
-computer hostname are always included; `-TlsName` adds friendly or LAN names without removing
-those safe defaults:
+Use the supported password reset helper only when recovery is actually needed:
 
 ```powershell
-.\rasputin.ps1 setup-https -TlsName rasputin.test,$env:COMPUTERNAME
-.\rasputin.ps1 start
+$env:RASPUTIN_DATA_DIR = "$env:LOCALAPPDATA\Rasputin\data"
+.\.venv\Scripts\python.exe -m backend.tools.reset_password
 ```
 
-For a friendly name on the same computer, map it to `127.0.0.1` in the operating-system hosts
-file, then open `https://rasputin.test:8787`. For another trusted LAN device, start with `-Lan`,
-map the chosen hostname to the Rasputin machine's LAN address, and install mkcert's `rootCA.pem`
-on that client. Never copy `rootCA-key.pem`. `mkcert` is for private trusted networks; public or
-Internet-facing access needs a real DNS name and a production reverse proxy/certificate.
+This changes credentials in the selected store; it is not a routine setup/restart step. Follow
+its prompts privately and coordinate a runtime restart if required for session invalidation.
+Never put passwords in Git, logs, screenshots, or documentation. Do not use legacy container
+credential commands for native accounts.
 
-Native and Docker instances should use distinct hostnames when they run side by side so their
-host-scoped session cookies cannot collide.
+## 3. Prepare the workspace and safety settings
 
-## 2. Get Or Reset The Admin Password
+Approve the intended host folder through Workspaces. Begin with read-only access and grant only
+the capabilities needed. Native folder approval needs no mount or restart. Keep Privacy Lock,
+owner/workspace boundaries, and approval/audit controls in place. Native Windows Host Shell is
+unavailable until its AppContainer boundary is implemented and verified; enabling Docker is not
+a workaround. Skills use declarative instructions and governed tools.
 
-On the **first boot of a fresh data store**, Rasputin generates an admin password once. In Docker
-mode, the manager normally prints it; you can read the same line from the current container logs:
+## 4. Download and load a model
+
+Open **Discover Models**, choose a compatible GGUF variant, and download it. Wait for verification
+and registration, then choose **Load** on the completed download card or **Load Model** in
+**Models → My Models**. Review context and automatic device placement, then select **Load model**.
+Wait for **Ready**, choose **Use in New Chat**, and send a short prompt in Chat mode. Return to the
+same model and choose **Stop Model**; its installed files should remain available for another load.
+The engine runs as a native `llama-server` child process.
+A catalog listing or green health check alone does not prove inference or coding capability.
+
+For an existing GGUF, use Scan GGUF/import from an approved path. For an old container-managed
+entry, use **Get GGUF** or import its local GGUF. A retired runtime error indicates the wrong/stale
+path. Check the installed version; a missing bundled engine requires updating or reinstalling a
+verified package. Source contributors should inspect the runtime manifest/configuration and load
+error. Plain transformer weights are not directly loadable by llama.cpp.
+
+External local OpenAI-compatible endpoints may be registered separately. They are not required
+for the native GGUF workflow. Remote model endpoints remain governed by Privacy Lock.
+
+## 5. Build a native package
+
+Contributors need Windows x64, the repository Python environment, Node/npm, and build-time
+network access for dependencies and pinned runtime assets. End users do not need this toolchain.
 
 ```powershell
-.\rasputin.ps1 credentials
+npm run desktop:check
+npm run desktop:test
+npm run desktop:package
 ```
 
-Use the `admin` username unless you configured `RASPUTIN_ADMIN_USER`.
+Packaging builds `frontend/`, verifies/stages the pinned CPU/CUDA llama.cpp assets, bundles the
+backend with PyInstaller, and creates the NSIS installer under `dist/electron/`.
+The current package remains unsigned; do not claim Authenticode or automatic-update certification.
 
-`credentials` does not read the password hash and cannot recover a changed password. It works only
-while the **original generated password line remains in the current container logs**. Container
-replacement or log loss can remove that line even though the admin account persists in the named
-data volume. If it is missing or you no longer know the password, generate a new one:
+A source backend restart does not update an installed Desktop package. Complete checks first,
+then install the new package with operator approval. Quit the current Desktop owner before
+replacing its binaries. Preserve the data directory and verify the new owner afterward. Never
+launch Native Host against Desktop's active store to make a source change appear live.
 
-```powershell
-.\rasputin.ps1 reset-password
-```
+## 6. Verify the release candidate
 
-For native mode, run `python -m backend.tools.reset_password` with the same
-`RASPUTIN_DATA_DIR` environment used by that instance (omit it for the native default). Restart the
-running server/container afterward if you need to invalidate already-loaded sessions immediately.
-
-The password is not displayed in the browser. Do not copy it into Git, screenshots, docs, tickets,
-or issue comments.
-
-## 3. Change The Admin Password
-
-After login:
-
-1. Open Settings.
-2. Open Admin.
-3. Enter the generated password as the current password.
-4. Save a new local admin password.
-
-The password hash stays in ignored local runtime data under `data/`.
-
-## 4. Run The Setup Checklist
-
-Open Settings -> General. The Release setup checklist should show:
-
-- admin password state
-- chat model connection state
-- active workspace state
-- privacy lock state
-- Markdown output folder state
-
-Use the checklist buttons to jump to Models, Workspaces, Safety, Output, or Admin.
-
-## 5. Connect A Model
-
-For an already-running local model endpoint:
-
-1. Open Models.
-2. Register or select the local endpoint.
-3. Run Discover or Test health.
-4. Confirm the model is reachable.
-
-Privacy lock blocks non-local model URLs by default. Remote APIs require an explicit Safety change and API keys must come from environment variables or the ignored local secret store.
-
-## 6. Select A Workspace
-
-Open Workspaces and choose a project folder. Native mode registers the approved host path directly
-with no mount or restart. Docker mode can browse only folders already visible inside the wrapper;
-new host folders use the mount-request → restart → approve flow.
-
-New folder access should start read-only. File writes, moves, shell execution, Docker control, and web-search broker use remain governed by Safety and approvals.
-
-## 7. Check Output
-
-Open Settings -> Output and confirm the Markdown export folder. Exports must stay inside Rasputin-visible paths.
-
-## 8. Validate Before Sharing
-
-Run:
+Use an isolated `RASPUTIN_DATA_DIR` for tests. Build and contract checks:
 
 ```powershell
+.\.venv\Scripts\python.exe -m unittest tests.testDocumentation tests.testReleaseContract
+.\.venv\Scripts\python.exe scripts\verify_docs.py
+npm run build
 npm run checkRepoSafety
-.\scripts\test.ps1 -Ui
 ```
 
-Before pushing or packaging, verify Git does not stage:
+For an approved native endpoint, use explicit targeting:
 
-- `data/`
-- `workspace/`
-- `models/`
-- `testdata/`
-- logs
-- screenshots
-- API keys
-- generated RAG or graph indexes
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_deployment_matrix.py --endpoint native=http://127.0.0.1:8788
+.\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788
+```
 
-## 9. Productivity Features
+For Desktop, replace the URL with its recorded loopback URL. Older helper defaults and the
+`scripts/test.ps1` harness include legacy container coverage; they are not the native startup
+path. Use the isolated native workflow in [Codex onboarding](CODEX_ONBOARDING.md) for UI checks.
 
-- Activity -> Inbox shows durable completion, failure, cancellation, and approval notices.
-- Activity -> Queue manages persisted queued work; queued tasks survive wrapper restarts.
-- `Ctrl+K` opens account-scoped search across chats, runs, and generated artifacts.
-- Archive is now the Artifact Workspace: preview, pin, copy, download, and return to source run.
-- Settings -> Integrations stores account-scoped connector configuration for Gmail, Outlook,
-  Teams, and generic HTTPS webhooks. OAuth providers remain `ready for authorization` until an
-  operator supplies an application registration and completes the provider authorization handoff.
+Record separate evidence for health/frontend, authenticated UI, model inference, a real coder
+mission, voice hardware, and recovery. Do not turn historical Docker success or a mocked test
+into current native release proof. See the [operator runbook](RASPUTIN_V1_OPERATOR_RUNBOOK.md).
 
+## 7. Data and recovery
+
+Keep application data, workspace sources, model weights, and credentials out of version control.
+Use the governed backup/export flow, and restore into a separate target for rehearsal. Preserve
+native ownership and data during upgrades. Test login, workspace scope, model files, and runtime
+health after a restore. Model caches and external workspaces are not implicitly included in an
+application-state backup.
+
+LAN, reverse proxies, HTTPS trust, and public distribution require separate review. An ordinary
+native restart or upgrade must not widen network exposure, change safety flags, or reset accounts.

@@ -174,7 +174,8 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
     def test_missing_engine_is_reported_without_docker(self):
         previous = os.environ.pop("RASPUTIN_LLAMA_SERVER", None)
         try:
-            result = self.provider.start({**self.model, "engine_path": "definitely-not-a-real-llama-server"})
+            with patch("backend.warsat.providers.native_llamacpp._find_engine", return_value=""):
+                result = self.provider.start({**self.model, "engine_path": "definitely-not-a-real-llama-server"})
         finally:
             if previous is not None:
                 os.environ["RASPUTIN_LLAMA_SERVER"] = previous
@@ -201,7 +202,8 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
             result = self.provider.start(self.model)
         self.assertFalse(result["ok"])
         self.assertEqual(result["failureCode"], "health_timeout")
-        terminate.assert_called_with(4243)
+        self.assertEqual(terminate.call_args.args, (4243,))
+        self.assertEqual(terminate.call_args.kwargs["state"]["pid"], 4243)
         self.assertFalse((Path(os.environ["RASPUTIN_DATA_DIR"]) / "llama.cpp" / "demo.json").exists())
 
     def test_crash_and_log_text_have_stable_failure_codes(self):
@@ -239,6 +241,81 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
             ready, reason = check_prerequisites(None)
         self.assertFalse(ready)
         self.assertIn("RASPUTIN_LLAMA_SERVER", reason)
+
+    def test_reused_pid_is_never_adopted_or_stopped(self):
+        from backend.warsat.providers import native_llamacpp as native
+        state = {"pid": 4242, "processCreatedAt": 10.0, "engine": "llama-server.exe", "command": ["llama-server.exe", "--model", "demo.gguf"]}
+        native._write_state(self.model, state)
+        process = Mock()
+        process.create_time.return_value = 20.0
+        with patch.object(native.psutil, "Process", return_value=process), patch.object(native, "_health") as health:
+            self.assertEqual(self.provider.status(self.model), "stopped")
+            native._write_state(self.model, state)
+            self.assertTrue(self.provider.stop(self.model)["ok"])
+        process.terminate.assert_not_called()
+        process.kill.assert_not_called()
+        health.assert_not_called()
+
+    def test_matching_pid_with_different_command_is_not_owned(self):
+        from backend.warsat.providers import native_llamacpp as native
+        process = Mock()
+        process.cmdline.return_value = ["unrelated.exe"]
+        with patch.object(native.psutil, "Process", return_value=process):
+            self.assertIsNone(native._owned_process({"pid": 4242, "command": ["llama-server.exe"]}))
+
+    def test_stop_terminates_only_matching_owned_process(self):
+        from backend.warsat.providers import native_llamacpp as native
+        process = Mock()
+        process.create_time.return_value = 10.0
+        process.cmdline.return_value = ["llama-server.exe", "--model", "demo.gguf"]
+        process.exe.return_value = "llama-server.exe"
+        process.children.return_value = []
+        state = {"pid": 4242, "processCreatedAt": 10.0, "engine": "llama-server.exe", "command": process.cmdline.return_value}
+        native._write_state(self.model, state)
+        with patch.object(native.psutil, "Process", return_value=process), patch.object(native.psutil, "wait_procs", return_value=([], [])):
+            self.assertTrue(self.provider.stop(self.model)["ok"])
+        process.terminate.assert_called_once_with()
+        process.kill.assert_not_called()
+
+    def test_failed_stop_retains_state_for_retry(self):
+        from backend.warsat.providers import native_llamacpp as native
+        native._write_state(self.model, {"pid": 4242})
+        with patch.object(native, "_terminate", side_effect=OSError("still running")):
+            result = self.provider.stop(self.model)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failureCode"], "stop_failed")
+        self.assertEqual(native._read_state(self.model)["pid"], 4242)
+
+    def test_occupied_port_is_blocked_before_spawn(self):
+        from backend.warsat.providers import native_llamacpp as native
+        with patch.object(native, "_find_engine", return_value="llama-server.exe"), patch.object(native, "_port_available", return_value=False), patch.object(native.subprocess, "Popen") as spawn:
+            result = self.provider.start(self.model)
+        self.assertEqual(result["failureCode"], "port_in_use")
+        spawn.assert_not_called()
+
+    def test_exited_child_cannot_borrow_another_healthy_endpoint(self):
+        from backend.warsat.providers import native_llamacpp as native
+        process = Mock(pid=4244)
+        process.poll.return_value = 7
+        with patch.object(native, "_find_engine", return_value="llama-server.exe"), patch.object(native.subprocess, "Popen", return_value=process), patch.object(native, "_health", return_value=True) as health:
+            result = self.provider.start(self.model)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failureCode"], "process_crash")
+        health.assert_not_called()
+
+    def test_native_capability_probe_is_cached_and_exact(self):
+        from backend.warsat.providers import native_llamacpp as native
+        native._engine_capabilities.cache_clear()
+        output = Mock(returncode=0, stdout="--split-mode {none,layer,row} --tensor-split N --fit-target N", stderr="")
+        with patch.object(native.subprocess, "run", return_value=output) as run:
+            first = native._engine_capabilities("test-engine", 123)
+            second = native._engine_capabilities("test-engine", 123)
+        self.assertEqual(first, second)
+        self.assertTrue(first["flags"]["--split-mode"])
+        self.assertFalse(first["flags"]["--fit"])
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], ["test-engine", "--help"])
+        native._engine_capabilities.cache_clear()
 
     def test_initial_status_is_stopped(self):
         self.assertEqual(self.provider.status(self.model), "stopped")

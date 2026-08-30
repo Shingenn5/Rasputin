@@ -16,7 +16,12 @@ def _camel_key(key):
 
 def camelize(value):
     if isinstance(value, dict):
-        return {_camel_key(k): camelize(v) for k, v in value.items()}
+        # Exact artifact filenames are data, not snake_case field names.
+        # Renaming Q4_K_M.gguf here makes the download size/hash lookup fail.
+        return {
+            _camel_key(k): dict(v) if _camel_key(k) in {"fileSizes", "fileHashes"} and isinstance(v, dict) else camelize(v)
+            for k, v in value.items()
+        }
     if isinstance(value, list):
         return [camelize(v) for v in value]
     return value

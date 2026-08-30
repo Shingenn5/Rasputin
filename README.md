@@ -91,7 +91,7 @@ Rasputin's desktop model flow is designed around the same user journey as a loca
 
 ### 1. Browse the catalog
 
-Open **Models → Library**. The catalog can show locally cached models or search Hugging Face. It
+Open **Discover Models**. The catalog can show locally cached models or search Hugging Face. It
 supports:
 
 - model-purpose and runtime filters;
@@ -118,7 +118,7 @@ registered in the local model library and can be loaded without re-downloading t
 
 ### 4. Plan and load with llama.cpp
 
-Load the completed artifact from the download card or Models library. Automatic placement considers
+Load the completed artifact from the download card or **Models → My Models**. Automatic placement considers
 the model size, context length, KV-cache cost, available GPU memory, and compatible devices before
 starting the native llama.cpp process.
 
@@ -137,6 +137,22 @@ Rasputin keeps “installed” and “loaded” separate. A model can be present
 running, and each running instance has its own health, endpoint, device allocation, resolved
 settings, and lifecycle state.
 
+### 5. Chat, stop, and load again
+
+Wait for the model to report **Ready**, then select **Use in New Chat** in its Models inspector.
+Send a short prompt in Chat mode and confirm an actual response. A download or a healthy process
+alone does not prove that the selected model can answer or use coding tools.
+
+Return to **Models → My Models**, select the same model, and choose **Stop Model** to release its
+runtime resources. The downloaded files stay installed; **Load Model** starts them again without
+another download. **Stop** on a download card cancels that download instead of stopping inference.
+
+If a download fails, use **Retry** when offered. If loading fails, read the error in the Load
+dialog, adjust the indicated settings, and retry. For a memory blocker, choose a smaller GGUF
+or reduce context rather than forcing an unsupported placement. If the bundled engine is missing
+from an installed app, update or reinstall a verified Rasputin package; source restarts cannot
+repair missing files in the installed package.
+
 ## Chat and agentic coding
 
 Once a model is loaded, use it from the main workspace for:
@@ -150,8 +166,7 @@ Once a model is loaded, use it from the main workspace for:
 Desktop mode keeps the existing Rasputin safety boundaries: workspace approval, explicit capability
 permissions, audit events, and visible recovery errors. Host Shell is deliberately unavailable in
 the packaged desktop until a proven Windows AppContainer runner exists; approved file and Git
-tools remain governed workspace capabilities. Docker-backed model deployment and Docker control
-are not part of the packaged desktop workflow.
+tools remain governed workspace capabilities. Model loading runs entirely through the native GGUF and llama.cpp workflow.
 
 ## MCP Servers
 
@@ -219,6 +234,22 @@ npm run desktop
 
 The development desktop reuses the repository Python environment. Keep development data isolated
 from any personal installation by setting RASPUTIN_DATA_DIR before launch.
+
+### Native Host for source/browser development
+
+The installed app is the product. Contributors can run a separate source-backed Native Host:
+
+~~~powershell
+npm run build
+.\.venv\Scripts\python.exe -m backend.tools.native_host start --port 8788
+.\.venv\Scripts\python.exe -m backend.tools.native_host status --json
+~~~
+
+Use a separate `RASPUTIN_DATA_DIR` when Desktop is already running. Desktop owns the URL recorded
+in `desktop-runtime.json`; Native Host records `native-host.json`. Never run both against one
+store. Source changes require a newly built/installed package to update installed Desktop.
+See [native deployment and ownership](docs/DEPLOYMENT_MATRIX.md) and
+[release setup](docs/RELEASE_SETUP.md) for restart, recovery, and verification commands.
 
 ### Package the Windows installer
 

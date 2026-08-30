@@ -2,125 +2,46 @@
 trigger: always_on
 ---
 
-## WarSat Deployment Mission
+## Rasputin native product direction
 
-WarSat is not only an orchestration system.
+Rasputin is a Windows native AI workstation. The installed Electron application owns a
+packaged backend and bundled llama.cpp. The source Native Host is a separate browser/headless
+workflow. Models are GGUF artifacts served by native child processes. Docker infrastructure is retired.
 
-WarSat is responsible for discovering, acquiring, containerizing, deploying, and operating AI capabilities across Rasputin.
+Read `docs/CODEX_ONBOARDING.md`, `docs/DEPLOYMENT_MATRIX.md`, and
+`docs/WRAPPER_RUNTIME_CONTRACT.md` for implementation-grounded instructions.
 
-Core workflow:
+### Model workflow
 
-Model Discovery
-→ Model Acquisition
-→ Validation
-→ Containerization
-→ Deployment
-→ Monitoring
-→ Lifecycle Management
+Discover → select exact compatible GGUF → download/import → verify/register →
+plan native placement → load with llama.cpp → infer → monitor → stop.
 
-WarSat should allow users to:
+Keep installed files separate from loaded processes. Use the existing catalog, acquisition,
+registry, load-profile, runtime-service, and provider boundaries. Prefer a fitting single GPU;
+only use combined devices when supported by the artifact, runtime, and hardware evidence.
 
-* Discover models
-* Download models
-* Import models
-* Build runtime environments
-* Generate Docker containers
-* Deploy containers
-* Assign models to agents
-* Assign models to workspaces
-* Monitor deployments
-* Update deployments
-* Retire deployments
+Native model actions use the native runtime provider. Old managed entries should offer GGUF
+recovery. Unsupported artifacts must show a clear blocker and next action. There is no Docker
+control feature in the current product; do not document one or revive retired infrastructure.
 
-The intended user experience is:
+### Ownership and safety
 
-A user can locate a model, download it, convert it into a deployable containerized service, and deploy it entirely from the Rasputin GUI without requiring manual Docker commands.
+- Identify the live owner from `desktop-runtime.json` or `native-host.json`, not an assumed port.
+- Never run two backends against the same store or delete an ownership record to bypass a live owner.
+- An installed package must be rebuilt/updated to receive source changes; restarting source does
+  not update installed binaries.
+- Respect existing user approval for the requested restart/update; ask before unrelated or
+  destructive operations. Preserve accounts, models, workspaces, and network configuration.
+- Use isolated native data and processes for tests. Do not start retired infrastructure.
+- Skills are declarative instructions; governed file, Git, and other tool checks still apply.
+  Native Windows Host Shell remains fail-closed pending a verified AppContainer runner.
+- Record validation, resource estimates, progress, clear errors, lifecycle state, and audit evidence.
+  A plan or health response is not proof that a model can produce an answer.
 
-WarSat acts as the operational deployment layer of Rasputin.
+### Retained code and future work
 
----
-
-### Deployment Pipeline
-
-Preferred architecture:
-
-Model Registry
-→ Artifact Acquisition
-→ Container Build
-→ Container Registry
-→ Deployment Target
-→ Runtime Monitoring
-
-Supported deployment targets may include:
-
-* Local Docker
-* Docker Compose
-* Kubernetes
-* Remote Nodes
-* Future Deployment Providers
-
-Deployment logic must be provider-based and extensible.
-
-Never hardcode deployment logic to a single platform.
-
----
-
-### WarSat Responsibilities
-
-WarSat owns:
-
-* Mission Planning
-* Agent Orchestration
-* Workflow Execution
-* Tool Approvals
-* Deployment Operations
-* Container Lifecycle Management
-* Runtime Monitoring
-* Autonomous Operations
-
-WarSat is the only area permitted to execute infrastructure-changing operations.
-
-Examples:
-
-* Download model
-* Build container
-* Deploy service
-* Stop deployment
-* Upgrade deployment
-* Remove deployment
-* Execute mission
-
-All infrastructure actions must originate through WarSat.
-
----
-
-### Deployment Safety Requirements
-
-Every deployment operation must provide:
-
-* Validation
-* Resource Estimation
-* Progress Tracking
-* Success Feedback
-* Failure Feedback
-* Rollback Capability
-* Audit Logging
-
-No deployment may execute silently.
-
-Every deployment action must create an audit record.
-
----
-
-### Long-Term Vision
-
-The ultimate goal of WarSat is to function as an AI Operations Center where users can:
-
-1. Discover AI capabilities.
-2. Deploy those capabilities.
-3. Assign them to missions.
-4. Monitor execution.
-5. Optimize performance.
-6. Archive outcomes.
-
-Without leaving the Rasputin interface.
+WarSat-named modules include shared hardware/runtime services and legacy container providers.
+Their names do not make containerization the product architecture. Do not require every action
+to pass through a container deployment console or add Kubernetes/remote-node work to native fixes.
+Preserve legacy behavior when unrelated, but document it as compatibility code rather than the
+current installation or model-loading path.

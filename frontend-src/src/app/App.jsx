@@ -7,7 +7,8 @@ import { api, postJson, postJsonStream } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
 import { DashboardView } from "../features/dashboard/DashboardView.jsx";
-import { ModelsView } from "../features/models/ModelsView.jsx";
+import { usesNativeModels, prepareNativeModel } from "../features/models/nativeDeployment.js";
+import { ModelsView, preferredDownloadVariant } from "../features/models/ModelsView.jsx";
 import { AssistantView } from "../features/assistant/AssistantView.jsx";
 import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
@@ -228,6 +229,7 @@ export function App() {
   const modeModelOverridesRef = useRef(modeModelOverrides);
   const authenticated = !!session?.authenticated && !loginVisible;
   const desktopOnly = Boolean(security?.desktopOnly);
+  const nativeModels = usesNativeModels(security);
 
   // First-run onboarding is about launch readiness, not registry cardinality:
   // seeded entries can still be stopped or unhealthy and cannot start a chat.
@@ -404,7 +406,7 @@ export function App() {
         window.history.replaceState(null, "", routeHashFor("home"));
         return;
       }
-      applyView(route.view, route.section);
+      go(route.view, route.section, { fromHistory: true });
     }
     applyHashRoute();
     window.addEventListener("hashchange", applyHashRoute);
@@ -413,7 +415,7 @@ export function App() {
       window.removeEventListener("hashchange", applyHashRoute);
       window.removeEventListener("popstate", applyHashRoute);
     };
-  }, [desktopOnly, session]);
+  }, [desktopOnly, nativeModels, session]);
 
   useEffect(() => {
     if (modelsQuery.data) setModels(modelsQuery.data);
@@ -557,13 +559,13 @@ export function App() {
       : data.security?.desktopOnly && !desktopPrimaryViews.has(rememberedView)
         ? desktopDefaultView
         : rememberedView;
-    const nativeRequestedView = data.security?.desktopOnly && requestedView === "warsat" ? "models" : requestedView;
+    const nativeRequestedView = usesNativeModels(data.security) && requestedView === "warsat" ? "models" : requestedView;
     const requestedSection = hasExplicitRoute && route.view === "settings" ? route.section || "general" : prefs.activeSettingsSection || "general";
     const routeAllowed = canAccessRoute(activeRole, nativeRequestedView, requestedSection);
     setView(routeAllowed ? nativeRequestedView : "home");
     setSettingsSection(routeAllowed ? requestedSection : "accounts");
-    if (data.security?.desktopOnly && requestedView !== nativeRequestedView) {
-      setGlobalStatus("WarSat is unavailable in Rasputin Desktop; use Models for native llama.cpp loading.");
+    if (usesNativeModels(data.security) && requestedView !== nativeRequestedView) {
+      setGlobalStatus("Use Models to load GGUF files with the native llama.cpp runtime.");
       window.history.replaceState(null, "", routeHashFor(nativeRequestedView, requestedSection));
     } else if (!routeAllowed) {
       setGlobalStatus("This account does not include this area.");
@@ -583,7 +585,7 @@ export function App() {
     // loader as the WarSat route so an empty result is still terminal.
     loadModelCatalog(false, { automatic: true }).catch(() => {});
     if (["discover", "models"].includes(nativeRequestedView)) {
-      loadWarsatHardware().catch(() => {});
+      loadWarsatHardware(usesNativeModels(data.security)).catch(() => {});
     }
   }
 
@@ -980,17 +982,20 @@ export function App() {
   }
 
   function go(nextView, section, options = {}) {
-    const effectiveView = desktopOnly && nextView === "warsat" ? "models" : nextView;
-    if (desktopOnly && nextView === "warsat") {
-      setGlobalStatus("WarSat is unavailable in Rasputin Desktop; Models uses the bundled native llama.cpp runtime.");
+    const effectiveView = nativeModels && nextView === "warsat" ? "models" : nextView;
+    if (nativeModels && nextView === "warsat") {
+      setGlobalStatus("Models uses the native llama.cpp runtime. The old deployment console is retired.");
     }
     if (!canAccessRoute(session?.role, effectiveView, section)) {
       setGlobalStatus("This account does not include this area.");
       return;
     }
     applyView(effectiveView, section);
-    if (options.fromHistory) return;
     const nextHash = routeHashFor(effectiveView, section);
+    if (options.fromHistory) {
+      if (effectiveView !== nextView) window.history.replaceState(null, "", nextHash);
+      return;
+    }
     if (window.location.hash !== nextHash) {
       window.history.pushState(null, "", nextHash);
     }
@@ -1004,11 +1009,11 @@ export function App() {
   }, [session, settingsSection, view]);
 
   useEffect(() => {
-    if (!desktopOnly || view !== "warsat") return;
-    setGlobalStatus("WarSat is unavailable in Rasputin Desktop; use Models for native llama.cpp loading.");
+    if (!nativeModels || view !== "warsat") return;
+    setGlobalStatus("Use Models to load GGUF files with the native llama.cpp runtime.");
     setView("models");
     window.history.replaceState(null, "", routeHashFor("models"));
-  }, [desktopOnly, view]);
+  }, [nativeModels, view]);
 
   function toggleSidebar() {
     // < sm breakpoint (639px) → overlay mode; sm+ → collapse/expand rail
@@ -1283,6 +1288,9 @@ export function App() {
     }
     try {
       const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey, ...options });
+      if (result?.ok === false) {
+        throw new Error(result.error?.message || result.error || result.message || "Model action failed.");
+      }
       setGlobalStatus(action === "repair" && result.repaired ? "Model repaired." : `${action} finished.`);
       await loadModels();
     } catch (error) {
@@ -1561,10 +1569,8 @@ export function App() {
   }
 
   async function loadPendingMounts() {
-    // Never throws: Docker control may still be disabled, or this may run
-    // before the boot-time security fetch resolves (this is called from the
-    // hash-route effect, which fires before loadBasics() finishes). Either
-    // way, an empty pending-mounts panel is the correct, silent fallback.
+    // Legacy mount requests are unavailable on native hosts. This may also
+    // run before bootstrap finishes; an empty panel is the safe fallback.
     try {
       const payload = await api("/api/workspace/mount-requests");
       setPendingMounts(payload.requests || []);
@@ -2232,8 +2238,9 @@ export function App() {
     setGlobalStatus("Schedule saved.");
   }
 
-  async function loadWarsatHardware() {
-    const hardware = await api("/api/warsat/hardware").catch((error) => ({
+  async function loadWarsatHardware(nativeModels = usesNativeModels(security)) {
+    if (security?.native === undefined && security?.desktopOnly === undefined) return null;
+    const hardware = await api(nativeModels ? "/api/warsat/hardware?native_models=true" : "/api/warsat/hardware").catch((error) => ({
       ok: false,
       status: "blocked",
       checks: [],
@@ -2247,10 +2254,13 @@ export function App() {
   }
 
   async function loadWarsat() {
+    // Bootstrap may not have resolved when a saved legacy hash is restored.
+    // Never probe retired providers unless a legacy runtime is explicit.
+    if (nativeModels || security?.native !== false) return null;
     const [nextWarsat, runtimes, hardware] = await Promise.all([
       api("/api/warsat/protocols"),
       api("/api/warsat/runtimes"),
-      loadWarsatHardware(),
+      loadWarsatHardware(false),
     ]);
     setWarsat(nextWarsat);
     setWarsatRuntimes(runtimes);
@@ -2259,29 +2269,17 @@ export function App() {
 
   async function prepareCatalogModelForWarsat(item, options = {}) {
     if (!item) return null;
-    if (security?.desktopOnly) {
-      const modelRef = item.modelId || item.id || item.name;
-      if (item.modelPath && String(item.modelPath).toLowerCase().endsWith(".gguf")) {
-        try {
-          const imported = await postJson("/api/model-registry/import-gguf", {
-            path: item.modelPath,
-            name: item.name || modelRef,
-            role: item.purpose === "coding" ? "coder" : "helper",
-            context: Number(options.contextWindow || item.contextWindow || 4096),
-          });
-          await loadModels();
-          setSelectedModel(imported.key);
-          setGlobalStatus("Imported the GGUF into the native llama.cpp library.");
-          return imported;
-        } catch (error) {
-          setGlobalStatus(error.message);
-          return null;
-        }
-      }
+    if (usesNativeModels(security)) {
       try {
-        await postJson("/api/models/download", { modelId: modelRef });
-        setGlobalStatus("GGUF download started. Rasputin will register it when the download completes.");
-        return { status: "downloading", modelId: modelRef };
+        const result = await prepareNativeModel(item, options, { api, postJson, selectVariant: preferredDownloadVariant });
+        if (result.key) {
+          await loadModels();
+          setSelectedModel(result.key);
+          setGlobalStatus("Imported the GGUF into the native llama.cpp library. Choose Load Model to start it.");
+        } else {
+          setGlobalStatus("GGUF download started. Rasputin will register it for native llama.cpp when complete.");
+        }
+        return result;
       } catch (error) {
         setGlobalStatus(error.message);
         return null;
@@ -2736,7 +2734,7 @@ export function App() {
         schedules={schedulesList}
         createSchedule={createSchedule}
       />
-      {!desktopOnly && (
+      {!nativeModels && (
       <WarsatView
         view={view}
         warsat={warsat}
@@ -2796,7 +2794,8 @@ export function App() {
         saveTrialRoute={saveTrialRoute}
         modeModelOverrides={modeModelOverrides}
       />
-      <ModelsView
+      {/* Onboarding owns focus until dismissed; Desktop Models is also a modal. */}
+      {!showOnboarding && <ModelsView
         view={view}
         models={models}
         selectedModelObject={selectedModelObject}
@@ -2820,9 +2819,9 @@ export function App() {
         warsatRuntimes={warsatRuntimes}
         warsatPlan={warsatPlan}
         security={security}
-        openWarsat={() => (desktopOnly ? go("models") : go("warsat"))}
+        openWarsat={() => (nativeModels ? go("models") : go("warsat"))}
         go={go}
-      />
+      />}
       <AssistantView
         view={view}
         profile={assistantProfile}
@@ -2958,7 +2957,7 @@ export function App() {
       {showOnboarding && (
         <Onboarding
           hasSeededModels={models.length > 0}
-          onScanModels={() => { setOnboarded(true); go(desktopOnly ? "models" : "warsat"); }}
+          onDiscoverModels={() => { setOnboarded(true); go("discover"); }}
           onOpenRegistry={() => { setOnboarded(true); go("models"); }}
           onConnectLocalEndpoint={() => { setOnboarded(true); go("models"); }}
           onEnableTestingMode={() => { updateTestingMode(true); setOnboarded(true); go("home"); }}

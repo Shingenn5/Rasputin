@@ -285,7 +285,7 @@ function WarmindConsoleLayout({ screen, viewport, navigate, variantInfo, hideTel
         <aside className="preview-telemetry" aria-label="Warmind Console telemetry">
           <TelemetryBlock title="Active Runs" items={fixtures.tasks.map(([status, title, progress]) => `${status}: ${title} / ${progress}`)} />
           <TelemetryBlock title="Approvals" items={fixtures.approvals.map(([summary, action, status]) => `${status}: ${action} / ${summary}`)} />
-          <TelemetryBlock title="Runtime" items={["Privacy lock enabled", "Docker control disabled", "Workspace: Project Root"]} />
+          <TelemetryBlock title="Runtime" items={["Privacy lock enabled", "Native model runtime", "Workspace: Project Root"]} />
         </aside>
       )}
     </div>

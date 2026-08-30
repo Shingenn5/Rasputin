@@ -82,6 +82,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   const [previewError, setPreviewError] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const modelKey = model?.key || "";
   const modelName = displayModelName(model, models);
@@ -89,6 +90,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
 
   useEffect(() => {
     if (!modelKey) return;
+    setLoadError("");
     const next = savedProfile(modelKey);
     setProfile(next);
     setRemember(localStorage.getItem("rasputin:model-load:remember:" + modelKey) === "1");
@@ -116,7 +118,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
           profile: cleaned,
           hardware: hardware || {},
           model,
-          modelPath: model.path || model.model_path || model.modelPath,
+          modelPath: model.hostModelPath || model.host_model_path || model.path || model.model_path || model.modelPath,
           capabilities: runtimeStatus?.capabilities || runtimeStatus?.runtimeCapabilities || runtimeStatus?.runtime_capabilities || {},
         }),
       }).then(setPreview).catch((error) => {
@@ -130,10 +132,12 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   }, [model, hardware, runtimeStatus, cleaned]);
 
   const set = (key) => (event) => setProfile((current) => ({ ...current, [key]: event.target.value }));
+  const requiredMemoryMb = preview?.resolvedSettings?.requiredMemoryMb ?? preview?.resolved_settings?.required_memory_mb;
   const blocked = Boolean(preview?.blocked || preview?.accepted === false || previewError);
 
   const handleLoad = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       if (remember) {
         localStorage.setItem("rasputin:model-load:" + modelKey, JSON.stringify(profile));
@@ -143,6 +147,8 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       }
       await onLoad(model, cleaned);
       onClose();
+    } catch (error) {
+      setLoadError(error?.message || "Unable to load this model. Review the settings and try again.");
     } finally {
       setLoading(false);
     }
@@ -150,8 +156,9 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
 
   return (
     <Modal open={Boolean(model)} onClose={onClose} title={modelName || "Load model"} size="lg" className="studio-load-modal">
+      {loadError && <p role="alert" className="models-discover-error">{loadError}</p>}
       <div className="studio-load-summary">
-        <div><MemoryStick size={18} /><span><small>Estimated memory</small><strong>{preview?.resolvedSettings?.estimatedMemoryGb || preview?.resolved_settings?.estimated_memory_gb || "Auto-fit"}</strong></span></div>
+        <div><MemoryStick size={18} /><span><small>Estimated memory</small><strong>{Number.isFinite(requiredMemoryMb) ? `${(requiredMemoryMb / 1024).toFixed(2)} GB` : "Auto-fit"}</strong></span></div>
         <div><Gauge size={18} /><span><small>Inference engine</small><strong>llama.cpp</strong></span></div>
         <div><Layers size={18} /><span><small>Placement</small><strong>{profile.memoryMode === "cpu_only" ? "System RAM" : profile.splitMode === "layer" ? "Combined GPU pool" : "Automatic"}</strong></span></div>
       </div>
@@ -241,7 +248,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         <div className="studio-load-plan">
           <strong>Planned allocation</strong>
           {(preview.deviceAllocation || preview.device_allocation).map((device, index) => (
-            <span key={device.deviceId || device.device_id || index}>{device.name || "GPU " + (device.deviceId ?? device.device_id ?? index)} � {device.allocatedMb || device.allocated_mb || "auto"} MB</span>
+            <span key={device.deviceId || device.device_id || index}>{device.name || "GPU " + (device.deviceId ?? device.device_id ?? index)} · {Number(device.memoryMb ?? device.memory_mb ?? device.allocatedMb ?? device.allocated_mb ?? 0).toFixed(0)} MB</span>
           ))}
         </div>
       )}
@@ -256,7 +263,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         <span />
         <button type="button" className="w2-button" onClick={onClose}>Cancel</button>
         <button type="button" className="w2-button primary" disabled={blocked || loading} onClick={handleLoad}>
-          <Cpu size={15} /> {loading ? "Loading&" : "Load model"}
+          <Cpu size={15} /> {loading ? "Loading…" : "Load model"}
         </button>
       </footer>
     </Modal>

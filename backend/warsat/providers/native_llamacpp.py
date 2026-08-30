@@ -9,10 +9,14 @@ report a process that was left behind by a restart.
 import json
 import os
 import shutil
-import signal
+import socket
 import subprocess
 import sys
 import time
+import threading
+from functools import cache, lru_cache
+
+import psutil
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -22,6 +26,7 @@ from typing import Any
 from backend.core.datadir import data_dir
 from backend.core.response import AppError
 from backend.runtime.runtime_service import LlamaCppRuntimeService
+from backend.runtime.bootstrap import discover_manifest_path
 from backend.models.load_profiles import LoadProfileError, ResolvedLoadPlan, build_command, resolve_load_plan
 from .base import DeploymentProvider
 
@@ -65,15 +70,40 @@ def _write_state(model, payload):
 
 def _pid_alive(pid):
     try:
-        pid = int(pid)
-    except (TypeError, ValueError):
+        process = psutil.Process(int(pid))
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except (TypeError, ValueError, psutil.Error):
         return False
-    if pid <= 0:
-        return False
+
+
+def _owned_process(state):
+    """Never adopt or stop a reused PID from a stale runtime state file."""
     try:
-        os.kill(pid, 0)
-        return True
-    except PermissionError:
+        process = psutil.Process(int(state.get("pid")))
+        if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+            return None
+        created = state.get("processCreatedAt")
+        if created is not None and abs(process.create_time() - float(created)) > 0.01:
+            return None
+        command = state.get("command")
+        if not command or process.cmdline() != command:
+            return None
+        if os.path.normcase(os.path.realpath(process.exe())) != os.path.normcase(os.path.realpath(state.get("engine") or command[0])):
+            return None
+        return process
+    except (TypeError, ValueError, OSError, psutil.Error):
+        return None
+
+
+@cache
+def _lifecycle_lock(state_path):
+    return threading.RLock()
+
+
+def _port_available(port):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.bind(("127.0.0.1", port))
         return True
     except OSError:
         return False
@@ -102,7 +132,7 @@ def _find_engine(model):
     configured = str(model.get("engine_path") or os.environ.get("RASPUTIN_LLAMA_SERVER") or "").strip()
     accelerator = _model_accelerator(model)
     try:
-        service = LlamaCppRuntimeService()
+        service = LlamaCppRuntimeService(manifest_path=discover_manifest_path())
         if _desktop_only():
             bundled = service.bundled_engine_path(accelerator, required=False)
             if bundled:
@@ -131,6 +161,34 @@ def _find_engine(model):
     return ""
 
 
+@lru_cache(maxsize=8)
+def _engine_capabilities(engine, modified_ns):
+    try:
+        result = subprocess.run(
+            [engine, "--help"], capture_output=True, text=True, errors="replace",
+            timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if result.returncode != 0:
+        return {}
+    help_text = result.stdout + "\n" + result.stderr
+    flags = ("--fit", "--fit-target", "--fit-ctx", "--split-mode", "--tensor-split", "--cpu-moe", "--n-cpu-moe")
+    return {"flags": {flag: flag in help_text.split() for flag in flags}}
+
+
+def native_runtime_capabilities(model=None):
+    """Probe the selected local binary once per version, without loading a model."""
+    engine = _find_engine(model or {})
+    if not engine:
+        return {}
+    try:
+        modified_ns = Path(engine).stat().st_mtime_ns
+    except OSError:
+        return {}
+    return _engine_capabilities(engine, modified_ns)
+
+
 def _health_url(model):
     base = str(model.get("base_url") or "").rstrip("/")
     return base.rsplit("/v1", 1)[0] + "/health" if "/v1" in base else base + "/health"
@@ -147,38 +205,34 @@ def _health(model, timeout=1.5):
         return False
 
 
-def _terminate(pid):
+def _terminate(pid, *, state=None):
+    process = _owned_process(state or {})
+    if process is None:
+        return
+    # psutil tracks process creation time, including during forceful recovery.
+    # A PID alone is insufficient because the OS can reuse it after a restart.
     try:
-        numeric = int(pid)
-    except (TypeError, ValueError):
+        children = process.children(recursive=True)
+    except psutil.NoSuchProcess:
         return
-    if not _pid_alive(numeric):
-        return
-    if os.name == "nt":
-        # Graceful tree stop first; force the whole tree only when recovery needs it.
-        subprocess.run(["taskkill", "/PID", str(numeric), "/T"], capture_output=True, text=True, timeout=20)
-    else:
+    for child in reversed(children):
         try:
-            os.killpg(numeric, signal.SIGTERM)
-        except OSError:
-            try:
-                os.kill(numeric, signal.SIGTERM)
-            except OSError:
-                return
-    deadline = time.monotonic() + 5
-    while _pid_alive(numeric) and time.monotonic() < deadline:
-        time.sleep(0.1)
-    if _pid_alive(numeric):
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(numeric), "/T", "/F"], capture_output=True, text=True, timeout=20)
-        else:
-            try:
-                os.killpg(numeric, signal.SIGKILL)
-            except OSError:
-                try:
-                    os.kill(numeric, signal.SIGKILL)
-                except OSError:
-                    pass
+            child.terminate()
+        except psutil.NoSuchProcess:
+            pass
+    try:
+        process.terminate()
+    except psutil.NoSuchProcess:
+        pass
+    _, alive = psutil.wait_procs([*children, process], timeout=5)
+    for child in alive:
+        try:
+            child.kill()
+        except psutil.NoSuchProcess:
+            pass
+    _, remaining = psutil.wait_procs(alive, timeout=3)
+    if remaining:
+        raise OSError("The owned llama-server process could not be stopped; retry Stop before loading again.")
 
 
 def _failure(code, message, guidance, *, status="failed", **extra):
@@ -271,10 +325,16 @@ class NativeLlamaCppProvider(DeploymentProvider):
             "extra_flags": ("extra_flags",),
         }
         for canonical, keys in aliases.items():
-            if any(key in profile for key in keys):
+            parts = canonical.split("_")
+            camel = parts[0] + "".join(part.title() for part in parts[1:])
+            if any(key in profile for key in (*keys, camel)):
                 continue
             for key in keys:
                 if key in model:
+                    # Imported artifacts use context=0 as an auto-detect sentinel.
+                    # The planner represents automatic context with an omitted value.
+                    if canonical == "context_length" and model.get("context_auto") and model[key] in (None, "", 0, "0"):
+                        break
                     profile[canonical] = model[key]
                     break
 
@@ -366,6 +426,10 @@ class NativeLlamaCppProvider(DeploymentProvider):
         return self._command_for_plan(plan, engine, model_path, port, self._mmproj_path(model))
 
     def start(self, model):
+        with _lifecycle_lock(str(_state_path(model))):
+            return self._start(model)
+
+    def _start(self, model):
         if model.get("runtime") != NATIVE_RUNTIME:
             return {"ok": False, "message": "This provider only starts native llama.cpp models."}
         if self.status(model) == "running":
@@ -393,7 +457,11 @@ class NativeLlamaCppProvider(DeploymentProvider):
                     resolvedPlan=self._plan_payload(plan, []),
                 )
             return _failure("missing_runtime", "llama-server was not found. Install llama.cpp or set RASPUTIN_LLAMA_SERVER to llama-server.exe.", "Set RASPUTIN_LLAMA_SERVER to a valid llama-server executable and retry.", status="unavailable", resolvedPlan=self._plan_payload(plan, []))
-        self.stop(model)
+        stopped = self.stop(model)
+        if not stopped.get("ok"):
+            return stopped
+        if not _port_available(port):
+            return _failure("port_in_use", f"Port {port} is already in use by another process.", "Choose another model port or stop the application using that port, then retry.")
         command = self._command_for_plan(plan, engine, model_path, port, mmproj_path)
         plan_payload = self._plan_payload(plan, command)
         log_path = _log_path(model)
@@ -411,23 +479,34 @@ class NativeLlamaCppProvider(DeploymentProvider):
             return _failure("missing_runtime", str(exc), "Verify the executable path and permissions, then retry.", command=command, resolvedPlan=plan_payload)
         log_handle.close()
         state = {"pid": process.pid, "command": command, "engine": engine, "logPath": str(log_path), "startedAt": time.time(), "resolvedPlan": plan_payload}
+        try:
+            state["processCreatedAt"] = psutil.Process(process.pid).create_time()
+        except psutil.Error:
+            pass
         _write_state(model, state)
         deadline = time.monotonic() + _START_TIMEOUT
         while time.monotonic() < deadline:
-            if _health(model, timeout=1.0):
-                return {"ok": True, "status": "running", "pid": process.pid, "command": command, "logPath": str(log_path), "resolvedPlan": plan_payload}
             if process.poll() is not None:
                 self.stop(model)
                 log_text = self.logs(model, limit=40).get("logs", "")
                 return _failure_from_text(log_text, f"llama-server exited with code {process.returncode}.", command=command, logPath=str(log_path), resolvedPlan=plan_payload)
+            if _health(model, timeout=1.0):
+                return {"ok": True, "status": "running", "pid": process.pid, "command": command, "logPath": str(log_path), "resolvedPlan": plan_payload}
             time.sleep(0.25)
         self.stop(model)
         return _failure("health_timeout", f"llama-server did not become healthy within {_START_TIMEOUT:g} seconds.", "Check the native llama.cpp log, model fit, and port availability, then retry.", command=command, logPath=str(log_path), resolvedPlan=plan_payload)
 
     def stop(self, model):
+        with _lifecycle_lock(str(_state_path(model))):
+            return self._stop(model)
+
+    def _stop(self, model):
         state = _read_state(model)
         pid = state.get("pid")
-        _terminate(pid)
+        try:
+            _terminate(pid, state=state)
+        except (OSError, psutil.Error) as exc:
+            return _failure("stop_failed", str(exc), "Retry Stop and check the native process before loading another model.", pid=pid)
         try:
             _state_path(model).unlink()
         except OSError:
@@ -442,7 +521,7 @@ class NativeLlamaCppProvider(DeploymentProvider):
             return "external"
         state = _read_state(model)
         pid = state.get("pid")
-        if not _pid_alive(pid):
+        if _owned_process(state) is None:
             if state:
                 try:
                     _state_path(model).unlink()

@@ -1,182 +1,109 @@
-# Rasputin Deployment Matrix
+# Rasputin native deployment and lifecycle
 
-Rasputin has one cross-platform server shape and two Windows-specific application shapes. All shapes
-use the same FastAPI backend, React frontend, account model, permissions, and audit system; the
-lifecycle owner and filesystem boundary differ.
+Updated 2026-08-29. Rasputin's current direction is a Windows native application with
+local llama.cpp inference. Docker infrastructure is retired from the product. Application startup,
+skills, and model loading use native processes and governed tools.
 
-| Shape | Platforms | Lifecycle owner | Default address | Intended use |
-| --- | --- | --- | --- | --- |
-| Docker Server | Windows, macOS, Linux | Docker Compose | 127.0.0.1:8787 | Recommended shared/local appliance |
-| Native Server | Windows | Native host controller | localhost:8788 | Direct access to approved Windows folders |
-| Desktop | Windows | Electron window and tray | Loopback port | One-operator desktop experience |
-| Private remote access | Any existing server shape | Tailscale Serve or reviewed reverse proxy | Stable HTTPS name | Trusted LAN or tailnet access |
+| Shape | Lifecycle owner | Address | Use |
+| --- | --- | --- | --- |
+| Installed Windows Desktop | Electron and its tray | Private loopback port selected at launch | Packaged daily-driver; bundled backend, frontend, and llama.cpp |
+| Native Host from source | `backend.tools.native_host` | `http://localhost:8788` by default | Browser/headless development with approved host folders |
+| Isolated verification | Test-owned native process | `http://127.0.0.1:8899` by convention | Disposable data; never the active installation's store |
 
-## Docker Server
+## Installed Windows Desktop
 
-Docker Server is the supported deployment for Windows, macOS, and Linux. The image contains the
-backend, built frontend, Git, and Python dependencies. The host needs Docker Desktop (Windows/macOS)
-or Docker Engine plus Compose v2 (Linux); Python and Node are not required for a Docker-only install.
+Launch Rasputin from its installed shortcut. Electron starts the packaged backend and
+waits for `/api/health`. Use the tray to restart its Desktop Runtime or quit the app.
+Closing the window may only minimize it to the tray.
 
-The standard deployment binds to loopback and keeps application state in the named volume
-rasputin-data. It also mounts workspace/ and models/ from the checkout. Do not use
-docker compose down -v during normal operations.
+The installed application does **not** read backend or frontend changes from a source
+checkout. Rebuild and install the updated package to apply source fixes; restarting an
+old installed package only restarts that old code. See [release setup](RELEASE_SETUP.md).
 
-macOS/Linux:
+`desktop-runtime.json` records the backend PID, Electron owner PID, URL, and data directory.
+Inspect that record when identifying the active instance; do not assume the desktop app
+uses port 8788. Do not kill a live Desktop owner to make another launcher take its store.
 
-~~~bash
-./rasputin.sh config
-./rasputin.sh start --no-open
-./rasputin.sh status
-./rasputin.sh logs
-./rasputin.sh credentials
-./rasputin.sh reset-password
-./rasputin.sh stop
-~~~
+## Native Host from source
 
-Windows PowerShell:
+Use the repository virtual environment and a built frontend. From PowerShell:
 
-~~~powershell
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 config
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -NoOpen
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 status
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 logs
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 credentials
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 reset-password
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 stop
-~~~
+```powershell
+npm run build
+.\.venv\Scripts\python.exe -m backend.tools.native_host start --port 8788
+.\.venv\Scripts\python.exe -m backend.tools.native_host status --json
+.\.venv\Scripts\python.exe -m backend.tools.native_host restart
+.\.venv\Scripts\python.exe -m backend.tools.native_host stop
+```
 
-The start command builds/rebuilds the local image and recreates the container without deleting
-named volumes. Use WRAPPER_PORT to choose another host port. Keep WRAPPER_BIND=127.0.0.1 unless
-direct LAN access is intentionally configured with HTTPS.
+The equivalent PowerShell manager commands are `native-host-start`, `native-host-status`,
+`native-host-restart`, and `native-host-stop`. Do not use the manager's bare `start`,
+`stop`, `restart`, or `native-rebuild` as substitutes without inspecting their implementation;
+legacy launcher branches still exist. The module commands above identify the native owner explicitly.
 
-### WarSat Docker control
+Native Host preserves its saved port/LAN configuration, waits for health, and attempts
+an orderly shutdown before its process-tree fallback. A restart does not migrate or erase
+model weights, chats, or preferences. First-run credentials are shown only for a fresh store.
 
-The normal Docker Server does not mount the host Docker socket. WarSat control is an explicit
-overlay because the socket can control sibling containers and the Docker host.
+## Data ownership
 
-macOS/Linux:
+Both native launchers default to `%LOCALAPPDATA%\Rasputin\data`.
+`RASPUTIN_DATA_DIR` selects a different store. Never run Desktop and Native Host simultaneously
+against the same store. Use separate stores for parallel development and verification.
 
-~~~bash
-./rasputin.sh stop
-./rasputin.sh start --enable-warsat --no-open
-~~~
+Native Host ownership is recorded in `native-host.json`; its saved settings are in
+`native-host-config.json`. Respect either launcher's live ownership record. Before restarting
+an existing installation, identify its actual owner, preserve its settings, and obtain the
+operator's approval. Approval already given in the current task remains valid.
 
-Windows PowerShell:
+Back up application data using the governed backup flow. Model weights and external workspace
+files need their own backup plan; an application-state backup is not a full machine backup.
+Never remove ownership files to bypass a running owner or use volume-deletion commands.
 
-~~~powershell
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 stop
-powershell.exe -ExecutionPolicy Bypass -File .\rasputin.ps1 start -EnableWarSat -NoOpen
-~~~
+## Native model deployment
 
-An administrator must also enable Docker control in Settings -> Safety. Run WarSat readiness before
-deploying a model. GPU/model-image compatibility remains runtime-specific.
+1. Open **Discover Models** and choose an exact compatible GGUF variant.
+2. Download it, or import an existing approved GGUF file from **Models**.
+3. Wait for verification and registration to complete.
+4. Choose **Load** on the completed download or **Load Model** in **Models → My Models**.
+   Review context, memory mode, and automatic device placement, then choose **Load model**.
+5. Rasputin starts a native `llama-server` process and registers its local endpoint.
+6. Wait for **Ready**, choose **Use in New Chat**, and confirm a response in Chat mode.
+7. Choose **Stop Model** in the model's inspector when finished. Installed files remain available
+   for the next load; no repeat download is needed. A download card's **Stop** cancels acquisition.
 
-## Native Server (Windows)
+`native-llamacpp` is the managed runtime. Installed files and loaded processes are separate
+states. Native Host uses this path even when `RASPUTIN_DESKTOP_ONLY` is false. Native hardware
+inspection uses `/api/warsat/hardware?native_models=true`; the route name is retained for
+compatibility and does not imply Docker is required.
 
-Native Server is the managed non-Docker option for Windows. It runs independently of Electron,
-records its PID, URL, and data directory under %LOCALAPPDATA%\Rasputin\data, and gives approved
-workspaces direct host-folder access. Docker remains optional for the backend but is required for
-Action Skills and WarSat model containers.
+If an obsolete build reports a retired runtime error, check for an old installed
+package or an old managed registry entry. Use **Get GGUF** to select a native artifact,
+or import its existing GGUF file. If the bundled engine is missing, update or reinstall a verified
+Desktop package. Source contributors should check the runtime manifest/configuration and load error.
+Raw transformer weights are not directly loadable by native llama.cpp.
 
-~~~powershell
-.\rasputin.ps1 native-host-start -Port 8788
-.\rasputin.ps1 native-host-status
-.\rasputin.ps1 native-host-restart
-.\rasputin.ps1 native-host-stop
-~~~
+## Verification and remote access
 
-The controller waits for /api/health, attempts a graceful Uvicorn shutdown, and falls back to
-process-tree termination only after a timeout. Fresh credentials are printed once by the start
-command and are not written to the persistent host log.
+Verify only the endpoint that actually owns the installation:
 
-Desktop and Native Server use the same native data-store convention, but they must not run as two
-independent backends against the same store. The installed Desktop application owns its packaged
-backend; Native Server is a separate source-development/server shape.
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_deployment_matrix.py --endpoint native=http://127.0.0.1:8788
+.\.venv\Scripts\python.exe scripts\verify_release_candidate.py --endpoint native=http://127.0.0.1:8788
+```
 
-Start-at-login is available for the current Windows user:
+For Desktop, substitute the URL recorded in `desktop-runtime.json`. Explicit endpoints avoid
+the legacy multi-runtime defaults of older verification helpers. Health/frontend probes do not
+prove model inference: complete download → load → response → stop separately with a small model.
 
-~~~powershell
-.\rasputin.ps1 native-host-install -Port 8788
-.\rasputin.ps1 native-host-uninstall
-~~~
+Desktop binds to loopback. Private LAN/reverse-proxy access is a separate, explicitly reviewed
+Native Host configuration, not an installation prerequisite. Preserve Host/Origin checks,
+authentication, HTTPS requirements, and firewall boundaries. Never enable LAN or public access
+as part of an ordinary restart.
 
-This creates a per-user startup entry, not a machine service. The user must remain signed in.
+## Retained legacy code
 
-For direct LAN access, generate HTTPS first and then use -Lan. Plain HTTP LAN mode is rejected.
-
-## Desktop (Windows)
-
-Desktop is the self-contained Windows daily-driver. Electron owns the window, tray, packaged
-PyInstaller backend, and bundled llama.cpp engine; all backend traffic stays on an internal loopback
-port and models are loaded directly from local GGUF files.
-
-~~~powershell
-npm run desktop
-npm run desktop:package:dir
-npm run desktop:package
-~~~
-
-Packages are currently unsigned and may trigger a Windows publisher warning. The installed target
-does not need Python, Node, Docker, WSL, or a separate llama.cpp install. The only user-initiated
-network download in the model workflow is the model weight selected from the catalog.
-
-## Private remote access
-
-Keep the server bound to loopback and use a reviewed private transport. Do not expose an unencrypted
-HTTP instance directly to the public internet.
-
-Tailscale planning (run from a Python-enabled checkout):
-
-~~~bash
-python3 scripts/setup_remote_access.py tailscale --target http://127.0.0.1:8787
-~~~
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\setup_remote_access.py tailscale --target http://127.0.0.1:8787
-~~~
-
-Review the reported URL and allowed host, then add --apply only after confirming the target. The
-helper does not enable Tailscale Funnel or public internet access.
-
-For Caddy, generate a reviewed configuration:
-
-~~~bash
-python3 scripts/setup_remote_access.py caddy --hostname rasputin.example.com --target http://127.0.0.1:8787 --output ./Caddyfile
-~~~
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\setup_remote_access.py caddy --hostname rasputin.example.com --target http://127.0.0.1:8787 --output C:\Rasputin\Caddyfile
-~~~
-
-Add the proxy hostname to the managed native launcher when using Native Server. Public access also
-requires real DNS, a trusted certificate, hardened firewall rules, and a security review.
-
-## Verification
-
-The verifier checks health, frontend serving, and baseline security headers. Run it against every
-active endpoint:
-
-Before the first launch, the optional read-only installation preflight reports missing checkout
-assets, local CLI prerequisites, and occupied default ports without changing the machine:
-
-~~~bash
-python3 scripts/check_installation.py
-~~~
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\check_installation.py
-~~~
-
-macOS/Linux:
-
-~~~bash
-./.venv/bin/python scripts/verify_deployment_matrix.py --endpoint docker=http://127.0.0.1:8787
-~~~
-
-Windows PowerShell:
-
-~~~powershell
-.\.venv\Scripts\python.exe scripts\verify_deployment_matrix.py --endpoint docker=http://127.0.0.1:8787 --endpoint native=http://127.0.0.1:8788
-~~~
-
-Add --insecure only for a private certificate during local verification.
+Docker Server, Compose assets, and container-oriented WarSat providers remain in the repository
+for historical implementation context. They are outside the current Windows native
+product and must not appear as setup instructions or an alternative model workflow. Older Linux/macOS Docker evidence is historical, not a
+claim that those platforms are currently packaged or release-certified.

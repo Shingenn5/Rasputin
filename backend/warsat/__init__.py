@@ -436,8 +436,8 @@ def _docker_info_checks(docker_path, docker_version):
     return checks, detected
 
 
-def hardware_probe():
-    desktop_only = _truthy_env("RASPUTIN_DESKTOP_ONLY")
+def hardware_probe(native_models=False):
+    desktop_only = _truthy_env("RASPUTIN_DESKTOP_ONLY") or bool(native_models)
     cfg = security.load()
     docker_path = None if desktop_only else _docker_cli_path()
     docker_version_raw = _probe_command(["docker", "version", "--format", "{{json .}}"], timeout=10) if docker_path else {"ok": False, "stdout": "", "stderr": ""}
@@ -457,7 +457,7 @@ def hardware_probe():
             "dockerControl",
             "Docker Control Permission",
             "skip",
-            "Docker is not part of the Rasputin Desktop runtime.",
+            "Docker is not required for native llama.cpp models.",
             {"enabled": False, "desktopOnly": True},
         ))
     else:

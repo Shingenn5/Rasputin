@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Card, Form, Row, Col, Badge, Spinner, Button } from "react-bootstrap";
-import { ShieldCheck, Lock, Unlock, Key, FileCheck2, Globe, Server, AlertTriangle, Box } from "lucide-react";
+import { ShieldCheck, Lock, Unlock, Key, FileCheck2, Globe, Server, AlertTriangle } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting, rotateSecrets } from "./settingsActions.js";
 
@@ -128,30 +128,14 @@ export function SecuritySettings({ desktopOnly = false }) {
                       <Form.Check type="switch" id="allow-remote-models" checked={!!security?.allow_remote_models} onChange={() => handleToggle("allow_remote_models")} />
                     </td>
                   </tr>
-                  {!desktopOnly && (
-                  <tr>
+                  <tr data-testid="native-runtime-row">
                     <td className="ps-4">
-                      <div className="fw-medium"><Box size={16} className="me-2 text-danger"/>WarSat Docker Control</div>
-                      <div className="text-muted small">Allow WarSat to manage host containers.</div>
+                      <div className="fw-medium"><Server size={16} className="me-2 text-success"/>Native llama.cpp Runtime</div>
+                      <div className="text-muted small">Models run as local processes managed by Rasputin.</div>
                     </td>
-                    <td>
-                      {security?.allow_docker_control ? <Badge bg="danger">Allowed</Badge> : <Badge bg="secondary">Blocked</Badge>}
-                    </td>
-                    <td className="text-end pe-4">
-                      <Form.Check type="switch" id="allow-docker-control" checked={!!security?.allow_docker_control} onChange={() => handleToggle("allow_docker_control")} />
-                    </td>
+                    <td><Badge bg="success">Native</Badge></td>
+                    <td className="text-end pe-4"><span className="text-muted small">{desktopOnly ? "Bundled with Rasputin Desktop" : "Configured in Runtime settings"}</span></td>
                   </tr>
-                  )}
-                  {desktopOnly && (
-                    <tr data-testid="native-runtime-row">
-                      <td className="ps-4">
-                        <div className="fw-medium"><Server size={16} className="me-2 text-success"/>Native llama.cpp Runtime</div>
-                        <div className="text-muted small">Bundled with this desktop application; Docker and separate runtime installs are unavailable.</div>
-                      </td>
-                      <td><Badge bg="success">Bundled</Badge></td>
-                      <td className="text-end pe-4"><span className="text-muted small">Managed by Rasputin Desktop</span></td>
-                    </tr>
-                  )}
                   <tr>
                     <td className="ps-4">
                       <div className="fw-medium"><FileCheck2 size={16} className="me-2 text-warning"/>File Modifications</div>
@@ -179,7 +163,7 @@ export function SecuritySettings({ desktopOnly = false }) {
                   <tr data-testid="unattended-mode-row">
                     <td className="ps-4">
                       <div className="fw-medium"><Lock size={16} className="me-2 text-danger"/>Unattended Execution</div>
-                      <div className="text-muted small">Deny shell, web, Docker, external MCP, and unreviewed capabilities while you are away.</div>
+                      <div className="text-muted small">Deny shell, web, external MCP, and unreviewed capabilities while you are away.</div>
                     </td>
                     <td>
                       {security?.unattended_mode ? <Badge bg="danger">Locked down</Badge> : <Badge bg="secondary">Interactive</Badge>}

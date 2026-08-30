@@ -93,7 +93,7 @@ class NativeLlamaCppHttpContractTests(unittest.TestCase):
                 self.assertEqual(body["choices"][0]["message"]["content"], "OK")
             finally:
                 if process.poll() is None:
-                    _terminate(process.pid)
+                    _terminate(process.pid, state={"pid": process.pid, "engine": command[0], "command": command})
                 process.wait(timeout=5)
 
             self.assertIsNotNone(process.poll())

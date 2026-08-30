@@ -2,7 +2,7 @@ import os
 
 from .base import DeploymentProvider
 from .docker import DockerProvider
-from .native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME
+from .native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME, native_runtime_capabilities
 
 _docker_provider = DockerProvider()
 
@@ -13,7 +13,7 @@ def _native_hardware_snapshot(model=None):
     # snapshot.
     from backend import warsat
 
-    snapshot = dict(warsat.hardware_probe())
+    snapshot = dict(warsat.hardware_probe(native_models=True))
     headroom = (model or {}).get("host_memory_headroom_mb")
     if headroom is not None:
         snapshot["host_memory_headroom_mb"] = headroom
@@ -22,6 +22,7 @@ def _native_hardware_snapshot(model=None):
 
 _native_llamacpp_provider = NativeLlamaCppProvider(
     hardware_snapshot_provider=_native_hardware_snapshot,
+    runtime_capabilities_provider=native_runtime_capabilities,
 )
 
 def get_provider(model: dict) -> DeploymentProvider:

@@ -13,7 +13,7 @@ competing "current" roadmaps from forming.
 | Join the project as a coding agent | [`CODEX_ONBOARDING.md`](CODEX_ONBOARDING.md) | Repository map, test workflow, and agent gotchas |
 | Inherit or maintain the codebase | [`MAINTAINER_HANDOFF.md`](MAINTAINER_HANDOFF.md) | First-day workflow, ownership boundaries, maintenance baseline, and handoff acceptance |
 | Understand the architecture | [`RASPUTIN_ARCHITECTURE_GUIDE.md`](RASPUTIN_ARCHITECTURE_GUIDE.md) | Runtime and frontend architecture reference |
-| Deploy or troubleshoot a runtime | [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) | Docker, native, desktop, and remote-access matrix |
+| Deploy or troubleshoot a runtime | [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) | Installed Desktop and source Native Host ownership, upgrades, and verification |
 | Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md), [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md), [`RASPUTIN_V1_OPERATOR_RUNBOOK.md`](RASPUTIN_V1_OPERATOR_RUNBOOK.md), and `scripts/verify_release_candidate.py` | Operational release steps, human evidence checklist, automated evidence, and explicit remaining boundaries |
 | Change security-sensitive behavior | [`THREAT_MODEL.md`](../THREAT_MODEL.md), [`SECURITY.md`](../SECURITY.md) | Security boundaries and reporting policy |
 
@@ -28,11 +28,11 @@ These are the documents to consult before starting implementation work.
 | [`CSS_OWNERSHIP.md`](CSS_OWNERSHIP.md) | Global cascade, stylesheet owners, and behavior-preserving extraction order | Current refactoring contract |
 | [`ADAPTIVE_CONTEXT_AND_THROUGHPUT.md`](ADAPTIVE_CONTEXT_AND_THROUGHPUT.md) | Evidence-bound context sizing and child-work budgets | Implemented policy contract; measured runtime evidence remains bounded |
 | [`RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md`](RASPUTIN_APPLICATION_READINESS_GAP_REPORT.md) | Release-readiness gaps and evidence requirements | Current readiness report |
-| [`RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md`](RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md) | Independent fresh-user audit of the rebuilt model-orchestration and UI/UX revision | P1/P2 fixed and independently re-verified |
+| [`RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md`](RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md) | Independent fresh-user audit of the rebuilt model-orchestration and UI/UX revision | Historical server-era audit; not current deployment guidance |
 | [`RASPUTIN_IMPLEMENTATION_LEDGER.md`](RASPUTIN_IMPLEMENTATION_LEDGER.md) | Compact source/test evidence ledger for current workstation and Assistant status | Reconcile before roadmap edits |
 | [`RASPUTIN_V1_RELEASE_CONTRACT.md`](RASPUTIN_V1_RELEASE_CONTRACT.md) | Frozen ten-slice v1 finish line, evidence matrix, and explicit non-goals | Scope authority for the completion batch |
 | [`DESKTOP_ARCHITECTURE.md`](DESKTOP_ARCHITECTURE.md) | Windows desktop packaging and lifecycle | Current packaging reference |
-| [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md) | Native versus Docker runtime behavior | Runtime contract |
+| [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md) | Native model, data, and execution behavior | Runtime contract |
 | [`MODEL_RESOURCE_MANIFEST.md`](MODEL_RESOURCE_MANIFEST.md) | Versioned model resource and placement evidence schema | Implemented contract; live runtime measurements remain bounded |
 | [`LASTING_MEMORY.md`](LASTING_MEMORY.md) | Owner/workspace-scoped durable memory contract and current API/UI | Implemented foundation; follow-up slices remain |
 | [`MCP_CAPABILITY_CONTRACT.md`](MCP_CAPABILITY_CONTRACT.md) | Versioned MCP tool discovery and callable-only model surface | Implemented capability contract |
@@ -50,10 +50,10 @@ implemented behavior or security policy.
 
 | Document | Purpose |
 | --- | --- |
-| [`RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx) / [`PDF`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.pdf) | Reviewable visual proposal for Rasputin's personal-assistant direction |
+| [`RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx) / [`PDF`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.pdf) | Native-runtime-aligned visual proposal; proposed features remain proposals |
 | [`RASPUTIN_VS_ODYSSEUS_COMPARISON.md`](RASPUTIN_VS_ODYSSEUS_COMPARISON.md) | Product and architecture comparison |
 | [`ODYSSEUS_INSPIRED_RASPUTIN_ROADMAP.md`](ODYSSEUS_INSPIRED_RASPUTIN_ROADMAP.md) | Project Prometheus roadmap and adoption boundaries |
-| [`PROJECT_PROMETHEUS_PHASE_0_STATUS.md`](PROJECT_PROMETHEUS_PHASE_0_STATUS.md) | Phase-0 milestone record |
+| [`PROJECT_PROMETHEUS_PHASE_0_STATUS.md`](PROJECT_PROMETHEUS_PHASE_0_STATUS.md) | Historical phase-0 milestone record; not current startup advice |
 
 ## Governance, upstream, and audit records
 
@@ -78,10 +78,10 @@ implemented behavior or security policy.
 
 ## Documentation maintenance rules
 
-1. Trust code and passing tests over a stale claim in a document.
+1. Trust code and passing tests over a stale implementation claim. The product direction is Windows native; retained server-era code is not a supported user workflow.
 2. Put user-facing installation and lifecycle commands in the root README.
 3. Put per-runtime deployment details in `DEPLOYMENT_MATRIX.md`; link to it
-   instead of copying the same command tables into another document.
+   instead of copying the same command tables into another document. Docker control and container deployment are retired, not optional setup features.
 4. Put active implementation work in the checklist or a dated readiness report.
    Keep proposals and milestone audits clearly labeled as design/history.
 5. Add new proposal or research artifacts under a descriptive subdirectory

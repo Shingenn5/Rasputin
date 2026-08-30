@@ -6,18 +6,24 @@ aren't. It's written for whoever is deciding whether to expose an instance
 beyond their own machine, and for whoever picks up the next piece of
 security work.
 
-It is a snapshot as of 2026-07-13. Verify file:line citations against
-current code before relying on them; this system moves fast.
+Native product scope reconciled 2026-08-29. Historical security evidence retains its original
+date; verify file:line citations against current code. This document does not certify retired
+server code or treat it as a supported deployment path.
 
 ---
 
 ## 1. Operating assumption
 
-Rasputin is built to run as **one locally administered appliance**. It may now
-serve several authenticated local users simultaneously, but the machine/data
-directory administrator remains the ultimate trust boundary. Account isolation
-protects users from accidental cross-account access through the application;
-it is not cryptographic tenant isolation from the host administrator.
+Rasputin is built to run as **one locally administered workstation**. Source Native Host may
+serve several authenticated local users simultaneously. Installed Desktop is a single-operator
+surface: its supervisor sets `RASPUTIN_DESKTOP_ONLY=1`, and `auth.public_session()` supplies the
+local administrator identity to loopback callers without a password or cookie. Other local
+processes that can reach that listener share this trust boundary; Desktop is not authenticated
+isolation from them. Never expose this mode beyond loopback.
+
+The machine/data-directory administrator remains the ultimate trust boundary. Native Host account
+isolation protects users from accidental cross-account access through the application; it is not
+cryptographic tenant isolation from the host administrator.
 
 - Web pages, RAG'd files, and tool output the agent fetches on the
   operator's behalf may contain adversarial text ("ignore previous
@@ -26,11 +32,10 @@ it is not cryptographic tenant isolation from the host administrator.
   Privacy Lock, and the approval system all exist to let the *operator*
   control what an *agentic loop running on their behalf* can do — not to
   protect Rasputin from someone who already has legitimate access to it.
-- Anyone who can reach the API surface must now present real credentials
-  (§6.1) — a login screen, password verification, and session cookie all
-  actually enforce this as of 2026-07-07. Before that date this was
-  enforced only by network topology (don't expose the port); don't assume
-  that's still the only backstop without re-reading §6.1.
+- Ordinary Native Host API access requires real credentials (§6.1), password verification,
+  and session cookies. The loopback-only Desktop administrator session above is a separate,
+  intentional exception; do not describe Desktop as requiring the Native Host login screen.
+  Host/Origin checks, workspace permissions, capability gates, and audit records still apply.
 - Private chats, tasks, preferences, memory, and login sessions carry an owner.
   Workspaces have explicit membership roles. Appliance-wide settings, model
   control, security, approvals, and WarSat mutations require an administrator.
@@ -49,7 +54,6 @@ it is not cryptographic tenant isolation from the host administrator.
 | `allow_file_reorganize` | off | `fs_mkdir`/`fs_move` |
 | `allow_shell_execution` | **off** | `shell_exec` — also requires the workspace's separate Host Shell capability; Native/Desktop Windows is currently fail-closed pending AppContainer isolation |
 | `allow_web_search` | on | `web_search` (DuckDuckGo scrape, brokered — see §3) |
-| `allow_docker_control` | **off** | WarSat deploys, host folder browsing, mount requests |
 | `allow_remote_models` | **off** | "Privacy Lock" — routing to any non-local model endpoint |
 | `allow_model_tests` / `allow_model_registry_edit` | on | Trials engine, model registry edits |
 
@@ -185,6 +189,10 @@ Ranked by how much they should change what you're willing to expose.
 
 ### 6.1 — RESOLVED 2026-07-07 — the login/session boundary was a no-op
 
+The following is historical Native Host/server verification. Current Desktop intentionally adds
+`desktop_auto_login_enabled()` ahead of the other session branches for loopback callers only
+(§1); the no-cookie rejection below applies when that mode and other explicit bypasses are off.
+
 Found 2026-07-06: `backend/core/auth.py`'s `login()`, `public_session()`,
 and `require_user()` unconditionally returned an authenticated admin
 session regardless of any password or cookie, and `backend/api/core.py`'s
@@ -223,29 +231,23 @@ immediately locks it back out. Covered by three new tests in
 `testLoginRateLimitLocksOutAfterRepeatedFailures`,
 `testCurrentUserEnforcesRealSessionWhenBypassesDisabled`).
 
-**Credential recovery:** the generated password is printed only when the
-admin record is first created. `rasputin.ps1 credentials` can recover it only
-while that original line still exists in the current container logs. After a
-container replacement/log loss—or after the password was changed—use
-`rasputin.ps1 reset-password`; for a native run use
-`python -m backend.tools.reset_password`. A reset changes the stored hash and
-clears sessions in the resetting process; restart the running server/container
-if you need to invalidate sessions it already holds in memory immediately.
+**Credential recovery:** Native Host prints generated credentials only for a fresh store.
+Installed Desktop uses its local administrator session without a password dialog and redacts
+bootstrap secrets from persistent logs. For explicitly requested Native Host recovery, use `.\.venv\Scripts\python.exe -m backend.tools.reset_password` against the intended
+data directory. It changes the stored hash; coordinate the owning runtime's restart when needed
+for immediate invalidation of sessions already held in memory. Never recover credentials from
+retired infrastructure commands or publish them in a transcript.
 
-**Caveat carried forward, not fixed:** `localhost_bypass_enabled()` checks
-`request.client.host` against a literal loopback set. Behind the standard
-docker-compose deployment that's the bridge gateway IP, not `127.0.0.1` —
-so this bypass is a native-dev convenience only and simply never fires in
-the primary deployment mode. That's intentional (conservative), not a gap,
-but don't extend it to trust proxy headers without real thought.
+**Localhost bypass caveat:** native loopback is still a network boundary, not authentication.
+Keep the development bypass disabled in ordinary use. Never widen it by trusting unvalidated
+proxy headers. The legacy bridge-network behavior is historical and not a current deployment recommendation.
 
 ### 6.2 — Desktop skill migration and fail-closed shell
 
 The packaged Desktop skill path now treats `SKILL.md` files as declarative
 instructions. It does not execute arbitrary Python skill code or depend on a
 Docker daemon. Tool calls requested during a skill-guided task still pass
-through the normal server-side capability, workspace, approval, and audit
-separate compatibility path until that deployment is retired.
+through the normal server-side capability, workspace, approval, and audit checks.
 
 The former dedicated-account native Windows shell path has also been retired
 from Desktop. Host Shell remains unavailable until an AppContainer runner is
@@ -267,8 +269,8 @@ Labeling content as untrusted and instructing the model not to obey it
 reduces the odds a model acts on injected instructions; it does not
 eliminate the possibility a sufficiently capable adversarial payload gets a
 model to act anyway. Tool-level guardrails (approval queues, Trusted Dev
-Mode/Host-Shell scoping, the native low-privilege account, approval gates, and
-deny-pattern shell filters remain the actual backstops, not
+Mode/Host-Shell scoping, fail-closed native Host Shell, approval gates, and
+path/capability enforcement remain the actual backstops, not
 the prompt wrapper.
 
 ## 7. What this document is not
