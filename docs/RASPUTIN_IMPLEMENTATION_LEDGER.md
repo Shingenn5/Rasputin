@@ -93,6 +93,42 @@ open. The proposal PDF has a recorded 12-page visual review; its Word document r
 verified only, with visual rendering unavailable. Source restarts do not update installed binaries;
 this workstation's update was proven through packaging, installation, hashes, and live ownership.
 
+## 2026-08-30 first-request timing cleanup
+
+**IMPLEMENTED / VERIFIED in isolated source:** message details and the task drawer separate
+runtime-reported generation speed, first visible token, prompt processing, and request time.
+Whole-request throughput remains explicitly labeled and keeps its exact/estimated count source;
+small positive rates display as `0.04 tok/s` or `<0.01 tok/s`, never rounded zero. Old records
+without native timing retain their historical throughput and show unavailable for missing timings.
+Per-call measurements reset between turns and survive task persistence.
+
+New native loads perform a synthetic prompt and two decode tokens before reporting ready.
+Warm-up is bounded to 120 seconds, does not create a chat/task, and disables reuse of a prior
+prompt cache for the synthetic request. Failed warm-up returns an actionable load failure and stops the newly launched process.
+Load and Stop run off the HTTP event loop; the loading dialog explains the warm-up period.
+This moves some first-request initialization into loading, not a guarantee against every later
+kernel/context-specific startup cost.
+
+The isolated source UI on :8904 loaded the real SmolLM2-135M Q4_K_M model on CPU, completed
+warm-up, ran Chat, displayed native metrics in both details surfaces, and stopped the model.
+The health endpoint responded in 18 ms during loading. No page errors or horizontal overflow
+occurred at widths 1440, 1024, and 390. Proof and screenshots are under
+`%TEMP%/rasputin-timing-cleanup-01a0540b/` (`source-proof.json`, `timing-details.png`).
+Backend coverage includes native readiness/failure handling, timing persistence and fallback,
+invalid values, and HTTP event-loop responsiveness. Formatter tests cover low rates and absent
+native timings. The existing 27B model in the installed app was not restarted or unloaded.
+
+The rebuilt packaged Desktop backend on :8905 repeated the real CPU GGUF Load → warm-up →
+Chat → details → Stop flow with exact native metrics. Warm-up completed in 0.375 seconds;
+first visible text took 0.165 seconds in that small-model check. This does not certify the
+27B mixed-GPU startup improvement. Packaged proof is in `packaged-proof.json`; browser checks
+again found no page errors or overflow at all three widths. `npm run desktop:package` produced
+`dist/electron/Rasputin-Setup-0.2.0.exe`. The test listeners/models were stopped after validation.
+
+**Deployment boundary:** source/package verification does not update the installed Desktop app.
+The updated installer must be applied and checked before this cleanup is live there; doing so
+requires closing the app and unloading its active model.
+
 ## Evidence boundary
 
 The 2026-08-29 native lifecycle and UI checks used isolated data, real authentication, a real

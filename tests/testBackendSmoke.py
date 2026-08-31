@@ -5254,6 +5254,63 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(persisted["generationMetrics"]["outputTokens"], metrics["outputTokens"])
         self.assertEqual(persisted["generationMetrics"]["tokenCountSource"], "estimated")
 
+    def testGovernedChatCapturesNativeTimingAndFirstVisibleToken(self):
+        hub = agent.AgentHub()
+        task = agent.AgentTask("answer this", "dry-run", "general", mode="chat", workspace_path=".")
+        task.owner_id = "test"
+        hub.tasks[task.id] = task
+
+        async def scripted_chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"):
+            on_delta({"type": "metrics", "timing": {"prompt_ms": 50708.11}})
+            await asyncio.sleep(0.01)
+            on_delta({"type": "text", "text": "Yes"})
+            on_delta({"type": "metrics", "usage": {"completion_tokens": 2}, "timing": {"predicted_per_second": 0.1733}})
+            return "Yes", []
+
+        sections = [context_governor.section("task", "Task", "answer this", required=True, priority=0)]
+        with patch("backend.engine.agent._chat", scripted_chat), patch("backend.engine.agent.model_registry.get_model", return_value={"provider": "mock", "compatibility": {"promptProfile": "standard"}}):
+            asyncio.run(hub.governed_chat(task, "chat", "main", sections))
+        metrics = hub.snapshot_task(task)["generationMetrics"]
+        self.assertEqual(metrics["outputTokens"], 2)
+        self.assertEqual(metrics["tokenCountSource"], "exact")
+        self.assertEqual(metrics["lastPromptSeconds"], 50.708)
+        self.assertEqual(metrics["lastDecodeTokensPerSecond"], 0.1733)
+        self.assertGreater(metrics["lastTimeToFirstTokenSeconds"], 0)
+        hub._persist_task(task)
+        hub.tasks.pop(task.id)
+        self.assertEqual(hub.get_task(task.id, "test")["generationMetrics"], metrics)
+
+    def testSlowRequestDoesNotBecomeZeroAndMissingMetricsDoNotReusePriorTurn(self):
+        hub = agent.AgentHub()
+        hub._trigger_broadcast = lambda _task_id: None
+        task = agent.AgentTask("timings", "dry-run", "general")
+        hub._record_generation_metrics(task, "chat", "Yes", 56.506, {
+            "usage": {"completion_tokens": 2},
+            "timing": {"prompt_ms": 50708.11, "predicted_per_second": 0.1733},
+            "timeToFirstTokenSeconds": 50.9,
+        })
+        self.assertAlmostEqual(task.generation_metrics["tokensPerSecond"], 2 / 56.506)
+        self.assertEqual(task.generation_metrics["lastDecodeTokensPerSecond"], 0.1733)
+        hub._record_generation_metrics(task, "reflection", "answer", 1)
+        self.assertEqual(task.generation_metrics["tokenCountSource"], "estimated")
+        self.assertIsNone(task.generation_metrics["lastDecodeTokensPerSecond"])
+        self.assertIsNone(task.generation_metrics["lastTimeToFirstTokenSeconds"])
+        self.assertIsNone(task.generation_metrics["lastPromptSeconds"])
+        self.assertGreater(agent._metric_tokens_per_second(1, 1000), 0)
+
+    def testInvalidNativeMetricsCannotClaimExactCountOrValidSpeed(self):
+        hub = agent.AgentHub()
+        hub._trigger_broadcast = lambda _task_id: None
+        for invalid in (-1, float("nan"), float("inf"), True, "oops", 2.5):
+            with self.subTest(invalid=invalid):
+                task = agent.AgentTask("timings", "dry-run", "general")
+                hub._record_generation_metrics(task, "chat", "answer", 2, {"usage": {"completion_tokens": invalid}})
+                self.assertEqual(task.generation_metrics["tokenCountSource"], "estimated")
+        metrics = agent._normalize_generation_metrics({"lastDecodeTokensPerSecond": float("inf"), "lastPromptSeconds": -1, "lastTimeToFirstTokenSeconds": True})
+        self.assertIsNone(metrics["lastDecodeTokensPerSecond"])
+        self.assertIsNone(metrics["lastPromptSeconds"])
+        self.assertIsNone(metrics["lastTimeToFirstTokenSeconds"])
+
     def testGenerationMetricNormalizationWithInvalidMeasurementsReturnsUnavailable(self):
         normalized = agent._normalize_generation_metrics({
             "outputTokens": "not-a-number",

@@ -258,12 +258,13 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       )}
       {previewError && <div className="studio-load-warning" role="alert"><AlertTriangle size={16} /><span>{previewError}</span></div>}
 
+      {loading && <p role="status" data-testid="model-warmup-status">Loading weights and running a short warm-up before the model is ready. The first load can take longer while the runtime initializes.</p>}
       <footer className="studio-load-footer">
         <label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember settings for this model</label>
         <span />
         <button type="button" className="w2-button" onClick={onClose}>Cancel</button>
         <button type="button" className="w2-button primary" disabled={blocked || loading} onClick={handleLoad}>
-          <Cpu size={15} /> {loading ? "Loading…" : "Load model"}
+          <Cpu size={15} /> {loading ? "Loading and warming up…" : "Load model"}
         </button>
       </footer>
     </Modal>

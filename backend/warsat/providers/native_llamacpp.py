@@ -32,6 +32,7 @@ from .base import DeploymentProvider
 
 
 NATIVE_RUNTIME = "native-llamacpp"
+_WARMUP_TIMEOUT = 120.0
 _START_TIMEOUT = max(5.0, min(float(os.environ.get("RASPUTIN_LLAMA_START_TIMEOUT", "45")), 180.0))
 
 
@@ -203,6 +204,36 @@ def _health(model, timeout=1.5):
             return 200 <= response.status < 300
     except (OSError, urllib.error.URLError):
         return False
+
+
+def _warm_up(model):
+    """Exercise prompt and decode kernels before exposing a newly loaded model.
+
+    This is synthetic runtime work, never a user task or chat message. Use the
+    owned listener rather than a configurable URL, and bound both token counts
+    and the request timeout. Disable prior prompt-cache reuse for this request.
+    """
+    context = max(32, int(model.get("context") or 4096))
+    words = min(256, context // 4)
+    payload = {
+        "prompt": "warm " * words,
+        "n_predict": 2,
+        "ignore_eos": True,
+        "temperature": 0,
+        "stream": False,
+        "cache_prompt": False,
+    }
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{int(model.get('port') or 8081)}/completion",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    started = time.monotonic()
+    with urllib.request.urlopen(request, timeout=_WARMUP_TIMEOUT) as response:
+        data = json.loads(response.read(1024 * 1024))
+    if not isinstance(data, dict) or data.get("error") or not data.get("tokens_predicted"):
+        raise ValueError("The native runtime did not complete its warm-up prediction.")
+    return {"status": "complete", "seconds": round(time.monotonic() - started, 3)}
 
 
 def _terminate(pid, *, state=None):
@@ -478,7 +509,7 @@ class NativeLlamaCppProvider(DeploymentProvider):
             log_handle.close()
             return _failure("missing_runtime", str(exc), "Verify the executable path and permissions, then retry.", command=command, resolvedPlan=plan_payload)
         log_handle.close()
-        state = {"pid": process.pid, "command": command, "engine": engine, "logPath": str(log_path), "startedAt": time.time(), "resolvedPlan": plan_payload}
+        state = {"pid": process.pid, "command": command, "engine": engine, "logPath": str(log_path), "startedAt": time.time(), "resolvedPlan": plan_payload, "startupStage": "loading"}
         try:
             state["processCreatedAt"] = psutil.Process(process.pid).create_time()
         except psutil.Error:
@@ -491,7 +522,16 @@ class NativeLlamaCppProvider(DeploymentProvider):
                 log_text = self.logs(model, limit=40).get("logs", "")
                 return _failure_from_text(log_text, f"llama-server exited with code {process.returncode}.", command=command, logPath=str(log_path), resolvedPlan=plan_payload)
             if _health(model, timeout=1.0):
-                return {"ok": True, "status": "running", "pid": process.pid, "command": command, "logPath": str(log_path), "resolvedPlan": plan_payload}
+                state["startupStage"] = "warming"
+                _write_state(model, state)
+                try:
+                    state["warmup"] = _warm_up({**model, "context": plan.resolved_settings.get("context_length", model.get("context"))})
+                except (OSError, ValueError, urllib.error.URLError) as exc:
+                    self.stop(model)
+                    return _failure("warmup_failed", f"The model loaded but its warm-up failed: {exc}", "Check the native runtime log and available memory, then retry Load.", command=command, logPath=str(log_path), resolvedPlan=plan_payload)
+                state["startupStage"] = "ready"
+                _write_state(model, state)
+                return {"ok": True, "status": "running", "pid": process.pid, "command": command, "logPath": str(log_path), "resolvedPlan": plan_payload, "warmup": state["warmup"]}
             time.sleep(0.25)
         self.stop(model)
         return _failure("health_timeout", f"llama-server did not become healthy within {_START_TIMEOUT:g} seconds.", "Check the native llama.cpp log, model fit, and port availability, then retry.", command=command, logPath=str(log_path), resolvedPlan=plan_payload)
@@ -528,6 +568,8 @@ class NativeLlamaCppProvider(DeploymentProvider):
                 except OSError:
                     pass
             return "stopped"
+        if state.get("startupStage") in {"loading", "warming"}:
+            return "starting"
         return "running" if _health(model) else "starting"
 
     def logs(self, model, limit=120):

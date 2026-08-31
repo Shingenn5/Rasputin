@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import threading
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -57,6 +59,29 @@ class DesktopModelApiTests(unittest.TestCase):
 
     def tearDown(self):
         main.app.dependency_overrides.clear()
+
+    def test_model_load_and_stop_leave_event_loop_responsive(self):
+        for handler, operation in ((core.model_registry_start, "start_model"), (core.model_registry_stop, "stop_model")):
+            with self.subTest(operation=operation):
+                entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+                def blocking_lifecycle(*args, **kwargs):
+                    entered.set()
+                    release.wait(1)
+                    finished.set()
+                    return {"ok": True}
+
+                async def check():
+                    request = asyncio.create_task(handler(core.ModelKeyIn(key="fixture"), _user={"role": "admin"}))
+                    try:
+                        self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+                        self.assertFalse(finished.is_set(), "The event loop must run while lifecycle work is pending")
+                    finally:
+                        release.set()
+                        await request
+
+                with patch.object(core.model_registry, operation, side_effect=blocking_lifecycle):
+                    asyncio.run(check())
 
     def test_model_id_compatibility_and_exact_variant_download(self):
         with patch.object(model_acquisition, "start_download", return_value={"id": "legacy"}) as legacy:

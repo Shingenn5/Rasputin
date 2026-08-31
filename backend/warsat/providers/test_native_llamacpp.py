@@ -154,7 +154,7 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
         process = Mock()
         process.pid = 4242
         process.poll.return_value = None
-        with patch("backend.warsat.providers.native_llamacpp._find_engine", return_value="llama-server.exe"),              patch("backend.warsat.providers.native_llamacpp.subprocess.Popen", return_value=process),              patch("backend.warsat.providers.native_llamacpp._health", return_value=True):
+        with patch("backend.warsat.providers.native_llamacpp._find_engine", return_value="llama-server.exe"),              patch("backend.warsat.providers.native_llamacpp.subprocess.Popen", return_value=process),              patch("backend.warsat.providers.native_llamacpp._health", return_value=True), patch("backend.warsat.providers.native_llamacpp._warm_up", return_value={"status": "complete", "seconds": 1}):
             result = self.provider.start(self.model)
         state = json.loads((Path(os.environ["RASPUTIN_DATA_DIR"]) / "llama.cpp" / "demo.json").read_text(encoding="utf-8"))
         assert result["ok"]
@@ -162,6 +162,40 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
         assert state["resolvedPlan"] == result["resolvedPlan"]
         assert "--host" in state["command"] and "127.0.0.1" in state["command"]
         self.provider.stop(self.model)
+
+    def test_warmup_is_bounded_synthetic_and_uses_owned_loopback_port(self):
+        from backend.warsat.providers import native_llamacpp as native
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b'{"tokens_predicted": 2}'
+        with patch.object(native.urllib.request, "urlopen", return_value=response) as request:
+            result = native._warm_up({**self.model, "base_url": "https://untrusted.invalid/v1"})
+        self.assertEqual(result["status"], "complete")
+        req = request.call_args.args[0]
+        self.assertEqual(req.full_url, "http://127.0.0.1:18081/completion")
+        payload = json.loads(req.data)
+        self.assertEqual(payload["n_predict"], 2)
+        self.assertTrue(payload["ignore_eos"])
+        self.assertFalse(payload["cache_prompt"])
+        self.assertLessEqual(len(payload["prompt"].split()), 256)
+        self.assertEqual(request.call_args.kwargs["timeout"], 120)
+
+    def test_healthy_process_is_not_ready_until_warmup_completes(self):
+        from backend.warsat.providers import native_llamacpp as native
+        for stage, expected in (("loading", "starting"), ("warming", "starting"), ("ready", "running")):
+            with self.subTest(stage=stage), patch.object(native, "_read_state", return_value={"startupStage": stage}), patch.object(native, "_owned_process", return_value=Mock()), patch.object(native, "_health", return_value=True):
+                self.assertEqual(self.provider.status(self.model), expected)
+
+    def test_failed_warmup_does_not_report_ready_and_stops_new_process(self):
+        from backend.warsat.providers import native_llamacpp as native
+        process = Mock(pid=4242)
+        process.poll.return_value = None
+        with patch.object(native, "_find_engine", return_value="llama-server.exe"), patch.object(native.subprocess, "Popen", return_value=process), patch.object(native, "_health", return_value=True), patch.object(native, "_warm_up", side_effect=TimeoutError("warm-up timeout")), patch.object(self.provider, "stop", return_value={"ok": True}) as stop:
+            result = self.provider.start(self.model)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failureCode"], "warmup_failed")
+        self.assertEqual(stop.call_count, 2)
 
     def test_managed_runtime_path_is_used_before_path_fallback(self):
         managed = Path(self.temp_dir.name) / "managed-llama-server.exe"

@@ -93,6 +93,9 @@ def _empty_generation_metrics():
         "lastOutputTokens": 0,
         "lastGenerationSeconds": 0.0,
         "lastTokensPerSecond": None,
+        "lastTimeToFirstTokenSeconds": None,
+        "lastPromptSeconds": None,
+        "lastDecodeTokensPerSecond": None,
     }
 
 
@@ -125,8 +128,7 @@ def _metric_tokens_per_second(output_tokens, generation_seconds):
     if not math.isfinite(rate):
         return None
     rate = min(rate, MAX_GENERATION_TOKENS_PER_SECOND)
-    rounded = round(rate, 2)
-    return rounded if rounded > 0 else None
+    return rate
 
 
 def _normalize_generation_metrics(value):
@@ -153,6 +155,10 @@ def _normalize_generation_metrics(value):
         "lastGenerationSeconds": last_generation_seconds,
         "lastTokensPerSecond": _metric_tokens_per_second(last_output_tokens, last_generation_seconds),
     })
+    for key in ("lastTimeToFirstTokenSeconds", "lastPromptSeconds", "lastDecodeTokensPerSecond"):
+        number = _nonnegative_metric_float(raw.get(key))
+        if number > 0:
+            metrics[key] = min(number, MAX_GENERATION_TOKENS_PER_SECOND) if key == "lastDecodeTokensPerSecond" else _metric_seconds(number)
     return metrics
 
 
@@ -1719,25 +1725,34 @@ class AgentHub:
 
         return on_delta
 
-    def _record_generation_metrics(self, task, phase, text, elapsed_seconds):
-        """Record honest, task-scoped output throughput for message details.
+    def _record_generation_metrics(self, task, phase, text, elapsed_seconds, native_metrics=None):
+        """Keep whole-request throughput separate from native decode speed.
 
-        Provider responses do not consistently expose token usage across local
-        runtimes, so the current count is explicitly estimated from response
-        text. The elapsed time is measured around the model request, which
-        makes the displayed value useful for comparing runs without implying
-        runtime-reported tokenizer precision.
+        Counts are exact only when every recorded call supplied valid usage.
+        First-visible-token and native timings describe the most recent call;
+        they must not be reconstructed from total request duration.
         """
         metrics = _normalize_generation_metrics(getattr(task, "generation_metrics", None))
-        output_tokens = max(0, context_governor.estimate_tokens(text))
+        native = native_metrics or {}
+        usage = native.get("usage") if isinstance(native.get("usage"), dict) else {}
+        timing = native.get("timing") if isinstance(native.get("timing"), dict) else {}
+        raw_tokens = usage.get("completion_tokens", timing.get("predicted_n"))
+        exact = (
+            _nonnegative_metric_int(raw_tokens) > 0
+            or (isinstance(raw_tokens, (int, float)) and not isinstance(raw_tokens, bool) and raw_tokens == 0)
+        )
+        output_tokens = _nonnegative_metric_int(raw_tokens) if exact else max(0, context_governor.estimate_tokens(text))
         duration = _metric_seconds(elapsed_seconds)
-        metrics["tokenCountSource"] = "estimated"
+        metrics["tokenCountSource"] = "exact" if exact and (not metrics["turns"] or metrics["tokenCountSource"] == "exact") else "estimated"
         metrics["outputTokens"] += output_tokens
         metrics["generationSeconds"] = round(metrics["generationSeconds"] + duration, 3)
         metrics["turns"] += 1
         metrics["lastPhase"] = phase
         metrics["lastOutputTokens"] = output_tokens
         metrics["lastGenerationSeconds"] = duration
+        metrics["lastTimeToFirstTokenSeconds"] = native.get("timeToFirstTokenSeconds")
+        metrics["lastPromptSeconds"] = _nonnegative_metric_float(timing.get("prompt_ms")) / 1000
+        metrics["lastDecodeTokensPerSecond"] = timing.get("predicted_per_second")
         task.generation_metrics = _normalize_generation_metrics(metrics)
         self._trigger_broadcast(task.id)
 
@@ -1874,14 +1889,27 @@ class AgentHub:
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
                 generation_started = time.perf_counter()
+                native_metrics = {}
+
+                def measured_delta(event):
+                    if event.get("type") == "text" and event.get("text") and "timeToFirstTokenSeconds" not in native_metrics:
+                        native_metrics["timeToFirstTokenSeconds"] = time.perf_counter() - generation_started
+                    if event.get("type") == "metrics":
+                        for key in ("usage", "timing"):
+                            if isinstance(event.get(key), dict):
+                                native_metrics.setdefault(key, {}).update(event[key])
+                    if on_delta:
+                        on_delta(event)
+
                 text, tool_calls = await _chat(
-                    model_key, messages, tools=tools, on_delta=on_delta, reasoning=effective_reasoning,
+                    model_key, messages, tools=tools, on_delta=measured_delta if on_delta else None, reasoning=effective_reasoning,
                 )
                 self._record_generation_metrics(
                     task,
                     phase,
                     text,
                     time.perf_counter() - generation_started,
+                    native_metrics,
                 )
 
                 if minimal_inference and not tool_calls:

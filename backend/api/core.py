@@ -839,12 +839,12 @@ async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(
 @models_router.post("/model-registry/start")
 
 async def model_registry_start(req: ModelKeyIn, _user=Depends(require_admin)):
-    return ok(model_registry.start_model(req.key, load_profile=req.profile))
+    return ok(await asyncio.to_thread(model_registry.start_model, req.key, load_profile=req.profile))
 
 @models_router.post("/model-registry/stop")
 
 async def model_registry_stop(req: ModelKeyIn, _user=Depends(require_admin)):
-    return ok(model_registry.stop_model(req.key))
+    return ok(await asyncio.to_thread(model_registry.stop_model, req.key))
 
 @models_router.post("/model-registry/test")
 

@@ -1,3 +1,4 @@
+import { formatGenerationMetrics } from "../../lib/generationMetrics.js";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pause, Play, RefreshCw, Square, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -148,9 +149,13 @@ export function TaskDetailsDrawer({
                     <Metric label="Status" value={task.status || "queued"} tone={task.status} />
                     <Metric label="Activity" value={active ? (task.status === "running" ? "Generating" : labelize(task.status)) : "Complete"} />
                     <Metric
-                      label="Output TPS"
+                      label="Request throughput (all calls)"
                       value={formatGenerationMetrics(task.generationMetrics).tokensPerSecond}
                     />
+                    <Metric label="Generation speed (last call)" value={formatGenerationMetrics(task.generationMetrics).decodeSpeed} />
+                    <Metric label="First visible token (last call)" value={formatGenerationMetrics(task.generationMetrics).firstToken} />
+                    <Metric label="Prompt processing (last call)" value={formatGenerationMetrics(task.generationMetrics).promptTime} />
+                    <Metric label="Request time (last call)" value={formatGenerationMetrics(task.generationMetrics).requestTime} />
                     <Metric
                       label="Output tokens"
                       value={formatGenerationMetrics(task.generationMetrics).outputTokens}
@@ -681,19 +686,6 @@ function ToolCallSummary({ tool }) {
   );
 }
 
-function formatGenerationMetrics(metrics) {
-  const source = metrics?.tokenCountSource === "exact" ? "exact" : "estimated";
-  const tokensPerSecond = Number(metrics?.tokensPerSecond);
-  const outputTokens = Number(metrics?.outputTokens);
-  return {
-    tokensPerSecond: Number.isFinite(tokensPerSecond) && tokensPerSecond > 0
-      ? tokensPerSecond.toFixed(1) + " tok/s (" + source + ")"
-      : "Unavailable",
-    outputTokens: Number.isFinite(outputTokens) && outputTokens > 0
-      ? (source === "estimated" ? "~" : "") + outputTokens.toLocaleString()
-      : "Unavailable",
-  };
-}
 
 function Metric({ label, value, tone }) {
   return (

@@ -1,3 +1,4 @@
+import { formatGenerationMetrics } from "../../lib/generationMetrics.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
@@ -1293,19 +1294,6 @@ function ModeSidePanel({
   );
 }
 
-function formatGenerationMetrics(metrics) {
-  const source = metrics?.tokenCountSource === "exact" ? "exact" : "estimated";
-  const tokensPerSecond = Number(metrics?.tokensPerSecond);
-  const outputTokens = Number(metrics?.outputTokens);
-  return {
-    tokensPerSecond: Number.isFinite(tokensPerSecond) && tokensPerSecond > 0
-      ? tokensPerSecond.toFixed(1) + " tok/s (" + source + ")"
-      : "Unavailable",
-    outputTokens: Number.isFinite(outputTokens) && outputTokens > 0
-      ? (source === "estimated" ? "~" : "") + outputTokens.toLocaleString()
-      : "Unavailable",
-  };
-}
 
 function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskDetails }) {
   const status = task.status || "queued";
@@ -1341,7 +1329,7 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
           <span className={`status-pill status-${status}`}>{status}</span>
           {active && (
             <span className="status-pill status-running">
-              {streaming ? "Generating…" : status === "queued" ? "Queued" : status === "paused" ? "Paused" : "Working…"}
+              {streaming ? "Generating…" : status === "queued" ? "Queued" : status === "paused" ? "Paused" : runningPhase === "chat" ? "Waiting for first token…" : "Working…"}
             </span>
           )}
           <span className="task-runtime-identity" data-testid="task-runtime-identity" title={taskRuntimeIdentity}>
@@ -1375,8 +1363,14 @@ function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskD
             )}
             <dt>Workspace</dt><dd>{displayWorkspaceName(task.workspace)}</dd>
             <dt>Status</dt><dd>{status}</dd>
-            <dt>Output TPS</dt>
+            <dt>Request throughput (all calls)</dt>
             <dd data-testid="message-generation-tps">{generation.tokensPerSecond}</dd>
+            <dt>Generation speed (last call)</dt>
+            <dd data-testid="message-decode-tps">{generation.decodeSpeed}</dd>
+            <dt>First visible token (last call)</dt>
+            <dd data-testid="message-first-token">{generation.firstToken}</dd>
+            <dt>Prompt processing (last call)</dt><dd>{generation.promptTime}</dd>
+            <dt>Request time (last call)</dt><dd>{generation.requestTime}</dd>
             <dt>Output tokens</dt>
             <dd>{generation.outputTokens}</dd>
           </dl>
