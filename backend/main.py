@@ -94,6 +94,12 @@ async def startup():
         audit.log("task_queue_recovered", {"count": recovered})
     telegram.start_polling()
     try:
+        discovery = await asyncio.to_thread(model_registry.discover_gguf_at_startup)
+        if discovery.get("registered"):
+            audit.log("model_startup_discovery_registered", {"count": len(discovery["registered"])})
+    except Exception as exc:
+        audit.log("model_startup_discovery_failed", {"error": str(exc)})
+    try:
         model_registry.auto_repair_obvious()
     except Exception as exc:
         audit.log("model_auto_repair_startup_failed", {"error": str(exc)})

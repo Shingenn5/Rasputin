@@ -90,6 +90,27 @@ test("Discover hardware includes CPU, system RAM, GPU facts, and readable native
   assert.match(styles, /select option \{ background-color: #111815; color: #eef7f2;/);
 });
 
+test("Discover shows registered models independently of catalog results and opens My Models", () => {
+  assert.match(models, /data-testid="discover-installed-models"/);
+  assert.match(models, /const discoverInstalledModels = useMemo/);
+  assert.match(models, /model\.runtime === "native-llamacpp"/);
+  assert.match(models, /model\.artifactAvailable \?\? model\.artifact_available/);
+  assert.match(models, /artifactAvailable === true/);
+  assert.match(models, /Number\.isFinite\(size\) && size > 0/);
+  assert.match(models, /discoverInstalledModels\.length > 0/);
+  assert.match(models, /models=\{discoverInstalledModels\}/);
+  assert.match(models, /function DiscoverInstalledSummary/);
+  assert.match(models, /On this Rasputin/);
+  assert.match(models, /downloaded model/);
+  assert.match(models, /status === "reachable" \? "Ready" : "Downloaded"/);
+  assert.match(models, /Manage .* in My Models/);
+  assert.match(models, /setSelectedInstalledKey\(model\.key\)/);
+  assert.match(models, /setActiveTab\("installed"\)/);
+  assert.match(models, /go\?\.\("models"\)/);
+  assert.match(styles, /models-discover-installed ul[^}]*grid-template-columns: repeat\(auto-fit, minmax\(230px, 1fr\)\)/s);
+  assert.match(styles, /@media \(max-width: 640px\)[\s\S]*models-discover-installed ul \{ max-height: 238px; grid-template-columns: minmax\(0, 1fr\); \}/);
+});
+
 test("completed downloads leave the fixed progress rail but remain available through catalog state", () => {
   assert.match(models, /const downloadProgressJobs = useMemo/);
   assert.match(models, /showsGlobalDownloadProgress\(downloadJobState\(job\)\)/);

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -448,6 +449,12 @@ def _artifact_display_name(artifact):
 
 def _public_model(model):
     item = {**model, **_native_file_size_metadata(model)}
+    if item.get("runtime") == NATIVE_RUNTIME:
+        try:
+            artifact_path = Path(str(item.get("host_model_path") or "")).expanduser().resolve()
+            item["artifact_available"] = artifact_path.is_file() and artifact_path.suffix.lower() == ".gguf"
+        except (OSError, TypeError, ValueError):
+            item["artifact_available"] = False
     if item.get("runtime") == NATIVE_RUNTIME and item.get("repository"):
         item.setdefault("publisher", str(item["repository"]).split("/", 1)[0])
         if item.get("name") == item.get("variant_id"):
@@ -630,8 +637,9 @@ def set_role(key, role):
     raise AppError("model_missing", f"Model '{key}' is not registered.", 404)
 
 
-def upsert(model):
-    security.require("allow_model_registry_edit")
+def _upsert(model, *, require_permission):
+    if require_permission:
+        security.require("allow_model_registry_edit")
     model = _normalize_model_payload(model)
     api_key = str(model.pop("api_key", "") or "").strip()
     clear_api_key = bool(model.pop("clear_api_key", False))
@@ -696,6 +704,9 @@ def upsert(model):
     audit.log("model_upsert", {"key": key, "provider": model.get("provider"), "managed": model.get("managed")})
     return model
 
+
+def upsert(model):
+    return _upsert(model, require_permission=True)
 
 PROTECTED_KEYS = {"dry-run", "local-embeddings"}
 
@@ -963,8 +974,9 @@ def start_health_monitor():
     return thread
 
 
-def import_gguf(req):
-    security.require("allow_model_registry_edit")
+def _import_gguf(req, *, require_permission):
+    if require_permission:
+        security.require("allow_model_registry_edit")
     file_path = _safe_file(req.get("path", ""))
     existing = _gguf_already_imported(file_path)
     if existing:
@@ -1000,9 +1012,87 @@ def import_gguf(req):
                   "artifact_files", "artifact_destination", "mmproj_path"):
         if req.get(field) is not None:
             model[field] = req[field]
-    out = upsert(model)
-    audit.log("model_import_gguf", {"key": key, "path": str(file_path), "port": port})
+    out = _upsert(model, require_permission=require_permission)
+    audit.log("model_import_gguf", {"key": key, "path": str(file_path), "port": port, "startup": not require_permission})
     return out
+
+
+def import_gguf(req):
+    return _import_gguf(req, require_permission=True)
+
+
+def discover_gguf_at_startup(*, limit=200, time_budget_seconds=2.0):
+    """Register valid GGUFs already present in bounded native model roots.
+
+    Startup discovery reads only the four-byte GGUF signature. Stable keys hash
+    the normalized path, never model contents, so multi-GB files are not read.
+    Existing and stale registrations are left intact.
+    """
+    if not workspace.is_native():
+        return {"roots": [], "registered": [], "existing": [], "ignored": 0, "truncated": False}
+    try:
+        maximum = max(1, min(int(limit), 200))
+        budget = max(0.05, min(float(time_budget_seconds), 10.0))
+    except (TypeError, ValueError):
+        maximum, budget = 200, 2.0
+    roots = _model_library_roots()
+    deadline = time.monotonic() + budget
+    registered = []
+    existing = []
+    ignored = 0
+    considered = 0
+    truncated = False
+    for base in roots:
+        if time.monotonic() >= deadline or considered >= maximum:
+            truncated = True
+            break
+        if not base.is_dir():
+            continue
+        try:
+            candidates = base.rglob("*.gguf")
+            for file_path in candidates:
+                if time.monotonic() >= deadline or considered >= maximum:
+                    truncated = True
+                    break
+                considered += 1
+                lowered = file_path.name.lower()
+                if lowered.startswith("mmproj"):
+                    ignored += 1
+                    continue
+                shard = re.match(r"^.*-(\d{5})-of-(\d{5})\.gguf$", lowered)
+                if shard and int(shard.group(1)) != 1:
+                    ignored += 1
+                    continue
+                try:
+                    safe_path = _safe_file(file_path)
+                    with safe_path.open("rb") as handle:
+                        if handle.read(4) != b"GGUF":
+                            ignored += 1
+                            continue
+                except (AppError, OSError):
+                    ignored += 1
+                    continue
+                imported = _gguf_already_imported(safe_path)
+                if imported:
+                    existing.append(imported.get("key") or str(safe_path))
+                    continue
+                identity = os.path.normcase(str(safe_path))
+                suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:10]
+                key = f"auto-{_slug(safe_path.stem)}-{suffix}"
+                model = _import_gguf({"path": str(safe_path), "key": key, "name": safe_path.stem}, require_permission=False)
+                registered.append(model.get("key") or key)
+        except OSError:
+            ignored += 1
+    result = {
+        "roots": [str(root) for root in roots],
+        "registered": registered,
+        "existing": existing,
+        "ignored": ignored,
+        "considered": considered,
+        "truncated": truncated,
+    }
+    audit.log("model_startup_discovery", result)
+    return result
 
 
 def register_artifact(artifact):

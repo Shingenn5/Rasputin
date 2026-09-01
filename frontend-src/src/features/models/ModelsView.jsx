@@ -1243,6 +1243,12 @@ export function ModelsView({
     m.key !== "dry-run" && !["mock", "hash-vector"].includes(m.provider)
   )), [models]);
   const installedModels = registeredModels;
+  const discoverInstalledModels = useMemo(() => registeredModels.filter((model) => {
+    const path = model.hostModelPath || model.host_model_path || model.modelPath || model.model_path;
+    const artifactAvailable = model.artifactAvailable ?? model.artifact_available;
+    const size = Number(model.sizeBytes ?? model.size_bytes);
+    return model.runtime === "native-llamacpp" && artifactAvailable === true && Boolean(path) && Number.isFinite(size) && size > 0;
+  }), [registeredModels]);
   const filteredInstalledModels = useMemo(() => {
     const query = installedSearch.trim().toLowerCase();
     return installedModels.filter((model) => {
@@ -1592,6 +1598,16 @@ export function ModelsView({
     }
   };
 
+  const manageInstalledModel = (model) => {
+    if (!model?.key) return;
+    setInstalledSearch("");
+    setInstalledCategory("all");
+    setSelectedInstalledKey(model.key);
+    setInstalledInspectorTab(isManagedModelRunning(model) ? "load" : "info");
+    setActiveTab("installed");
+    go?.("models");
+  };
+
   const loadCompletedArtifact = async (download) => {
     const artifact = completedArtifactFor(download);
     const identity = downloadJobIdentity(download);
@@ -1916,7 +1932,11 @@ export function ModelsView({
                 </div>
               )}
 
-              {/* Active Downloads */}
+              {discoverInstalledModels.length > 0 && (
+                <DiscoverInstalledSummary models={discoverInstalledModels} onManage={manageInstalledModel} />
+              )}
+
+              {/* Active downloads only. Completed and cancelled receipts remain out of this rail. */}
               {downloadProgressJobs.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }} data-testid="model-download-progress-rail">
                   {downloadProgressJobs.map((dl) => <ModelDownloadProgress key={downloadJobIdentity(dl) || dl.modelId || dl.repository} download={dl} onDownloadAction={onDownloadAction} onLoadArtifact={downloadJobState(dl) === "completed" ? loadCompletedArtifact : undefined} loadingArtifact={loadingArtifact === downloadJobIdentity(dl)} />)}
@@ -2654,6 +2674,44 @@ function CatalogPagination({ total, currentPage, pageCount, pageSize, onPageChan
         </label>
       </div>
     </footer>
+  );
+}
+
+function DiscoverInstalledSummary({ models, onManage }) {
+  return (
+    <section className="models-discover-installed" data-testid="discover-installed-models" aria-labelledby="discover-installed-title">
+      <header>
+        <span>
+          <CheckCircle2 size={15} aria-hidden="true" />
+          <strong id="discover-installed-title">On this Rasputin</strong>
+        </span>
+        <small>{models.length} downloaded model{models.length === 1 ? "" : "s"}</small>
+      </header>
+      <ul aria-label="Installed models available on this Rasputin">
+        {models.map((model) => {
+          const running = isManagedModelRunning(model);
+          const status = runtimeStatus(model);
+          const statusLabel = running ? "Loaded" : status === "reachable" ? "Ready" : "Downloaded";
+          return (
+            <li key={model.key} data-model-key={model.key}>
+              <PublisherLogo item={model} size="sm" />
+              <span className="models-discover-installed-copy">
+                <strong>{displayModelName(model, models)}</strong>
+                <small><span className={running ? "is-loaded" : ""}>{statusLabel}</span> · {installedModelFormat(model)}</small>
+              </span>
+              <button
+                type="button"
+                className="models-discover-installed-action"
+                onClick={() => onManage?.(model)}
+                aria-label={`Manage ${displayModelName(model, models)} in My Models`}
+              >
+                Manage
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
