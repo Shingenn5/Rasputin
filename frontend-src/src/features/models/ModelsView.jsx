@@ -47,6 +47,7 @@ import {
   runtimeStatus,
 } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
+import { showsGlobalDownloadProgress } from "../../lib/modelDownloadVisibility.js";
 import { api, postJson } from "../../api/client.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
@@ -1176,6 +1177,10 @@ export function ModelsView({
   const gpuCapacity = useMemo(() => hardwarePlacementCapacity(effectiveHardware), [effectiveHardware]);
   const systemHardware = useMemo(() => systemHardwareSummary(effectiveHardware), [effectiveHardware]);
   const totalVramGb = gpuCapacity.aggregateVramGb || 0;
+  const downloadProgressJobs = useMemo(
+    () => activeDownloads.filter((job) => showsGlobalDownloadProgress(downloadJobState(job))),
+    [activeDownloads],
+  );
 
   useEffect(() => {
     if (warsatHardware) {
@@ -1912,9 +1917,9 @@ export function ModelsView({
               )}
 
               {/* Active Downloads */}
-              {activeDownloads.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
-                  {activeDownloads.map((dl) => <ModelDownloadProgress key={downloadJobIdentity(dl) || dl.modelId || dl.repository} download={dl} onDownloadAction={onDownloadAction} onLoadArtifact={downloadJobState(dl) === "completed" ? loadCompletedArtifact : undefined} loadingArtifact={loadingArtifact === downloadJobIdentity(dl)} />)}
+              {downloadProgressJobs.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }} data-testid="model-download-progress-rail">
+                  {downloadProgressJobs.map((dl) => <ModelDownloadProgress key={downloadJobIdentity(dl) || dl.modelId || dl.repository} download={dl} onDownloadAction={onDownloadAction} onLoadArtifact={downloadJobState(dl) === "completed" ? loadCompletedArtifact : undefined} loadingArtifact={loadingArtifact === downloadJobIdentity(dl)} />)}
                 </div>
               )}
 
@@ -2011,6 +2016,8 @@ export function ModelsView({
                       downloadCatalogItem={downloadCatalogItem}
                       onDownloadAction={onDownloadAction}
                       activeDownloads={activeDownloads}
+                      loadCompletedArtifact={loadCompletedArtifact}
+                      loadingArtifact={loadingArtifact}
                     />
                   </div>
                 )}
@@ -2729,6 +2736,8 @@ function DiscoverModelInspector({
   downloadCatalogItem,
   onDownloadAction,
   activeDownloads,
+  loadCompletedArtifact,
+  loadingArtifact,
 }) {
   const [variantDetail, setVariantDetail] = useState(null);
   const [variantDetailLoading, setVariantDetailLoading] = useState(false);
@@ -2791,6 +2800,10 @@ function DiscoverModelInspector({
   const activeDownloadId = downloadJobIdentity(activeDownload);
   const runPrimaryAction = async () => {
     onTabChange("download");
+    if (downloaded) {
+      await loadCompletedArtifact?.(activeDownload);
+      return;
+    }
     if (isDownloading) {
       await onDownloadAction?.("cancel", activeDownloadId);
       return;
@@ -2809,11 +2822,11 @@ function DiscoverModelInspector({
   const primaryLabel = isDownloading
     ? "Stop"
     : downloaded
-      ? "Downloaded"
+      ? (loadingArtifact === activeDownloadId ? "Loading…" : "Load model")
       : !isHuggingFace
         ? "Prepare model"
         : "Download";
-  const primaryDisabled = downloaded || (isDownloading && !activeDownloadId);
+  const primaryDisabled = (downloaded && (!activeDownloadId || loadingArtifact === activeDownloadId)) || (isDownloading && !activeDownloadId);
   const exactDownloadDisabled = downloaded || isDownloading || !selectedVariant || !selectedCompatibility?.safe;
   const fitReady = downloaded || item.readyWithinThreeMinutes || item.loaded || placement.canRunNow;
   const fitStatus = downloaded ? "Downloaded" : placement.label;
@@ -2845,7 +2858,7 @@ function DiscoverModelInspector({
         <span className={`models-inspector-status ${fitReady ? "is-ready" : ""}`}>{fitStatus}</span>
         <div className="models-inspector-primary-actions">
           <button className="w2-button primary" type="button" data-testid="discover-download-action" onClick={runPrimaryAction} disabled={primaryDisabled}>
-            {isDownloading ? <Square size={13} /> : <Download size={13} />} {primaryLabel}
+            {isDownloading ? <Square size={13} /> : downloaded ? <Play size={13} /> : <Download size={13} />} {primaryLabel}
           </button>
           {item.sourceUrl ? (
             <a className="w2-button" href={item.sourceUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Source</a>

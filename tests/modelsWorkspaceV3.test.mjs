@@ -90,6 +90,18 @@ test("Discover hardware includes CPU, system RAM, GPU facts, and readable native
   assert.match(styles, /select option \{ background-color: #111815; color: #eef7f2;/);
 });
 
+test("completed downloads leave the fixed progress rail but remain available through catalog state", () => {
+  assert.match(models, /const downloadProgressJobs = useMemo/);
+  assert.match(models, /showsGlobalDownloadProgress\(downloadJobState\(job\)\)/);
+  assert.match(models, /downloadProgressJobs\.map/);
+  assert.doesNotMatch(models, /activeDownloads\.map\(\(dl\) => <ModelDownloadProgress/);
+  assert.match(models, /const downloaded = downloadState === "completed"/);
+  assert.match(models, /downloaded \? <><CheckCircle2 size=\{12\} \/> Manage<\/>/);
+  assert.match(models, /loadCompletedArtifact=\{loadCompletedArtifact\}/);
+  assert.match(models, /if \(downloaded\) \{\s*await loadCompletedArtifact\?\.\(activeDownload\)/);
+  assert.match(models, /downloaded \? <Play size=\{13\}/);
+});
+
 test("Discover downloads start directly and expose Stop in the same controls", () => {
   assert.match(models, /function preferredDownloadVariant/);
   assert.match(models, /const downloadCatalogItem = async \(item\)/);

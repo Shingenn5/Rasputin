@@ -129,6 +129,27 @@ again found no page errors or overflow at all three widths. `npm run desktop:pac
 The updated installer must be applied and checked before this cleanup is live there; doing so
 requires closing the app and unloading its active model.
 
+## 2026-08-31 Discover completed-download flow cleanup
+
+**IMPLEMENTED / VERIFIED in isolated source:** completed and cancelled download receipts no
+longer remain in the global progress rail above Discover's independently scrolling catalog.
+In-progress, paused, and failed jobs remain visible there because they still need status or an
+operator action. A completed model stays in its catalog row with `Manage`; its inspector retains
+the direct `Load model` action, so removing the stale receipt does not remove deployment access.
+
+The authenticated Desktop browser fixture rendered 40 catalog rows, scrolled the catalog by 600
+pixels, and verified that an active download remained actionable while the completed-only state
+had no progress rail. The completed row opened its inspector with an enabled `Load model` action.
+No page errors or horizontal overflow occurred at widths 1440, 1024, and 390. Focused model UI
+coverage passed 53 tests, and the production frontend build completed. The rebuilt packaged
+backend/UI repeated the same active and completed states, catalog scroll, inspector action, and
+three-width checks with no page errors. `npm run desktop:package` produced
+`dist/electron/Rasputin-Setup-0.2.0.exe`. Local proof is under
+`%TEMP%/rasputin-discover-scroll-01a0540b/` (`proof.json`, `packaged-proof.json`, and screenshots).
+
+**Deployment boundary:** source and packaged verification do not update the installed Desktop app.
+Installing the rebuilt package requires closing the app and unloading its active model.
+
 ## Evidence boundary
 
 The 2026-08-29 native lifecycle and UI checks used isolated data, real authentication, a real
