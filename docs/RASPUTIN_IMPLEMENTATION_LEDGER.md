@@ -147,8 +147,14 @@ three-width checks with no page errors. `npm run desktop:package` produced
 `dist/electron/Rasputin-Setup-0.2.0.exe`. Local proof is under
 `%TEMP%/rasputin-discover-scroll-01a0540b/` (`proof.json`, `packaged-proof.json`, and screenshots).
 
-**Deployment boundary:** source and packaged verification do not update the installed Desktop app.
-Installing the rebuilt package requires closing the app and unloading its active model.
+**VERIFIED installed on the current workstation:** the silent current-user update exited zero;
+the installed executable, `resources/app.asar`, and backend executable hashes match the tested
+package. The restarted installed backend returned HTTP 200 and the installed UI repeated the
+completed-download flow with no page errors or overflow at all three widths. The previously loaded
+Qwen model was intentionally unloaded for the approved update and was not automatically reloaded.
+Installed proof is in the same scratch folder as `installed-proof.json` and
+`installed-completed-download-flow.png`; the prior installed binaries are preserved under
+`pre-discover-update/` for rollback.
 
 ## Evidence boundary
 
