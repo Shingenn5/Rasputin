@@ -23,7 +23,7 @@ These are foundations to preserve, not rewrite:
 - Local accounts, session auth, owner-scoped records, workspace roles, approvals, audit trails, and trusted-workspace controls.
 - Agent modes with bounded execution, token/tool-event streaming, patch-based edits, shell execution, Git status/diff/commit tools, and a test/fix loop.
 - Workspace browsing, RAG/knowledge-graph tools, artifact/archive/inbox surfaces, memory review/job APIs, and bounded conversation summaries.
-- Native GGUF acquisition, load-profile planning, bundled llama.cpp execution, GPU probing, model health, and placement tests.
+- Native GGUF acquisition, load-profile planning, hardware-selected llama.cpp acquisition and execution, GPU probing, model health, and placement tests.
 - Persisted model capability probes, conservative mode preflight/fallback, per-deploy parser contracts, Assistant readiness/command-preview contracts, and device-free local voice adapters.
 - Bounded application backup/integrity verification, owner metadata export/deletion confirmation,
   live operational diagnostics, a sarcastic-but-respectful Assistant profile contract, and a

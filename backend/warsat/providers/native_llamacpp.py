@@ -132,13 +132,10 @@ def _model_accelerator(model):
 def _find_engine(model):
     configured = str(model.get("engine_path") or os.environ.get("RASPUTIN_LLAMA_SERVER") or "").strip()
     accelerator = _model_accelerator(model)
+    service = LlamaCppRuntimeService(manifest_path=discover_manifest_path())
+    if _desktop_only():
+        return str(service.ensure_local_runtime().get("engine_path") or "")
     try:
-        service = LlamaCppRuntimeService(manifest_path=discover_manifest_path())
-        if _desktop_only():
-            bundled = service.bundled_engine_path(accelerator, required=False)
-            if bundled:
-                return bundled
-            return ""
         managed = service.active_engine_path(required=False, accelerator=accelerator)
     except (AppError, OSError, ValueError, TypeError):
         managed = ""
@@ -477,13 +474,22 @@ class NativeLlamaCppProvider(DeploymentProvider):
         if plan.blocked:
             plan_payload = self._plan_payload(plan, [])
             return _failure("model_load_blocked", self._blocked_message(plan), "Supply a fresh hardware/runtime snapshot or adjust the load profile.", status="blocked", blockReasons=list(plan.block_reasons), resolvedPlan=plan_payload, command=[])
-        engine = _find_engine(model)
+        try:
+            engine = _find_engine(model)
+        except AppError as exc:
+            return _failure(
+                exc.code,
+                str(exc),
+                "Check the internet connection and retry Load. Rasputin downloads only the runtime selected for this hardware.",
+                status="unavailable",
+                resolvedPlan=self._plan_payload(plan, []),
+            )
         if not engine:
             if _desktop_only():
                 return _failure(
-                    "missing_bundled_runtime",
-                    "The packaged llama.cpp runtime is missing. Reinstall or rebuild the Rasputin desktop application.",
-                    "Use the self-contained Rasputin installer; Docker, Python, and a separate llama.cpp installation are not supported in desktop mode.",
+                    "runtime_unavailable",
+                    "A compatible llama.cpp runtime is not installed.",
+                    "Check the internet connection and retry Load so Rasputin can download the runtime selected for this hardware.",
                     status="unavailable",
                     resolvedPlan=self._plan_payload(plan, []),
                 )

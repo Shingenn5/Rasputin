@@ -386,17 +386,35 @@ def select_compatible_manifest(
     requested_accelerators = [_normalise_accelerator(value) for value in hardware.accelerators]
     if not requested_accelerators:
         raise AppError("runtime_accelerator_unsupported", "No supported accelerator was supplied.")
+    candidates = [
+        manifest for manifest in candidates
+        if manifest.engine == runtime.engine
+        and (not runtime.version or manifest.version == runtime.version)
+        and _normalise_platform(manifest.platform) == _normalise_platform(hardware.platform)
+        and _normalise_architecture(manifest.architecture) == _normalise_architecture(hardware.architecture)
+    ]
     for requested in requested_accelerators:
-        for manifest in candidates:
-            if manifest.engine != runtime.engine or (runtime.version and manifest.version != runtime.version):
-                continue
-            if _normalise_platform(manifest.platform) != _normalise_platform(hardware.platform):
-                continue
-            if _normalise_architecture(manifest.architecture) != _normalise_architecture(hardware.architecture):
-                continue
-            if _accelerator_matches(manifest.accelerator, requested, hardware.cuda_versions):
-                manifest.validate()
-                return manifest
+        exact = next(
+            (manifest for manifest in candidates if _normalise_accelerator(manifest.accelerator) == requested),
+            None,
+        )
+        if exact:
+            exact.validate()
+            return exact
+        if requested != "cuda" or not hardware.cuda_versions:
+            continue
+        supported = max((_cuda_version_tuple(value) for value in hardware.cuda_versions), default=())
+        compatible = [
+            (_cuda_version_tuple(manifest.accelerator), manifest)
+            for manifest in candidates
+            if _normalise_accelerator(manifest.accelerator).startswith("cuda")
+            and _cuda_version_tuple(manifest.accelerator)
+            and _cuda_version_tuple(manifest.accelerator) <= supported
+        ]
+        if compatible:
+            selected = max(compatible, key=lambda item: item[0])[1]
+            selected.validate()
+            return selected
     raise AppError(
         "runtime_accelerator_unsupported",
         f"No {runtime.engine} runtime matches {', '.join(hardware.accelerators)} on {hardware.platform}/{hardware.architecture}.",
@@ -480,12 +498,9 @@ def _normalise_accelerator(value: str) -> str:
     return value.lower().replace(" ", "").replace("-", "")
 
 
-def _accelerator_matches(manifest: str, requested: str, cuda_versions: Sequence[str]) -> bool:
-    manifest = _normalise_accelerator(manifest)
-    requested = _normalise_accelerator(requested)
-    if manifest == requested:
-        return True
-    if requested == "cuda" and manifest.startswith("cuda"):
-        suffix = manifest.removeprefix("cuda")
-        return not suffix or not cuda_versions or suffix in {_normalise_accelerator(item).removeprefix("cuda") for item in cuda_versions}
-    return False
+def _cuda_version_tuple(value: str) -> tuple[int, ...]:
+    suffix = _normalise_accelerator(value).removeprefix("cuda")
+    match = re.match(r"^(\d+)(?:\.(\d+))?", suffix)
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.groups(default="0"))

@@ -15,7 +15,7 @@ code and fix this doc.*
 
 Rasputin is a Windows native AI workstation for local chat, governed coding, and a bounded
 personal Assistant. The installed Electron app owns a packaged FastAPI backend, React frontend,
-SQLite state, and bundled llama.cpp. The source Native Host is a separate browser/headless
+SQLite state, and hardware-selected llama.cpp acquisition. The source Native Host is a separate browser/headless
 workflow. Both load GGUF models as native processes. Docker infrastructure is retired from the
 product direction; do not suggest it as a requirement, feature, fallback, or troubleshooting step.
 

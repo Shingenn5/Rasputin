@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
 
+from backend.core.response import AppError
 from backend.warsat.providers.native_llamacpp import NativeLlamaCppProvider, NATIVE_RUNTIME
 from tests.native_llamacpp_smoke import _DIAGNOSTIC_CHAR_LIMIT, _DiagnosticTail, _failure, check_prerequisites
 
@@ -216,6 +217,18 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["status"], "unavailable")
         self.assertIn("llama-server", result["error"])
+
+    def test_runtime_download_failure_is_actionable(self):
+        with patch(
+            "backend.warsat.providers.native_llamacpp._find_engine",
+            side_effect=AppError("runtime_download_failed", "Could not acquire selected runtime."),
+        ):
+            result = self.provider.start(self.model)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["failureCode"], "runtime_download_failed")
+        self.assertEqual(result["status"], "unavailable")
+        self.assertIn("internet connection", result["recoveryGuidance"])
 
     def test_mmproj_from_registered_artifact_is_an_exact_command_argument(self):
         mmproj = Path(self.temp_dir.name) / "mmproj-demo-f16.gguf"

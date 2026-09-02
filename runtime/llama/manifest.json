@@ -17,8 +17,7 @@
           "size_bytes": 18130251,
           "archive": true
         }
-      ],
-      "bundled_path": "bundled/llama.cpp-b10586-windows-x86_64-cpu"
+      ]
     },
     {
       "manifest_id": "llama.cpp-b10586-windows-x86_64-cuda12.4",
@@ -44,8 +43,7 @@
           "size_bytes": 391443627,
           "archive": true
         }
-      ],
-      "bundled_path": "bundled/llama.cpp-b10586-windows-x86_64-cuda12.4"
+      ]
     },
     {
       "manifest_id": "llama.cpp-b10586-windows-x86_64-cuda13.3",
@@ -71,8 +69,7 @@
           "size_bytes": 390970417,
           "archive": true
         }
-      ],
-      "bundled_path": "bundled/llama.cpp-b10586-windows-x86_64-cuda13.3"
+      ]
     }
   ]
 }

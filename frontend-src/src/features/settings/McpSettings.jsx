@@ -424,7 +424,7 @@ export function McpSettings({
       <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-muted-foreground">
         Local stdio commands run on this computer only after approval and inside an approved Rasputin workspace.
         Streamable HTTP servers may be remote, but any secret header is read from the environment variable named during setup.
-        The installer includes Rasputin, llama.cpp, and the Python runtime; third-party MCP server packages still need their own executable or an HTTP endpoint.
+        The installer includes Rasputin and its Python runtime; llama.cpp is selected and downloaded once for detected hardware. Third-party MCP server packages still need their own executable or an HTTP endpoint.
         <a className="ml-1 inline-flex items-center gap-1 text-primary hover:underline" href="https://modelcontextprotocol.io/" target="_blank" rel="noreferrer">
           MCP specification <ExternalLink size={12} />
         </a>

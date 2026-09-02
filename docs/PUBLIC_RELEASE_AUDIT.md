@@ -1,9 +1,9 @@
 # Rasputin Public Release Audit
 
 > **Audit started:** July 24, 2026
-> **Audit refreshed:** August 24, 2026
+> **Audit refreshed:** September 1, 2026
 > **Branch:** `main`
-> **Status:** Local repository-safety re-check passed; release is not yet cleared
+> **Status:** Public preview repository; local safety checks pass; stable release clearance remains open
 
 ## Executive result
 
@@ -11,10 +11,10 @@ The current tracked tree passes Rasputin's repository safety check and contains
 no tracked runtime data, generated build output, private-key files, databases,
 or local model weights.
 
-The repository is now licensed under AGPL-3.0-or-later but should **not** be
-made public yet. The owner must select a contribution-signing policy and
-supported release surface. Dedicated secret and dependency-license scans still
-need their first remote run before final clearance.
+The repository is public and licensed under AGPL-3.0-or-later. Windows x64
+Desktop is the supported preview surface. Preview publication does not equal
+stable-release clearance: contribution policy, dependency inventory, signing,
+update delivery, and successful remote security checks remain open.
 
 ## Current-tree checks
 
@@ -75,9 +75,12 @@ None of these dedicated scanners were installed during the initial audit:
 - TruffleHog.
 - detect-secrets.
 
-An initial `.github/workflows/repository-safety.yml` workflow now adds
+The `.github/workflows/repository-safety.yml` workflow adds
 full-history Gitleaks scanning on pushes, pull requests, and manual runs, plus
-GitHub dependency review for pull requests. Before publication:
+GitHub dependency review for pull requests. Earlier Windows-hosted runs failed
+while the Gitleaks action fetched an unavailable Windows archive; the workflow
+now uses Ubuntu and needs a successful remote run after publication. Before a
+stable release:
 
 1. Run and review the new workflow remotely; local heuristic checks do not
    substitute for its first successful full-history scan.
@@ -89,12 +92,12 @@ GitHub dependency review for pull requests. Before publication:
 5. Confirm that public issue attachments and test fixtures cannot enter
    workspace/runtime data paths.
 
-## Decisions blocking public release
+## Decisions blocking a supported stable release
 
 1. DCO versus CLA contribution policy.
 2. Copyright and maintainer governance.
-3. Supported operating systems and installation methods.
-4. Vulnerability-reporting contact or private GitHub security-advisory process.
+3. Code signing and automatic update-channel policy.
+4. Vulnerability-reporting contact and response-time commitments.
 5. Which AGPL-compatible Odysseus source adoptions are worth their maintenance
    cost.
 
@@ -104,7 +107,7 @@ GitHub dependency review for pull requests. Before publication:
 |---|---|
 | Current tracked tree | Provisionally clear |
 | High-confidence history heuristic | Provisionally clear |
-| Dedicated full-history secret scan | Workflow added; first remote run pending |
+| Dedicated full-history secret scan | Workflow host fixed locally; successful remote run pending |
 | Dependency vulnerability review | Workflow added; first pull-request run pending |
 | Dependency license inventory | Pending |
 | Vulnerability scan | Pending |
@@ -112,5 +115,5 @@ GitHub dependency review for pull requests. Before publication:
 | Public governance documents | Initial set added; contribution-signing policy pending |
 | Feature baseline | In progress; see `RASPUTIN_IMPLEMENTATION_LEDGER.md` and `RASPUTIN_V1_RELEASE_CONTRACT.md` |
 
-Do not rewrite history, publish a release, or import Odysseus source without a
-recorded provenance and compatibility review.
+Do not rewrite history, publish a stable release, or import Odysseus source
+without recorded provenance and compatibility review.

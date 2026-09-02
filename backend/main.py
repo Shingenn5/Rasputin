@@ -26,7 +26,7 @@ from backend.api.serving import router as serving_router
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
 
-app = FastAPI(title="Rasputin", version="0.2.0")
+app = FastAPI(title="Rasputin", version="0.2.1")
 
 app.add_exception_handler(Exception, error_handler)
 app.add_exception_handler(HTTPException, http_error_handler)

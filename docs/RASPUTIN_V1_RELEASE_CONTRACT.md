@@ -15,7 +15,8 @@ this document passes; feature presence alone is not sufficient.
 
 ## Supported deployment paths
 
-- **Windows Desktop:** the native product, with an Electron-owned packaged backend and bundled llama.cpp.
+- **Windows Desktop:** the native product, with an Electron-owned packaged backend and one
+  hardware-selected, verified llama.cpp runtime downloaded when first needed.
 - **Native Server / Native Host:** the Windows source/browser workflow with approved host folders;
   it must not share a live data store with Desktop.
 - **Native models:** exact compatible GGUF artifacts, local llama.cpp processes, and explicit

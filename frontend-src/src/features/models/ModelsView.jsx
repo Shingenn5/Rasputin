@@ -2321,7 +2321,7 @@ export function ModelsView({
               {desktopOnly ? (
                 <div className="w2-card models-native-runtime-card" data-testid="native-runtime-settings">
                   <h3 style={{ margin: 0, fontSize: "0.875rem" }}><Cpu size={14} style={{ verticalAlign: "-2px" }} /> Native llama.cpp Runtime</h3>
-                  <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>The bundled llama.cpp engine loads downloaded GGUF models directly. No Docker, Python, Node, or separate runtime install is required.</p>
+                  <p style={{ fontSize: "0.75rem", color: "var(--cc-muted)", margin: 0 }}>Rasputin detects this machine and downloads one verified llama.cpp runtime on first model load. Later loads reuse it. No Docker, Python, Node, or manual runtime install is required.</p>
                 </div>
               ) : (
                 <div className="w2-card">
@@ -3102,7 +3102,7 @@ function StudioModelDetail({ item }) {
       </section>
       <section>
         <h3>About this model</h3>
-        <p>{item.description || item.summary || "Select a GGUF variant to download it into Rasputin's native model library. Loading is handled by the bundled llama.cpp runtime."}</p>
+        <p>{item.description || item.summary || "Select a GGUF variant to download it into Rasputin's native model library. Rasputin acquires one hardware-compatible llama.cpp runtime when first needed."}</p>
       </section>
     </aside>
   );

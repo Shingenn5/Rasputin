@@ -3,8 +3,8 @@
 Thank you for helping build a safer, more capable local AI operations
 environment.
 
-> Rasputin is licensed under AGPL-3.0-or-later and is preparing for its first
-> public release. The long-term contributor-signing policy is still awaiting
+> Rasputin is licensed under AGPL-3.0-or-later and currently publishes Windows
+> preview builds. The long-term contributor-signing policy is still awaiting
 > maintainer approval. Third-party source imports require recorded provenance
 > and license review.
 
@@ -48,7 +48,7 @@ Do not:
 - Commit credentials, runtime databases, model files, local workspaces, or
   generated frontend output.
 - Stage unrelated user changes.
-- weaken approval, workspace, owner, or network boundaries for convenience.
+- Weaken approval, workspace, owner, or network boundaries for convenience.
 - Copy upstream code without following `docs/UPSTREAM_ADOPTION_POLICY.md`.
 
 ## Upstream work

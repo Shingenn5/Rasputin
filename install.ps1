@@ -1,51 +1,50 @@
+param(
+    [string]$Destination = (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'),
+    [switch]$Run
+)
+
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$repository = 'Shingenn5/Rasputin'
+$minimumVersion = [version]'0.2.1'
 
-try {
-    [void](docker compose version 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose v2 is unavailable" }
-    [void](docker info 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw "Docker engine is not running" }
-} catch {
-    Write-Host "Docker Compose v2 is required, and the Docker engine must be running." -ForegroundColor Red
-    Write-Host "Install Docker Desktop, start it, and rerun this installer." -ForegroundColor Yellow
-    exit 1
+Write-Host 'Finding latest Rasputin Windows release...' -ForegroundColor Cyan
+$headers = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'Rasputin-Installer' }
+$releases = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$repository/releases?per_page=20"
+$release = @($releases | Where-Object { -not $_.draft } | Select-Object -First 1)
+
+if (-not $release) {
+    throw "No Rasputin release is available. See https://github.com/$repository/releases"
 }
 
-Write-Host ""
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "      Rasputin Installer (Windows)       " -ForegroundColor Cyan
-Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host ""
-
-$targetDir = Join-Path -Path $PWD -ChildPath "Rasputin"
-
-if (Test-Path $targetDir) {
-    Write-Host "Directory '$targetDir' already exists!" -ForegroundColor Yellow
-    $choice = Read-Host "Do you want to overwrite it? (y/N)"
-    if ($choice -notmatch "^[yY]") {
-        Write-Host "Installation aborted." -ForegroundColor Red
-        exit
-    }
-    Remove-Item -Recurse -Force $targetDir
+$versionText = ([string]$release.tag_name) -replace '^v', '' -replace '-.*$', ''
+$releaseVersion = $null
+if (-not [version]::TryParse($versionText, [ref]$releaseVersion) -or $releaseVersion -lt $minimumVersion) {
+    throw "Latest published installer is obsolete. Wait for v$minimumVersion or newer: https://github.com/$repository/releases"
 }
 
-Write-Host "Downloading Rasputin..." -ForegroundColor Cyan
-$zipUrl = "https://github.com/Shingenn5/Rasputin/archive/refs/heads/main.zip"
-$zipPath = Join-Path -Path $PWD -ChildPath "rasputin-main.zip"
+$installer = @($release.assets | Where-Object { $_.name -match '^Rasputin-Setup-.*\.exe$' } | Select-Object -First 1)
+$checksum = @($release.assets | Where-Object { $_.name -eq "$($installer.name).sha256" } | Select-Object -First 1)
+if (-not $installer -or -not $checksum) {
+    throw "Release $($release.tag_name) is missing its installer or SHA-256 file."
+}
 
-Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+$installerPath = Join-Path $Destination $installer.name
+$checksumPath = "$installerPath.sha256"
+Invoke-WebRequest -Headers $headers -Uri $installer.browser_download_url -OutFile $installerPath
+Invoke-WebRequest -Headers $headers -Uri $checksum.browser_download_url -OutFile $checksumPath
 
-Write-Host "Extracting..." -ForegroundColor Cyan
-Expand-Archive -Path $zipPath -DestinationPath $PWD -Force
-Remove-Item -Force $zipPath
+$expected = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0]
+$actual = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or $actual -ne $expected) {
+    Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
+    throw 'Installer SHA-256 verification failed. Downloaded installer was removed.'
+}
 
-# GitHub zips put everything inside a "Rasputin-main" folder. Let's rename it.
-Rename-Item -Path (Join-Path -Path $PWD -ChildPath "Rasputin-main") -NewName "Rasputin"
-
-Write-Host ""
-Write-Host "Installation complete! Rasputin is now in '$targetDir'" -ForegroundColor Green
-Write-Host ""
-
-Set-Location $targetDir
-Write-Host "Starting Rasputin setup..." -ForegroundColor Cyan
-& .\rasputin.ps1 start
+Write-Host "Verified installer: $installerPath" -ForegroundColor Green
+if ($Run) {
+    Start-Process -FilePath $installerPath
+} else {
+    Write-Host 'Run it when ready, or rerun this script with -Run.'
+}

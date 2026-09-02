@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from typing import Any, Callable, Mapping, Sequence
 import urllib.error
 import urllib.request
@@ -28,6 +31,8 @@ from .llamacpp_installer import (
 _DOWNLOAD_TIMEOUT_SECONDS = 120
 _DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 _SMOKE_TIMEOUT_SECONDS = 15
+_RUNTIME_INSTALL_LOCK = threading.RLock()
+_CUDA_VERSION_RE = re.compile(r"CUDA(?: UMD)? Version:\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 
 def _default_http_downloader(asset: RuntimeAsset, destination: str | Path) -> None:
@@ -92,6 +97,42 @@ def _default_smoke_runner(executable: Path) -> SmokeCheckResult:
     if result.returncode == 0:
         return SmokeCheckResult(True, "Runtime executable responded to --version.")
     return SmokeCheckResult(False, f"Runtime executable exited with code {result.returncode}.")
+
+
+def detect_local_runtime_hardware() -> HardwareRuntimeInput:
+    """Detect enough local hardware detail to choose one pinned runtime safely."""
+
+    accelerators = ["cpu"]
+    cuda_versions: list[str] = []
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi:
+        options: dict[str, Any] = {
+            "capture_output": True,
+            "check": False,
+            "text": True,
+            "timeout": 10,
+        }
+        if os.name == "nt":
+            options["creationflags"] = subprocess.CREATE_NO_WINDOW
+        try:
+            inventory = subprocess.run(
+                [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
+                **options,
+            )
+            details = subprocess.run([nvidia_smi], **options)
+        except (OSError, subprocess.SubprocessError):
+            inventory = details = None
+        if inventory and inventory.returncode == 0 and inventory.stdout.strip() and details and details.returncode == 0:
+            match = _CUDA_VERSION_RE.search(f"{details.stdout}\n{details.stderr}")
+            if match:
+                accelerators.insert(0, "cuda")
+                cuda_versions.append(match.group(1))
+    return HardwareRuntimeInput(
+        platform=platform.system(),
+        architecture=platform.machine(),
+        accelerators=tuple(accelerators),
+        cuda_versions=tuple(cuda_versions),
+    )
 
 
 class LlamaCppRuntimeService:
@@ -280,6 +321,35 @@ class LlamaCppRuntimeService:
         self.installer = installer
         return record
 
+    def ensure_local_runtime(self) -> dict[str, Any]:
+        """Install and activate only the runtime selected for this machine."""
+
+        with _RUNTIME_INSTALL_LOCK:
+            selection = self.select(detect_local_runtime_hardware())
+            active = self.installer.active_record()
+            if (
+                active
+                and active.get("installation_id") == selection.installation_id
+                and not active.get("bundled")
+            ):
+                engine = self.active_engine_path(required=False)
+                if engine:
+                    return {**active, "engine_path": engine, "downloaded": False}
+
+            installed_path = self.installer.version_path(selection)
+            installed_manifest = installed_path / "manifest.json"
+            installed_engine = installed_path / selection.executable
+            if installed_manifest.is_file() and installed_engine.is_file():
+                record = self.installer.activate(selection.installation_id)
+                return {**record, "engine_path": str(installed_engine.resolve()), "downloaded": False}
+
+            record = self.install(selection)
+            return {
+                **record,
+                "engine_path": self.active_engine_path(),
+                "downloaded": True,
+            }
+
     def activate(self, version: str) -> dict[str, Any]:
         return self.installer.activate(version)
 
@@ -309,4 +379,4 @@ class LlamaCppRuntimeService:
         return {"ok": ok, "path": str(path), "message": result.message if isinstance(result, SmokeCheckResult) else ""}
 
 
-__all__ = ["LlamaCppRuntimeService"]
+__all__ = ["LlamaCppRuntimeService", "detect_local_runtime_hardware"]

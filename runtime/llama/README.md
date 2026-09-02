@@ -1,15 +1,16 @@
 # Native llama.cpp runtime manifest
 
-The manifest pins the Windows llama.cpp CPU and CUDA builds used by the desktop
-installer. The prepare-desktop-runtime.ps1 build step downloads and verifies
-those assets at build time, flattens each verified runtime into bundled/, and
-runs llama-server --version before electron-builder packages the application.
+The manifest pins Windows llama.cpp CPU and CUDA builds available to Desktop.
+The packaging check validates manifest identity, approved download origins,
+asset sizes, and SHA-256 values without downloading runtime binaries.
 
-The shipped Windows installer therefore contains the native inference engine;
-an end user does not install Docker, Python, Node, or llama.cpp separately.
-Model weights remain user-selected downloads from the model catalog.
+On first model load, Rasputin detects local GPU/driver compatibility, chooses
+one matching runtime, downloads only that runtime's assets, verifies every
+SHA-256, extracts safely, smoke-checks llama-server, and activates it. Machines
+without a compatible NVIDIA runtime receive the CPU build. Later loads reuse
+the installed runtime.
 
 The manifest is also retained for runtime identity and compatibility selection.
 Development checkouts may still use the repository's native Python launch path,
-but the packaged Electron application resolves its engine exclusively from the
-bundled runtime directory.
+but packaged Electron resolves its engine from the verified user-local runtime
+store.

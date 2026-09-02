@@ -1,7 +1,7 @@
 {
   "name": "rasputin",
-  "version": "0.2.0",
-  "description": "Private local AI workstation and multi-user server",
+  "version": "0.2.1",
+  "description": "Private Windows AI workstation for local GGUF inference and governed agentic coding",
   "author": "Shingenn5",
   "license": "AGPL-3.0-or-later",
   "private": true,
@@ -74,8 +74,8 @@
         "to": "backend"
       },
       {
-        "from": "runtime/llama",
-        "to": "llama"
+        "from": "runtime/llama/manifest.json",
+        "to": "llama/manifest.json"
       }
     ],
     "win": {

@@ -1,0 +1,64 @@
+name: Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          npm ci
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-desktop.txt
+
+      - name: Test desktop contracts
+        shell: pwsh
+        run: |
+          npm run desktop:check
+          npm run desktop:test
+          .\.venv\Scripts\python.exe -m unittest tests.testBackendSmoke
+
+      - name: Build installer
+        shell: pwsh
+        run: npm run desktop:package
+
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $installer = "dist/electron/Rasputin-Setup-$($package.version).exe"
+          if (-not (Test-Path -LiteralPath $installer)) { throw "Missing $installer" }
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path -Leaf $installer)" | Set-Content -LiteralPath "$installer.sha256" -Encoding ascii
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rasputin-windows-installer
+          path: |
+            dist/electron/Rasputin-Setup-*.exe
+            dist/electron/Rasputin-Setup-*.exe.sha256
+          if-no-files-found: error
+          compression-level: 0

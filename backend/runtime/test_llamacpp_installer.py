@@ -40,6 +40,29 @@ class LlamaCppInstallerTests(TestCase):
         with self.assertRaisesRegex(AppError, "No llama.cpp runtime matches"):
             select_compatible_manifest([cpu], HardwareRuntimeInput("windows", "x86_64", ("vulkan",)))
 
+    def test_selects_highest_cuda_runtime_supported_by_driver_and_falls_back_to_cpu(self):
+        cpu = _manifest(accelerator="cpu")
+        cuda_124 = _manifest(version="cuda-124", accelerator="cuda12.4")
+        cuda_133 = _manifest(version="cuda-133", accelerator="cuda13.3")
+        manifests = [cpu, cuda_124, cuda_133]
+
+        newest = select_compatible_manifest(
+            manifests,
+            HardwareRuntimeInput("windows", "amd64", ("cuda", "cpu"), ("13.3",)),
+        )
+        compatible = select_compatible_manifest(
+            manifests,
+            HardwareRuntimeInput("windows", "amd64", ("cuda", "cpu"), ("13.0",)),
+        )
+        fallback = select_compatible_manifest(
+            manifests,
+            HardwareRuntimeInput("windows", "amd64", ("cuda", "cpu"), ("11.8",)),
+        )
+
+        self.assertEqual(newest.accelerator, "cuda13.3")
+        self.assertEqual(compatible.accelerator, "cuda12.4")
+        self.assertEqual(fallback.accelerator, "cpu")
+
     def test_hash_mismatch_is_rejected_before_activation(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "runtime.zip"

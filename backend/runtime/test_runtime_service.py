@@ -10,11 +10,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 import urllib.error
 
-from backend.runtime.llamacpp_installer import AppError, RuntimeManifest, SmokeCheckResult
+from backend.runtime.llamacpp_installer import AppError, HardwareRuntimeInput, RuntimeManifest, SmokeCheckResult
 from backend.runtime.runtime_service import (
     LlamaCppRuntimeService,
     _default_http_downloader,
     _default_smoke_runner,
+    detect_local_runtime_hardware,
 )
 
 
@@ -33,6 +34,84 @@ def manifest(content: bytes = b"llama-server") -> RuntimeManifest:
 
 
 class RuntimeServiceTests(unittest.TestCase):
+    def test_detects_nvidia_cuda_version_for_runtime_selection(self):
+        inventory = subprocess.CompletedProcess(["nvidia-smi"], 0, stdout="NVIDIA GeForce RTX 5060 Ti\n", stderr="")
+        details = subprocess.CompletedProcess(["nvidia-smi"], 0, stdout="CUDA UMD Version: 13.3", stderr="")
+        with patch("backend.runtime.runtime_service.shutil.which", return_value="nvidia-smi.exe"), patch(
+            "backend.runtime.runtime_service.subprocess.run",
+            side_effect=[inventory, details],
+        ):
+            detected = detect_local_runtime_hardware()
+
+        self.assertEqual(detected.accelerators, ("cuda", "cpu"))
+        self.assertEqual(detected.cuda_versions, ("13.3",))
+
+    def test_ensure_downloads_only_selected_runtime_once(self):
+        cpu_content = b"cpu-runtime"
+        cuda_content = b"cuda-runtime"
+        cpu = manifest(cpu_content)
+        cuda = RuntimeManifest.from_dict({
+            **manifest(cuda_content).to_dict(),
+            "manifest_id": "cuda-13.3",
+            "accelerator": "cuda13.3",
+        })
+        downloaded = []
+
+        def download(asset, destination):
+            downloaded.append(asset.name)
+            content = cuda_content if asset.sha256 == hashlib.sha256(cuda_content).hexdigest() else cpu_content
+            Path(destination).write_bytes(content)
+
+        with TemporaryDirectory() as tmp, patch(
+            "backend.runtime.runtime_service.detect_local_runtime_hardware",
+            return_value=HardwareRuntimeInput("windows", "x64", ("cuda", "cpu"), ("13.3",)),
+        ):
+            service = LlamaCppRuntimeService(
+                root=tmp,
+                manifests=[cpu, cuda],
+                downloader=download,
+                smoke_runner=lambda _: True,
+            )
+            first = service.ensure_local_runtime()
+            second = service.ensure_local_runtime()
+
+        self.assertEqual(first["manifest"]["accelerator"], "cuda13.3")
+        self.assertTrue(first["downloaded"])
+        self.assertFalse(second["downloaded"])
+        self.assertEqual(downloaded, ["llama-server.exe"])
+
+    def test_ensure_replaces_legacy_bundled_record_with_user_local_runtime(self):
+        content = b"local-runtime"
+        selected = RuntimeManifest.from_dict({
+            **manifest(content).to_dict(),
+            "manifest_id": "selected-cpu",
+        })
+        with TemporaryDirectory() as tmp, patch(
+            "backend.runtime.runtime_service.detect_local_runtime_hardware",
+            return_value=HardwareRuntimeInput("windows", "x64", ("cpu",)),
+        ):
+            root = Path(tmp)
+            legacy = root / "legacy-bundle"
+            legacy.mkdir()
+            (legacy / "llama-server.exe").write_bytes(b"legacy")
+            service = LlamaCppRuntimeService(
+                root=root / "runtime",
+                manifests=[selected],
+                downloader=lambda _asset, destination: Path(destination).write_bytes(content),
+                smoke_runner=lambda _: True,
+            )
+            service.installer._write_active({
+                "version": selected.version,
+                "installation_id": selected.installation_id,
+                "path": str(legacy),
+                "manifest": selected.to_dict(),
+                "bundled": True,
+            })
+
+            ensured = service.ensure_local_runtime()
+
+        self.assertTrue(ensured["downloaded"])
+        self.assertNotEqual(Path(ensured["path"]), legacy)
     def test_default_hooks_install_and_verify_without_network(self):
         content = b"llama-server"
 

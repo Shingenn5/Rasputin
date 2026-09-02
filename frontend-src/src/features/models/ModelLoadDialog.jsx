@@ -258,7 +258,10 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       )}
       {previewError && <div className="studio-load-warning" role="alert"><AlertTriangle size={16} /><span>{previewError}</span></div>}
 
-      {loading && <p role="status" data-testid="model-warmup-status">Loading weights and running a short warm-up before the model is ready. The first load can take longer while the runtime initializes.</p>}
+      {runtimeStatus?.state === "install_required" && !loading && (
+        <p role="status">First load will detect your NVIDIA driver, download and verify one compatible llama.cpp runtime, then reuse it for later loads.</p>
+      )}
+      {loading && <p role="status" data-testid="model-warmup-status">Preparing the selected runtime if needed, loading weights, and running a short warm-up. First load may take longer while one verified runtime downloads.</p>}
       <footer className="studio-load-footer">
         <label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember settings for this model</label>
         <span />

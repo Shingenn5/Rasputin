@@ -1,6 +1,6 @@
 # Rasputin Desktop Architecture
 
-Status: self-contained Windows desktop packaging with bundled llama.cpp implemented on 2026-08-23.
+Status: compact Windows desktop packaging with hardware-selected llama.cpp acquisition.
 
 The Windows product and its source-development runtime share FastAPI and React:
 
@@ -62,16 +62,16 @@ Repository development reuses `.venv`, or a Python 3.12+ interpreter supplied th
 `RASPUTIN_PYTHON`. Distribution uses PyInstaller plus electron-builder:
 
 1. npm run build produces frontend/.
-2. npm run desktop:runtime downloads, verifies, and stages the pinned CPU/CUDA llama.cpp builds
-   under runtime/llama/bundled/ at build time.
+2. npm run desktop:runtime validates the pinned CPU/CUDA manifest without downloading payloads.
 3. npm run desktop:backend produces a standalone onedir backend runtime containing the frontend.
-4. electron-builder copies the backend and all llama.cpp binaries into Electron resources; the
-   packaged app selects the correct native engine automatically.
+4. electron-builder copies the backend and runtime manifest into Electron resources. First model
+   load detects hardware, downloads only the highest compatible runtime, verifies every SHA-256,
+   smoke-checks it, and stores it under user-local application data.
 5. The NSIS install hook grants Electron's restricted AppContainer read/execute ACL and creates a
    user-scoped installer while preserving data on uninstall.
 
-The unpacked application, bundled backend, bundled CPU/CUDA engines, and ordinary sandboxed launch
-path have passed local smoke tests. The application icon is implemented. Remaining release gates
+The unpacked application, packaged backend, runtime acquisition contract, and ordinary sandboxed
+launch path have passed local smoke tests. The application icon is implemented. Remaining release gates
 are Authenticode signing, update signing/channel metadata, and a clean-machine install/upgrade/uninstall test outside
 the development workstation.
 

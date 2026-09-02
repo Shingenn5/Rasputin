@@ -17,14 +17,15 @@ test('desktop packaging scripts and resources are wired', () => {
 
   assert.match(scripts['desktop:package:dir'] ?? '', /electron-builder\s+--dir\s+--win/, 'desktop:package:dir must build a Windows unpacked desktop package');
   assert.match(scripts['desktop:package'] ?? '', /electron-builder\s+--win\s+nsis/, 'desktop:package must build the Windows NSIS installer');
-  assert.ok(resourceSources.includes('runtime/llama'), 'electron-builder must package runtime/llama as an extra resource');
+  assert.ok(resourceSources.includes('runtime/llama/manifest.json'), 'electron-builder must package only the runtime manifest');
+  assert.ok(!resourceSources.includes('runtime/llama'), 'electron-builder must not package every local runtime payload');
   assert.ok(resourceSources.includes('dist/desktop-backend/rasputin-backend'), 'electron-builder must package the PyInstaller backend resource');
-  assert.match(scripts["desktop:package:dir"] ?? "", /desktop:runtime/, "unpacked packaging must prepare bundled llama.cpp binaries");
+  assert.match(scripts["desktop:package:dir"] ?? "", /desktop:runtime/, "unpacked packaging must validate the runtime manifest");
   assert.equal(packageJson.build?.nsis?.include, "scripts/desktop-installer.nsh", "NSIS must apply the Electron sandbox ACL hook");
   assert.match(fs.readFileSync(path.join(repoRoot, "scripts", "desktop-installer.nsh"), "utf8"), /S-1-15-2-2/, "installer must grant restricted AppContainer read/execute access");
 });
 
-test('packaged llama runtime manifest declares CPU, CUDA, and companion assets', () => {
+test('packaged llama runtime manifest declares downloadable CPU and CUDA assets', () => {
   const manifest = readJson(path.join('runtime', 'llama', 'manifest.json'));
   assert.ok(Array.isArray(manifest.runtimes) && manifest.runtimes.length > 0, 'runtime manifest must declare at least one runtime');
 
@@ -33,7 +34,9 @@ test('packaged llama runtime manifest declares CPU, CUDA, and companion assets',
   assert.ok([...accelerators].some((accelerator) => accelerator.startsWith('cuda')), 'runtime manifest must include a CUDA runtime');
 
   for (const runtime of manifest.runtimes) {
-    assert.match(runtime.bundled_path ?? "", /^bundled[\\/]/, runtime.manifest_id + " must declare its installer-bundled executable path");
+    assert.equal(runtime.bundled_path, undefined, runtime.manifest_id + " must not declare an installer-bundled payload");
+    assert.ok((runtime.assets ?? []).every((asset) => asset.url.startsWith('https://github.com/ggml-org/llama.cpp/releases/download/')));
+    assert.ok((runtime.assets ?? []).every((asset) => /^[0-9a-f]{64}$/i.test(asset.sha256 ?? '')));
   }
 
   for (const runtime of manifest.runtimes.filter((entry) => entry.accelerator?.startsWith('cuda'))) {

@@ -1,7 +1,7 @@
 # Rasputin native setup and release guide
 
-Updated 2026-08-29. The release target is the Windows native Desktop app with a packaged
-backend and bundled llama.cpp. Native Host is the source/browser workflow. Retired server
+Updated 2026-09-01. The release target is the Windows native Desktop app with a packaged
+backend and one verified llama.cpp runtime downloaded after hardware detection. Native Host is the source/browser workflow. Retired server
 infrastructure and control features have no role in these steps.
 
 ## 1. Choose the correct owner
@@ -53,9 +53,9 @@ A catalog listing or green health check alone does not prove inference or coding
 
 For an existing GGUF, use Scan GGUF/import from an approved path. For an old container-managed
 entry, use **Get GGUF** or import its local GGUF. A retired runtime error indicates the wrong/stale
-path. Check the installed version; a missing bundled engine requires updating or reinstalling a
-verified package. Source contributors should inspect the runtime manifest/configuration and load
-error. Plain transformer weights are not directly loadable by llama.cpp.
+path. A runtime acquisition error should show a retryable download or compatibility message.
+Source contributors should inspect the runtime manifest/configuration and load error. Plain
+transformer weights are not directly loadable by llama.cpp.
 
 External local OpenAI-compatible endpoints may be registered separately. They are not required
 for the native GGUF workflow. Remote model endpoints remain governed by Privacy Lock.
@@ -63,7 +63,7 @@ for the native GGUF workflow. Remote model endpoints remain governed by Privacy 
 ## 5. Build a native package
 
 Contributors need Windows x64, the repository Python environment, Node/npm, and build-time
-network access for dependencies and pinned runtime assets. End users do not need this toolchain.
+network access for dependencies. End users do not need this toolchain.
 
 ```powershell
 npm run desktop:check
@@ -71,8 +71,9 @@ npm run desktop:test
 npm run desktop:package
 ```
 
-Packaging builds `frontend/`, verifies/stages the pinned CPU/CUDA llama.cpp assets, bundles the
-backend with PyInstaller, and creates the NSIS installer under `dist/electron/`.
+Packaging builds `frontend/`, validates the pinned runtime manifest without downloading its
+CPU/CUDA payloads, bundles the backend with PyInstaller, and creates the NSIS installer under
+`dist/electron/`.
 The current package remains unsigned; do not claim Authenticode or automatic-update certification.
 
 A source backend restart does not update an installed Desktop package. Complete checks first,

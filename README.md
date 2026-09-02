@@ -13,6 +13,26 @@ containers.
 ![llama.cpp](https://img.shields.io/badge/inference-llama.cpp-111318?style=for-the-badge)
 ![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-orange?style=for-the-badge)
 
+[Download Rasputin for Windows](https://github.com/Shingenn5/Rasputin/releases) ·
+[Installation help](#install-and-run) ·
+[Report a problem](https://github.com/Shingenn5/Rasputin/issues/new/choose)
+
+> **Preview software:** use release `v0.2.1` or newer and confirm both the installer and its
+> `.sha256` file are present. Older preview installers are obsolete. Current builds are unsigned,
+> so Windows may show a Microsoft Defender SmartScreen warning.
+
+## Quick start
+
+1. Open [Releases](https://github.com/Shingenn5/Rasputin/releases).
+2. Download the newest `Rasputin-Setup-<version>.exe` and matching `.sha256` file.
+3. Verify the checksum, run the installer, then open Rasputin from the Start menu.
+4. Open **Models → Discover Models**, choose a GGUF model, and select **Download**.
+5. When download finishes, select **Load**. First load detects your hardware and downloads only
+   one compatible llama.cpp runtime; later loads reuse it. Then select **Use in New Chat**.
+
+No Docker, WSL, Python, Node.js, account, or separate llama.cpp installation is required.
+GPU acceleration is optional; compatible NVIDIA GPUs improve performance.
+
 ## Current desktop capabilities
 
 - Rasputin launches as a self-contained Electron desktop application.
@@ -20,8 +40,9 @@ containers.
   desktop-only path.
 - Electron owns the bundled backend process, its lifecycle, crash recovery, tray controls, and
   shutdown.
-- The installer includes the Python backend runtime, the React frontend, and pinned native CPU/CUDA
-  llama.cpp binaries. End users do not install those components separately.
+- The installer includes the Python backend and React frontend. It does not carry multiple
+  CPU/CUDA payloads: first model load downloads and verifies only the runtime selected for the
+  detected hardware.
 - Desktop inference uses native llama.cpp and GGUF model artifacts. Desktop model deployment is
   not Docker-backed.
 - Models has a local catalog and Hugging Face search, hardware-aware fit guidance, exact variant
@@ -39,7 +60,7 @@ containers.
 | --- | --- |
 | Normal launch | Open Rasputin from the Start menu or installed shortcut |
 | User-managed server | None; the internal loopback backend is started and owned by Electron |
-| Inference engine | Bundled native llama-server from llama.cpp |
+| Inference engine | Verified native llama-server selected and downloaded once for this hardware |
 | Model format | GGUF-first for local native inference |
 | Model deployment | Native child processes; no Docker containers |
 | Network exposure | Loopback-only by default; no LAN listener |
@@ -54,18 +75,28 @@ launch, configure, or keep running separately.
 
 ### Using the Windows installer
 
-Run the Rasputin-Setup-<version>.exe installer and launch Rasputin from the installed shortcut.
-The installer includes the application runtime and bundled llama.cpp; Docker, WSL, Python, Node,
-and a separate llama.cpp installation are not prerequisites.
+Download `Rasputin-Setup-<version>.exe` and its matching `.sha256` file from
+[GitHub Releases](https://github.com/Shingenn5/Rasputin/releases). Verify the download in
+PowerShell:
 
-The current local build artifact is produced at:
-
-~~~text
-dist/electron/Rasputin-Setup-0.2.0.exe
+~~~powershell
+$expected = (Get-Content .\Rasputin-Setup-<version>.exe.sha256 -Raw).Split()[0]
+$actual = (Get-FileHash .\Rasputin-Setup-<version>.exe -Algorithm SHA256).Hash
+$actual -eq $expected
 ~~~
 
-This branch does not yet publish a signed public release or an automatic update channel. The
-current installer is unsigned, so Windows may show a publisher warning during installation.
+The result must be `True`. Then run the installer and launch Rasputin from its shortcut. The
+first model load needs internet access to acquire one pinned, SHA-256-verified llama.cpp runtime.
+
+From a source checkout, `install.ps1` can download and verify the newest supported release:
+
+~~~powershell
+.\install.ps1 -Run
+~~~
+
+The current installer is unsigned and there is no automatic update channel yet. If SmartScreen
+appears, confirm the file came from this repository's Releases page and that its SHA-256 matches
+before choosing **More info → Run anyway**.
 
 ### First launch
 
