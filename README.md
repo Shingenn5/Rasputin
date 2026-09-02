@@ -32,13 +32,11 @@ Click once to download. No repository clone, terminal, developer tools, or accou
 5. When download finishes, select **Load**. First load detects your hardware and downloads only
    one compatible llama.cpp runtime; later loads reuse it. Then select **Use in New Chat**.
 
-No Docker, WSL, Python, Node.js, account, or separate llama.cpp installation is required.
 GPU acceleration is optional; compatible NVIDIA GPUs improve performance.
 
 ## Current interface
 
-These screenshots come from the current production frontend running against an isolated local
-Rasputin backend.
+These screenshots come from the current Rasputin Frontend Interface.
 
 ![Rasputin Operations Overview](docs/images/rasputin-operations-overview.png)
 
