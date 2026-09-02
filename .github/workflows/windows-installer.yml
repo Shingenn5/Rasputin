@@ -52,6 +52,8 @@ jobs:
           if (-not (Test-Path -LiteralPath $installer)) { throw "Missing $installer" }
           $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path -Leaf $installer)" | Set-Content -LiteralPath "$installer.sha256" -Encoding ascii
+          Copy-Item -LiteralPath $installer -Destination "dist/electron/Rasputin-Setup.exe"
+          "$hash  Rasputin-Setup.exe" | Set-Content -LiteralPath "dist/electron/Rasputin-Setup.exe.sha256" -Encoding ascii
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -60,5 +62,7 @@ jobs:
           path: |
             dist/electron/Rasputin-Setup-*.exe
             dist/electron/Rasputin-Setup-*.exe.sha256
+            dist/electron/Rasputin-Setup.exe
+            dist/electron/Rasputin-Setup.exe.sha256
           if-no-files-found: error
           compression-level: 0

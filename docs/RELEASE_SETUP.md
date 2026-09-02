@@ -74,6 +74,9 @@ npm run desktop:package
 Packaging builds `frontend/`, validates the pinned runtime manifest without downloading its
 CPU/CUDA payloads, bundles the backend with PyInstaller, and creates the NSIS installer under
 `dist/electron/`.
+Each GitHub release must include the versioned installer and checksum plus stable aliases named
+`Rasputin-Setup.exe` and `Rasputin-Setup.exe.sha256`. The README download button targets the stable
+installer name on the latest release.
 The current package remains unsigned; do not claim Authenticode or automatic-update certification.
 
 A source backend restart does not update an installed Desktop package. Complete checks first,

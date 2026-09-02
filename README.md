@@ -13,19 +13,21 @@ containers.
 ![llama.cpp](https://img.shields.io/badge/inference-llama.cpp-111318?style=for-the-badge)
 ![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-orange?style=for-the-badge)
 
-[Download Rasputin for Windows](https://github.com/Shingenn5/Rasputin/releases) ·
-[Installation help](#install-and-run) ·
+[![Download Rasputin for Windows](https://img.shields.io/badge/Download_Rasputin_for_Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Shingenn5/Rasputin/releases/latest/download/Rasputin-Setup.exe)
+
+Click once to download. No repository clone, terminal, developer tools, or account required.
+
+[Installation help](#install-and-run) · [All releases](https://github.com/Shingenn5/Rasputin/releases) ·
 [Report a problem](https://github.com/Shingenn5/Rasputin/issues/new/choose)
 
-> **Preview software:** use release `v0.2.1` or newer and confirm both the installer and its
-> `.sha256` file are present. Older preview installers are obsolete. Current builds are unsigned,
-> so Windows may show a Microsoft Defender SmartScreen warning.
+> **Preview software:** current builds are unsigned, so Windows may show a Microsoft Defender
+> SmartScreen warning.
 
 ## Quick start
 
-1. Open [Releases](https://github.com/Shingenn5/Rasputin/releases).
-2. Download the newest `Rasputin-Setup-<version>.exe` and matching `.sha256` file.
-3. Verify the checksum, run the installer, then open Rasputin from the Start menu.
+1. Select **Download Rasputin for Windows** above.
+2. Open the downloaded `Rasputin-Setup.exe` and follow the installer.
+3. Launch Rasputin from the Start menu.
 4. Open **Models → Discover Models**, choose a GGUF model, and select **Download**.
 5. When download finishes, select **Load**. First load detects your hardware and downloads only
    one compatible llama.cpp runtime; later loads reuse it. Then select **Use in New Chat**.
@@ -75,20 +77,23 @@ launch, configure, or keep running separately.
 
 ### Using the Windows installer
 
-Download `Rasputin-Setup-<version>.exe` and its matching `.sha256` file from
-[GitHub Releases](https://github.com/Shingenn5/Rasputin/releases). Verify the download in
+Select the **Download Rasputin for Windows** button at the top of this page, then open
+`Rasputin-Setup.exe`. That is the normal installation path.
+
+Advanced users can optionally download `Rasputin-Setup.exe.sha256` from
+[GitHub Releases](https://github.com/Shingenn5/Rasputin/releases) and verify the download in
 PowerShell:
 
 ~~~powershell
-$expected = (Get-Content .\Rasputin-Setup-<version>.exe.sha256 -Raw).Split()[0]
-$actual = (Get-FileHash .\Rasputin-Setup-<version>.exe -Algorithm SHA256).Hash
+$expected = (Get-Content .\Rasputin-Setup.exe.sha256 -Raw).Split()[0]
+$actual = (Get-FileHash .\Rasputin-Setup.exe -Algorithm SHA256).Hash
 $actual -eq $expected
 ~~~
 
 The result must be `True`. Then run the installer and launch Rasputin from its shortcut. The
 first model load needs internet access to acquire one pinned, SHA-256-verified llama.cpp runtime.
 
-From a source checkout, `install.ps1` can download and verify the newest supported release:
+Developers using a source checkout can instead run:
 
 ~~~powershell
 .\install.ps1 -Run
@@ -213,9 +218,10 @@ Supported desktop flows include:
 - tool, resource, and prompt discovery;
 - tool classification, approval gates, audit events, and guarded execution.
 
-Rasputin's installer contains Rasputin, its backend, and llama.cpp. It does not bundle every
-third-party MCP server package. A stdio server must already be available as a local executable or
-package-manager command, or the server must expose a reachable Streamable HTTP endpoint.
+Rasputin's installer contains Rasputin and its backend. It downloads one compatible llama.cpp
+runtime after hardware detection on the first model load. It does not bundle third-party MCP server
+packages. A stdio server must already be available as a local executable or package-manager command,
+or the server must expose a reachable Streamable HTTP endpoint.
 
 ## GitHub and other connections
 
