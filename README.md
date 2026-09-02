@@ -35,6 +35,20 @@ Click once to download. No repository clone, terminal, developer tools, or accou
 No Docker, WSL, Python, Node.js, account, or separate llama.cpp installation is required.
 GPU acceleration is optional; compatible NVIDIA GPUs improve performance.
 
+## Current interface
+
+These screenshots come from the current production frontend running against an isolated local
+Rasputin backend.
+
+![Rasputin Operations Overview](docs/images/rasputin-operations-overview.png)
+
+| Chat workspace | Discover Models |
+| --- | --- |
+| ![Rasputin chat workspace](docs/images/rasputin-chat-workspace.png) | ![Rasputin Discover Models](docs/images/rasputin-discover-models.png) |
+
+Rasputin uses a dark operator-console layout with a persistent workspace rail, purple interaction
+accents, task-oriented chat, and dedicated model operations rather than a generic chatbot shell.
+
 ## Current desktop capabilities
 
 - Rasputin launches as a self-contained Electron desktop application.
@@ -258,7 +272,7 @@ toolchain.
 - Python 3.12+;
 - Node.js 22+ and npm;
 - a working virtual environment with the backend requirements installed;
-- network access during the build to fetch the pinned llama.cpp assets and Python/Node packages.
+- network access during the build to fetch Python and Node packages.
 
 ### Development desktop
 
@@ -297,9 +311,9 @@ npm run desktop:package
 Packaging performs these steps:
 
 1. builds the production React frontend;
-2. stages and verifies the pinned CPU/CUDA llama.cpp runtime;
+2. validates the hardware-selectable llama.cpp manifest without downloading runtime payloads;
 3. builds the standalone PyInstaller backend;
-4. packages Electron, the backend, llama.cpp, and the Rasputin icon with electron-builder;
+4. packages Electron, the backend, runtime manifest, and Rasputin icon with electron-builder;
 5. produces an NSIS installer under dist/electron/.
 
 For an unpacked directory useful for local smoke testing:
@@ -334,12 +348,12 @@ screen, and exercise the model/catalog surface in an isolated test data director
 
 ## Current status and honest boundaries
 
-### Implemented on this branch
+### Implemented in the current preview
 
 - Electron desktop lifecycle and tray ownership;
 - direct desktop boot with Rasputin branding and icon;
 - packaged PyInstaller backend;
-- bundled, pinned native llama.cpp runtime selection;
+- pinned, hardware-selected llama.cpp acquisition on first model load;
 - desktop-only native model registry and GGUF artifact flow;
 - model catalog, Hugging Face search, exact-variant download controls, and durable job state;
 - hardware-aware placement planning and advanced llama.cpp load-profile validation;
@@ -356,8 +370,7 @@ publicly distributed LM Studio replacement. The remaining release gates are:
 - Authenticode signing and a trusted update channel;
 - live inference certification across representative CPU/CUDA hardware and model sizes;
 - end-to-end third-party MCP server certification;
-- end-to-end agentic coding certification using a real local coder model;
-- a public release artifact and release notes.
+- end-to-end agentic coding certification using a real local coder model.
 
 These boundaries do not change the desktop product shape: the packaged app remains the supported
 daily-driver path, and Docker is not required for it.
@@ -369,7 +382,7 @@ daily-driver path, and Docker is not required for it.
 | desktop/ | Electron main process, backend supervisor, settings, and application assets |
 | frontend-src/ | React source; generated production output is written to frontend/ |
 | backend/ | FastAPI services, model catalog/acquisition, llama.cpp integration, MCP, and connectors |
-| runtime/llama/ | Pinned llama.cpp manifest and bundled-runtime staging documentation |
+| runtime/llama/ | Pinned hardware-selectable llama.cpp manifest and runtime documentation |
 | scripts/ | Desktop runtime, backend, installer, packaging, and verification scripts |
 | tests/ | Backend, desktop lifecycle, branding, UI, and integration tests |
 

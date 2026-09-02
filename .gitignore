@@ -63,6 +63,7 @@ test-results/
 .claude/
 .gemini/
 *.png
+!docs/images/*.png
 *.webp
 *.webm
 

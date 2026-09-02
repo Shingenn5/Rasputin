@@ -1,7 +1,7 @@
 # Rasputin Public Release Audit
 
 > **Audit started:** July 24, 2026
-> **Audit refreshed:** September 1, 2026
+> **Audit refreshed:** September 2, 2026
 > **Branch:** `main`
 > **Status:** Public preview repository; local safety checks pass; stable release clearance remains open
 
@@ -11,24 +11,24 @@ The current tracked tree passes Rasputin's repository safety check and contains
 no tracked runtime data, generated build output, private-key files, databases,
 or local model weights.
 
-The repository is public and licensed under AGPL-3.0-or-later. Windows x64
-Desktop is the supported preview surface. Preview publication does not equal
-stable-release clearance: contribution policy, dependency inventory, signing,
-update delivery, and successful remote security checks remain open.
+The repository is public, licensed under AGPL-3.0-or-later, and publishes the compact Windows x64
+preview installer as release `v0.2.1`. Desktop is the supported preview surface. Preview publication
+does not equal stable-release clearance: contribution policy, dependency inventory, signing,
+update delivery, and broader vulnerability coverage remain open.
 
 ## Current-tree checks
 
 | Check | Result |
 |---|---|
 | `scripts/check-repo-safety.ps1` | Pass |
-| Tracked files | 375 |
+| Tracked files after this refresh | 408 |
 | Tracked `data/`, build, distribution, virtualenv, Playwright, or `node_modules` paths | 0 |
 | Tracked private-key, certificate, database, or log extensions | 0 |
-| Tracked local screenshots covered by the audit patterns | 0 |
+| Tracked product screenshots | 3 sanitized captures from an isolated local backend |
 | Tracked `.env` files | `.env.example` only |
 | Tracked model weights | 0 |
 | Tracked file larger than 5 MB | 0 |
-| Git object database | Approximately 7 MB total (`6.57 MiB` packed plus loose objects) |
+| Generated installers and local runtime payloads | Excluded from the tracked tree |
 
 `backend/models/secrets.py` matched the filename audit because it is the
 application's secret-storage implementation, not a secret file.
@@ -75,22 +75,16 @@ None of these dedicated scanners were installed during the initial audit:
 - TruffleHog.
 - detect-secrets.
 
-The `.github/workflows/repository-safety.yml` workflow adds
-full-history Gitleaks scanning on pushes, pull requests, and manual runs, plus
-GitHub dependency review for pull requests. Earlier Windows-hosted runs failed
-while the Gitleaks action fetched an unavailable Windows archive; the workflow
-now uses Ubuntu and needs a successful remote run after publication. Before a
-stable release:
+The `.github/workflows/repository-safety.yml` workflow runs repository checks and full-history
+Gitleaks scanning on pushes, pull requests, and manual runs, plus GitHub dependency review for pull
+requests. The latest `main` run passed remotely on September 1, 2026. Before a stable release:
 
-1. Run and review the new workflow remotely; local heuristic checks do not
-   substitute for its first successful full-history scan.
-2. Generate a dependency license inventory for Python, npm, bundled native engines, and the
+1. Generate a dependency license inventory for Python, npm, downloaded native engines, and the
    git submodule.
-3. Add dependency vulnerability scanning.
-4. Decide whether generated installers receive an SBOM and provenance
-   attestation.
-5. Confirm that public issue attachments and test fixtures cannot enter
-   workspace/runtime data paths.
+2. Add broader dependency vulnerability scanning beyond pull-request dependency review.
+3. Decide whether generated installers receive an SBOM and provenance attestation.
+4. Confirm that public issue attachments and test fixtures cannot enter workspace/runtime data
+   paths.
 
 ## Decisions blocking a supported stable release
 
@@ -107,7 +101,7 @@ stable release:
 |---|---|
 | Current tracked tree | Provisionally clear |
 | High-confidence history heuristic | Provisionally clear |
-| Dedicated full-history secret scan | Workflow host fixed locally; successful remote run pending |
+| Dedicated full-history secret scan | Pass on latest `main` GitHub Actions run |
 | Dependency vulnerability review | Workflow added; first pull-request run pending |
 | Dependency license inventory | Pending |
 | Vulnerability scan | Pending |
