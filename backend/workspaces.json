@@ -1,0 +1,20 @@
+{
+  "workspaces": {
+    "research": {
+      "tools": ["web_search", "deep_research", "document_upload", "synthesis"],
+      "features": ["recursive_search", "citation_management", "research_tracking"]
+    },
+    "documents": {
+      "tools": ["document_upload", "rag_processing", "graph_visualization", "entity_extraction"],
+      "features": ["knowledge_graph_integration", "document_analysis", "export_options"]
+    },
+    "coding": {
+      "tools": ["code_editor", "script_debugging", "terminal_access", "auto_refactoring"],
+      "features": ["syntax_highlighting", "code_versioning", "external_integration"]
+    },
+    "general": {
+      "tools": ["basic_chat", "quick_tasks", "system_settings"],
+      "features": ["task_prioritization", "quick_actions", "user_preferences"]
+    }
+  }
+}
