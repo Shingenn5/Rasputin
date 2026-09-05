@@ -3,6 +3,7 @@ import { AlertTriangle, Cpu, Gauge, Layers, MemoryStick, SlidersHorizontal } fro
 import { api } from "../../api/client.js";
 import { Modal } from "../../components/Modal.jsx";
 import { displayModelName } from "../../lib/display.js";
+import { firstLoadCanResolvePlacement } from "./modelEcosystem.js";
 
 const DEFAULT_PROFILE = {
   contextLength: 8192,
@@ -78,7 +79,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [remember, setRemember] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  const [preview, setPreview] = useState(null);
+  const [previewResult, setPreviewResult] = useState(null);
   const [previewError, setPreviewError] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -87,6 +88,9 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   const modelKey = model?.key || "";
   const modelName = displayModelName(model, models);
   const cleaned = useMemo(() => cleanProfile(profile), [profile]);
+  const previewKey = JSON.stringify({ model, hardware, runtimeStatus, profile: cleaned });
+  const preview = previewResult?.key === previewKey ? previewResult.value : null;
+  const previewPending = !preview;
 
   useEffect(() => {
     if (!modelKey) return;
@@ -108,6 +112,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   useEffect(() => {
     if (!model) return undefined;
     const controller = new AbortController();
+    let disposed = false;
     const timer = window.setTimeout(() => {
       setPreviewError("");
       api("/api/model-catalog/load-plan-preview", {
@@ -121,21 +126,26 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
           modelPath: model.hostModelPath || model.host_model_path || model.path || model.model_path || model.modelPath,
           capabilities: runtimeStatus?.capabilities || runtimeStatus?.runtimeCapabilities || runtimeStatus?.runtime_capabilities || {},
         }),
-      }).then(setPreview).catch((error) => {
-        if (error?.name !== "AbortError") setPreviewError(error?.message || "Unable to preview this load profile.");
+      }).then((value) => {
+        if (!disposed) setPreviewResult({ key: previewKey, value });
+      }).catch((error) => {
+        if (!disposed && error?.name !== "AbortError") setPreviewError(error?.message || "Unable to preview this load profile.");
       });
     }, 250);
     return () => {
+      disposed = true;
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [model, hardware, runtimeStatus, cleaned]);
+  }, [model, hardware, runtimeStatus, cleaned, previewKey]);
 
   const set = (key) => (event) => setProfile((current) => ({ ...current, [key]: event.target.value }));
   const requiredMemoryMb = preview?.resolvedSettings?.requiredMemoryMb ?? preview?.resolved_settings?.required_memory_mb;
-  const blocked = Boolean(preview?.blocked || preview?.accepted === false || previewError);
+  const provisionalFirstLoad = firstLoadCanResolvePlacement(preview, runtimeStatus, hardware, cleaned);
+  const blocked = previewPending || Boolean(((preview?.blocked || preview?.accepted === false) && !provisionalFirstLoad) || previewError);
 
   const handleLoad = async () => {
+    if (blocked || loading) return;
     setLoading(true);
     setLoadError("");
     try {
@@ -253,9 +263,16 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         </div>
       )}
 
-      {(preview?.blockReasons || preview?.block_reasons)?.length > 0 && (
+      {provisionalFirstLoad && (
+        <div className="studio-load-plan" role="status">
+          <strong>First-load placement check</strong>
+          <span>The GPUs have enough combined free memory. Rasputin will install the matching llama.cpp runtime, confirm layer-split support, and re-check placement before launch.</span>
+        </div>
+      )}
+      {!provisionalFirstLoad && (preview?.blockReasons || preview?.block_reasons)?.length > 0 && (
         <div className="studio-load-warning" role="alert"><AlertTriangle size={16} /><span>{(preview.blockReasons || preview.block_reasons).join(" ")}</span></div>
       )}
+      {previewPending && !previewError && <p role="status">Checking placement for these settings…</p>}
       {previewError && <div className="studio-load-warning" role="alert"><AlertTriangle size={16} /><span>{previewError}</span></div>}
 
       {runtimeStatus?.state === "install_required" && !loading && (

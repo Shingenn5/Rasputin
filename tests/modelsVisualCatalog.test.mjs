@@ -31,7 +31,7 @@ test("desktop Discover Models opens into a native llama.cpp visual catalog", () 
   assert.match(models, /const desktopItem = \{/);
   assert.match(sidebar, /view: "discover", label: "Discover Models"/);
   assert.doesNotMatch(models, /id: "library",\s+label: "Library"/);
-  assert.match(models, /settings: \{ label: "Developer", hint: "Runtime and connections" \}/);
+  assert.match(models, /settings: \{ label: "Advanced", hint: "Connections & diagnostics" \}/);
   assert.match(models, /className="models-catalog-toolbar"/);
   assert.match(models, /aria-label="Refresh model catalog"/);
   assert.doesNotMatch(models, /Models <span className="text-muted-foreground">Center<\/span>/);
@@ -66,6 +66,8 @@ test("desktop model catalog exposes selection details and a real llama.cpp loade
   assert.match(loader, /GPU split mode/);
   assert.match(loader, /KV cache offload/);
   assert.match(loader, /\/api\/model-catalog\/load-plan-preview/);
+  assert.match(loader, /firstLoadCanResolvePlacement/);
+  assert.match(loader, /confirm layer-split support, and re-check placement before launch/);
   assert.match(app, /runModelAction\(action, key, options = \{\}\)/);
   assert.match(app, /\{ key: resolvedKey, \.\.\.options \}/);
 });

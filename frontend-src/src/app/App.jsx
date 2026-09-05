@@ -3030,21 +3030,14 @@ async function fetchModels() {
   return registry.models || [];
 }
 
-// Boot-time model selection: never trust the last-used model key blindly,
-// since that runtime may no longer be active. Only restore it if it's still
-// reachable; otherwise auto-detect whichever model (if any) is already
-// running, preferring the main role. With nothing running, land on null so
-// the UI reads "no model selected" instead of pretending a stopped model
-// is ready.
+// Start every normal session deliberately unselected. A runtime may still be
+// loaded in the background, but chat should not silently attach to yesterday's
+// model. Testing Mode is the only explicit boot-time selection.
 function pickBootModel(models, prefs) {
   if (prefs.testingMode) {
     return models.some((model) => model.key === "dry-run") ? "dry-run" : null;
   }
-  const isActive = (model) => isUserFacingModel(model, false) && runtimeStatus(model) === "reachable";
-  const preferred = models.find((model) => model.key === prefs.selectedModel);
-  if (preferred && isActive(preferred)) return preferred.key;
-  const fallback = models.find((model) => model.role === "main" && isActive(model)) || models.find(isActive);
-  return fallback ? fallback.key : null;
+  return null;
 }
 
 async function fetchAuditEvents() {

@@ -13,20 +13,28 @@ test("Models workspace v3 adds a distinct command-console hierarchy", () => {
   assert.match(models, /models-v3-catalog-stage/);
   assert.match(models, /models-v3-model-card/);
   assert.match(models, /models-v3-running/);
+  assert.match(models, /models-v3-overview-disclosure/);
+  assert.match(models, /models-catalog-advanced/);
+  assert.match(models, /models-inspector-technical/);
   assert.match(styles, /models-v3-command-band/);
   assert.match(styles, /models-v3-metric/);
   assert.match(styles, /models-v3-tab/);
 });
 
-test("My Models opens as a dense selectable inventory with a persistent inspector", () => {
+test("My Models opens as a relaxed selectable inventory with a persistent inspector", () => {
   assert.match(models, /useState\(\(\) => view === "discover" \? "library" : "installed"\)/);
   assert.match(models, /className="models-inventory-workbench"/);
   assert.match(models, /role="table" aria-label="Installed models"/);
-  for (const heading of ["Model", "Developer", "Params", "Context", "Format", "Fit", "Actions"]) {
+  for (const heading of ["Model", "Status", "Actions"]) {
     assert.match(models, new RegExp(`role="columnheader">${heading}<`));
   }
   assert.match(models, /data-testid="installed-model-row"/);
+  assert.match(models, /data-runtime-state=\{operationalSignal\.key\}/);
   assert.match(models, /aria-selected=\{selected\}/);
+  assert.match(models, /aria-current=\{chatActive \? "true" : undefined\}/);
+  assert.match(models, /> Chat Target<\/span>/);
+  assert.match(styles, /models-state-signal/);
+  assert.match(styles, /models-state-glyph/);
   assert.match(models, /data-testid="installed-model-inspector"/);
   assert.match(models, /aria-label="Model inspector sections"/);
   assert.match(models, /installedSearchInputRef\.current\?\.focus\(\)/);
@@ -46,10 +54,10 @@ test("My Models opens as a dense selectable inventory with a persistent inspecto
   assert.match(models, /Load Model/);
 });
 
-test("Discover Models mirrors the dense inventory and persistent inspector contract", () => {
+test("Discover Models uses a focused inventory and persistent inspector contract", () => {
   assert.match(models, /data-testid="discover-model-workbench"/);
   assert.match(models, /role="table"\s+aria-label="Available models"/);
-  for (const heading of ["Model", "Developer", "Params", "Context", "Downloads", "Fit", "Actions"]) {
+  for (const heading of ["Model", "Fit", "Actions"]) {
     assert.match(models, new RegExp(`role="columnheader">${heading}<`));
   }
   assert.match(models, /data-table-kind="discover-model-table"/);
@@ -111,16 +119,18 @@ test("Discover shows registered models independently of catalog results and open
   assert.match(styles, /@media \(max-width: 640px\)[\s\S]*models-discover-installed ul \{ max-height: 238px; grid-template-columns: minmax\(0, 1fr\); \}/);
 });
 
-test("completed downloads leave the fixed progress rail but remain available through catalog state", () => {
+test("completed downloads leave the progress rail and Discover links to durable My Models state", () => {
   assert.match(models, /const downloadProgressJobs = useMemo/);
   assert.match(models, /showsGlobalDownloadProgress\(downloadJobState\(job\)\)/);
   assert.match(models, /downloadProgressJobs\.map/);
   assert.doesNotMatch(models, /activeDownloads\.map\(\(dl\) => <ModelDownloadProgress/);
-  assert.match(models, /const downloaded = downloadState === "completed"/);
-  assert.match(models, /downloaded \? <><CheckCircle2 size=\{12\} \/> Manage<\/>/);
+  assert.match(models, /const downloadedReceipt = downloadState === "completed"/);
+  assert.match(models, /findInstalledCatalogModel\(item, registeredModels\)/);
+  assert.match(models, /installed \? <><Play size=\{12\} \/> Load<\/>/);
   assert.match(models, /loadCompletedArtifact=\{loadCompletedArtifact\}/);
-  assert.match(models, /if \(downloaded\) \{\s*await loadCompletedArtifact\?\.\(activeDownload\)/);
-  assert.match(models, /downloaded \? <Play size=\{13\}/);
+  assert.match(models, /else if \(downloadedReceipt\) onLoadArtifact\?\.\(download\)/);
+  assert.match(models, /if \(downloadedReceipt\) \{\s*await loadCompletedArtifact\?\.\(activeDownload\)/);
+  assert.match(models, /installed \|\| downloadedReceipt \? <Play size=\{13\}/);
 });
 
 test("Discover downloads start directly and expose Stop in the same controls", () => {

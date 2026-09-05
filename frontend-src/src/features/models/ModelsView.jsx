@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Cloud,
   Copy,
+  Crosshair,
   Cpu,
   Database,
   Download,
@@ -61,6 +62,7 @@ import { ModelIdentity } from "./ModelIdentity.jsx";
 import { PublisherLogo } from "./PublisherLogo.jsx";
 import { ModelLoadDialog } from "./ModelLoadDialog.jsx";
 import { ModelServingPanel } from "./ModelServingPanel.jsx";
+import { findInstalledCatalogModel } from "./modelEcosystem.js";
 import "../../styles/models-workspace-v3.css";
 
 /* ── Tab config ── */
@@ -68,7 +70,7 @@ const modelsTabs = [
   { id: "installed",  label: "Installed",   icon: Package },
   { id: "running",    label: "Running",     icon: Activity },
   { id: "serving",    label: "Serving",     icon: RadioTower },
-  { id: "settings",   label: "Settings",    icon: Settings },
+  { id: "settings",   label: "Advanced",    icon: Settings },
 ];
 
 
@@ -662,11 +664,31 @@ function contextWindowFor(m) {
   return 0;
 }
 
-function statusColor(st) {
-  if (["reachable","healthy","ready","running"].includes(st)) return "var(--ras-safe)";
-  if (["unhealthy","error","failed","blocked"].includes(st)) return "var(--ras-danger)";
-  if (["stopped","unknown","warning"].includes(st)) return "var(--ras-warn)";
-  return "var(--cc-muted)";
+export function modelOperationalSignal(model) {
+  const status = String(runtimeStatus(model) || "unknown").toLowerCase();
+  if (["reachable", "healthy", "ready", "running"].includes(status)) {
+    return { key: "live", label: "Live", detail: "Serving now" };
+  }
+  if (["unhealthy", "unreachable", "error", "failed", "blocked"].includes(status)) {
+    return { key: "down", label: "Down", detail: "Needs attention" };
+  }
+  if (model?.artifactAvailable === false || model?.artifact_available === false) {
+    return { key: "down", label: "Down", detail: "Local file missing" };
+  }
+  if (["loading", "starting", "warming"].includes(status)) {
+    return { key: "parked", label: "Starting", detail: "Preparing model" };
+  }
+  return { key: "parked", label: "Parked", detail: status === "stopped" ? "Ready to load" : "Status not confirmed" };
+}
+
+function ModelStateSignal({ signal, chatActive = false, compact = false, role }) {
+  return (
+    <span className={`models-state-signal is-${signal.key} ${compact ? "is-compact" : ""}`} role={role}>
+      <span className="models-state-glyph" aria-hidden="true"><i /><i /><i /></span>
+      <span className="models-state-copy"><strong>{signal.label}</strong><small>{signal.detail}</small></span>
+      {chatActive && <span className="models-chat-target"><Crosshair size={11} aria-hidden="true" /> Chat Target</span>}
+    </span>
+  );
 }
 
 function trustedDownloadProgress(download) {
@@ -1544,6 +1566,11 @@ export function ModelsView({
   };
   const startDownload = async (modelId, variant = null) => {
     try {
+      const installed = findInstalledCatalogModel({ modelId }, registeredModels, variant);
+      if (installed) {
+        await configureNativeLoad(installed);
+        return true;
+      }
       if (nativeModels && !variant) throw new Error("Choose a compatible GGUF variant for native llama.cpp; raw model weights cannot be loaded here.");
       if (variant && !variantCompatibility(variant).safe) throw new Error(variantCompatibility(variant).reasons[0] || "This GGUF variant is incompatible. Choose another variant.");
       const body = variant ? { modelId, variant } : { modelId };
@@ -1568,6 +1595,11 @@ export function ModelsView({
 
   const downloadCatalogItem = async (item) => {
     const modelId = catalogModelId(item);
+    const installedModel = findInstalledCatalogModel(item, registeredModels);
+    if (installedModel) {
+      await configureNativeLoad(installedModel);
+      return;
+    }
     const existing = catalogDownloadFor(item, activeDownloads);
     const existingState = existing ? downloadJobState(existing) : "";
     if (existing && !["completed", "failed", "cancelled"].includes(existingState)) {
@@ -1655,19 +1687,25 @@ export function ModelsView({
             <span aria-hidden="true" /> Native · llama.cpp
           </div>
         )}
-        <div className="models-v3-runtime-metrics">
-          {[
-            { v: totalModels, l: "Registered", c: "text-foreground" },
-            { v: healthyCount, l: "Reachable now", c: "text-primary" },
-            { v: runningModels.length, l: nativeModels ? "Running models" : "Running containers", c: "text-amber-400" },
-            { v: catalogItems.length, l: "Cached locally", c: "text-sky-400" },
-          ].map((s) => (
-            <div key={s.l} className="models-v3-metric">
-              <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
-              <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
-            </div>
-          ))}
-        </div>
+        <details className="models-v3-overview-disclosure">
+          <summary>
+            <span>Library Overview</span>
+            <small>{totalModels} models · {runningModels.length} loaded</small>
+          </summary>
+          <div className="models-v3-runtime-metrics">
+            {[
+              { v: totalModels, l: "Registered", c: "text-foreground" },
+              { v: healthyCount, l: "Reachable now", c: "text-primary" },
+              { v: runningModels.length, l: nativeModels ? "Running models" : "Running containers", c: "text-amber-400" },
+              { v: catalogItems.length, l: "Cached locally", c: "text-sky-400" },
+            ].map((s) => (
+              <div key={s.l} className="models-v3-metric">
+                <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
+                <div className="text-[0.66rem] uppercase tracking-wide text-muted-foreground">{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </details>
       </div>
 
       {/* ── Tab Bar ── */}
@@ -1679,7 +1717,7 @@ export function ModelsView({
             installed: { label: "My Models", hint: "Local and connected" },
             running: { label: "Loaded", hint: "Active runtime" },
             serving: { label: "Serving", hint: "APIs, MCP, metrics" },
-            settings: { label: "Developer", hint: "Runtime and connections" },
+            settings: { label: "Advanced", hint: "Connections & diagnostics" },
           }[t.id];
           return (
             <UIButton
@@ -1817,32 +1855,41 @@ export function ModelsView({
                     Enter a model name, exact org/model ID, or Hugging Face URL, then press Enter or Search. Exact matches appear first.
                   </span>
                 )}
-                <select className="w2-input" style={{ width: "140px", flex: "none" }} value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
-                  <option value="all">All types</option>
-                  {catalogCategories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
-                {searchMode !== "catalog" && (
-                  <select className="w2-input" style={{ width: "130px", flex: "none" }} value={hfSort} onChange={e => setHfSort(e.target.value)}>
-                    <option value="popular">Most popular</option>
-                    <option value="downloads">Most downloaded</option>
-                    <option value="likes">Most liked</option>
-                    <option value="trending">Trending</option>
-                    <option value="lastModified">Recent</option>
-                    <option value="vram_desc">VRAM: largest first</option>
-                  </select>
-                )}
-                {searchMode === "catalog" && !desktopOnly && (
-                  <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogRuntime} onChange={e => setCatalogRuntime(e.target.value)}>
-                    <option value="deployable">Deployable</option>
-                    <option value="all">All Runtimes</option>
-                    {catalogRuntimes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                  </select>
-                )}
-                <select className="w2-input" style={{ width: "130px", flex: "none" }} value={catalogFit} onChange={e => setCatalogFit(e.target.value)}>
-                  <option value="all">Any fit</option>
-                  <option value="fits">Fits safely</option>
-                </select>
               </div>
+
+              <details className="models-catalog-advanced">
+                <summary>
+                  <span><SlidersHorizontal size={15} /> Filters</span>
+                  <small>{[catalogPurpose !== "all", catalogRuntime !== "all", catalogFit !== "all", hfSort !== "popular", vramMinGb !== "", vramMaxGb !== ""].filter(Boolean).length || "None"} active</small>
+                </summary>
+                <div className="models-catalog-secondary-filters">
+                  <label><span>Type</span><select className="w2-input" value={catalogPurpose} onChange={e => setCatalogPurpose(e.target.value)}>
+                    <option value="all">All types</option>
+                    {catalogCategories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select></label>
+                  {searchMode !== "catalog" && (
+                    <label><span>Sort</span><select className="w2-input" value={hfSort} onChange={e => setHfSort(e.target.value)}>
+                      <option value="popular">Most popular</option>
+                      <option value="downloads">Most downloaded</option>
+                      <option value="likes">Most liked</option>
+                      <option value="trending">Trending</option>
+                      <option value="lastModified">Recent</option>
+                      <option value="vram_desc">VRAM: largest first</option>
+                    </select></label>
+                  )}
+                  {searchMode === "catalog" && !desktopOnly && (
+                    <label><span>Runtime</span><select className="w2-input" value={catalogRuntime} onChange={e => setCatalogRuntime(e.target.value)}>
+                      <option value="deployable">Deployable</option>
+                      <option value="all">All runtimes</option>
+                      {catalogRuntimes.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select></label>
+                  )}
+                  <label><span>Hardware fit</span><select className="w2-input" value={catalogFit} onChange={e => setCatalogFit(e.target.value)}>
+                    <option value="all">Any fit</option>
+                    <option value="fits">Fits safely</option>
+                  </select></label>
+                </div>
+              </details>
 
               <details className="model-hardware-filters">
                 <summary>
@@ -1962,15 +2009,12 @@ export function ModelsView({
                       >
                         <div className="models-discover-head" role="row">
                           <span role="columnheader">Model</span>
-                          <span role="columnheader">Developer</span>
-                          <span role="columnheader">Params</span>
-                          <span role="columnheader">Context</span>
-                          <span role="columnheader">Downloads</span>
                           <span role="columnheader">Fit</span>
                           <span role="columnheader">Actions</span>
                         </div>
                         {pagedItems.map((item) => {
                           const itemId = item.id || item.modelId;
+                          const installedModel = findInstalledCatalogModel(item, registeredModels);
                           return (
                             <DiscoverCatalogRow
                               key={itemId}
@@ -1978,16 +2022,16 @@ export function ModelsView({
                               selected={selectedCatalogItem === item}
                               placementFit={catalogPlacementAssessment(item, effectiveHardware)}
                               activeDownloads={activeDownloads}
+                              installedModel={installedModel}
                               onSelect={() => setSelectedCatalogId(itemId)}
                               onDownload={() => {
                                 setSelectedCatalogId(itemId);
                                 downloadCatalogItem(item);
                               }}
                               onDownloadAction={onDownloadAction}
-                              onManage={() => {
-                                setSelectedCatalogId(itemId);
-                                setDiscoverInspectorTab("download");
-                              }}
+                              onLoadInstalled={configureNativeLoad}
+                              onManageInstalled={manageInstalledModel}
+                              onLoadArtifact={loadCompletedArtifact}
                             />
                           );
                         })}
@@ -2025,6 +2069,8 @@ export function ModelsView({
                     <DiscoverModelInspector
                       key={selectedCatalogItem?.id || selectedCatalogItem?.modelId || "empty"}
                       item={selectedCatalogItem}
+                      installedModel={findInstalledCatalogModel(selectedCatalogItem, registeredModels)}
+                      installedModels={registeredModels}
                       activeTab={discoverInspectorTab}
                       onTabChange={setDiscoverInspectorTab}
                       placementFit={selectedCatalogItem ? catalogPlacementAssessment(selectedCatalogItem, effectiveHardware) : null}
@@ -2038,6 +2084,8 @@ export function ModelsView({
                       activeDownloads={activeDownloads}
                       loadCompletedArtifact={loadCompletedArtifact}
                       loadingArtifact={loadingArtifact}
+                      onLoadInstalled={configureNativeLoad}
+                      onManageInstalled={manageInstalledModel}
                     />
                   </div>
                 )}
@@ -2056,6 +2104,9 @@ export function ModelsView({
                         loadCompletedArtifact={loadCompletedArtifact}
                         activeDownloads={activeDownloads}
                         desktopOnly={nativeModels}
+                        installedModel={findInstalledCatalogModel(item, registeredModels)}
+                        onLoadInstalled={configureNativeLoad}
+                        onManageInstalled={manageInstalledModel}
                       />
                     ))}
                   </div>
@@ -2133,11 +2184,7 @@ export function ModelsView({
                   <div className="studio-installed-list models-inventory-table" data-testid="studio-installed-list" data-table-kind="installed-model-table" role="table" aria-label="Installed models">
                     <div className="studio-installed-head" role="row">
                       <span role="columnheader">Model</span>
-                      <span role="columnheader">Developer</span>
-                      <span role="columnheader">Params</span>
-                      <span role="columnheader">Context</span>
-                      <span role="columnheader">Format</span>
-                      <span role="columnheader">Fit</span>
+                      <span role="columnheader">Status</span>
                       <span role="columnheader">Actions</span>
                     </div>
                     {filteredInstalledModels.map(model => (
@@ -2146,6 +2193,7 @@ export function ModelsView({
                         model={model}
                         allModels={models}
                         selected={selectedInstalledModel?.key === model.key}
+                        chatActive={selectedModel === model.key}
                         onSelect={() => setSelectedInstalledKey(model.key)}
                         runModelAction={runModelAction}
                         executeAction={executeAction}
@@ -2162,7 +2210,7 @@ export function ModelsView({
 
                   {!filteredInstalledModels.length && (
                     <div className="models-inventory-empty">
-                      {installedModels.length ? "No installed models match this filter." : "No models registered. Use Discover to download a model, or Developer to connect an endpoint."}
+                      {installedModels.length ? "No installed models match this filter." : "No models registered. Use Discover to download a model, or Advanced to connect an endpoint."}
                     </div>
                   )}
                   <footer className="models-inventory-footer">
@@ -2186,6 +2234,7 @@ export function ModelsView({
                 />
                 <InstalledModelInspector
                   model={selectedInstalledModel}
+                  chatActive={selectedModel === selectedInstalledModel?.key}
                   activeTab={installedInspectorTab}
                   onTabChange={setInstalledInspectorTab}
                   allModels={models}
@@ -2230,7 +2279,7 @@ export function ModelsView({
                           <div style={{ fontSize: "0.6875rem", color: "var(--cc-muted)" }}>{m.runtime || m.provider} · {labelize(m.role || "chat")}</div>
                         </div>
                       </div>
-                      <span style={{ fontSize: "0.6875rem", color: "var(--ras-safe)", fontWeight: 600 }}>Online</span>
+                      <ModelStateSignal signal={modelOperationalSignal(m)} chatActive={selectedModel === m.key} compact />
                     </div>
                   ))}
                 </div>
@@ -2259,7 +2308,7 @@ export function ModelsView({
                 </div>
                 <div className="models-runtime-contract">
                   <Badge variant="up">Loopback only</Badge>
-                  <Badge variant="muted">llama.cpp bundled</Badge>
+                  <Badge variant="muted">Runtime on demand</Badge>
                   <Badge variant="muted">No Docker</Badge>
                 </div>
               </header>
@@ -2715,19 +2764,19 @@ function DiscoverInstalledSummary({ models, onManage }) {
   );
 }
 
-function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onSelect, onDownload, onDownloadAction, onManage }) {
+function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, installedModel, onSelect, onDownload, onDownloadAction, onLoadInstalled, onManageInstalled, onLoadArtifact }) {
   const modelId = catalogModelId(item);
   const modelName = String(item?.name || modelId.split("/").pop() || modelId);
-  const developer = catalogPublisher(item);
-  const context = contextWindowFor(item);
   const download = catalogDownloadFor(item, activeDownloads);
   const downloadState = download ? downloadJobState(download) : "";
   const activelyDownloading = Boolean(download && !["completed", "failed", "cancelled"].includes(downloadState));
-  const downloaded = downloadState === "completed";
+  const downloadedReceipt = downloadState === "completed";
+  const installed = Boolean(installedModel);
+  const installedRunning = installed && isManagedModelRunning(installedModel);
   const jobId = downloadJobIdentity(download);
   const placement = placementFit || catalogPlacementAssessment(item, null);
-  const fitReady = downloaded || item?.readyWithinThreeMinutes || item?.loaded || placement.canRunNow;
-  const fitLabel = downloaded ? "Downloaded" : activelyDownloading ? labelize(downloadState) : placement.label;
+  const fitReady = installed || downloadedReceipt || item?.readyWithinThreeMinutes || item?.loaded || placement.canRunNow;
+  const fitLabel = installedRunning ? "Loaded" : installed ? "In My Models" : downloadedReceipt ? "Downloaded" : activelyDownloading ? labelize(downloadState) : placement.label;
 
   return (
     <div
@@ -2752,10 +2801,6 @@ function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onS
           <small title={modelId}>{modelId}</small>
         </span>
       </div>
-      <span className="models-inventory-developer" role="cell" title={developer}>{developer}</span>
-      <span className="models-inventory-chip" role="cell">{catalogParameterLabel(item)}</span>
-      <span className="models-inventory-context" role="cell">{context > 0 ? context.toLocaleString() : "-"}</span>
-      <span className="models-discover-downloads" role="cell">{compactCatalogMetric(item?.downloads)}</span>
       <span className={`models-inventory-fit ${fitReady ? "is-ready" : "is-review"}`} role="cell">
         <i style={{ background: fitReady ? "var(--models-forge-bright)" : "var(--ras-warn)" }} />
         {fitLabel}
@@ -2765,16 +2810,18 @@ function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onS
           type="button"
           className={`models-discover-row-action ${activelyDownloading ? "is-stop" : ""}`}
           data-testid="discover-row-download"
-          aria-label={activelyDownloading ? `Stop download for ${modelName}` : downloaded ? `Manage downloaded model ${modelName}` : `Download ${modelName}`}
+          aria-label={installedRunning ? `Manage loaded model ${modelName}` : installed ? `Load installed model ${modelName}` : activelyDownloading ? `Stop download for ${modelName}` : downloadedReceipt ? `Load downloaded model ${modelName}` : `Download ${modelName}`}
           disabled={activelyDownloading && !jobId}
           onClick={(event) => {
             event.stopPropagation();
-            if (activelyDownloading) onDownloadAction?.("cancel", jobId);
-            else if (downloaded) onManage?.();
+            if (installedRunning) onManageInstalled?.(installedModel);
+            else if (installed) onLoadInstalled?.(installedModel);
+            else if (activelyDownloading) onDownloadAction?.("cancel", jobId);
+            else if (downloadedReceipt) onLoadArtifact?.(download);
             else onDownload?.();
           }}
         >
-          {activelyDownloading ? <><Square size={12} /> Stop</> : downloaded ? <><CheckCircle2 size={12} /> Manage</> : <><Download size={12} /> Download</>}
+          {installedRunning ? <><Settings size={12} /> Manage</> : installed ? <><Play size={12} /> Load</> : activelyDownloading ? <><Square size={12} /> Stop</> : downloadedReceipt ? <><Play size={12} /> Load</> : <><Download size={12} /> Download</>}
         </button>
       </div>
     </div>
@@ -2783,6 +2830,8 @@ function DiscoverCatalogRow({ item, selected, placementFit, activeDownloads, onS
 
 function DiscoverModelInspector({
   item,
+  installedModel: repositoryModel,
+  installedModels,
   activeTab,
   onTabChange,
   placementFit,
@@ -2796,6 +2845,8 @@ function DiscoverModelInspector({
   activeDownloads,
   loadCompletedArtifact,
   loadingArtifact,
+  onLoadInstalled,
+  onManageInstalled,
 }) {
   const [variantDetail, setVariantDetail] = useState(null);
   const [variantDetailLoading, setVariantDetailLoading] = useState(false);
@@ -2827,7 +2878,12 @@ function DiscoverModelInspector({
   const activeDownload = catalogDownloadFor(item, activeDownloads);
   const activeDownloadState = activeDownload ? downloadJobState(activeDownload) : "";
   const isDownloading = Boolean(activeDownload && !["completed", "failed", "cancelled"].includes(activeDownloadState));
-  const downloaded = activeDownloadState === "completed";
+  const downloadedReceipt = !selectedVariant && activeDownloadState === "completed";
+  const installedModel = selectedVariant
+    ? findInstalledCatalogModel(item, installedModels, selectedVariant)
+    : repositoryModel;
+  const installed = Boolean(installedModel);
+  const installedRunning = installed && isManagedModelRunning(installedModel);
   const context = contextWindowFor(item);
   const updated = item.lastModified || item.updatedAt || item.updated_at;
   const capabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
@@ -2857,8 +2913,16 @@ function DiscoverModelInspector({
 
   const activeDownloadId = downloadJobIdentity(activeDownload);
   const runPrimaryAction = async () => {
+    if (installedRunning) {
+      onManageInstalled?.(installedModel);
+      return;
+    }
+    if (installed) {
+      await onLoadInstalled?.(installedModel);
+      return;
+    }
     onTabChange("download");
-    if (downloaded) {
+    if (downloadedReceipt) {
       await loadCompletedArtifact?.(activeDownload);
       return;
     }
@@ -2871,23 +2935,27 @@ function DiscoverModelInspector({
       return;
     }
     if (selectedVariant) {
-      await startDownload(modelId, selectedVariant);
+      if (selectedCompatibility?.safe) await startDownload(modelId, selectedVariant);
       return;
     }
     await downloadCatalogItem?.(item);
   };
 
-  const primaryLabel = isDownloading
+  const primaryLabel = installedRunning
+    ? "Manage in My Models"
+    : installed
+      ? "Load model"
+      : isDownloading
     ? "Stop"
-    : downloaded
+    : downloadedReceipt
       ? (loadingArtifact === activeDownloadId ? "Loading…" : "Load model")
       : !isHuggingFace
         ? "Prepare model"
         : "Download";
-  const primaryDisabled = (downloaded && (!activeDownloadId || loadingArtifact === activeDownloadId)) || (isDownloading && !activeDownloadId);
-  const exactDownloadDisabled = downloaded || isDownloading || !selectedVariant || !selectedCompatibility?.safe;
-  const fitReady = downloaded || item.readyWithinThreeMinutes || item.loaded || placement.canRunNow;
-  const fitStatus = downloaded ? "Downloaded" : placement.label;
+  const primaryDisabled = !installed && ((selectedVariant && !selectedCompatibility?.safe) || (downloadedReceipt && (!activeDownloadId || loadingArtifact === activeDownloadId)) || (isDownloading && !activeDownloadId));
+  const exactDownloadDisabled = isDownloading || !selectedVariant || (!installed && !selectedCompatibility?.safe);
+  const fitReady = installed || downloadedReceipt || item.readyWithinThreeMinutes || item.loaded || placement.canRunNow;
+  const fitStatus = installedRunning ? "Loaded" : installed ? "In My Models" : downloadedReceipt ? "Downloaded" : placement.label;
 
   const handleTabKeyDown = (event, tab) => {
     const index = tabs.indexOf(tab);
@@ -2913,10 +2981,11 @@ function DiscoverModelInspector({
             <small>{developer} · {modelId}</small>
           </div>
         </div>
+        {installedModel && <p className="models-inspector-summary">Local file: {installedModelFile(installedModel)}</p>}
         <span className={`models-inspector-status ${fitReady ? "is-ready" : ""}`}>{fitStatus}</span>
         <div className="models-inspector-primary-actions">
           <button className="w2-button primary" type="button" data-testid="discover-download-action" onClick={runPrimaryAction} disabled={primaryDisabled}>
-            {isDownloading ? <Square size={13} /> : downloaded ? <Play size={13} /> : <Download size={13} />} {primaryLabel}
+            {isDownloading && !installed ? <Square size={13} /> : installed || downloadedReceipt ? <Play size={13} /> : <Download size={13} />} {primaryLabel}
           </button>
           {item.sourceUrl ? (
             <a className="w2-button" href={item.sourceUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> Source</a>
@@ -2972,8 +3041,8 @@ function DiscoverModelInspector({
           <h3>Download files</h3>
           {activeDownload && (
             <div className="models-inspector-callout">
-              {downloaded ? <CheckCircle2 size={16} /> : <Download size={16} />}
-              <span><strong>{downloaded ? "Download complete" : labelize(activeDownloadState)}</strong><small>{trustedDownloadProgress(activeDownload) ? Math.round(Number(activeDownload.progress)) + "% complete" : "Rasputin is tracking this download."}</small></span>
+              {downloadedReceipt ? <CheckCircle2 size={16} /> : <Download size={16} />}
+              <span><strong>{downloadedReceipt ? "Download complete" : labelize(activeDownloadState)}</strong><small>{trustedDownloadProgress(activeDownload) ? Math.round(Number(activeDownload.progress)) + "% complete" : "Rasputin is tracking this download."}</small></span>
             </div>
           )}
           {isHuggingFace ? (
@@ -3009,8 +3078,8 @@ function DiscoverModelInspector({
               {variantDetail && variants.length === 0 && <p className="models-inspector-summary">No complete GGUF variants were returned. Choose a GGUF repository to load this model with native llama.cpp.</p>}
               {variantIssues.map((issue, index) => <div key={(issue.kind || "issue") + index} className="models-discover-warning">{issue.reason || issue.kind}{issue.nextAction ? ` · ${issue.nextAction}` : ""}</div>)}
               {variantDetail && (
-                <button className="models-inspector-wide-action is-primary" type="button" onClick={() => startDownload(modelId, selectedVariant || null)} disabled={exactDownloadDisabled}>
-                  <Download size={13} /> {variants.length ? "Download selected GGUF" : "No GGUF available"}
+                <button className="models-inspector-wide-action is-primary" type="button" onClick={() => installed ? onLoadInstalled?.(installedModel) : startDownload(modelId, selectedVariant)} disabled={exactDownloadDisabled}>
+                  <Download size={13} /> {installed ? "Load selected GGUF" : variants.length ? "Download selected GGUF" : "No GGUF available"}
                 </button>
               )}
             </div>
@@ -3108,7 +3177,7 @@ function StudioModelDetail({ item }) {
   );
 }
 
-function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, loadCompletedArtifact, activeDownloads, desktopOnly = false }) {
+function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, loadCompletedArtifact, activeDownloads, desktopOnly = false, installedModel = null, onLoadInstalled, onManageInstalled }) {
   const modelId = item.modelId || item.id;
   const isHuggingFace = searchMode !== "catalog" || item.source === "huggingface";
   const [variantDetail, setVariantDetail] = useState(null);
@@ -3121,6 +3190,8 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
   ));
   const downloadStateName = downloadJobState(downloadState);
   const isDownloading = Boolean(downloadState && !["failed", "completed", "cancelled"].includes(downloadStateName));
+  const installed = Boolean(installedModel);
+  const installedRunning = installed && isManagedModelRunning(installedModel);
   const variants = Array.isArray(variantDetail?.variants) ? variantDetail.variants : [];
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || null;
   const selectedCompatibility = selectedVariant ? variantCompatibility(selectedVariant) : null;
@@ -3166,7 +3237,11 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
   };
 
   const variantIssues = Array.isArray(variantDetail?.variantIssues) ? variantDetail.variantIssues : [];
-  const primaryAction = downloadStateName === "completed"
+  const primaryAction = installedRunning
+    ? () => onManageInstalled?.(installedModel)
+    : installed
+      ? () => onLoadInstalled?.(installedModel)
+      : downloadStateName === "completed"
     ? () => loadCompletedArtifact?.(downloadState)
     : isHuggingFace && desktopOnly && !variantDetail
     ? openVariantDetails
@@ -3175,7 +3250,11 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
       : item.deployable
         ? () => prepareCatalogModelForWarsat?.(item)
         : undefined;
-  const primaryLabel = downloadStateName === "completed"
+  const primaryLabel = installedRunning
+    ? "Manage in My Models"
+    : installed
+      ? "Load model"
+      : downloadStateName === "completed"
     ? "Load model"
     : isDownloading
     ? "Downloading…"
@@ -3193,12 +3272,18 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
                 ? "Download weights"
                 : "View details";
   const primaryDisabled = Boolean(
-    isDownloading
-    || (downloadStateName !== "completed" && isHuggingFace && desktopOnly && variantDetail && !selectedVariant)
-    || (downloadStateName !== "completed" && selectedCompatibility && !selectedCompatibility.safe)
-    || (item.deployable && !desktopOnly && blocked)
+    !installed && (
+      isDownloading
+      || (downloadStateName !== "completed" && isHuggingFace && desktopOnly && variantDetail && !selectedVariant)
+      || (downloadStateName !== "completed" && selectedCompatibility && !selectedCompatibility.safe)
+      || (item.deployable && !desktopOnly && blocked)
+    )
   );
-  const stateLabel = downloadStateName === "completed"
+  const stateLabel = installedRunning
+    ? "Loaded"
+    : installed
+      ? "In My Models"
+      : downloadStateName === "completed"
     ? "Downloaded"
     : item.readyWithinThreeMinutes || item.loaded
       ? "Ready"
@@ -3349,19 +3434,15 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
 /* ═══════════════════════════════════════════
    INSTALLED CARD
    ═══════════════════════════════════════════ */
-function InstalledCard({ nativeModels = false, model, allModels, selected = false, onSelect, runModelAction, executeAction, setUiState, onConfigureLoad, onOpenActions }) {
+function InstalledCard({ nativeModels = false, model, allModels, selected = false, chatActive = false, onSelect, runModelAction, executeAction, setUiState, onConfigureLoad, onOpenActions }) {
   const name = model.name || displayModelName(model, allModels);
   const secondary = displayModelSecondary(model, allModels);
-  const st = runtimeStatus(model);
-  const isHealthy = isModelHealthy(model);
   const mismatch = modelMismatchLine(model);
-  const context = contextWindowFor(model);
   const [busy, setBusy] = useState(null);
   const nativeRuntime = model.runtime === "native-llamacpp";
   const needsGguf = needsNativeModelDownload(model, nativeModels);
   const isRunning = isManagedModelRunning(model);
-  const developer = installedModelPublisher(model);
-  const fit = mismatch ? "Review" : isHealthy ? "Ready" : model.managed ? "Available" : "Check";
+  const operationalSignal = modelOperationalSignal(model);
 
   const runAction = async (key, actionName, op) => {
     setBusy(key);
@@ -3378,11 +3459,13 @@ function InstalledCard({ nativeModels = false, model, allModels, selected = fals
   return (
     <div
       id={`installed-model-row-${String(model.key).replace(/[^a-zA-Z0-9_-]/g, "-")}`}
-      className={`studio-installed-row models-inventory-row ${selected ? "is-selected" : ""}`}
+      className={`studio-installed-row models-inventory-row ${selected ? "is-selected" : ""} ${chatActive ? "is-chat-active" : ""}`}
       data-testid="installed-model-row"
       data-model-key={model.key}
+      data-runtime-state={operationalSignal.key}
       role="row"
       aria-selected={selected}
+      aria-current={chatActive ? "true" : undefined}
       aria-controls="installed-model-inspector"
       tabIndex={selected ? 0 : -1}
       onClick={onSelect}
@@ -3400,11 +3483,7 @@ function InstalledCard({ nativeModels = false, model, allModels, selected = fals
           <small>{secondary || model.model || model.key}</small>
         </span>
       </span>
-      <span className="models-inventory-developer" role="cell" title={developer}>{developer}</span>
-      <span className="models-inventory-chip" role="cell">{installedModelParameters(model)}</span>
-      <span className="models-inventory-context" role="cell">{context > 0 ? context.toLocaleString() : "Default"}</span>
-      <span className="models-inventory-chip" role="cell">{installedModelFormat(model)}</span>
-      <span className={`models-inventory-fit is-${fit.toLowerCase()}`} role="cell"><i style={{ background: statusColor(st) }} aria-hidden="true" />{fit}</span>
+      <ModelStateSignal signal={operationalSignal} chatActive={chatActive} role="cell" />
       <span className="studio-installed-actions" role="cell">
         {model.managed && (
           <Button
@@ -3434,7 +3513,7 @@ function InstalledCard({ nativeModels = false, model, allModels, selected = fals
   );
 }
 
-function InstalledModelInspector({ nativeModels = false, model, allModels, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, activeTab, onTabChange }) {
+function InstalledModelInspector({ nativeModels = false, model, allModels, chatActive = false, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, activeTab, onTabChange }) {
   const [busy, setBusy] = useState("");
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -3489,6 +3568,7 @@ function InstalledModelInspector({ nativeModels = false, model, allModels, onUse
   const nativeRuntime = model.runtime === "native-llamacpp";
   const needsGguf = needsNativeModelDownload(model, nativeModels);
   const isRunning = isManagedModelRunning(model);
+  const operationalSignal = modelOperationalSignal(model);
   const path = installedModelPath(model);
   const context = contextWindowFor(model);
   const mismatch = modelMismatchLine(model);
@@ -3588,7 +3668,7 @@ function InstalledModelInspector({ nativeModels = false, model, allModels, onUse
           <PublisherLogo item={model} size="lg" />
           <div><strong>{name}</strong><small>{developer} · {modelId}</small></div>
         </div>
-        <span className={`models-inspector-status ${healthy ? "is-ready" : ""}`}>{healthy ? "Ready" : labelize(st)}</span>
+        <ModelStateSignal signal={operationalSignal} chatActive={chatActive} />
         <div className="models-inspector-primary-actions">
           <button type="button" className="w2-button" onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
           {model.managed && (
@@ -3620,9 +3700,12 @@ function InstalledModelInspector({ nativeModels = false, model, allModels, onUse
         <section id="model-inspector-panel-info" role="tabpanel" aria-labelledby="model-inspector-tab-info" className="models-inspector-section">
           <h3>Model Information</h3>
           <p className="models-inspector-summary">{model.summary || model.description || `A ${labelize(model.role || "chat")} model trained by ${developer}.`}</p>
-          <dl className="models-inspector-facts">
-            {infoFacts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
-          </dl>
+          <details className="models-inspector-disclosure models-inspector-technical">
+            <summary><SlidersHorizontal size={14} /> Technical Details</summary>
+            <dl className="models-inspector-facts">
+              {infoFacts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
+            </dl>
+          </details>
         </section>
       )}
 
@@ -3690,7 +3773,7 @@ function InstalledModelInspector({ nativeModels = false, model, allModels, onUse
         <div><span>Purpose</span><strong>{labelize(installedModelCategory(model))}</strong></div>
         <div><span>Compatibility</span><strong>{mismatch || "No mismatch detected"}</strong></div>
       </details>
-      <details className="models-inspector-disclosure" open={Boolean(path)}>
+      <details className="models-inspector-disclosure">
         <summary><HardDrive size={14} /> Source File</summary>
         <div><span>Path</span><strong title={path || "No local source path"}>{path || "Managed endpoint — no local file"}</strong></div>
         <div><span>Override</span><strong>{nativeRuntime ? "Available in Load Model" : "Managed externally"}</strong></div>

@@ -214,3 +214,24 @@ The next substantial dependency is the governed native validation runner and its
 edit/test/repair/review mission. Capability-specific model certification, broader state
 consolidation, recovery journals, and the remaining review recommendations retain their own
 follow-up scope. Nothing in this wave enables native Host Shell or changes the installed app.
+
+
+## Models ecosystem completion — 2026-09-05
+
+Implemented in source: Discover links to durable My Models artifacts; explicit GGUF
+selection matches variant identity and revision when supplied instead of silently loading
+another installed quantization. Shared download actions reuse matching local artifacts.
+The inspector names the local file selected for loading. Normal startup leaves the chat
+model unselected, and operational labels distinguish live, parked, starting, missing-file,
+and unknown states.
+
+Load previews are bound to their model, hardware, runtime, and profile inputs. Load stays
+disabled until the current preview arrives. Provisional first-load placement respects
+explicit GPU/split restrictions; actual startup retains backend runtime capability and
+placement enforcement.
+
+Six focused helper/source tests and the frontend build passed in the working checkout.
+Broader regression, responsive browser interaction, real Qwen load/inference/stop, and
+installed-app verification are deliberately deferred at the operator's request. These
+source changes do not certify the installed app or a live model lifecycle. No installation
+is included in this step.
