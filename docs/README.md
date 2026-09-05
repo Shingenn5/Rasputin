@@ -31,6 +31,7 @@ These are the documents to consult before starting implementation work.
 | [`RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md`](RASPUTIN_FRESH_USER_RELEASE_GATE_REPORT_2026-08-18.md) | Independent fresh-user audit of the rebuilt model-orchestration and UI/UX revision | Historical server-era audit; not current deployment guidance |
 | [`RASPUTIN_IMPLEMENTATION_LEDGER.md`](RASPUTIN_IMPLEMENTATION_LEDGER.md) | Compact source/test evidence ledger for current workstation and Assistant status | Reconcile before roadmap edits |
 | [`RASPUTIN_V1_RELEASE_CONTRACT.md`](RASPUTIN_V1_RELEASE_CONTRACT.md) | Frozen ten-slice v1 finish line, evidence matrix, and explicit non-goals | Scope authority for the completion batch |
+| [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) | Source regression gates, native release evidence schema, and recovery/scorecard semantics | Implemented source contract; installed/live-model evidence remains separate |
 | [`DESKTOP_ARCHITECTURE.md`](DESKTOP_ARCHITECTURE.md) | Windows desktop packaging and lifecycle | Current packaging reference |
 | [`WRAPPER_RUNTIME_CONTRACT.md`](WRAPPER_RUNTIME_CONTRACT.md) | Native model, data, and execution behavior | Runtime contract |
 | [`MODEL_RESOURCE_MANIFEST.md`](MODEL_RESOURCE_MANIFEST.md) | Versioned model resource and placement evidence schema | Implemented contract; live runtime measurements remain bounded |
@@ -50,6 +51,7 @@ implemented behavior or security policy.
 
 | Document | Purpose |
 | --- | --- |
+| [System improvement review - 2026-09-04](reviews/RASPUTIN_SYSTEM_IMPROVEMENT_REVIEW_2026-09-04.md) | Current-code overview, fresh focused checks, and prioritized engineering recommendations; proposal subordinate to the v1 release contract |
 | [`RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx) / [`PDF`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.pdf) | Native-runtime-aligned visual proposal; proposed features remain proposals |
 | [`RASPUTIN_VS_ODYSSEUS_COMPARISON.md`](RASPUTIN_VS_ODYSSEUS_COMPARISON.md) | Product and architecture comparison |
 | [`ODYSSEUS_INSPIRED_RASPUTIN_ROADMAP.md`](ODYSSEUS_INSPIRED_RASPUTIN_ROADMAP.md) | Project Prometheus roadmap and adoption boundaries |

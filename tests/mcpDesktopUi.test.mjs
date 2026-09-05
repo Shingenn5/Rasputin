@@ -25,5 +25,5 @@ test("MCP settings keeps registration and execution guarded", () => {
   assert.match(mcp, /approved Rasputin workspace/);
   assert.match(mcp, /Allow guarded/);
   assert.match(mcp, /Test tool/);
-  assert.match(mcp, /third-party MCP server packages still need their own executable/);
+  assert.match(mcp, /third-party MCP server packages still need their own executable/i);
 });

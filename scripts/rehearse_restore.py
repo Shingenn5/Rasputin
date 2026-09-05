@@ -22,26 +22,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-def _verify_restored_target(target: Path) -> dict:
-    verifier = """
-import json
-from backend.core import auth, runtime_store
-runtime_store.init_db()
-public = auth.bootstrap()
-with runtime_store._lock, runtime_store.connect() as conn:
-    tables = {row['name'] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-print(json.dumps({
-    "databaseExists": runtime_store.DB_FILE.is_file(),
-    "tableCount": len(tables),
-    "authUsers": int(public.get("user_count") or 0),
-    "adminPresent": public.get("role") == "admin",
-}))
-"""
+def _isolated_worker(target: Path, program: str, *arguments: str) -> dict:
     env = os.environ.copy()
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONPATH", None)
     env["RASPUTIN_DATA_DIR"] = str(target)
+    env["RASPUTIN_ADMIN_USER"] = "admin"
     env["RASPUTIN_ADMIN_PASSWORD"] = "restore-rehearsal-only-password"
     completed = subprocess.run(
-        [sys.executable, "-c", verifier],
+        [sys.executable, "-c", program, *arguments],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -50,60 +39,109 @@ print(json.dumps({
         check=False,
     )
     if completed.returncode != 0:
-        return {
-            "passed": False,
-            "exitCode": completed.returncode,
-            "error": (completed.stderr or completed.stdout or "restore verification failed")[-1000:],
-        }
+        raise RuntimeError((completed.stderr or "restore rehearsal worker failed")[-1000:])
     try:
-        result = json.loads((completed.stdout or "{}").strip().splitlines()[-1])
+        return json.loads((completed.stdout or "").strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError) as exc:
-        return {"passed": False, "exitCode": completed.returncode, "error": f"invalid verifier output: {exc}"}
-    result["passed"] = bool(result.get("databaseExists") and result.get("tableCount") and result.get("adminPresent"))
-    result["exitCode"] = completed.returncode
+        raise RuntimeError("restore rehearsal worker returned invalid output") from exc
+
+
+def _create_and_restore_fixture(source: Path, target: Path) -> dict:
+    # The worker owns all source connections opened by initialization/auth.
+    # Process exit closes even legacy transaction-only contexts before the
+    # parent's strict TemporaryDirectory cleanup runs on Windows.
+    return _isolated_worker(source, """
+import json
+import sys
+from contextlib import closing
+from backend.core import auth, backup, runtime_store, workspace
+runtime_store.init_db()
+auth.bootstrap()
+auth.create_user("rehearsal-member", "restore-member-only-password")
+workspace.set_member("project-root", "rehearsal-member", "viewer")
+with closing(runtime_store.connect()) as conn:
+    now = runtime_store.now()
+    for owner in ("admin", "rehearsal-member"):
+        conn.execute(
+            "INSERT INTO sessions(id,title,status,workspace,model,mode,skill,summary,created_at,updated_at,owner_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            ("restore-" + owner, "Retained rehearsal session", "active", ".", "dry-run", "chat", "general", "", now, now, owner),
+        )
+    conn.commit()
+(runtime_store.DATA_DIR / "operator-state.json").write_text(
+    json.dumps({"restore": "verified"}), encoding="utf-8"
+)
+archive = backup.create_backup(destination=runtime_store.DATA_DIR / "backups" / "rehearsal.zip")
+print(json.dumps({
+    "archive": archive,
+    "dryRun": backup.restore_to_directory(archive["path"], sys.argv[1], dry_run=True),
+    "restore": backup.restore_to_directory(archive["path"], sys.argv[1], dry_run=False),
+}))
+""", str(target))
+
+
+def _verify_restored_target(target: Path) -> dict:
+    try:
+        result = _isolated_worker(target, """
+import json
+from contextlib import closing
+from backend.core import auth, runtime_store
+runtime_store.init_db()
+with closing(runtime_store.connect()) as conn:
+    tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    sessions = {row["owner_id"] for row in conn.execute(
+        "SELECT owner_id FROM sessions WHERE title='Retained rehearsal session'"
+    ).fetchall()}
+# Check preserved records before bootstrap could replace a missing account.
+users = (runtime_store.get_kv("auth") or {}).get("users", [])
+members = next((item.get("members", {}) for item in (runtime_store.get_kv("workspace_config") or {}).get("workspaces", []) if item.get("id") == "project-root"), {})
+public = auth.bootstrap()
+print(json.dumps({
+    "databaseExists": runtime_store.DB_FILE.is_file(),
+    "databaseIntegrity": integrity,
+    "tableCount": len(tables),
+    "authUsers": len(users),
+    "adminPresent": any(user.get("username") == "admin" and user.get("role") == "admin" for user in users),
+    "memberPresent": any(user.get("username") == "rehearsal-member" and user.get("role") == "member" for user in users),
+    "sessionOwnersPreserved": sessions == {"admin", "rehearsal-member"},
+    "workspaceMembershipPreserved": members.get("admin") == "owner" and members.get("rehearsal-member") == "viewer",
+    "sidecarPreserved": json.loads((runtime_store.DATA_DIR / "operator-state.json").read_text(encoding="utf-8")) == {"restore": "verified"},
+}))
+""")
+    except RuntimeError as exc:
+        return {"passed": False, "error": str(exc)}
+    result["passed"] = all(result.get(key) for key in (
+        "databaseExists", "databaseIntegrity", "tableCount", "adminPresent",
+        "memberPresent", "sessionOwnersPreserved", "workspaceMembershipPreserved", "sidecarPreserved",
+    ))
+    result["exitCode"] = 0
     return result
 
 
 def _rehearse() -> dict:
-    from contextlib import redirect_stdout
-    from io import StringIO
-
     with tempfile.TemporaryDirectory(prefix="rasputin-restore-source-") as source_dir, tempfile.TemporaryDirectory(prefix="rasputin-restore-target-") as target_dir:
         source = Path(source_dir)
         target = Path(target_dir) / "restored-data"
-        original_data_dir = os.environ.get("RASPUTIN_DATA_DIR")
-        original_password = os.environ.get("RASPUTIN_ADMIN_PASSWORD")
-        os.environ["RASPUTIN_DATA_DIR"] = str(source)
-        os.environ["RASPUTIN_ADMIN_PASSWORD"] = "restore-rehearsal-only-password"
-        try:
-            from backend.core import auth, backup, runtime_store
-
-            runtime_store.init_db()
-            with redirect_stdout(StringIO()):
-                auth.bootstrap()
-            fixture = source / "operator-state.json"
-            fixture.write_text('{"restore": "verified"}\n', encoding="utf-8")
-            archive = backup.create_backup(destination=source / "backups" / "rehearsal.zip")
-            dry_run = backup.restore_to_directory(archive["path"], target, dry_run=True)
-            applied = backup.restore_to_directory(archive["path"], target, dry_run=False)
-            verification = _verify_restored_target(target)
-            return {
-                "mode": "rehearse",
-                "passed": bool(dry_run.get("wouldRestore") and applied.get("restored") and verification.get("passed")),
-                "archive": {"fileCount": archive.get("fileCount"), "path": archive.get("path")},
-                "dryRun": {"valid": dry_run.get("valid"), "destination": dry_run.get("destination")},
-                "restore": {"restoredCount": applied.get("restoredCount"), "destination": applied.get("destination")},
-                "verification": verification,
-            }
-        finally:
-            if original_data_dir is None:
-                os.environ.pop("RASPUTIN_DATA_DIR", None)
-            else:
-                os.environ["RASPUTIN_DATA_DIR"] = original_data_dir
-            if original_password is None:
-                os.environ.pop("RASPUTIN_ADMIN_PASSWORD", None)
-            else:
-                os.environ["RASPUTIN_ADMIN_PASSWORD"] = original_password
+        # No backend imports or data-directory environment mutations in this
+        # parent: every runtime handle belongs to a completed isolated worker.
+        fixture = _create_and_restore_fixture(source, target)
+        archive = fixture["archive"]
+        dry_run = fixture["dryRun"]
+        applied = fixture["restore"]
+        verification = _verify_restored_target(target)
+        result = {
+            "mode": "rehearse",
+            "passed": bool(archive.get("integrityVerified") and dry_run.get("wouldRestore") and applied.get("restored") and verification.get("passed")),
+            "archive": {"fileCount": archive.get("fileCount"), "path": archive.get("path"), "integrityVerified": archive.get("integrityVerified")},
+            "dryRun": {"valid": dry_run.get("valid"), "destination": dry_run.get("destination")},
+            "restore": {"restoredCount": applied.get("restoredCount"), "destination": applied.get("destination")},
+            "verification": verification,
+        }
+    # Reaching this point proves both temporary trees were removed; no cleanup
+    # errors are suppressed and no garbage-collection timing is required.
+    result["cleanupPassed"] = not source.exists() and not target.exists()
+    result["passed"] = result["passed"] and result["cleanupPassed"]
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -53,7 +53,9 @@ REQUIRED_MARKERS: dict[str, tuple[str, ...]] = {
     "modelPlacementAndAdmission": (
         "frontend-src/src/features/models/ModelsView.jsx",
         "blockedReasons",
-        "Why it fits:",
+        "model-deployment-blockers",
+        "Fit not yet verified:",
+        "Fit guidance:",
         "prepareCatalogModelForWarsat",
         "frontend-src/src/features/warsat/WarsatView.jsx",
         'data-testid="warsat-resource-admission"',

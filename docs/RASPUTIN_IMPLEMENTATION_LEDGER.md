@@ -43,9 +43,9 @@ replace the detailed checklist or readiness report.
 | Internal MCP capability contract | IMPLEMENTED / VERIFIED | Versioned callable capability surface is documented in `docs/MCP_CAPABILITY_CONTRACT.md` and exposed through the existing MCP layer and Assistant readiness surface. `scripts/certify_mcp_safety.py` and `tests/testMcpSafety.py` certify fail-closed discovery, allowlisted routing, dry-run mutation, approval previews, and audit evidence in an isolated fixture. | A standalone external MCP server remains conditional and is not part of this ledger's completed work. |
 | Real file-editing local coder mission | PARTIAL / BLOCKED | The deterministic acceptance fixture proves the orchestration path; `scripts/certify_local_coder.py` reports the live prerequisite explicitly. | The small native inference proof does not establish coder capability; a fresh certified native coder and a live edit → test → repair → diff review mission are still required. |
 | Deterministic coding acceptance fixture | VERIFIED | `scripts/run_coding_acceptance.py` creates an isolated two-file Git fixture, drives the real MCP patch path through the governed execution loop, records a failing test followed by a passing repair, and emits JSON evidence; `tests/test_coding_acceptance.py` is the regression gate. | The scripted model is deterministic; it does not replace live local-model certification. |
-| Diagnostics, backup/restore, and release recovery | IMPLEMENTED / PARTIAL | `backend/core/diagnostics.py` provides live redacted checks; `backend/core/backup.py` and `/api/recovery/*` provide manifest/hash backups, SQLite WAL checkpointing, separate-target restore, integrity verification, dry-run restore, owner-safe metadata export, and explicit owner deletion confirmation; `scripts/rehearse_restore.py --rehearse`, `tests/testDiagnostics.py`, and `tests/testBackup.py` cover the contracts. | Restore remains separate-target only while the service runs; isolated clean-instance migration is verified, but a stopped active-data upgrade rehearsal and workspace source/model caches/TLS recovery remain open. |
+| Diagnostics, backup/restore, and release recovery | IMPLEMENTED / PARTIAL | `backend/core/diagnostics.py` provides live redacted checks; `backend/core/backup.py` and `/api/recovery/*` provide immutable staged backups, SQLite online snapshots, separate-target restore, archive integrity verification, dry-run restore, owner-safe metadata export, and explicit owner deletion confirmation; `scripts/rehearse_restore.py --rehearse`, `tests/testDiagnostics.py`, and `tests/testBackup.py` cover the contracts. | Restore remains separate-target only while the service runs; isolated clean-instance migration is verified, but a stopped active-data upgrade rehearsal and workspace source/model caches/TLS recovery remain open. |
 | Installation verification | VERIFIED on current workstation / PARTIAL release | The 2026-08-30 native installer built and installed successfully; installed executable/package/backend/frontend hashes matched the tested build. The live installed owner passed health/frontend, catalog-search, route-recovery, and bundled-engine checks while preserving 21 registered models. `scripts/check_installation.py` remains a legacy checkout inventory, not an installed-user prerequisites guide. | Windows clean-machine install/upgrade/uninstall, broader GPU-driver compatibility, signing, native-window interaction, and hardware/audio certification remain separate release evidence. |
-| Release-candidate certification | IMPLEMENTED / PARTIAL | `scripts/verify_release_candidate.py` runs isolated backend and UI contract tests, `scripts/certify_ui_contract.py` certifies the source-level Workstation/Assistant, memory, voice, model-admission, and governed-command surfaces, docs validation, frontend build/artifact checks, and explicitly selected native health/frontend/security probes while redacting command output; `docs/RASPUTIN_V1_OPERATOR_RUNBOOK.md` records the human evidence checklist and `docs/RASPUTIN_V1_POST_RELEASE_BACKLOG.md` locks deferred scope. | Automated gates can pass, but the report keeps live coder-model, clean-restore, voice-hardware, and authenticated operator-UI evidence as explicit release boundaries. |
+| Release-candidate certification | IMPLEMENTED / PARTIAL | `scripts/verify_source_regressions.py` runs isolated backend/JavaScript/Desktop/browser/build/docs gates; `scripts/verify_release_candidate.py` probes explicitly selected native owners and uses versioned, hash-bound evidence from `scripts/release_evidence.py` to compute readiness. See `docs/RELEASE_EVIDENCE.md`. | Source tests and fixture evidence do not certify an installed package, clean-machine recovery, real coder mission, or voice hardware. These require matching current operator evidence; signing/update channels retain their separate public-distribution scope. |
 
 ## Latest native workflow verification — 2026-08-30
 
@@ -163,3 +163,54 @@ GGUF, and the bundled llama.cpp engine. The corresponding 197 backend and 36 fro
 passed. Desktop dialog layout checks used browser fixtures; these are not a packaged installer
 or clean-machine certification. Older rows retain their own limited source/test scope. Historical
 server-era test results do not define native setup or prove the current installed app is updated.
+
+## First reliability wave — 2026-09-04
+
+The source implementation now includes immutable backup staging and SQLite online snapshots,
+archive verification before publication, Windows restore-rehearsal cleanup, honest Trials
+scorecards, and native release evidence evaluation. See [RELEASE_EVIDENCE.md](RELEASE_EVIDENCE.md)
+for commands, schema, scope, and proof boundaries.
+
+- **IMPLEMENTED / VERIFIED — recovery:** the 20 focused backup/reliability tests pass, including
+  source changes after hashing, active writers, secondary database WAL state, failed publication,
+  preserved restore boundaries, and the actual Windows subprocess rehearsal with strict cleanup.
+  Each database is consistent independently; database/sidecar snapshots are not one transaction.
+- **IMPLEMENTED / VERIFIED in isolated source UI — scorecards:** generic cards keep unmeasured
+  dimensions empty, show request-completion provenance, exclude absent values from averages,
+  and hide unsupported legacy scores. Twelve focused scoring/Trials backend tests pass.
+  The authenticated browser fixture creates a real dry-run experiment through the API,
+  generates its scorecard through the UI, checks keyboard details and sparse radar output,
+  and verifies legacy fallback. Desktop and narrow-card screenshots were visually reviewed.
+- **IMPLEMENTED / VERIFIED by fixtures — release reporting:** the versioned evaluator binds
+  selected source/package/model identities, checks attachment hashes, enforces seven-day
+  freshness, and distinguishes source, installed, clean-machine, and live-model evidence.
+  Native targets are explicit; there are no default production endpoint probes.
+  Full release readiness remains open until the actual required evidence is supplied.
+- **IMPLEMENTED / locally verified — source CI:** the Windows source workflow runs isolated
+  Python modules, the full top-level JavaScript suite, Desktop checks, a build, and authenticated
+  browser fixtures. Existing source assertions were reconciled with current minimal navigation,
+  model-action options, fit disclosures, and cosmetic wording/tokens; no application behavior
+  was changed to satisfy obsolete literals. Hosted CI has not run for these unpushed changes.
+  Verification children enter retained Windows Jobs before execution. Regression checks cover
+  exited launchers, timeouts, ownership failures, preservation of unrelated processes, and
+  browser reports with zero or skipped tests. This is verification process cleanup, not a
+  native Host Shell capability or a filesystem/network sandbox.
+
+Scope-isolated pre-publication verification passed all 39 source checks: 360 backend tests (359 passed,
+one Windows symlink-permission skip), 132 JavaScript tests, five Desktop lifecycle tests,
+three Desktop syntax checks, the frontend build, documentation validation, and both authenticated
+browser fixtures. That is 499 tests reported, with 498 passed and one skipped. The detached
+checkout included only this wave, excluding pending model-workspace edits. It also proved
+that generated frontend assets must be built before backend imports on a fresh checkout;
+the runner now enforces that order and blocks dependent checks after a failed build. The same
+full run exercised retained Windows Job ownership, including nested test processes.
+
+Source fixtures are not installed-package, clean-machine, actual-coder, or audio-hardware
+certification.
+The reviewed screenshot artifacts are under the session scratch folder
+`%TEMP%/rasputin-improvements-01a06fab/`.
+
+The next substantial dependency is the governed native validation runner and its real
+edit/test/repair/review mission. Capability-specific model certification, broader state
+consolidation, recovery journals, and the remaining review recommendations retain their own
+follow-up scope. Nothing in this wave enables native Host Shell or changes the installed app.

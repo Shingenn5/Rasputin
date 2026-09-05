@@ -1,0 +1,59 @@
+name: Windows source regressions
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-source-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-regressions:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Create isolated Python environment
+        run: python -m venv .venv
+
+      - name: Install Python dependencies
+        run: .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+      - name: Install Chromium fixture browser
+        run: npx playwright install chromium
+
+      - name: Verify source, lifecycle, and authenticated browser fixtures
+        run: .\.venv\Scripts\python.exe scripts/verify_source_regressions.py --browser-artifacts "${{ runner.temp }}/rasputin-browser-evidence"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-browser-evidence
+          path: ${{ runner.temp }}/rasputin-browser-evidence
+          if-no-files-found: ignore
+          retention-days: 7

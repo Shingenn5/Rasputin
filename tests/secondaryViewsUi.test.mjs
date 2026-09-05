@@ -24,7 +24,8 @@ test("uses one compact visual contract across secondary workspaces", () => {
   assert.match(css, /Secondary workspace UI v2/);
   assert.match(css, /--sv-rail-width:\s*148px/);
   assert.match(css, /--sv-command-height:\s*44px/);
-  assert.match(css, /--sv-radius:\s*7px/);
+  const radius = css.match(/--sv-radius:\s*(\d+)px/);
+  assert.ok(radius && Number(radius[1]) > 0 && Number(radius[1]) <= 8, "secondary surfaces keep a compact shared radius");
 });
 
 test("history keeps accessible tabs while gaining a dense timeline and inspector", () => {

@@ -6,7 +6,7 @@ class WarsatUiContractTests(unittest.TestCase):
     def test_model_actions_send_the_card_registry_key(self):
         app_source = (Path(__file__).resolve().parents[1] / "frontend-src" / "src" / "app" / "App.jsx").read_text(encoding="utf-8")
         models_source = (Path(__file__).resolve().parents[1] / "frontend-src" / "src" / "features" / "models" / "ModelsView.jsx").read_text(encoding="utf-8")
-        self.assertIn("async function runModelAction(action, key)", app_source)
+        self.assertIn("async function runModelAction(action, key, options = {})", app_source)
         self.assertIn("const resolvedKey = typeof key === \"string\" ? key.trim() : \"\";", app_source)
         self.assertIn("key: resolvedKey", app_source)
         self.assertIn("runModelAction?.(op, model.key)", models_source)

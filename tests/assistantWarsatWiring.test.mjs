@@ -31,7 +31,7 @@ test("WarSat plan preserves assistant correlation and shows its source", () => {
   assert.match(warsatApi, /assistant_request_id: str \| None = None/);
   assert.match(warsatApi, /plan\["assistantRequestId"\] = req\.assistant_request_id/);
   assert.match(app, /assistantRequestId: options\.assistantRequestId/);
-  assert.match(app, /assistantRequestId: warsatPlan\.assistantRequestId/);
+  assert.match(app, /const assistantRequestId = warsatPlan\.assistantRequestId/);
   assert.match(warsatView, /plan\.assistantRequestId/);
   assert.match(warsatView, /Requested by Personal Assistant/);
 });

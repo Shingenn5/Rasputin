@@ -104,6 +104,7 @@ def init_db():
                 subject_type TEXT DEFAULT '',
                 subject_id TEXT DEFAULT '',
                 scores TEXT DEFAULT '{}',
+                evidence TEXT DEFAULT '{}',
                 created_at REAL NOT NULL
             );
 
@@ -125,6 +126,9 @@ def init_db():
                 created_at REAL NOT NULL
             );
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(scorecards)")}
+        if "evidence" not in columns:
+            conn.execute("ALTER TABLE scorecards ADD COLUMN evidence TEXT DEFAULT '{}'")
         conn.commit()
     finally:
         conn.close()
@@ -443,14 +447,14 @@ def get_scorecard(scorecard_id):
         conn.close()
 
 
-def create_scorecard(name, subject_type="", subject_id="", scores=None):
+def create_scorecard(name, subject_type="", subject_id="", scores=None, evidence=None):
     sc_id = _new_id("sc")
     now = _now()
     conn = _connect()
     try:
         conn.execute(
-            "INSERT INTO scorecards (id, name, subject_type, subject_id, scores, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (sc_id, name, subject_type, subject_id, _json_dumps(scores or {}), now),
+            "INSERT INTO scorecards (id, name, subject_type, subject_id, scores, evidence, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (sc_id, name, subject_type, subject_id, _json_dumps(scores or {}), _json_dumps(evidence or {}), now),
         )
         conn.commit()
         return get_scorecard(sc_id)
@@ -560,12 +564,19 @@ def _row_to_benchmark(row):
 def _row_to_scorecard(row):
     if not row:
         return None
+    scores = _json_loads(row["scores"])
+    evidence = _json_loads(row["evidence"])
+    # Fitness certificates have a separate measured-results contract.
+    if row["subject_type"] != "fitness_certificate":
+        from .scorecards import normalize_scorecard
+        scores, evidence = normalize_scorecard(scores, evidence)
     return {
         "id": row["id"],
         "name": row["name"],
         "subjectType": row["subject_type"],
         "subjectId": row["subject_id"],
-        "scores": _json_loads(row["scores"]),
+        "scores": scores,
+        "evidence": evidence,
         "createdAt": row["created_at"],
     }
 

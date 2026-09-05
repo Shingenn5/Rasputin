@@ -116,6 +116,15 @@ class BackupTests(unittest.TestCase):
         self.assertTrue(report["dryRun"]["valid"])
         self.assertTrue(report["restore"]["restoredCount"] > 0)
         self.assertTrue(report["verification"]["adminPresent"])
+        self.assertTrue(report["archive"]["integrityVerified"])
+        self.assertTrue(report["verification"]["databaseIntegrity"])
+        self.assertTrue(report["verification"]["memberPresent"])
+        self.assertTrue(report["verification"]["sessionOwnersPreserved"])
+        self.assertTrue(report["verification"]["workspaceMembershipPreserved"])
+        self.assertTrue(report["verification"]["sidecarPreserved"])
+        self.assertTrue(report["cleanupPassed"])
+        self.assertFalse(Path(report["archive"]["path"]).parent.parent.exists())
+        self.assertFalse(Path(report["restore"]["destination"]).parent.exists())
 
 
 if __name__ == "__main__":
