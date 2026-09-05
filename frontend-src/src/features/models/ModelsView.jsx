@@ -2105,6 +2105,7 @@ export function ModelsView({
                         activeDownloads={activeDownloads}
                         desktopOnly={nativeModels}
                         installedModel={findInstalledCatalogModel(item, registeredModels)}
+                        installedModels={registeredModels}
                         onLoadInstalled={configureNativeLoad}
                         onManageInstalled={manageInstalledModel}
                       />
@@ -3177,7 +3178,7 @@ function StudioModelDetail({ item }) {
   );
 }
 
-function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, loadCompletedArtifact, activeDownloads, desktopOnly = false, installedModel = null, onLoadInstalled, onManageInstalled }) {
+function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, loadCompletedArtifact, activeDownloads, desktopOnly = false, installedModel: repositoryModel = null, installedModels = [], onLoadInstalled, onManageInstalled }) {
   const modelId = item.modelId || item.id;
   const isHuggingFace = searchMode !== "catalog" || item.source === "huggingface";
   const [variantDetail, setVariantDetail] = useState(null);
@@ -3190,10 +3191,14 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
   ));
   const downloadStateName = downloadJobState(downloadState);
   const isDownloading = Boolean(downloadState && !["failed", "completed", "cancelled"].includes(downloadStateName));
-  const installed = Boolean(installedModel);
-  const installedRunning = installed && isManagedModelRunning(installedModel);
   const variants = Array.isArray(variantDetail?.variants) ? variantDetail.variants : [];
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) || null;
+  const installedModel = selectedVariant
+    ? findInstalledCatalogModel(item, installedModels, selectedVariant)
+    : repositoryModel;
+  const installed = Boolean(installedModel);
+  const installedRunning = installed && isManagedModelRunning(installedModel);
+  const downloadedReceipt = !selectedVariant && downloadStateName === "completed";
   const selectedCompatibility = selectedVariant ? variantCompatibility(selectedVariant) : null;
   const legacyDownloadAvailable = Boolean(variantDetail && variants.length === 0);
   const itemBlockedReasons = Array.isArray(item.blockedReasons) ? item.blockedReasons : [];
@@ -3241,7 +3246,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
     ? () => onManageInstalled?.(installedModel)
     : installed
       ? () => onLoadInstalled?.(installedModel)
-      : downloadStateName === "completed"
+      : downloadedReceipt
     ? () => loadCompletedArtifact?.(downloadState)
     : isHuggingFace && desktopOnly && !variantDetail
     ? openVariantDetails
@@ -3254,7 +3259,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
     ? "Manage in My Models"
     : installed
       ? "Load model"
-      : downloadStateName === "completed"
+      : downloadedReceipt
     ? "Load model"
     : isDownloading
     ? "Downloading…"
@@ -3274,8 +3279,8 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
   const primaryDisabled = Boolean(
     !installed && (
       isDownloading
-      || (downloadStateName !== "completed" && isHuggingFace && desktopOnly && variantDetail && !selectedVariant)
-      || (downloadStateName !== "completed" && selectedCompatibility && !selectedCompatibility.safe)
+      || (!downloadedReceipt && isHuggingFace && desktopOnly && variantDetail && !selectedVariant)
+      || (!downloadedReceipt && selectedCompatibility && !selectedCompatibility.safe)
       || (item.deployable && !desktopOnly && blocked)
     )
   );
@@ -3283,7 +3288,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
     ? "Loaded"
     : installed
       ? "In My Models"
-      : downloadStateName === "completed"
+      : downloadedReceipt
     ? "Downloaded"
     : item.readyWithinThreeMinutes || item.loaded
       ? "Ready"
@@ -3306,7 +3311,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
     >
       <div className="flex items-start justify-between gap-3">
         <ModelIdentity item={item} />
-        <Badge variant={downloadStateName === "completed" || item.readyWithinThreeMinutes ? "up" : blocked ? "down" : "muted"}>
+        <Badge variant={downloadedReceipt || item.readyWithinThreeMinutes ? "up" : blocked ? "down" : "muted"}>
           {stateLabel}
         </Badge>
       </div>
