@@ -49,7 +49,7 @@ export function isUserFacingModel(model, testingMode) {
 export function isModelHealthy(model) {
   if (!model) return false;
   if (model.key === "dry-run" || ["mock", "hash-vector"].includes(model.provider)) return true;
-  return runtimeStatus(model) === "reachable";
+  return runtimeStatus(model) === "reachable" && !modelMismatchLine(model);
 }
 
 export function isModelRouteable(model) {

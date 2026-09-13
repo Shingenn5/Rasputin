@@ -23,6 +23,9 @@ These are the documents to consult before starting implementation work.
 
 | Document | Scope | Status |
 | --- | --- | --- |
+| [`RASPUTIN_USER_TESTING_PLAYBOOK.md`](RASPUTIN_USER_TESTING_PLAYBOOK.md) | Computer Use user journeys, complete control inventory, responsive/accessibility checks, and verified improvement workflow | Reusable campaign guide; full campaign not yet executed |
+| [`RASPUTIN_USER_TESTING_REPORT_2026-09-09.md`](RASPUTIN_USER_TESTING_REPORT_2026-09-09.md) | Recorded native-app checks, 19 UI/UX findings, source regression evidence, and known coverage limits | Final September 10 report; attachment upload owner-verified, cancellation inconclusive; six source fixes, no installed-fix certification |
+| [`RASPUTIN_UX_IMPLEMENTATION_PLAN.md`](RASPUTIN_UX_IMPLEMENTATION_PLAN.md) | Code-grounded work packages for all 19 campaign findings, dependencies, acceptance tests, and installed closure | September 12 first source slice: fit-filter and metadata regressions pass; six pre-existing backend smoke failures; remaining packages and installed closure open |
 | [`CODING_AGENT_IMPLEMENTATION_CHECKLIST.md`](CODING_AGENT_IMPLEMENTATION_CHECKLIST.md) | Coding-agent capability and verification queue | Active working checklist |
 | [`MAINTAINER_HANDOFF.md`](MAINTAINER_HANDOFF.md) | Maintainer entry point, ownership map, code-health targets, and transfer acceptance | Current handoff contract |
 | [`CSS_OWNERSHIP.md`](CSS_OWNERSHIP.md) | Global cascade, stylesheet owners, and behavior-preserving extraction order | Current refactoring contract |

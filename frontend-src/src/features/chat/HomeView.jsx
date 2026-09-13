@@ -259,7 +259,7 @@ export function HomeView(props) {
       : modelIsMock
         ? "Testing"
         : modelRuntimeStatus === "reachable"
-          ? "Running"
+          ? healthy ? "Running" : "Needs attention"
           : modelRuntimeStatus === "unknown"
             ? "Not checked"
             : "Stopped";
@@ -716,7 +716,7 @@ export function HomeView(props) {
               aria-hidden="true"
             />
             <Cpu size={14} />
-            <span className="cc-model-name" data-testid="chat-selected-model-key">{selectedModel || "No model selected"}</span>
+            <span className="cc-model-name" data-testid="chat-selected-model-key" data-model-key={selectedModel || ""}>{displayModelName(selectedModelObject || selectedModel, models)}</span>
             <span className={"cc-model-state state-" + modelRuntimeStatus}>{modelStateLabel}</span>
           </button>
           <div className="cc-status-item cc-runtime-status" title={security?.native ? "Native workstation runtime" : "Docker server runtime"}>
@@ -1036,7 +1036,7 @@ export function HomeView(props) {
                       onClick={() => (cmd?.path === "model" ? closeCmd(true) : openCmd("model"))}
                     >
                       <span className={`cc-model-dot status-${modelRuntimeStatus}`} aria-hidden="true" />
-                      <span className="composer-chip-model-name">{selectedModel || "No model selected"}</span>
+                      <span className="composer-chip-model-name">{displayModelName(selectedModelObject || selectedModel, models)}</span>
                       <ChevronDown size={12} />
                     </button>
                     <button
@@ -1298,7 +1298,7 @@ function ModeSidePanel({
 function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskDetails }) {
   const status = task.status || "queued";
   const deploymentProfile = task.deploymentProfile || task.deployment_profile || {};
-  const taskModel = task.model || deploymentProfile.key || "No model selected";
+  const taskModel = displayModelName(task.model || deploymentProfile.key, models);
   const taskMode = task.mode || "chat";
   const taskWorkspace = displayWorkspaceName(task.workspace);
   const taskRuntime = deploymentProfile.runtime || deploymentProfile.provider || "unknown";

@@ -63,6 +63,16 @@ HF_PIPELINE_MAP = {
     "translation": "research",
 }
 
+# Name/tag heuristics may refine generation tasks. A reranker signal is also
+# meaningful for text-classification cross-encoders; other known
+# non-generation pipeline tasks remain authoritative.
+_HF_GENERATION_PIPELINES = frozenset({
+    "text-generation",
+    "text2text-generation",
+    "conversational",
+})
+_HF_RERANKER_REFINEMENT_PIPELINES = frozenset({"text-classification"})
+
 RUNTIMES = [
     {"id": "vllmCudaOpenai", "label": "vLLM", "input": "Hugging Face model id"},
     {"id": "llamaCppGgufServer", "label": "llama.cpp", "input": "Mounted GGUF path"},
@@ -1176,20 +1186,30 @@ def _normalize_hf_model(hf_model):
         arch_list = hf_model["config"].get("architectures") or []
         if arch_list:
             architecture = arch_list[0]
-    # Override purpose for known patterns
+    # Pipeline task metadata is authoritative for known non-generation tasks.
+    # Model names and tags can still refine generation models (for example,
+    # coder and reasoning variants), or fill in missing/unknown task metadata.
     blob = _text_blob(model_id, " ".join(tags))
-    if any(w in blob for w in ["coder", "coding", "code"]):
-        purpose = "coding"
-    elif any(w in blob for w in ["reason", "thinking", "r1"]):
-        purpose = "reasoning"
-    elif any(w in blob for w in ["rerank"]):
+    can_refine_purpose = (
+        not pipeline_tag
+        or pipeline_tag not in HF_PIPELINE_MAP
+        or pipeline_tag in _HF_GENERATION_PIPELINES
+    )
+    if pipeline_tag in _HF_RERANKER_REFINEMENT_PIPELINES and "rerank" in blob:
         purpose = "reranker"
-    elif "embed" in blob:
-        purpose = "embeddings"
-    elif any(w in blob for w in ["vision", "llava", "visual"]):
-        purpose = "vision"
-    elif any(w in blob for w in ["whisper", "speech", "tts"]):
-        purpose = "speech"
+    elif can_refine_purpose:
+        if any(w in blob for w in ["coder", "coding", "code"]):
+            purpose = "coding"
+        elif any(w in blob for w in ["reason", "thinking", "r1"]):
+            purpose = "reasoning"
+        elif any(w in blob for w in ["rerank"]):
+            purpose = "reranker"
+        elif "embed" in blob:
+            purpose = "embeddings"
+        elif any(w in blob for w in ["vision", "llava", "visual"]):
+            purpose = "vision"
+        elif any(w in blob for w in ["whisper", "speech", "tts"]):
+            purpose = "speech"
 
     is_gguf = "gguf" in blob
     has_open_weights = "/" in model_id  # HF models with org/name are usually open weights

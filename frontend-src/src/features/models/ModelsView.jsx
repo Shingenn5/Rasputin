@@ -62,6 +62,7 @@ import { ModelIdentity } from "./ModelIdentity.jsx";
 import { PublisherLogo } from "./PublisherLogo.jsx";
 import { ModelLoadDialog } from "./ModelLoadDialog.jsx";
 import { ModelServingPanel } from "./ModelServingPanel.jsx";
+import { catalogItemPassesFilters } from "./catalogFitFilter.js";
 import { findInstalledCatalogModel } from "./modelEcosystem.js";
 import "../../styles/models-workspace-v3.css";
 
@@ -1487,15 +1488,14 @@ export function ModelsView({
 
   const displayItems = useMemo(() => {
     const list = searchMode === "catalog" ? filteredCatalog : hfResults;
-    const hasMin = vramMinGb !== "" && Number.isFinite(Number(vramMinGb));
-    const hasMax = vramMaxGb !== "" && Number.isFinite(Number(vramMaxGb));
-    const minVram = hasMin ? Number(vramMinGb) : 0;
-    const maxVram = hasMax ? Number(vramMaxGb) : Infinity;
-    return list.filter(item => {
-      if (!item.vramEstimateGb) return !hasMin && !hasMax;
-      if (item.vramEstimateGb < minVram || item.vramEstimateGb > maxVram) return false;
-      return catalogFit !== "fits" || catalogPlacementAssessment(item, effectiveHardware).willFit === true;
-    });
+    return list.filter((item) => catalogItemPassesFilters(item, {
+      catalogFit,
+      vramMinGb,
+      vramMaxGb,
+      hardware: effectiveHardware,
+      estimateVramGb: catalogVramEstimateGb,
+      assessPlacement: catalogPlacementAssessment,
+    }));
   }, [searchMode, hfResults, filteredCatalog, catalogFit, effectiveHardware, vramMinGb, vramMaxGb]);
 
   const pageCount = Math.max(1, Math.ceil(displayItems.length / pageSize));
@@ -1697,7 +1697,7 @@ export function ModelsView({
               { v: totalModels, l: "Registered", c: "text-foreground" },
               { v: healthyCount, l: "Reachable now", c: "text-primary" },
               { v: runningModels.length, l: nativeModels ? "Running models" : "Running containers", c: "text-amber-400" },
-              { v: catalogItems.length, l: "Cached locally", c: "text-sky-400" },
+              { v: catalogItems.length, l: "Catalog entries", c: "text-sky-400" },
             ].map((s) => (
               <div key={s.l} className="models-v3-metric">
                 <div className={`text-xl font-bold ${s.c}`}>{s.v}</div>
@@ -1747,7 +1747,7 @@ export function ModelsView({
         })}
         <div className="flex-1" />
         {uiState.status !== "idle" && (
-          <Badge variant={uiState.status === "failed" ? "down" : uiState.status === "success" ? "up" : "muted"}>
+          <Badge className="models-rail-status" role="status" title={uiState.message} variant={uiState.status === "failed" ? "down" : uiState.status === "success" ? "up" : "muted"}>
             {uiState.message}
           </Badge>
         )}
