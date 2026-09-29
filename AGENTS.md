@@ -123,6 +123,48 @@ Clearly separate source-app, packaged-app, installed-app, and clean-machine evid
 - Never use destructive Git commands to clean a mixed worktree.
 - After a requested push, verify the remote branch or commit actually contains the intended change.
 
+## Pull requests
+
+When Elliott requests a PR or asks to continue work on an existing PR, that authorization covers
+creating or updating the scoped PR. Follow this workflow; merging still needs clear authorization.
+
+1. **Confirm the repository and branches.** Resolve the target repository from the Git remote.
+   Use the requested base branch, or verify the remote default branch when none is specified.
+   Work from a task branch; Codex uses `codex/`. Reuse an existing task branch when its scope fits.
+2. **Review the entire proposed diff.** Fetch the base and inspect both the commits and the
+   three-dot diff from the base to the head. A clean staged diff alone does not prove a clean PR.
+   Keep unrelated changes out of the PR, including earlier commits already on the branch. If the
+   branch mixes tasks, prepare a separate branch with only the intended commits without resetting
+   or overwriting the user's worktree.
+3. **Verify before publishing.** Run the relevant checks in the Verification section and review
+   `git diff --check`. For UI changes, include live interaction evidence and responsive checks
+   where applicable. Report failed, skipped, or unavailable checks honestly. Commit and push only
+   the requested scope under the Git policy above.
+4. **Reuse an existing PR.** Check for an open PR with the same repository, head, and base before
+   creating one. Update that PR rather than opening a duplicate. Use GitHub CLI or an available
+   GitHub connector; specify the repository, base, and head explicitly when creating a PR.
+5. **Write a useful title and description.** Lead with the concrete problem and resulting
+   behavior. Follow the repository's PR template if one exists; otherwise include a concise
+   summary, validation commands and outcomes, and material risks or remaining limitations.
+   Include before/after behavior or screenshots when they help review. Link related issues;
+   use closing keywords only when the PR actually resolves the issue. Rewrite the title and
+   description if the final scope changes. Keep conversation history and memory citations out.
+   For multiline descriptions, use a structured tool argument or a UTF-8 file in the session
+   scratch directory with `gh pr create --body-file` / `gh pr edit --body-file`.
+6. **Choose the correct review state.** Default to a draft while implementation or verification
+   remains incomplete. Open or mark it ready for review when the scoped work and relevant checks
+   are complete, unless Elliott asks to keep it a draft. Summarize blockers in a draft's body.
+7. **Check the published result.** Read back the PR URL, base, head, title, description, and diff.
+   Inspect CI with `gh pr checks` or the connector. Check repository safety, secret history,
+   dependency review, and Windows source regressions when those workflows run; pending or absent
+   checks are not passes. Installer CI is manual and does not prove installation on its own.
+   Fix regressions introduced by the PR and update its validation evidence. Do not bypass checks.
+8. **Hand off for review.** Report the PR link, draft/ready state, current CI status, and any
+   remaining blockers. In Codex, attach every created PR, and any existing PR being reviewed or
+   updated, to the chat using the available PR attachment tool. Request reviewers only when
+   Elliott authorizes it. Do not merge, enable auto-merge, or delete the branch without clear
+   authorization; PR creation and a successful push are not merge authorization.
+
 ## Reporting
 
 - Lead with the outcome. Keep reports concise, readable, and evidence-backed.
