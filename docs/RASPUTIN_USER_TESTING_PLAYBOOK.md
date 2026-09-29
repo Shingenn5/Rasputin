@@ -11,7 +11,7 @@ verify focused fixes. A successful click is not a successful feature.
 
 This guide defines a full campaign, not a claim that every existing control has already been
 enumerated or tested. Build a fresh inventory against the selected build each time. It is
-subordinate to [CODEX_AGENTS.md](../CODEX_AGENTS.md), current user authorization, and the
+subordinate to [AGENTS.md](../AGENTS.md), current user authorization, and the
 active tool permissions.
 
 ## How to invoke this guide

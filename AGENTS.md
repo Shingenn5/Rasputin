@@ -1,16 +1,169 @@
-# AGENTS.md — Model Orchestration Policy
+# AGENTS.md — Agent Operating Policy for Rasputin
 
-> **If you are Codex (or any non–Claude Code agent):** this file's orchestration policy is
-> Claude Code–specific and does not apply to you. Read **`docs/CODEX_ONBOARDING.md`** instead —
-> it covers the project, build/test commands, and the hard rules. The one section here that
-> applies to everyone is "Project gotchas" below (also repeated in that doc).
+This is the canonical repository policy for all coding agents. Shared project rules apply to
+both Claude Code and Codex. Each agent follows only its own orchestration section below;
+Claude's Fable/Sonnet/Haiku model policy does not apply to Codex or other OpenAI agents.
+
+## Instruction order
+
+1. Follow current system, developer, and user instructions.
+2. Follow this file for shared repository rules and your agent-specific orchestration policy.
+3. Read `docs/CODEX_ONBOARDING.md` for architecture, commands, current direction, and evidence.
+4. Read more specific `AGENTS.md` files when working below their directory.
+
+If documentation and implementation disagree, trust current code and tests, then correct the
+documentation when that correction is within scope.
+
+## Product direction
+
+Rasputin is a Windows-native local AI workstation. The installed Electron application owns a
+packaged FastAPI backend, React frontend, SQLite state, and hardware-selected llama.cpp runtime.
+The source Native Host is a separate development and browser workflow.
+
+- Treat the installed Windows application as the daily-driver product.
+- End users should not need Python, Node, Git, Docker, or repository knowledge.
+- Use native GGUF download/import, verification, loading, inference, and stopping flows.
+- Acquire only the hardware-appropriate runtime after detection; do not bundle every CUDA runtime.
+- Docker is retired from the product direction. Do not introduce it as a requirement, fallback,
+  feature, or troubleshooting recommendation.
+- Preserve authentication, owner/workspace boundaries, approvals, auditability, native process
+  ownership, and safe model-placement behavior.
+
+## Start every task
+
+Before changing files:
+
+1. Read the user request and identify whether it asks for explanation, diagnosis, implementation,
+   publishing, or verification.
+2. Check `git status --short` and `git branch --show-current`. Preserve unrelated user changes.
+3. Inspect the current implementation and relevant tests. Do not rely on roadmap prose alone.
+4. Read `THREAT_MODEL.md` before security-adjacent changes.
+5. For non-trivial work, state a short plan with checkable outcomes and keep the user updated.
+
+## Editing rules
+
+- Frontend source lives in `frontend-src/`. Never hand-edit generated `frontend/`; rebuild it with
+  `npm run build`.
+- Do not bulk-edit source with PowerShell `Get-Content`/`Set-Content`; Windows PowerShell 5.1 can
+  damage UTF-8 files. Prefer the patch tool. If it is unavailable, use a small exact Python edit.
+- Keep scratch files outside the repository in the session scratch directory, never in the repo or
+  `/tmp`.
+- Match surrounding style. Avoid unrelated refactors and broad formatting churn.
+- Use Tailwind v4, existing design tokens, and current shadcn primitives. Do not add new
+  `react-bootstrap` usage.
+- Do not restructure the Chat page. Upgrade components in place and preserve the composer pill.
+- Any layout change outside Chat needs an easy rollback path and live responsive verification.
+- Never discard, overwrite, stage, or commit unrelated work.
+
+## UX and accessibility
+
+- Prefer calm progressive disclosure over dense control walls. Keep the primary action visible;
+  place diagnostics and uncommon settings under clearly named Advanced or details controls.
+- Every action must work with keyboard only and mouse only.
+- Use semantic controls, visible focus, accessible names, and correct tab/list/dialog patterns.
+- Long text must wrap or truncate intentionally without causing page-level horizontal overflow.
+- Show model fit, blockers, and next actions in plain language. Prevent unsupported modes before a
+  task begins instead of allowing a delayed failure.
+- Verify UI behavior in the running application. Source inspection and a successful build do not
+  prove an interaction works.
+
+## Runtime and data safety
+
+- Use `.venv\Scripts\python.exe`; plain `python` is not reliable on the maintainer workstation.
+- All development and browser verification must use an isolated `RASPUTIN_DATA_DIR` and a test port
+  such as 8899. Never point tests at real user data.
+- Native Host and installed Desktop are different owners. Inspect `native-host.json` or
+  `desktop-runtime.json` before restarting or replacing a running process.
+- Never run two Rasputin instances against one data directory.
+- Installed Desktop is loopback-only and supplies its local administrator session. Native Host uses
+  real authentication. Never extend Desktop session behavior to LAN access.
+- Do not expose credentials, cookies, tokens, private paths, or generated secrets in commits,
+  screenshots, logs, or reports.
+- Do not perform destructive recovery, deletion, publishing, deployment, or persistent privileged
+  runtime changes without clear user authorization and exact target verification.
+
+## Verification
+
+Scale verification to risk, but do not skip the relevant gate.
+
+```powershell
+# Frontend build
+npm.cmd run build
+
+# Focused JavaScript tests
+node --test tests/<relevant-test>.test.mjs
+
+# Desktop syntax and lifecycle
+npm.cmd run desktop:check
+npm.cmd run desktop:test
+
+# Backend smoke tests
+.\.venv\Scripts\python.exe -m unittest tests.testBackendSmoke
+
+# Documentation contract
+.\.venv\Scripts\python.exe scripts\verify_docs.py
+```
+
+For UI work, follow `.agents/skills/verify/SKILL.md` (Codex) or
+`.claude/skills/verify/SKILL.md` (Claude Code): run an isolated server, authenticate through
+the supported flow, drive the changed interaction, test desktop/tablet/phone widths where layout is
+in scope, and clean up the test process and scratch data afterward.
+
+For installer or release work, verify the built artifact rather than only its source configuration.
+Clearly separate source-app, packaged-app, installed-app, and clean-machine evidence.
+
+## Git and publishing
+
+- After making a requested change, commit and push the scoped change to the branch you are
+  working from. Elliott's standing instruction authorizes this; do not ask again for each push.
+- Merge, tag, release, or deploy only with clear user authorization.
+- If implementation begins on `main`, create a task branch before committing unless Elliott
+  explicitly requests work directly on the saved branch. Codex uses the `codex/` prefix.
+- Stage only the requested scope. Review `git diff --check`, the staged diff, and final status.
+- Never use destructive Git commands to clean a mixed worktree.
+- After a requested push, verify the remote branch or commit actually contains the intended change.
+
+## Reporting
+
+- Lead with the outcome. Keep reports concise, readable, and evidence-backed.
+- Distinguish implemented, built, live-verified, installed-verified, partial, and unverified work.
+- Report commands and pass/fail counts. Identify unrelated pre-existing failures without implying
+  that changed work passed them.
+- Link changed files with useful line references.
+- State what remains uncommitted or unpushed.
+- Include a small TL;DR at the bottom of every response.
+- Use light sarcasm when appropriate and avoid filler; keep technical claims precise.
+- Never claim completion because code merely renders, compiles, or looks correct in a diff.
+
+## High-signal references
+
+- `docs/CODEX_ONBOARDING.md` — architecture, commands, hard rules, and current evidence
+- `docs/MAINTAINER_HANDOFF.md` — ownership map and maintainer workflow
+- `docs/DEPLOYMENT_MATRIX.md` — launch and upgrade ownership
+- `docs/WRAPPER_RUNTIME_CONTRACT.md` — native runtime contract
+- `docs/RASPUTIN_ARCHITECTURE_GUIDE.md` — frontend and runtime architecture
+- `docs/CODING_AGENT_IMPLEMENTATION_CHECKLIST.md` — active implementation queue
+- `THREAT_MODEL.md` — security boundaries
+- `.agents/skills/verify/SKILL.md` — live local verification workflow
+
+## Codex orchestration
+
+This section applies to Codex and other OpenAI coding agents.
+
+Work directly by default. Follow the current Codex runtime instructions for any delegation;
+never copy the Claude-specific Fable/Sonnet/Haiku tiering policy below.
+
+## Claude Code orchestration
+
+This section applies only to Claude Code. The shared rules above still apply to every work
+order and take precedence if a Claude-specific workflow repeats or contradicts them.
 
 This project runs Claude Code with **Fable as the orchestrator** and **Sonnet as the execution
 tier**. The goal: Fable's tokens are the expensive, scarce resource — spend them on planning,
 judgment, and verification; push bulk reading, editing, and mechanical work down to Sonnet
 subagents. Similar output quality, materially lower cost.
 
-## Roles
+### Roles
 
 - **Fable (this session):** understands the request, does *minimal* recon, writes the plan,
   decomposes it into work orders, dispatches Sonnet agents, verifies results, integrates, and
@@ -20,7 +173,7 @@ subagents. Similar output quality, materially lower cost.
   each. They start cold — they know nothing this conversation knows unless the work order says
   it. They return a compact report, not a transcript.
 
-## Workflow for every non-trivial prompt
+### Workflow for every non-trivial prompt
 
 1. **Plan first (Fable).** Read just enough to decompose correctly — signatures, directory
    shape, the failing test — not whole files. Produce a numbered plan with explicit, checkable
@@ -38,7 +191,7 @@ subagents. Similar output quality, materially lower cost.
 5. **Report.** Fable synthesizes the outcome for the user in its own words, with file:line
    references. Workers' raw output is never pasted wholesale.
 
-## When Fable handles it directly (do NOT delegate)
+### When Fable handles it directly (do NOT delegate)
 
 Delegation has a fixed overhead: every worker cold-starts and re-derives context. Spawning an
 agent for small work costs *more* tokens and time, not less. Fable executes directly when:
@@ -53,7 +206,7 @@ Rule of thumb: **delegate volume, keep judgment.** If the step is "read these 30
 apply this mechanical transformation," that's a worker. If the step is "decide whether this
 API should change," that's Fable.
 
-## Work-order template (the prompt for each Sonnet agent)
+### Work-order template (the prompt for each Sonnet agent)
 
 Every dispatch must contain, in this order:
 
@@ -68,7 +221,7 @@ Every dispatch must contain, in this order:
 5. **Report format** — "Return: files changed with line ranges, the acceptance-check output,
    and anything you found that contradicts the context above. Do not paste whole files."
 
-## Choosing the worker tier: Sonnet vs Haiku
+### Choosing the worker tier: Sonnet vs Haiku
 
 The test: **could a careful intern with zero codebase knowledge do this correctly from the
 work order alone, without making a single judgment call?** Yes → Haiku. No → Sonnet.
@@ -106,7 +259,7 @@ Haiku workers follow the same escalation rule: on hitting anything ambiguous or 
 stop and report back — never improvise. Fable re-dispatches to Sonnet with the ambiguity
 resolved.
 
-## Token-economy rules (both tiers)
+### Token-economy rules (both tiers)
 
 - Workers return **summaries and diffs, not file dumps**. Fable requests specific chunks if
   needed.
@@ -117,19 +270,9 @@ resolved.
   judgment, it should stop and report back — Fable decides, then re-dispatches. Workers never
   spawn their own agents.
 
-## Project gotchas every work order must respect
+### Authorization
 
-- **Never bulk-edit source files with PowerShell `Get-Content`/`Set-Content`** — PS 5.1
-  mangles UTF-8 and adds BOMs. Use the Edit/Write tools, or Python.
-- Temp/scratch files go to the session scratchpad directory, never the repo or `/tmp`.
-- Frontend verification workflow is documented in `.claude/skills/verify/SKILL.md`
-  (isolated `RASPUTIN_DATA_DIR` server, Playwright patterns, useful testids).
-- Do not restructure the chat page layout; upgrade components in place.
-- Commit/push only when the user asks; branch off `main` first if on the default branch.
-
-## What this policy does not change
-
-Plan mode, permission prompts, and user confirmation for irreversible or outward-facing
-actions all apply as normal at both tiers. If the user's request is genuinely ambiguous,
-Fable asks before dispatching — a fleet of workers executing the wrong plan is the most
-expensive failure mode there is.
+Follow current system, developer, and user instructions for plan mode, permissions, and
+outward-facing actions. Existing user authorization remains valid; commit and push scoped
+changes under the shared Git policy above. If a request is genuinely ambiguous, clarify the
+missing requirement before dispatching dependent work.

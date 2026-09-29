@@ -4,10 +4,10 @@
 operator/owner) and Claude Code sessions. If anything here drifts from the code, trust the
 code and fix this doc.*
 
-> **Note on `AGENTS.md`:** the repo-root `AGENTS.md` is a **Claude Code–specific orchestration
-> policy** (Fable orchestrator dispatching Sonnet subagents). Its model-tiering instructions do
-> **not** apply to you. Its "Project gotchas" section applies to **everyone** — those gotchas
-> are repeated in §4 below.
+> **Agent policy:** read the repo-root **`AGENTS.md`** first. It contains the shared project
+> rules and separate orchestration sections for Codex and Claude Code. Follow the shared rules
+> and the Codex section; Claude's Fable/Sonnet/Haiku model-tiering instructions do not apply to
+> Codex. The hard rules are also summarized in §4 below.
 
 ---
 
@@ -107,8 +107,9 @@ RASPUTIN_DATA_DIR=<temp-dir> PORT=8899 python server.py
    patterns where tabs exist, no hover-only or shortcut-only paths.
 5. **Do not restructure the chat page layout**; upgrade components in place. Any layout change
    elsewhere requires a restorable backup of the prior version. Keep the composer pill.
-6. **Commit only when Elliott asks.** Branch off `main` first if you're on the default branch.
-   Do not trust a branch name captured in a doc; check `git branch --show-current` at the start.
+6. **Commit and push requested changes under Elliott's standing instruction.** Stage only
+   the requested scope. Branch off `main` first if you're on the default branch. Do not trust a
+   branch name captured in a doc; check `git branch --show-current` at the start.
 7. Verify UI claims **in the running app**, not by reading code. "Renders" ≠ "works" — drive
    the primary action before calling something done.
 8. Temp/scratch files go outside the repo (session temp dir), never in the repo or `/tmp`.
@@ -166,8 +167,9 @@ unverified (its PDF has recorded visual review). Do not revive retired infrastru
 - **Honest reporting over optimism.** Distinguish "verified in the running app" from
   "compiles/renders". If something wasn't verified, say so explicitly — unverified claims get
   marked `[~]` in the checklist, not checked off.
-- **Ask before irreversible or outward-facing actions** (deletes, pushes, deploys to his real
-  instance). Propose before large refactors.
+- **Use existing authorization for outward-facing actions.** Scoped commits and pushes are
+  authorized by Elliott's standing instruction. Destructive recovery and deployments to his
+  real instance need clear authorization. Propose before large refactors.
 - **Identify the actual owner before changing a running app.** Installed Desktop records its
   private URL and owner PID in `desktop-runtime.json`; Native Host records `native-host.json`
   and defaults to :8788. Port :8899 is for isolated verification only. Never run both against
