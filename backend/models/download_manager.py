@@ -20,6 +20,17 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Protocol
 
 
+_LOCKS_GUARD = threading.Lock()
+_PATH_LOCKS: dict[str, Any] = {}
+
+
+def _path_lock(key: str):
+    # The Desktop API constructs a repository per request. All instances for
+    # one file must serialize the entire read/modify/replace transaction.
+    with _LOCKS_GUARD:
+        return _PATH_LOCKS.setdefault(key, threading.RLock())
+
+
 STATES = (
     "queued",
     "resolving",
@@ -197,6 +208,8 @@ class JobRepository(Protocol):
     def get(self, job_id: str) -> DownloadJob | None: ...
     def save(self, job: DownloadJob) -> None: ...
     def list(self) -> list[DownloadJob]: ...
+    def update(self, job_id: str, change: Callable[[DownloadJob | None], DownloadJob]) -> DownloadJob: ...
+    def worker_lock(self, job_id: str): ...
 
 
 class InMemoryJobRepository:
@@ -205,6 +218,7 @@ class InMemoryJobRepository:
     def __init__(self) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
+        self._worker_locks = {}
 
     def get(self, job_id: str) -> DownloadJob | None:
         with self._lock:
@@ -219,13 +233,24 @@ class InMemoryJobRepository:
         with self._lock:
             return [DownloadJob.from_dict(value) for value in self._jobs.values()]
 
+    def update(self, job_id, change):
+        with self._lock:
+            job = change(self.get(job_id))
+            self.save(job)
+            return job
+
+    def worker_lock(self, job_id):
+        with self._lock:
+            return self._worker_locks.setdefault(job_id, threading.RLock())
+
 
 class JsonJobRepository:
     """Self-contained atomic JSON persistence; it has no runtime-store dependency."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self._lock = threading.RLock()
+        self._identity = os.path.normcase(str(self.path.resolve()))
+        self._lock = _path_lock(self._identity)
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -258,6 +283,15 @@ class JsonJobRepository:
     def list(self) -> list[DownloadJob]:
         with self._lock:
             return [DownloadJob.from_dict(value) for value in self._read().values()]
+
+    def update(self, job_id, change):
+        with self._lock:
+            job = change(self.get(job_id))
+            self.save(job)
+            return job
+
+    def worker_lock(self, job_id):
+        return _path_lock(self._identity + ":worker:" + job_id)
 
 
 @dataclass
@@ -355,7 +389,7 @@ class DownloadManager:
 
     def run(self, job_id: str) -> DownloadJob:
         """Run one job synchronously; callers may place this in their worker pool."""
-        with self._lock:
+        with self.repository.worker_lock(job_id):
             job = self.get_job(job_id)
             if job.state not in {"queued", "downloading"}:
                 raise InvalidTransition(f"cannot run job in {job.state} state")
@@ -374,23 +408,17 @@ class DownloadManager:
                     self._download_file(job, file_record, control)
                 self._transition(job, "verifying")
                 self._verify_all(job)
-                self._transition(job, "installing")
-                self._finalize(job)
-                self._transition(job, "completed")
-                job.retryable = False
-                job.error = None
-                job.error_code = None
-                self._save(job)
+                self._publish(job)
             except PauseRequested:
-                if job.state != "paused":
-                    self._transition(job, "paused")
+                job.state = "paused"
                 self._update_progress(job)
-                self._save(job)
+                self._save(job, signal_control=False)
+                if job.state == "cancelled":
+                    self._cleanup_staging(job)
             except CancellationRequested:
-                if job.state != "cancelled":
-                    self._transition(job, "cancelled")
-                self._cleanup_staging(job)
+                job.state = "cancelled"
                 self._save(job)
+                self._cleanup_staging(job)
             except TransferError as exc:
                 self._fail(job, str(exc), code=exc.code, retryable=exc.transient)
             except (OSError, ValueError, DownloadManagerError) as exc:
@@ -398,22 +426,30 @@ class DownloadManager:
             return job
 
     def pause(self, job_id: str) -> DownloadJob:
-        job = self.get_job(job_id)
-        self._transition(job, "paused")
-        self._save(job)
-        return job
+        return self.transition(job_id, "paused")
 
     def resume(self, job_id: str) -> DownloadJob:
-        job = self.get_job(job_id)
-        self._transition(job, "downloading")
-        self._save(job)
-        return self.run(job_id)
+        # Wait for a paused worker to close its file before another worker
+        # resumes that same partial file.
+        with self.repository.worker_lock(job_id):
+            self.transition(job_id, "downloading")
+            return self.run(job_id)
 
     def cancel(self, job_id: str) -> DownloadJob:
-        job = self.get_job(job_id)
-        self._transition(job, "cancelled")
-        self._cleanup_staging(job)
-        self._save(job)
+        job = self.transition(job_id, "cancelled")
+        # Persist the signal first. An active transfer owns the open handle
+        # and cleans up after unwinding; deleting it here fails on Windows.
+        worker = self.repository.worker_lock(job_id)
+        if worker.acquire(blocking=False):
+            try:
+                try:
+                    self._cleanup_staging(job)
+                except PermissionError:
+                    # Reentrant control from a transfer callback may still
+                    # hold its handle. The worker's cancellation path retries.
+                    pass
+            finally:
+                worker.release()
         return job
 
     def retry(self, job_id: str) -> DownloadJob:
@@ -456,10 +492,12 @@ class DownloadManager:
         """Expose the explicit transition table for orchestration/UI adapters."""
         if state not in STATES:
             raise ValueError(f"unknown download state: {state}")
-        job = self.get_job(job_id)
-        self._transition(job, state)
-        self._save(job)
-        return job
+        def change(job):
+            if job is None:
+                raise KeyError(job_id)
+            self._transition(job, state)
+            return job
+        return self.repository.update(job_id, change)
 
     def _preflight(self, job: DownloadJob) -> None:
         destination = Path(job.destination)
@@ -567,6 +605,23 @@ class DownloadManager:
             raise PreflightError("destination appeared during atomic installation")
         self.storage.atomic_replace(staging, destination)
 
+    def _publish(self, job: DownloadJob) -> None:
+        def change(current):
+            if current and current.state == "cancelled":
+                raise CancellationRequested()
+            if current and current.state == "paused":
+                raise PauseRequested()
+            self._transition(job, "installing")
+            self._finalize(job)
+            self._transition(job, "completed")
+            job.retryable = False
+            job.error = None
+            job.error_code = None
+            return job
+        # Publication and its terminal record share the control transaction:
+        # Cancel either wins before publication or sees a completed artifact.
+        self.repository.update(job.id, change)
+
     def _matches(self, record: Mapping[str, Any], path: Path) -> bool:
         try:
             if path.stat().st_size != int(record["expected_size"]):
@@ -614,11 +669,21 @@ class DownloadManager:
         job.error_code = code
         job.retryable = retryable
         self._update_progress(job)
-        self._save(job)
+        self._save(job, signal_control=False)
+        if job.state == "cancelled":
+            self._cleanup_staging(job)
 
-    def _save(self, job: DownloadJob) -> None:
+    def _save(self, job: DownloadJob, *, signal_control=True) -> None:
         job.updated_at = self.clock()
-        self.repository.save(job)
+        def change(current):
+            if current and current.state in {"paused", "cancelled"} and current.state != job.state:
+                if signal_control:
+                    if current.state == "cancelled":
+                        raise CancellationRequested()
+                    raise PauseRequested()
+                job.state = current.state
+            return job
+        self.repository.update(job.id, change)
 
     def _cleanup_staging(self, job: DownloadJob) -> None:
         staging = Path(job.staging_dir)

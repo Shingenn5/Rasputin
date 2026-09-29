@@ -1275,13 +1275,17 @@ class AgentHub:
             snapshot = self.get_task(task_id)
             if not snapshot:
                 raise ValueError("task missing")
+            if snapshot.get("status") in {"done", "error", "cancelled"}:
+                return snapshot
             with store._lock, store.connect() as conn:
                 stamp = store.now()
-                conn.execute(
-                    "UPDATE tasks SET status='cancelled', completed_at=?, updated_at=? WHERE id=?",
+                updated = conn.execute(
+                    "UPDATE tasks SET status='cancelled', completed_at=?, updated_at=? WHERE id=? AND status IN ('queued', 'running', 'paused')",
                     (stamp, stamp, task_id),
                 )
                 conn.commit()
+            if not updated.rowcount:
+                return self.get_task(task_id)
             store.create_inbox_event(
                 snapshot.get("ownerId", "admin"),
                 "task_cancelled",
@@ -1293,6 +1297,8 @@ class AgentHub:
                 action_payload={"taskId": task_id},
             )
             return self.get_task(task_id)
+        if task.status in {"done", "error", "cancelled"}:
+            return self.snapshot_task(task)
         task.cancel_requested = True
         if task.status in {"queued", "running", "paused"}:
             task.status = "cancelled"
@@ -1305,19 +1311,23 @@ class AgentHub:
     async def pause(self, task_id):
         task = self.tasks.get(task_id)
         if task:
+            if task.status in {"done", "error", "cancelled"}:
+                return self.snapshot_task(task)
             task.paused_requested = True
             task.status = "paused"
             task.log("paused")
             await self.emit(task)
             return self.snapshot_task(task)
         with store._lock, store.connect() as conn:
-            conn.execute("UPDATE tasks SET paused=1, status='paused', updated_at=? WHERE id=?", (store.now(), task_id))
+            conn.execute("UPDATE tasks SET paused=1, status='paused', updated_at=? WHERE id=? AND status IN ('queued', 'running', 'paused')", (store.now(), task_id))
             conn.commit()
         return self.get_task(task_id)
 
     async def resume(self, task_id):
         task = self.tasks.get(task_id)
         if task:
+            if task.status in {"done", "error", "cancelled"}:
+                return self.snapshot_task(task)
             task.paused_requested = False
             task.status = "running" if task.started_at else "queued"
             task.log("resumed")
@@ -1398,6 +1408,22 @@ class AgentHub:
         if task.status == "paused":
             task.status = "running"
             await self.emit(task)
+
+    async def _task_chat(self, task, *args, **kwargs):
+        """Release the task queue promptly when inference is cancelled."""
+        pending = asyncio.create_task(_chat(*args, **kwargs))
+        try:
+            while not pending.done():
+                await asyncio.wait({pending}, timeout=0.1)
+                if task.cancel_requested or task.status == "cancelled":
+                    raise asyncio.CancelledError()
+            await self.checkpoint(task)
+            return await pending
+        finally:
+            if not pending.done():
+                pending.cancel()
+            # Consume a result/error even when cancellation wins the race.
+            await asyncio.gather(pending, return_exceptions=True)
 
     async def _prepare_isolated_workspace(self, task):
         """Provision or verify the task's retained Git worktree before tools run."""
@@ -1715,6 +1741,9 @@ class AgentHub:
         state = {"last": 0.0}
 
         def on_delta(event):
+            if task.cancel_requested or task.status == "cancelled":
+                # Propagate out of the provider worker so its response closes.
+                raise asyncio.CancelledError()
             kind = event.get("type")
             if kind == "text":
                 task.stream_text += event.get("text") or ""
@@ -1881,6 +1910,7 @@ class AgentHub:
 
         try:
             for attempt in range(max_attempts):
+                await self.checkpoint(task)
                 if time.time() - started_at > max_seconds:
                     task.log(f"tool loop stopped: {max_seconds}s time budget exceeded after {attempt} iteration(s)")
                     self._finish_step(task, phase_step, "error")
@@ -1901,8 +1931,8 @@ class AgentHub:
                     if on_delta:
                         on_delta(event)
 
-                text, tool_calls = await _chat(
-                    model_key, messages, tools=tools, on_delta=measured_delta if on_delta else None, reasoning=effective_reasoning,
+                text, tool_calls = await self._task_chat(
+                    task, model_key, messages, tools=tools, on_delta=measured_delta if on_delta else None, reasoning=effective_reasoning,
                 )
                 self._record_generation_metrics(
                     task,
@@ -2001,6 +2031,7 @@ class AgentHub:
                     return text
 
                 for tc in tool_calls:
+                    await self.checkpoint(task)
                     tool_name = str(tc.get("name") or "")
                     if tool_name not in allowed_tool_ids:
                         message = f"Tool '{tool_name or 'unknown'}' is not available in this task phase."
