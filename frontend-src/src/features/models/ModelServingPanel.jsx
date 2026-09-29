@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { harnessConfigs } from "./harnessConfig.js";
+import "./harnessConfig.css";
 import {
   Activity,
   AlertTriangle,
@@ -116,6 +118,7 @@ export function ModelServingPanel({ onOpenModels }) {
   const [liveMessage, setLiveMessage] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [harnessModelId, setHarnessModelId] = useState("");
 
   async function refresh() {
     setBusy("refresh");
@@ -175,6 +178,9 @@ export function ModelServingPanel({ onOpenModels }) {
   }
 
   const protocols = status?.protocols || [];
+  const servingModels = status?.servableModels || [];
+  const harnessModel = servingModels.find((model) => model.id === harnessModelId) || servingModels[0];
+  const configs = harnessConfigs(status?.openaiBaseUrl, harnessModel);
   const recent = status?.recentRequests || [];
   const isBusy = Boolean(busy);
   const readiness = servingReadiness(status);
@@ -287,6 +293,29 @@ export function ModelServingPanel({ onOpenModels }) {
                 <p><strong>Safe by default.</strong> Compatibility requests can return tool calls to their caller, but never execute MCP tools automatically. Prompt and message content is not stored in request metrics.</p>
               </div>
             </div>
+          </section>
+
+          <section className="serving-protocol-section serving-harness-setup" aria-label="Connect a coding harness" data-testid="serving-harness-setup">
+            <div className="serving-section-heading">
+              <div><h3>Connect Pi or OpenCode</h3><p>Load a model, generate a key, then use these settings in your coding harness on this PC.</p></div>
+            </div>
+            <div className="serving-harness-url">
+              <div><code>{status.openaiBaseUrl}</code><UIButton type="button" variant="outline" size="sm" disabled={!status.openaiBaseUrl} onClick={() => copyText(status.openaiBaseUrl, "base-url", "API base URL")}>Copy base URL</UIButton></div>
+            </div>
+            {!configs ? <p>Load a model in My Models, then refresh serving status to create its configuration.</p> : <>
+              <label>Model ID <select className="w2-input" aria-label="Harness model" value={harnessModel.id} onChange={(event) => setHarnessModelId(event.target.value)}>
+                {servingModels.map((model) => <option key={model.id} value={model.id}>{model.name} — {model.id}</option>)}
+              </select></label>
+              <p>Set <code>RASPUTIN_API_KEY</code> to your generated key in the terminal that launches the harness. Merge the configuration into your existing file.</p>
+              <div className="serving-header-actions">
+                <UIButton type="button" variant="outline" size="sm" onClick={() => copyText(configs.opencode, "opencode-config", "OpenCode configuration")}>Copy OpenCode config</UIButton>
+                <UIButton type="button" variant="outline" size="sm" disabled={!harnessModel.contextWindow || harnessModel.contextWindow <= 4096} onClick={() => copyText(configs.pi, "pi-config", "Pi configuration")}>Copy Pi config</UIButton>
+                <UIButton type="button" variant="outline" size="sm" onClick={() => copyText(harnessModel.id, "model-id", "Model ID")}>Copy model ID</UIButton>
+              </div>
+              <p>OpenCode: <code>opencode.json</code>. Pi: <code>~/.pi/agent/models.json</code>, then select Rasputin with <code>/model</code>. Keep Rasputin and the model running.</p>
+              {!harnessModel.contextWindow && <p>Context size is not reported; these configs use a conservative 4,096-token limit.</p>}
+              {(!harnessModel.contextWindow || harnessModel.contextWindow <= 4096) && <p>Pi reserves 4,096 tokens. Load this model with at least 8,192 context tokens, then refresh to copy its Pi configuration.</p>}
+            </>}
           </section>
 
           <section className="serving-protocol-section">

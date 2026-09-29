@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import subprocess
@@ -173,12 +174,21 @@ def _text_blob(*values):
 
 
 def _parameter_count(model_id, model):
+    for field in ("gguf", "safetensors"):
+        metadata = model.get(field)
+        if isinstance(metadata, dict):
+            try:
+                total = float(metadata.get("total") or 0)
+                if math.isfinite(total) and total > 0:
+                    return total / 1_000_000_000
+            except (ValueError, TypeError):
+                pass
     blob = _text_blob(model_id, model.get("name"), model.get("display_name"))
-    match = re.search(r"(\d+(?:\.\d+)?)\s*b(?:\b|[-_])", blob)
+    match = re.search(r"(\d+(?:\.\d+)?)\s*([bm])(?:\b|[-_])", blob)
     if not match:
         return None
     try:
-        return float(match.group(1))
+        return float(match.group(1)) / (1000 if match.group(2) == "m" else 1)
     except ValueError:
         return None
 
@@ -1167,7 +1177,7 @@ def _normalize_hf_model(hf_model):
     pipeline_tag = hf_model.get("pipeline_tag") or ""
     purpose = _hf_purpose_from_pipeline(pipeline_tag)
     tags = hf_model.get("tags") or []
-    params = _parameter_count(model_id, {"name": model_id, "tags": " ".join(tags)})
+    params = _parameter_count(model_id, {**hf_model, "name": model_id, "tags": " ".join(tags)})
     license_tag = ""
     for tag in tags:
         if tag.startswith("license:"):
@@ -1326,7 +1336,7 @@ def _looks_like_url(value):
 
 def search_hf(
     query="", model_type="", sort="popular", direction=-1, limit=100,
-    hardware=None, min_vram_gb=None, max_vram_gb=None,
+    hardware=None, min_vram_gb=None, max_vram_gb=None, gguf_only=False,
 ):
     """Search Hugging Face Hub API for models."""
     original_query = "" if query is None else str(query)
@@ -1362,6 +1372,12 @@ def search_hf(
         params["search"] = normalized_model_id or original_query
     if model_type:
         params["pipeline_tag"] = model_type
+    # Native discovery must find downloadable llama.cpp repositories. Exact
+    # references remain inspectable so their detail view can explain blockers.
+    if gguf_only and not exact_match:
+        params["filter"] = "gguf"
+    if gguf_only:
+        params["expand"] = ["gguf", "safetensors", "downloads", "likes", "tags", "pipeline_tag", "config", "lastModified"]
 
     raw_models = []
     try:
@@ -1426,6 +1442,13 @@ def search_hf(
 
     if hardware:
         items = _apply_fit(items, hardware)
+
+    if gguf_only:
+        for item in items:
+            if not any(option["protocolId"] == "llamaCppGgufServer" for option in item["runtimeOptions"]):
+                reason = "This repository does not advertise GGUF weights for Rasputin's native runtime. Search for a GGUF conversion."
+                item.update(deployable=False, fitStatus="unsupported", fitLabel="GGUF required",
+                            fitWillFit=False, fitCanRunNow=False, fitReasons=[reason], blockedReasons=[reason])
 
     if requested_sort in {"vram_desc", "vram_asc"}:
         items.sort(

@@ -1,0 +1,7 @@
+.serving-harness-setup { min-width: 0; overflow-wrap: anywhere; }
+.serving-harness-setup p { font-size: .8rem; line-height: 1.5; }
+.serving-harness-setup select { width: 100%; min-width: 0; max-width: 100%; }
+.serving-harness-setup .serving-header-actions { flex-wrap: wrap; margin: 10px 0; }
+.serving-harness-setup .serving-header-actions button { max-width: 100%; white-space: normal; height: auto; min-height: 32px; }
+.serving-harness-url > div { display: flex; min-width: 0; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.serving-harness-url code { min-width: 0; overflow-wrap: anywhere; }

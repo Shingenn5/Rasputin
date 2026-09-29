@@ -483,7 +483,7 @@ export function catalogPlacementAssessment(item, hardware, measuredEvidence = nu
     return withSystemRamAssessment({
       kind: "unknown",
       status: "unknown",
-      label: "Fit unknown",
+      label: !hasEstimate ? "Choose variant to check fit" : "Check hardware",
       canDeploy: false,
       willFit: null,
       canRunNow: false,
@@ -1033,7 +1033,7 @@ export function ModelsView({
 
   /* catalog state */
   const [catalogSearch, setCatalogSearch] = useState("");
-  const [catalogPurpose, setCatalogPurpose] = useState("all");
+  const [catalogPurpose, setCatalogPurpose] = useState("chat");
   const [catalogRuntime, setCatalogRuntime] = useState("all");
   const [catalogFit, setCatalogFit] = useState("all");
   const [searchMode, setSearchMode] = useState(() => view === "discover" ? "browse" : "catalog");
@@ -2900,6 +2900,7 @@ function DiscoverModelInspector({
     try {
       const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
       const detail = await api("/api/model-catalog/model/" + encodedModelId);
+      if (detail?.error) throw new Error(detail.error);
       setVariantDetail(detail);
       const nextVariants = Array.isArray(detail?.variants) ? detail.variants : [];
       setSelectedVariantId((current) => current && nextVariants.some((variant) => variant.id === current)
@@ -3224,6 +3225,7 @@ function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareB
     try {
       const encodedModelId = String(modelId).split("/").map(encodeURIComponent).join("/");
       const detail = await api("/api/model-catalog/model/" + encodedModelId);
+      if (detail?.error) throw new Error(detail.error);
       setVariantDetail(detail);
       const nextVariants = Array.isArray(detail?.variants) ? detail.variants : [];
       setSelectedVariantId((current) => current && nextVariants.some((variant) => variant.id === current)

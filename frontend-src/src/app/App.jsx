@@ -1380,7 +1380,7 @@ export function App() {
   async function scanGguf() {
     try {
       const result = await postJson("/api/model-registry/scan-gguf", {});
-      setGlobalStatus(`GGUF scan found ${result.count || 0} model files.`);
+      setGlobalStatus(`Added ${result.registered?.length || 0} models; ${result.existing?.length || 0} already in My Models.${result.truncated ? " Scan limit reached; scan a smaller model folder to find the rest." : ""}`);
       await loadModels();
     } catch (error) {
       setGlobalStatus(error.message);

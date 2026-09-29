@@ -87,6 +87,35 @@ class HfModelReferenceTests(unittest.TestCase):
         self.assertEqual(RecordingClient.calls[0][1]["search"], "qwen coder")
         self.assertEqual(result["items"][0]["id"], "org/qwen-coder")
 
+    def test_native_browse_filters_at_hub_but_exact_references_remain_inspectable(self):
+        for query in ("", "qwen coder", "org/model"):
+            with self.subTest(query=query):
+                RecordingClient.calls = []
+                RecordingClient.responses = [FakeResponse([{"id": "org/model", "tags": ["gguf"]}])]
+                with patch.object(catalog.httpx, "Client", RecordingClient), patch.object(catalog.audit, "log"):
+                    catalog.search_hf(query, gguf_only=True)
+                params = RecordingClient.calls[0][1]
+                self.assertEqual(params.get("filter"), None if query == "org/model" else "gguf")
+
+    def test_parameter_counts_use_reported_metadata_and_million_parameter_names(self):
+        for raw, expected in [
+            ({"id": "org/model", "gguf": {"total": 135000000}}, .135),
+            ({"id": "cross-encoder/ms-marco-MiniLM-L6-v2", "safetensors": {"total": 22713217}}, .022713217),
+            ({"id": "org/SmolLM2-135M-Instruct-GGUF"}, .135),
+            ({"id": "org/Model-7B", "gguf": {"total": "invalid"}}, 7),
+        ]:
+            with self.subTest(raw=raw):
+                self.assertAlmostEqual(catalog._normalize_hf_model(raw)["parameterCountB"], expected)
+
+    def test_native_exact_non_gguf_is_unsupported_not_unknown_fit(self):
+        RecordingClient.responses = [FakeResponse([{"id": "cross-encoder/ms-marco-MiniLM-L6-v2", "tags": ["safetensors"]}])]
+        with patch.object(catalog.httpx, "Client", RecordingClient), patch.object(catalog.audit, "log"):
+            result = catalog.search_hf("cross-encoder/ms-marco-MiniLM-L6-v2", gguf_only=True)
+        item = result["items"][0]
+        self.assertFalse(item["deployable"])
+        self.assertEqual(item["fitLabel"], "GGUF required")
+        self.assertFalse(item["fitWillFit"])
+
     def test_exact_url_uses_normalized_lookup_and_promotes_without_duplicate(self):
         exact_id = "org/special-model"
         RecordingClient.responses = [

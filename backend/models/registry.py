@@ -1030,18 +1030,22 @@ def discover_gguf_at_startup(*, limit=200, time_budget_seconds=2.0):
     """
     if not workspace.is_native():
         return {"roots": [], "registered": [], "existing": [], "ignored": 0, "truncated": False}
+    return _discover_gguf(_model_library_roots(), limit=limit, time_budget_seconds=time_budget_seconds, require_permission=False)
+
+
+def _discover_gguf(roots, *, limit=200, time_budget_seconds=2.0, require_permission=True):
     try:
         maximum = max(1, min(int(limit), 200))
         budget = max(0.05, min(float(time_budget_seconds), 10.0))
     except (TypeError, ValueError):
         maximum, budget = 200, 2.0
-    roots = _model_library_roots()
     deadline = time.monotonic() + budget
     registered = []
     existing = []
     ignored = 0
     considered = 0
     truncated = False
+    found = []
     for base in roots:
         if time.monotonic() >= deadline or considered >= maximum:
             truncated = True
@@ -1075,12 +1079,20 @@ def discover_gguf_at_startup(*, limit=200, time_budget_seconds=2.0):
                 imported = _gguf_already_imported(safe_path)
                 if imported:
                     existing.append(imported.get("key") or str(safe_path))
-                    continue
-                identity = os.path.normcase(str(safe_path))
-                suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:10]
-                key = f"auto-{_slug(safe_path.stem)}-{suffix}"
-                model = _import_gguf({"path": str(safe_path), "key": key, "name": safe_path.stem}, require_permission=False)
-                registered.append(model.get("key") or key)
+                else:
+                    identity = os.path.normcase(str(safe_path))
+                    suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:10]
+                    key = f"auto-{_slug(safe_path.stem)}-{suffix}"
+                    imported = _import_gguf({"path": str(safe_path), "key": key, "name": safe_path.stem}, require_permission=require_permission)
+                    registered.append(imported.get("key") or key)
+                stat = safe_path.stat()
+                found.append({
+                    "name": safe_path.stem, "path": str(safe_path),
+                    "size_bytes": stat.st_size, "modified_at": stat.st_mtime,
+                    "imported": True, "imported_key": imported.get("key"),
+                    "suggested_key": imported.get("key"),
+                    "suggested_role": suggest_role(safe_path.stem),
+                })
         except OSError:
             ignored += 1
     result = {
@@ -1090,8 +1102,10 @@ def discover_gguf_at_startup(*, limit=200, time_budget_seconds=2.0):
         "ignored": ignored,
         "considered": considered,
         "truncated": truncated,
+        "models": found,
+        "count": len(found),
     }
-    audit.log("model_startup_discovery", result)
+    audit.log("model_scan_gguf" if require_permission else "model_startup_discovery", result)
     return result
 
 
@@ -1119,34 +1133,7 @@ def scan_gguf(root=None):
             raise AppError("model_scan_denied", "Rasputin can only scan the mounted models folder.", 403)
         roots = [selected]
 
-    found = []
-    for base in roots:
-        if not base.exists() or not base.is_dir():
-            continue
-        try:
-            files = sorted(base.rglob("*.gguf"))
-        except Exception:
-            files = []
-        for file_path in files:
-            if len(found) >= 200:
-                break
-            try:
-                stat = file_path.stat()
-            except Exception:
-                continue
-            imported = _gguf_already_imported(file_path)
-            found.append({
-                "name": file_path.stem,
-                "path": str(file_path),
-                "size_bytes": stat.st_size,
-                "modified_at": stat.st_mtime,
-                "imported": bool(imported),
-                "imported_key": imported.get("key") if imported else "",
-                "suggested_key": imported.get("key") if imported else _slug(file_path.stem),
-                "suggested_role": suggest_role(file_path.stem),
-            })
-    audit.log("model_scan_gguf", {"roots": [str(root) for root in roots], "count": len(found)})
-    return {"roots": [str(root) for root in roots], "models": found, "count": len(found)}
+    return _discover_gguf(roots, time_budget_seconds=10.0)
 
 
 def next_port():
@@ -1192,6 +1179,9 @@ def start_model(key, load_profile=None):
         provider = get_provider(model)
         result = provider.start(model)
         if result.get("ok"):
+            if model.get("runtime") == NATIVE_RUNTIME:
+                detected = context_detection.detect_runtime_context(model)
+                _store_detected_context(key, detected)
             audit.log("model_start", {"key": key, "container": model.get("container"), "port": model.get("port")})
         else:
             audit.log("model_start_failed", {"key": key, "error": result.get("error", "unknown error")})

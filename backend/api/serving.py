@@ -116,6 +116,12 @@ def _public_status(request: Request):
         "servable_model_count": len(models),
         "configured_model_count": len(configured_models),
         "has_servable_model": bool(models),
+        "openai_base_url": f"{base}/v1",
+        "servable_models": [
+            {"id": model["key"], "name": model.get("name") or model["key"],
+             "context_window": model.get("context_window") or model.get("context") or 0}
+            for model in models
+        ],
         "next_actions": next_actions,
         "mcp_tool_execution": config["mcp_tool_execution"],
         "bind_policy": "loopback-default",
@@ -172,9 +178,7 @@ def _servable_models(source=None):
             continue
         if not model.get("base_url"):
             continue
-        if str(model.get("runtime_status") or "").lower() in {
-            "stopped", "unreachable", "error", "failed", "missing", "unhealthy",
-        }:
+        if str(model.get("runtime_status") or "").lower() != "reachable":
             continue
         out.append(model)
     return out

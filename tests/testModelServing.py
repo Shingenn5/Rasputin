@@ -113,6 +113,9 @@ class ModelServingTests(unittest.TestCase):
         self.assertEqual(status["configuredModelCount"], 2)
         self.assertTrue(status["hasServableModel"])
         self.assertEqual(status["nextActions"], [])
+        self.assertEqual(status["openaiBaseUrl"], "http://127.0.0.1:8899/v1")
+        self.assertEqual([model["id"] for model in status["servableModels"]], ["local-test"])
+        self.assertNotIn("baseUrl", status["servableModels"][0])
 
     @patch.object(serving.model_registry, "all_models", return_value=[
         FAKE_MODEL,
@@ -123,6 +126,16 @@ class ModelServingTests(unittest.TestCase):
         key = self.rotate_key()
         response = self.client.get("/v1/models", headers=self.auth_headers(key))
         self.assertEqual([item["id"] for item in response.json()["data"]], ["local-test"])
+
+    def test_unverified_and_starting_models_are_not_advertised_to_harnesses(self):
+        models = [{**FAKE_MODEL, "key": state or "missing-status", "runtime_status": state}
+                  for state in ("unknown", "starting", "stopped", "", "reachable")]
+        with patch.object(serving.model_registry, "all_models", return_value=models):
+            key = self.rotate_key()
+            status = self.client.get("/api/model-serving").json()["data"]
+            response = self.client.get("/v1/models", headers=self.auth_headers(key))
+        self.assertEqual(status["servableModelCount"], 1)
+        self.assertEqual([model["id"] for model in response.json()["data"]], ["reachable"])
 
     @patch.object(serving.model_registry, "all_models", return_value=[FAKE_MODEL])
     @patch.object(serving.providers, "chat", side_effect=fake_chat)

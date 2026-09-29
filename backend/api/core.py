@@ -787,7 +787,7 @@ async def model_catalog_search(
     _user=Depends(current_user),
 ):
     hardware = await asyncio.to_thread(warsat.hardware_probe, native_models=workspace.is_native()) if fit else None
-    return ok(model_catalog.search_hf(
+    return ok(await asyncio.to_thread(model_catalog.search_hf,
         query=q,
         model_type=type,
         sort=sort,
@@ -796,6 +796,7 @@ async def model_catalog_search(
         hardware=hardware,
         min_vram_gb=min_vram_gb,
         max_vram_gb=max_vram_gb,
+        gguf_only=workspace.is_native(),
     ))
 
 @models_router.get("/model-catalog/model/{model_id:path}")
@@ -834,7 +835,7 @@ async def model_registry_import_gguf(req: GgufImportIn, _user=Depends(require_ad
 @models_router.post("/model-registry/scan-gguf")
 
 async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(require_admin)):
-    return ok(model_registry.scan_gguf(req.root if req else None))
+    return ok(await asyncio.to_thread(model_registry.scan_gguf, req.root if req else None))
 
 @models_router.post("/model-registry/start")
 

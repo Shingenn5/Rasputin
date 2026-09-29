@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import get_ident
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
 
@@ -104,8 +105,49 @@ class StartupGgufDiscoveryTests(TestCase):
                     registry.import_gguf({"path": str(path)})
             permission.assert_called_once_with("allow_model_registry_edit")
 
+    def test_manual_scan_registers_valid_models_and_repeated_scan_does_not_duplicate(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "model.gguf").write_bytes(b"GGUFfixture")
+            (root / "broken.gguf").write_bytes(b"NOPE")
+            (root / "mmproj-model.gguf").write_bytes(b"GGUFfixture")
+            store, load_patch, save_patch = self._store_patches({"models": []})
+            with load_patch, save_patch, patch.object(registry, "_model_library_roots", return_value=[root]), patch.object(registry.security, "require") as permission, patch.object(registry.audit, "log"):
+                first = registry.scan_gguf()
+                second = registry.scan_gguf()
+            self.assertEqual(first["count"], 1)
+            self.assertEqual(len(first["registered"]), 1)
+            self.assertEqual(second["registered"], [])
+            self.assertEqual(second["existing"], first["registered"])
+            self.assertEqual(first["ignored"], 2)
+            self.assertEqual(len(store["models"]), 1)
+            self.assertTrue(first["models"][0]["imported"])
+            permission.assert_any_call("allow_model_registry_edit")
+
+    def test_manual_scan_denied_before_registering_anything(self):
+        with patch.object(registry.security, "require", side_effect=AppError("permission_denied", "disabled", 403)), patch.object(registry, "_discover_gguf") as discover:
+            with self.assertRaises(AppError):
+                registry.scan_gguf()
+        discover.assert_not_called()
+
 
 class StartupHookTests(IsolatedAsyncioTestCase):
+    async def test_discovery_routes_run_blocking_work_off_the_request_loop(self):
+        from backend.api import core
+
+        loop_thread = get_ident()
+        threads = []
+        def work(*args, **kwargs):
+            threads.append(get_ident())
+            return {"items": []}
+        with patch.object(core.model_catalog, "search_hf", side_effect=work) as search, patch.object(core.workspace, "is_native", return_value=True):
+            await core.model_catalog_search(_user={"role": "admin"})
+        self.assertTrue(search.call_args.kwargs["gguf_only"])
+        with patch.object(core.model_registry, "scan_gguf", side_effect=work):
+            await core.model_registry_scan_gguf(_user={"role": "admin"})
+        self.assertEqual(len(threads), 2)
+        self.assertTrue(all(thread != loop_thread for thread in threads))
+
     async def test_app_startup_runs_discovery_without_manual_scan_route(self):
         from backend import main
 
