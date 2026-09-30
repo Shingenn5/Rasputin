@@ -125,7 +125,7 @@ class IntakeCreateIn(CamelModel):
     content_base64: str
     mime_type: str | None = ""
     size_bytes: int | None = None
-    retention: str = "use_once"
+    retention: str = "remember"
 
 class IntakeRetentionIn(CamelModel):
     retention: str = "use_once"
@@ -172,8 +172,10 @@ async def create_task(req: TaskIn, _user=Depends(require_member)):
             raise AppError("assistant_context_capsule_workspace_mismatch", "The approved context capsule belongs to a different workspace.", 409)
     attachment_context, attachment_records = intake.prepare_task_context(_user["username"], req.attachment_ids)
     objective = str(req.objective or "").strip()
-    if attachment_context:
+    if attachment_context and any(record["retention"] != "remember" for record in attachment_records):
         objective = f"{objective or 'Analyze the attached files.'}\n\n{attachment_context}"
+    elif attachment_context and not objective:
+        objective = "Analyze the attached files."
     requested_mode = req.mode
     resolved_mode = requested_mode
     selected_model = model_registry.get_model(req.model)

@@ -3,8 +3,8 @@
 Uploads land under RASPUTIN_DATA_DIR, never the repository or active workspace.
 The API stores the original bytes, extracted text, and a provenance manifest so
 task creation does not depend on a browser keeping a large decoded document in
-memory.  Use-once records expire automatically; saved records become artifacts
-only after they are bound to a real task.
+memory. Sent documents are retained for owner-scoped retrieval across chats.
+Pending uploads expire; legacy use-once/artifact choices remain supported.
 """
 
 import base64
@@ -22,6 +22,8 @@ import subprocess
 import time
 import zipfile
 from pathlib import Path
+from collections import Counter
+from threading import RLock
 
 from backend.core import runtime_store as store
 from backend.core.datadir import data_dir
@@ -36,7 +38,8 @@ MAX_TASK_ATTACHMENTS = int(os.environ.get("RASPUTIN_INTAKE_MAX_TASK_ATTACHMENTS"
 MAX_TASK_CONTEXT_CHARS = int(os.environ.get("RASPUTIN_INTAKE_MAX_TASK_CONTEXT_CHARS", "1000000"))
 USE_ONCE_TTL_SECONDS = int(os.environ.get("RASPUTIN_INTAKE_TTL_SECONDS", "86400"))
 UNBOUND_TTL_SECONDS = int(os.environ.get("RASPUTIN_INTAKE_UNBOUND_TTL_SECONDS", "604800"))
-RETENTIONS = {"use_once", "save_artifact"}
+RETENTIONS = {"remember", "use_once", "save_artifact"}
+_knowledge_lock = RLock()
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 BLOCKED_EXTENSIONS = {".exe", ".dll", ".com", ".bat", ".cmd", ".ps1", ".msi", ".scr"}
 _ID_RE = re.compile(r"^intake_[a-f0-9]{16}$")
@@ -81,7 +84,7 @@ def cleanup_expired(owner_id=None):
             continue
         for record_dir in owner_root.iterdir():
             record = _read_json(record_dir / "manifest.json") if record_dir.is_dir() else None
-            if record and float(record.get("expiresAt") or 0) < now:
+            if record and record.get("expiresAt") is not None and float(record["expiresAt"]) < now:
                 shutil.rmtree(record_dir, ignore_errors=True)
                 removed += 1
     return removed
@@ -223,11 +226,11 @@ def _format_segments(segments):
     return content[:MAX_EXTRACTED_CHARS], provenance, truncated
 
 
-def create(owner_id, name, content_base64, browser_mime="", declared_size=None, retention="use_once"):
+def create(owner_id, name, content_base64, browser_mime="", declared_size=None, retention="remember"):
     cleanup_expired(owner_id)
-    retention = str(retention or "use_once")
+    retention = str(retention or "remember")
     if retention not in RETENTIONS:
-        raise ValueError("retention must be use_once or save_artifact")
+        raise ValueError("retention must be remember, use_once or save_artifact")
     filename = _safe_filename(name)
     extension = Path(filename).suffix.lower()
     if extension in BLOCKED_EXTENSIONS:
@@ -267,6 +270,7 @@ def create(owner_id, name, content_base64, browser_mime="", declared_size=None, 
             reason = parser.get("reason") or "unsupported_type"
             raise ValueError(f"attachment could not be extracted: {reason.replace('_', ' ')}")
         chunks = rag._chunk_segments(segments)
+        _write_json(record_dir / "chunks.json", chunks or segments)
         content, provenance, truncated = _format_segments(chunks or segments)
         (record_dir / "extracted.txt").write_text(content, encoding="utf-8")
         now = time.time()
@@ -303,7 +307,7 @@ def _load(owner_id, intake_id):
     record = _read_json(record_dir / "manifest.json")
     if not record or record.get("ownerId") != str(owner_id or "admin"):
         raise ValueError("attachment was not found")
-    if float(record.get("expiresAt") or 0) < time.time():
+    if record.get("expiresAt") is not None and float(record["expiresAt"]) < time.time():
         shutil.rmtree(record_dir, ignore_errors=True)
         raise ValueError("attachment expired; attach it again")
     return record, record_dir
@@ -318,7 +322,7 @@ def public_record(record):
 
 def set_retention(owner_id, intake_id, retention):
     if retention not in RETENTIONS:
-        raise ValueError("retention must be use_once or save_artifact")
+        raise ValueError("retention must be remember, use_once or save_artifact")
     record, record_dir = _load(owner_id, intake_id)
     if record.get("boundTaskId"):
         raise ValueError("attachment retention cannot change after task creation")
@@ -377,7 +381,12 @@ def bind_to_task(owner_id, records, task_id):
         current, record_dir = _load(owner_id, record["id"])
         current["boundTaskId"] = task_id
         current["state"] = "bound"
-        if current.get("retention") == "save_artifact":
+        if current.get("retention") == "remember":
+            current["expiresAt"] = None
+            current["state"] = "remembered"
+            _write_json(record_dir / "manifest.json", current)
+            _remember_document(owner_id, current, record_dir)
+        elif current.get("retention") == "save_artifact":
             content = (record_dir / "extracted.txt").read_text(encoding="utf-8")
             artifact_filename = f"{Path(current['name']).stem or 'attachment'}-extracted.txt"
             with store._lock, store.connect() as conn:
@@ -390,3 +399,43 @@ def bind_to_task(owner_id, records, task_id):
             shutil.rmtree(record_dir)
         else:
             _write_json(record_dir / "manifest.json", current)
+
+
+def _knowledge_key(owner_id):
+    return "attachment_knowledge:" + str(owner_id or "admin")
+
+
+def _remember_document(owner_id, record, record_dir):
+    chunks = _read_json(record_dir / "chunks.json") or []
+    source = f"attachment:{record['name']}:{record['id']}"
+    indexed = []
+    for number, chunk in enumerate(chunks):
+        text = str(chunk.get("text") or "")
+        terms = Counter(rag.query_terms(text))
+        if not terms:
+            continue
+        indexed.append({
+            **chunk, "source": source, "path": record["name"],
+            "attachment_id": record["id"], "task_id": record["boundTaskId"],
+            "chunk": number, "parser": record["parser"],
+            "terms": dict(terms), "term_count": sum(terms.values()),
+            "vector": rag._embed(text), "mtime": record["createdAt"],
+        })
+    with _knowledge_lock:
+        index = store.get_kv(_knowledge_key(owner_id), {"chunks": []})
+        kept = [c for c in index.get("chunks", []) if c.get("attachment_id") != record["id"]]
+        store.set_kv(_knowledge_key(owner_id), {"chunks": kept + indexed})
+
+
+def search_documents(owner_id, query, limit=6, task_id=None):
+    """Recall only this owner's sent documents, regardless of chat/workspace."""
+    index = store.get_kv(_knowledge_key(owner_id), {"chunks": []})
+    chunks = index.get("chunks", [])
+    attached = [c for c in chunks if task_id and c.get("task_id") == task_id]
+    result = rag.search_chunks(query, attached or chunks, limit)
+    result["hits"] = [h for h in result["hits"] if h["lexical_score"] > 0 or h["path_score"] > 0]
+    if attached and not result["hits"]:
+        result = rag.search_chunks(" ".join(c["path"] for c in attached), attached, limit)
+    for hit in result["hits"]:
+        hit["document_attachment"] = True
+    return result

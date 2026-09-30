@@ -39,7 +39,6 @@ import { useReliableAction } from "../../lib/actionRegistry.js";
 import {
   deleteAttachment,
   readableAttachmentSize,
-  updateAttachmentRetention,
   uploadAttachment,
 } from "../../lib/fileExtraction.js";
 import { Avatar } from "../../components/Avatar.jsx";
@@ -633,23 +632,11 @@ export function HomeView(props) {
         status: failures.length ? 'failed' : 'success',
         message: failures.length
           ? `Attached ${newAttachments.length}; ${failures.join(" ")}`
-          : `Attached ${newAttachments.length} file(s) with provenance`,
+          : `Attached ${newAttachments.length} file(s). Documents are remembered when sent.`,
       });
       setTimeout(() => setUiState({ status: 'idle', message: '' }), 3000);
     } else {
       setUiState({ status: 'failed', message: failures.join(" ") || 'Failed to extract any supported file content.' });
-    }
-  };
-
-  const changeAttachmentRetention = async (index, retention) => {
-    const attachment = attachments[index];
-    if (!attachment) return;
-    try {
-      const updated = await updateAttachmentRetention(attachment.id, retention);
-      setAttachments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...updated } : item));
-      setUiState({ status: "success", message: retention === "save_artifact" ? `${attachment.name} will be saved as an artifact.` : `${attachment.name} will expire after this task.` });
-    } catch (error) {
-      setUiState({ status: "failed", message: error.message });
     }
   };
 
@@ -835,21 +822,8 @@ export function HomeView(props) {
                       <FileText size={14} color="var(--ras-primary)" />
                       <span className="attachment-chip-detail">
                         <span className="attachment-chip-name">{att.name}</span>
-                        <small>{readableAttachmentSize(att.sizeBytes)} · {att.parser === "image_metadata" ? "image metadata" : att.parser} · {att.provenance?.length || 1} source chunk{att.provenance?.length === 1 ? "" : "s"}</small>
+                        <small>{readableAttachmentSize(att.sizeBytes)}{att.truncated ? " · Partial text extracted" : att.parser === "image_metadata" ? " · Image details only" : " · Ready to send"}</small>
                       </span>
-                      <label className="attachment-retention">
-                        <span className="visually-hidden">Retention for {att.name}</span>
-                        <select
-                          data-testid="attachment-retention"
-                          value={att.retention}
-                          onChange={(event) => changeAttachmentRetention(idx, event.target.value)}
-                          aria-label={`Retention for ${att.name}`}
-                        >
-                          <option value="use_once">Use once</option>
-                          <option value="save_artifact">Save as artifact</option>
-                          <option value="workspace_knowledge" disabled>Add to knowledge (next)</option>
-                        </select>
-                      </label>
                       <button type="button" aria-label={`Remove ${att.name}`} onClick={() => removeAttachment(idx)}>
                         <X size={12} />
                       </button>

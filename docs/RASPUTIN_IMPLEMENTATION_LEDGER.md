@@ -16,6 +16,31 @@ replace the detailed checklist or readiness report.
 
 ## Current evidence
 
+### Sent documents and retrieval across chats (2026-09-30)
+
+Sent attachments now default to `remember`: intake keeps the original file,
+parsed chunks, and an owner-specific SQLite search index after task binding.
+Pending uploads still expire and are not searchable. The composer shows the
+filename, size, extraction status, and remove button, without retention choices.
+Document evidence is retrieved for standard, lightweight, and minimal Chat;
+minimal inference retains its short question prompt and the untrusted-content
+policy whenever remembered document evidence is included. Current attachments
+take precedence over older documents; cross-chat recall is independent of the
+active workspace. XLSX citations retain sheet and row provenance.
+
+Verification: attachment regressions cover persistence, pending-upload exclusion,
+owner isolation, current-file precedence, XLSX provenance, lightweight Chat, and
+the actual minimal provider prompt. Authenticated source UI checks uploaded the
+Cedar Vale XLSX, sent its account-owner question, and recalled KB-014 in a new
+chat. Layout checks at 1440, 1024, and 390 pixels found no attachment/composer
+overlap or horizontal overflow. A packaged-backend restart against the same
+isolated store recalled the previously sent workbook without another upload.
+These live responses used a deterministic local model fixture to verify prompt
+delivery, not real-model answer quality. Installed Desktop has not been updated
+or verified by these checks. Existing expired use-once uploads cannot be restored
+by this change. The unrelated model-catalog smoke failure (7 models versus 1)
+also reproduces at the unchanged parent commit.
+
 | Area | Status | Evidence | Remaining boundary |
 | --- | --- | --- | --- |
 | Hardware/runtime capability profile | IMPLEMENTED / VERIFIED | `backend/warsat/capabilities.py` normalizes host, CPU, GPU static identity, volatile capacity, backend evidence, and conservative placement defaults; `GET /api/warsat/hardware` exposes the versioned profile while preserving the legacy detection payload; regression coverage is in `tests/testHardwareCapabilities.py`. | Runtime/model compatibility probes, measured memory envelopes, and broker leases are the next slices; an observed backend is not yet a launch certificate. |

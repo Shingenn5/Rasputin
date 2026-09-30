@@ -626,12 +626,16 @@ def _path_score(query, q_terms, chunk):
 
 def search(query, limit=6, path=None):
     index = _load()
+    return search_chunks(query, _filter_chunks(index["chunks"], path), limit)
+
+
+def search_chunks(query, chunks, limit=6):
+    """Rank an already visibility-filtered collection with normal RAG scoring."""
     q_terms = Counter(_tokenize(query))
     q_vec = _embed(query)
     if not q_terms:
         return {"query": query, "hits": []}
 
-    chunks = _filter_chunks(index["chunks"], path)
     doc_freq = Counter()
     for chunk in chunks:
         for term in chunk.get("terms", {}):

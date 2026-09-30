@@ -56,6 +56,7 @@ from backend.core import audit as audit
 from backend.mcp import tools as tool_relay
 from backend.core import workspace
 from backend.core import task_worktree
+from backend.core import intake
 
 TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
@@ -1800,9 +1801,10 @@ class AgentHub:
         minimal_inference = phase == "chat" and model_compatibility.default_profile(model) == "minimal"
         if minimal_inference:
             # A reachable model that failed richer certification still gets a
-            # useful escape hatch. No retrieved/untrusted data is present in
-            # this profile, so wrap only the operator's text in a short direct-
-            # answer instruction. Buffer until exposed thinking is cleaned.
+            # useful escape hatch. Keep only the question and explicitly
+            # retrieved document evidence; avoid broad workspace context.
+            # Buffer until exposed thinking is cleaned.
+            document_sections = [item for item in sections if item["key"] == "rag_sources" and item.get("required")]
             minimal_prompt = (
                 "Answer the question directly. Output only the final answer. "
                 "Do not show analysis, planning, brainstorming, or hidden reasoning.\n\n"
@@ -1821,8 +1823,13 @@ class AgentHub:
             sections = [context_governor.section(
                 "current_user_message", "", minimal_prompt, required=True, priority=0,
             )]
-            task.seen("minimal_inference", {"model": model_key, "retrievalSkipped": True, "toolsAttached": False})
-            task.log("minimal inference fallback selected; sending a direct-answer prompt without injected context")
+            if document_sections:
+                sections.append(context_governor.section(
+                    "untrusted_content_policy", "Data-handling policy", prompt_security.UNTRUSTED_CONTEXT_POLICY, required=True, priority=0,
+                ))
+                sections.extend(document_sections)
+            task.seen("minimal_inference", {"model": model_key, "retrievalSkipped": not bool(document_sections), "toolsAttached": False})
+            task.log("minimal inference fallback selected; sending the question and available document evidence")
             tools = None
         else:
             # Prepended here (not by each phase's own section list) so the
@@ -2145,6 +2152,8 @@ class AgentHub:
         )
         if light_context:
             context = {"hits": []}
+            if security.load().get("allow_file_read", False):
+                context = await asyncio.to_thread(intake.search_documents, owner_id, task.objective, 3, task.id)
             graph = {"edges": []}
             workspace_context = {"tree": None, "searches": [], "snippets": []}
             task.seen("adaptive_context", {
@@ -2167,6 +2176,7 @@ class AgentHub:
             task.log(f"rag hits: {len(task.sources)}")
         if task.graph:
             task.log(f"graph hits: {len(task.graph)}")
+        has_document_evidence = any(hit.get("document_attachment") for hit in context.get("hits", []))
         memory_sections = []
         if recall is not None:
             memory_sections.append(context_governor.section(
@@ -2190,7 +2200,7 @@ class AgentHub:
             context_governor.section("previous_conversation", "Previous conversation", self.format_conversation(previous_messages, task.id), priority=10, min_chars=220),
             context_governor.section("workspace", "Workspace", "" if light_context else task.workspace, required=not light_context, priority=0),
             *memory_sections,
-            context_governor.section("rag_sources", "Actual local RAG context", "" if light_context else self.format_context(context), priority=25, min_chars=240),
+            context_governor.section("rag_sources", "Actual local RAG context", self.format_context(context) if not light_context or context.get("hits") else "", required=has_document_evidence, priority=5 if has_document_evidence else 25, min_chars=700 if has_document_evidence else 240),
             context_governor.section("graph_evidence", "Actual local graph context", "" if light_context else self.format_graph(graph), priority=30, min_chars=180),
             context_governor.section("file_snippets", "Approved workspace file snippets", "" if light_context else self.format_workspace_snippets(workspace_context), priority=35, min_chars=260),
             context_governor.section("workspace_tree", "Approved workspace file listing", "" if light_context else self.format_workspace_tree(workspace_context), priority=70, min_chars=180),
@@ -2653,7 +2663,8 @@ class AgentHub:
         lines = []
         for h in hits[:max_items]:
             passage = rag.excerpt(h["text"], context.get("query", ""), max_chars)
-            lines.append(f"[{h['source']}#{h['chunk']} score={h['score']}]\n{passage}")
+            location = f" sheet={h['sheet_name']} rows={h.get('row_start')}-{h.get('row_end')}" if h.get("sheet_name") else ""
+            lines.append(f"[{h['source']}#{h['chunk']}{location} score={h['score']}]\n{passage}")
         return prompt_security.untrusted_context_message("local RAG search results", "\n\n".join(lines))
 
     def format_graph(self, graph):

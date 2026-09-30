@@ -14,7 +14,7 @@ function fileAsBase64(file) {
   });
 }
 
-export async function uploadAttachment(file, retention = "use_once") {
+export async function uploadAttachment(file) {
   if (!file) throw new Error("Choose a file to attach.");
   if (file.size > CLIENT_MAX_BYTES) {
     throw new Error(`${file.name} exceeds the 12 MB attachment limit.`);
@@ -25,7 +25,7 @@ export async function uploadAttachment(file, retention = "use_once") {
     mimeType: file.type || "application/octet-stream",
     sizeBytes: file.size,
     contentBase64,
-    retention,
+    retention: "remember",
   });
 }
 

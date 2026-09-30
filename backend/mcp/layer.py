@@ -629,7 +629,12 @@ class McpLayer:
     async def rag_search(self, query, limit=6, workspace_path=None, _task_id=None, _tool_call_id=None):
         if not security.load().get("allow_file_read", False):
             return {"query": query, "hits": [], "blocked": True}
-        return await asyncio.to_thread(rag.search, query, limit, workspace_path or workspace.get_active()["active_path"])
+        from backend.core import intake
+        owner_id, _ = self._task_memory_context(_task_id)
+        documents = await asyncio.to_thread(intake.search_documents, owner_id, query, limit, _task_id)
+        context = await asyncio.to_thread(rag.search, query, limit, workspace_path or workspace.get_active()["active_path"])
+        context["hits"] = (documents["hits"] + context["hits"])[:max(1, min(int(limit), 20))]
+        return context
 
     async def graph_search(self, query, limit=12, _task_id=None, _tool_call_id=None):
         if not security.load().get("allow_file_read", False):
