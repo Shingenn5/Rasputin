@@ -25,6 +25,7 @@ DATA_DIR = data_dir()
 REGISTRY_FILE = DATA_DIR / "mcp_relays.json"
 _lock = Lock()
 _processes = {}
+_http_transports = {}
 _request_ids = {}
 _PROTOCOL_VERSION = "2025-06-18"
 _SAFE_RISKS = {"guarded", "approval_required"}
@@ -52,9 +53,54 @@ class _Transport:
 class _HttpTransport(_Transport):
     def __init__(self, server):
         self.server = server
+        self.lock = asyncio.Lock()
+        self.started_at = time.time()
+        self.capabilities = {}
+        self.session_id = None
+        self.protocol_version = _PROTOCOL_VERSION
+        self.initialized = False
+
+    async def _initialize_locked(self):
+        result = await asyncio.to_thread(_http_request, self.server, "initialize", {
+            "protocolVersion": _PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "Rasputin", "version": "0.2.1"},
+        }, 12, self)
+        version = result.get("protocolVersion") or _PROTOCOL_VERSION
+        if version not in {"2024-11-05", "2025-03-26", _PROTOCOL_VERSION}:
+            raise AppError("mcp_protocol_version", "MCP server negotiated an unsupported protocol version.", 502)
+        self.protocol_version = version
+        self.capabilities = result.get("capabilities") or {}
+        await asyncio.to_thread(_http_request, self.server, "notifications/initialized", {}, 12, self, True)
+        self.initialized = True
+        self.started_at = time.time()
+
+    async def initialize(self):
+        async with self.lock:
+            if not self.initialized:
+                await self._initialize_locked()
 
     async def request(self, method, params, timeout):
-        return await asyncio.to_thread(_http_request, self.server, method, params, timeout)
+        async with self.lock:
+            if not self.initialized:
+                await self._initialize_locked()
+            try:
+                return await asyncio.to_thread(_http_request, self.server, method, params, timeout, self)
+            except AppError as exc:
+                if exc.code != "mcp_session_expired":
+                    raise
+                # A 404 for an assigned session requires a fresh handshake.
+                self.session_id = None
+                self.initialized = False
+                await self._initialize_locked()
+                return await asyncio.to_thread(_http_request, self.server, method, params, timeout, self)
+
+    async def close(self):
+        async with self.lock:
+            if self.session_id:
+                await asyncio.to_thread(_http_close, self)
+            self.initialized = False
+            self.session_id = None
 
 
 def _secret_value(ref):
@@ -62,25 +108,99 @@ def _secret_value(ref):
     return os.environ.get(text[5:], "") if text.startswith("$ENV:") else ""
 
 
-def _http_request(server, method, params, timeout):
-    target = str(server.get("network_target") or "").strip()
-    if not target.startswith(("http://", "https://")):
-        raise AppError("mcp_network_target_required", "A Streamable HTTP MCP server requires an http(s) network target.", 400)
-    request_id = _request_ids.get(server.get("id"), 0) + 1
-    _request_ids[server.get("id")] = request_id
+def _http_headers(server, state=None):
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
     for key, ref in (server.get("secret_refs") or {}).items():
         value = _secret_value(ref)
         if value:
             headers[str(key)] = value
-    payload = json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}).encode()
+    if state:
+        headers["MCP-Protocol-Version"] = state.protocol_version
+        if state.session_id:
+            headers["Mcp-Session-Id"] = state.session_id
+    return headers
+
+
+def _http_close(state):
+    request = urllib.request.Request(state.server["network_target"], headers=_http_headers(state.server, state), method="DELETE")
+    try:
+        with urllib.request.urlopen(request, timeout=3):
+            pass
+    except (OSError, urllib.error.HTTPError):
+        # Servers may not support explicit termination or may already be gone.
+        pass
+
+
+def _http_result(message, request_id, method):
+    if not isinstance(message, dict):
+        raise AppError("mcp_bad_schema", "MCP HTTP response was not a JSON-RPC object.", 502)
+    if message.get("id") != request_id:
+        return None
+    if message.get("error"):
+        error = message["error"]
+        detail = error.get("message") if isinstance(error, dict) else str(error)
+        raise AppError("mcp_protocol_error", detail or "MCP request failed.", 502)
+    result = message.get("result")
+    if not isinstance(result, dict):
+        raise AppError("mcp_bad_schema", f"MCP method {method} returned a non-object result.", 502)
+    return result
+
+
+def _http_request(server, method, params, timeout, state=None, notification=False):
+    target = str(server.get("network_target") or "").strip()
+    if not target.startswith(("http://", "https://")):
+        raise AppError("mcp_network_target_required", "A Streamable HTTP MCP server requires an http(s) network target.", 400)
+    request_id = _request_ids.get(server.get("id"), 0) + 1
+    if not notification:
+        _request_ids[server.get("id")] = request_id
+    headers = _http_headers(server, state)
+    if method == "initialize":
+        headers.pop("Mcp-Session-Id", None)
+    message = {"jsonrpc": "2.0", "method": method, "params": params or {}}
+    if not notification:
+        message["id"] = request_id
+    payload = json.dumps(message).encode()
     try:
         with urllib.request.urlopen(urllib.request.Request(target, data=payload, headers=headers, method="POST"), timeout=timeout) as response:
+            if notification:
+                if response.status != 202:
+                    raise AppError("mcp_bad_schema", "MCP notification was not accepted with HTTP 202.", 502)
+                return {}
+            if method == "initialize" and state:
+                session_id = response.headers.get("Mcp-Session-Id")
+                if session_id and any(ord(char) < 0x21 or ord(char) > 0x7E for char in session_id):
+                    raise AppError("mcp_bad_schema", "MCP server returned an invalid session ID.", 502)
+                state.session_id = session_id
+            if response.headers.get_content_type() == "text/event-stream":
+                # Read events until our response arrives, rather than waiting
+                # for EOF on a stream the server is allowed to keep open.
+                total, lines = 0, []
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    raw = response.readline(_MAX_OUTPUT + 1 - total)
+                    total += len(raw)
+                    if total > _MAX_OUTPUT:
+                        raise AppError("mcp_output_limit", "MCP HTTP response exceeded the output limit.", 502)
+                    if not raw:
+                        break
+                    line = raw.decode("utf-8").rstrip("\r\n")
+                    if line.startswith("data:"):
+                        lines.append(line[5:].removeprefix(" "))
+                    elif not line and lines:
+                        result = _http_result(json.loads("\n".join(lines)), request_id, method)
+                        lines = []
+                        if result is not None:
+                            return result
+                raise AppError("mcp_request_timeout", f"MCP stream ended without a response: {method}", 504)
             body = response.read(_MAX_OUTPUT + 1)
     except urllib.error.HTTPError as exc:
+        if exc.code == 404 and state and state.session_id and method != "initialize":
+            raise AppError("mcp_session_expired", "MCP HTTP session expired.", 502) from exc
         raise AppError("mcp_http_error", f"MCP HTTP request failed with status {exc.code}.", 502) from exc
     except TimeoutError as exc:
         raise AppError("mcp_request_timeout", f"MCP request timed out: {method}", 504) from exc
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise AppError("mcp_bad_schema", "MCP Streamable HTTP response was not valid JSON.", 502) from exc
     except OSError as exc:
         raise AppError("mcp_http_unreachable", f"MCP HTTP server could not be reached: {exc}", 502) from exc
     if len(body) > _MAX_OUTPUT:
@@ -89,12 +209,9 @@ def _http_request(server, method, params, timeout):
         message = json.loads(body.decode("utf-8"))
     except Exception as exc:
         raise AppError("mcp_bad_schema", "MCP Streamable HTTP response was not JSON.", 502) from exc
-    if message.get("error"):
-        error = message.get("error") or {}
-        raise AppError("mcp_protocol_error", error.get("message") or str(error), 502)
-    result = message.get("result") or {}
-    if not isinstance(result, dict):
-        raise AppError("mcp_bad_schema", f"MCP method {method} returned a non-object result.", 502)
+    result = _http_result(message, request_id, method)
+    if result is None:
+        raise AppError("mcp_bad_schema", "MCP HTTP response ID did not match its request.", 502)
     return result
 
 
@@ -486,15 +603,7 @@ def set_enabled(server_id, enabled):
 async def start(server_id, approval_id=None):
     data = _load()
     server = _find(data, server_id)
-    if server.get("transport") in {"internal", "streamable_http"}:
-        if server.get("transport") == "streamable_http" and not server.get("command_approved"):
-            raise AppError("mcp_approval_required", "Approve the MCP server registration before starting it.", 403)
-        if server.get("transport") == "streamable_http":
-            server["enabled"] = True
-            server["status"] = "running"
-            server["health"] = "running"
-            server["last_started_at"] = time.time()
-            _replace_server(server)
+    if server.get("transport") == "internal":
         return _public(server)
     if not server.get("command_approved"):
         target_approval = approval_id or server.get("pending_approval_id")
@@ -505,13 +614,6 @@ async def start(server_id, approval_id=None):
     server["enabled"] = True
     try:
         state = await _ensure_started(server)
-        if server.get("transport") == "streamable_http" and not server.get("capabilities"):
-            init = await _request(server_id, "initialize", {
-                "protocolVersion": _PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "clientInfo": {"name": "Rasputin", "version": "0.2.0"},
-            }, timeout=12)
-            server["capabilities"] = init.get("capabilities") or {}
         server["status"] = "running"
         server["health"] = "running"
         server["last_error"] = ""
@@ -533,6 +635,9 @@ async def start(server_id, approval_id=None):
 
 
 async def stop(server_id):
+    transport = _http_transports.pop(server_id, None)
+    if transport:
+        await transport.close()
     state = _processes.pop(server_id, None)
     live_logs = list(state.logs) if state else []
     if state:
@@ -578,15 +683,7 @@ async def discover(server_id):
         return {"server": _public(server), "tools": [], "resources": [], "prompts": [], "message": "Relay server is disabled until registration is approved and started."}
     try:
         state = await _ensure_started(server)
-        if server.get("transport") == "streamable_http" and not server.get("capabilities"):
-            init = await _request(server_id, "initialize", {
-                "protocolVersion": _PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "clientInfo": {"name": "Rasputin", "version": "0.2.0"},
-            }, timeout=12)
-            server["capabilities"] = init.get("capabilities") or {}
-        else:
-            server["capabilities"] = state.capabilities or server.get("capabilities") or {}
+        server["capabilities"] = state.capabilities or {}
         response = await _request(server_id, "tools/list", {})
         raw_tools = response.get("tools") or []
         if not isinstance(raw_tools, list):
@@ -919,6 +1016,9 @@ def _replace_server(server):
 
 
 def _is_running(server_id):
+    transport = _http_transports.get(server_id)
+    if transport:
+        return transport.initialized
     state = _processes.get(server_id)
     return bool(state and state.process.returncode is None)
 
@@ -926,7 +1026,12 @@ def _is_running(server_id):
 async def _ensure_started(server):
     server_id = server.get("id")
     if server.get("transport") == "streamable_http":
-        return _HttpTransport(server)
+        state = _http_transports.get(server_id)
+        if state is None:
+            state = _HttpTransport(server)
+            _http_transports[server_id] = state
+        await state.initialize()
+        return state
     if _is_running(server_id):
         return _processes[server_id]
     command = server.get("command")
@@ -981,7 +1086,8 @@ async def _initialize(server_id):
 async def _request(server_id, method, params=None, timeout=20):
     server = _find(_load(), server_id)
     if server.get("transport") == "streamable_http":
-        return await _HttpTransport(server).request(method, params, timeout)
+        state = await _ensure_started(server)
+        return await state.request(method, params, timeout)
     state = _processes.get(server_id)
     if not state or state.process.returncode is not None:
         raise AppError("mcp_server_not_running", "MCP server is not running.", 400)

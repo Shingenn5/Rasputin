@@ -48,6 +48,7 @@ async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"
 from backend.engine import context as context_governor
 from backend.engine import prompt_security
 from backend.rag import memory as memory
+from backend.rag import vector as rag
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
 from backend.core import security as security
@@ -2651,7 +2652,8 @@ class AgentHub:
             return "No local matches."
         lines = []
         for h in hits[:max_items]:
-            lines.append(f"[{h['source']}#{h['chunk']} score={h['score']}]\n{h['text'][:max_chars]}")
+            passage = rag.excerpt(h["text"], context.get("query", ""), max_chars)
+            lines.append(f"[{h['source']}#{h['chunk']} score={h['score']}]\n{passage}")
         return prompt_security.untrusted_context_message("local RAG search results", "\n\n".join(lines))
 
     def format_graph(self, graph):

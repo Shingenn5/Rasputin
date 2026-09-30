@@ -31,8 +31,10 @@ VECTOR_DIMS = 384
 MAX_TEXT_BYTES = 1_500_000
 MAX_DOCUMENT_BYTES = 12_000_000
 MAX_XLSX_ROWS_PER_SHEET = 5000
+CHUNKING_VERSION = 2
 
 _lock = Lock()
+_ingest_lock = Lock()
 
 
 def _blank():
@@ -113,8 +115,30 @@ def query_terms(text):
     return _tokenize(text)
 
 
+def excerpt(text, query, max_chars=450):
+    """Keep the matching passage when model context cannot fit a full chunk."""
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    terms = set(_tokenize(query)) - {"the", "this", "that", "what", "which", "where", "when", "with", "from", "have", "does", "about"}
+    terms = {term for term in terms if len(term) > 2}
+    matches = list(re.finditer(r"[a-zA-Z0-9_./-]{2,}", text.lower()))
+    positions = [match.start() for match in matches if match.group().strip("./-") in terms]
+    if not positions:
+        return text[:max_chars]
+    # Favor the window containing the most distinct relevant words, rather
+    # than a repeated filler word early in a long paragraph.
+    starts = {max(0, min(position - max_chars // 3, len(text) - max_chars)) for position in positions}
+    def score(start):
+        return len({match.group().strip("./-") for match in matches
+                    if start <= match.start() < start + max_chars and match.group().strip("./-") in terms})
+    start = max(sorted(starts), key=score)
+    return text[start:start + max_chars]
+
+
 def _tokenize(text):
-    return [t for t in re.findall(r"[a-zA-Z0-9_./-]{2,}", str(text or "").lower()) if len(t) < 60]
+    terms = (term.strip("./-") for term in re.findall(r"[a-zA-Z0-9_./-]{2,}", str(text or "").lower()))
+    return [term for term in terms if 2 <= len(term) < 60]
 
 
 def _hash_dim(term):
@@ -293,20 +317,27 @@ def _chunk_lines(text, lines_per_chunk=80, overlap=12, base_line=1, extra=None, 
     lines = str(text or "").splitlines()
     if not lines:
         return []
+    # Long PDF/DOCX paragraphs often occupy one logical line. Split them
+    # before grouping so the bounded chunk text never discards their tail.
+    spans = []
+    for index, line in enumerate(lines):
+        number = line_numbers[index] if line_numbers and index < len(line_numbers) else base_line + index
+        for offset in range(0, max(1, len(line)), 3800):
+            spans.append((number, line[offset:offset + 4000]))
     chunks = []
-    step = max(1, lines_per_chunk - overlap)
-    for start in range(0, len(lines), step):
-        part = lines[start:start + lines_per_chunk]
-        if not part:
-            break
-        joined = "\n".join(part).strip()
+    start = 0
+    while start < len(spans):
+        end, size = start, 0
+        while end < len(spans) and end - start < lines_per_chunk:
+            added = len(spans[end][1]) + (1 if end > start else 0)
+            if end > start and size + added > 5000:
+                break
+            size += added
+            end += 1
+        part = spans[start:end]
+        joined = "\n".join(value for _, value in part).strip()
         if joined:
-            if line_numbers and start < len(line_numbers):
-                line_start = line_numbers[start]
-                line_end = line_numbers[min(start + len(part) - 1, len(line_numbers) - 1)]
-            else:
-                line_start = base_line + start
-                line_end = base_line + start + len(part) - 1
+            line_start, line_end = part[0][0], part[-1][0]
             chunk = {
                 "text": joined,
                 "line_start": line_start,
@@ -317,8 +348,9 @@ def _chunk_lines(text, lines_per_chunk=80, overlap=12, base_line=1, extra=None, 
                 chunk["row_start"] = line_start
                 chunk["row_end"] = line_end
             chunks.append(chunk)
-        if start + lines_per_chunk >= len(lines):
+        if end >= len(spans):
             break
+        start = max(start + 1, end - overlap)
     return chunks
 
 
@@ -379,6 +411,13 @@ def _source(file_path, item, root):
 
 
 def ingest(path=".", label=None):
+    # API requests and Graphify can index simultaneously on worker threads.
+    # Keep the snapshot, merge, save, and stats update in one transaction.
+    with _ingest_lock:
+        return _ingest(path, label)
+
+
+def _ingest(path=".", label=None):
     target, item, root = _scope(path)
     index = _load()
     files = _walk(target)
@@ -402,17 +441,25 @@ def ingest(path=".", label=None):
             # files, or any other app's temp/lock files) -- skip it rather
             # than aborting the whole ingest over one vanished file.
             skipped.append({"path": rel, "reason": "vanished_during_scan", "parser": "unknown"})
+            seen_sources.discard(source)
             continue
         existing_doc = existing.get(source)
-        if existing_doc and existing_doc.get("mtime") == stat.st_mtime and existing_doc.get("bytes") == stat.st_size:
+        if (existing_doc and existing_doc.get("mtime") == stat.st_mtime
+                and existing_doc.get("bytes") == stat.st_size
+                and existing_doc.get("chunking_version") == CHUNKING_VERSION):
             unchanged.append(source)
             continue
         try:
             segments, parser = _read_document(file_path)
         except OSError:
             skipped.append({"path": rel, "reason": "vanished_during_scan", "parser": "unknown"})
+            seen_sources.discard(source)
             continue
         if not segments:
+            # The file changed but is now empty/unreadable/unsupported. Its
+            # former contents must not remain available as current evidence.
+            if existing_doc:
+                touched.append(source)
             skipped.append({"path": rel, "reason": parser.get("reason"), "parser": parser.get("parser")})
             continue
         touched.append(source)
@@ -427,13 +474,14 @@ def ingest(path=".", label=None):
             "mtime": stat.st_mtime,
             "bytes": stat.st_size,
             "content_hash": content_hash,
+            "chunking_version": CHUNKING_VERSION,
             "parser": parser.get("parser"),
             "parser_status": parser.get("reason") or "ok",
             "citation_kind": parser.get("citation_kind") or "line",
         }
         docs.append(doc)
         for n, chunk in enumerate(_chunk_segments(segments)):
-            chunk_text = chunk.get("text", "")[:5000]
+            chunk_text = chunk.get("text", "")
             terms = Counter(_tokenize(chunk_text))
             if not terms:
                 continue
@@ -651,5 +699,6 @@ def chunks_for_path(path=None):
 
 
 def reset():
-    _save(_blank())
-    return stats()
+    with _ingest_lock:
+        _save(_blank())
+        return stats()

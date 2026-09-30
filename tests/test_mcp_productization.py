@@ -27,6 +27,10 @@ class _McpHttpHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         method = body.get("method")
+        if method == "notifications/initialized":
+            self.send_response(202)
+            self.end_headers()
+            return
         if method == "initialize":
             result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}}
         elif method == "tools/list":
