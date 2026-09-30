@@ -1450,7 +1450,7 @@ export function App() {
     const approved = await postJson("/api/workspace/approve", {
       path,
       name: displayWorkspaceName(path),
-      readOnly: true,
+      readOnly: false,
     });
     const active = await postJson("/api/workspace/select", { path: approved.id || path });
     setWorkspace(active);

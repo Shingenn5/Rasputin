@@ -16,6 +16,26 @@ replace the detailed checklist or readiness report.
 
 ## Current evidence
 
+### Project folders are editable by default (2026-09-30)
+
+Opening, adding, or approving a project folder now grants read and edit access
+inside that folder by default. The Projects picker keeps read-only as an optional
+choice under Folder access and resets to read and edit for the next project.
+Explicit read-only choices still block writes. This changes folder permissions;
+global file-write controls, workspace membership, write approvals, and Native
+Desktop's Host Shell boundary remain enforced. Existing stored permissions are
+preserved by the application; an operator can explicitly grant editing to
+previously added projects through the existing approval endpoint.
+
+Verification: 5 focused backend checks cover actual approved file writes, all
+folder-opening endpoints, explicit read-only enforcement, approval preservation,
+and denial of a member opening an unapproved project. The full backend suite
+passed 168 of 169 checks; the remaining model-catalog count failure is the
+previously reproduced unrelated failure. The frontend build and documentation
+validation passed. Authenticated source and packaged UI checks at 1440, 1024,
+and 390 pixels confirmed default editing, keyboard read-only selection, and
+resetting the next folder to editable.
+
 ### Sent documents and retrieval across chats (2026-09-30)
 
 Sent attachments now default to `remember`: intake keeps the original file,
@@ -35,10 +55,12 @@ Cedar Vale XLSX, sent its account-owner question, and recalled KB-014 in a new
 chat. Layout checks at 1440, 1024, and 390 pixels found no attachment/composer
 overlap or horizontal overflow. A packaged-backend restart against the same
 isolated store recalled the previously sent workbook without another upload.
-These live responses used a deterministic local model fixture to verify prompt
-delivery, not real-model answer quality. Installed Desktop has not been updated
-or verified by these checks. Existing expired use-once uploads cannot be restored
-by this change. The unrelated model-catalog smoke failure (7 models versus 1)
+The isolated responses used a deterministic local fixture. Installed Desktop
+was subsequently updated with this bundle and tested with real local Qwen3 1.7B:
+the initial workbook chat and a separate chat without reupload both answered
+Maya Chen. The first answer invented a row number, so exact cell citations
+remain unreliable. Previously expired use-once uploads cannot be restored by
+this change. The unrelated model-catalog smoke failure (7 models versus 1)
 also reproduces at the unchanged parent commit.
 
 | Area | Status | Evidence | Remaining boundary |

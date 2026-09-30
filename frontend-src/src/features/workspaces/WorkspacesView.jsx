@@ -85,7 +85,7 @@ export function WorkspacesView({
   // Safe Folder Management State (Streamlined Modal)
   const [showAddModal, setShowAddModal] = useState(false);
   const [mountHostPath, setMountHostPath] = useState("");
-  const [mountReadOnly, setMountReadOnly] = useState(true);
+  const [mountReadOnly, setMountReadOnly] = useState(false);
   const [mountStatus, setMountStatus] = useState("");
   const [isMounting, setIsMounting] = useState(false);
   const [mountSuccess, setMountSuccess] = useState(false);
@@ -323,7 +323,7 @@ export function WorkspacesView({
   const resetMountModal = () => {
     setShowAddModal(false);
     setMountHostPath("");
-    setMountReadOnly(true);
+    setMountReadOnly(false);
     setMountStatus("");
     setMountSuccess(false);
     setMountWorkflowStep("saved");
@@ -1122,7 +1122,7 @@ export function WorkspacesView({
                 <p>
                   {native
                     ? "Browse this machine. The folder shown as Current folder is the one that will be added."
-                    : "Browse the host machine. Rasputin will create a read-only Docker mount unless you choose edit access."}
+                    : "Browse the host machine. Rasputin will create a mount using the selected folder access."}
                 </p>
               </div>
 
@@ -1233,24 +1233,26 @@ export function WorkspacesView({
                 </section>
               </div>
 
-              <div className="folder-picker-access-heading">
-                <div><span className="folder-picker-step">2</span><strong>Choose access</strong></div>
-                <span>You can change this later.</span>
-              </div>
+              <details>
+              <summary className="folder-picker-access-heading">
+                <strong>Folder access: {mountReadOnly ? "Read only" : "Read and edit"}</strong>
+                <span>Change access</span>
+              </summary>
               <div className="folder-picker-access" role="radiogroup" aria-label="Folder access">
                 <label className={mountReadOnly ? "is-selected" : ""}>
                   <input type="radio" name="accessMode" checked={mountReadOnly} onChange={() => setMountReadOnly(true)} />
                   <span className="folder-access-icon"><Eye size={19} /></span>
-                  <span><strong>Read and analyze <em>Recommended</em></strong><small>Agents can inspect and discuss files but cannot change them.</small></span>
+                  <span><strong>Read and analyze</strong><small>Agents can inspect and discuss files but cannot change them.</small></span>
                   <span className="folder-access-check"><Check size={14} /></span>
                 </label>
                 <label className={!mountReadOnly ? "is-selected" : ""}>
                   <input type="radio" name="accessMode" checked={!mountReadOnly} onChange={() => setMountReadOnly(false)} />
                   <span className="folder-access-icon"><ShieldPlus size={19} /></span>
-                  <span><strong>Read and edit</strong><small>Agents can create and modify files inside this folder.</small></span>
+                  <span><strong>Read and edit <em>Default</em></strong><small>Agents can create and modify files inside this folder.</small></span>
                   <span className="folder-access-check"><Check size={14} /></span>
                 </label>
               </div>
+              </details>
 
               {mountStatus && <div className="folder-picker-error" role="alert"><AlertTriangle size={16} /> {mountStatus}</div>}
 
@@ -1263,7 +1265,7 @@ export function WorkspacesView({
 
               <div className="folder-picker-review">
                 <div className="folder-picker-review-copy">
-                  <span className="folder-picker-step">3</span>
+                  <span className="folder-picker-step">2</span>
                   <span>
                     <small>{native ? "AVAILABLE IMMEDIATELY" : "RESTART REQUIRED AFTER MOUNT"}</small>
                     <strong>{mountHostPath ? displayWorkspaceName(mountHostPath) : "Select a folder to continue"}</strong>

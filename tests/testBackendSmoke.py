@@ -4468,6 +4468,40 @@ class BackendSmokeTests(unittest.TestCase):
             native_plan = self.assertOk(self.client.post("/api/workspace/mount-plan", json=mount_body))
         self.assertFalse(native_plan["requiresRestart"])
 
+    def testNativeProjectsDefaultToEditAndKeepReadOnlyOptIn(self):
+        project_base = Path(os.environ["RASPUTIN_DATA_DIR"]) / runtime_store.new_id("project_access")
+        project_base.mkdir(parents=True)
+        with patch.dict(os.environ, {"WRAPPER_RUNTIME": "native"}):
+            for route, path_key in [("add", "path"), ("approve", "path"), ("mount-apply", "hostPath")]:
+                project = project_base / route
+                project.mkdir()
+                opened = self.assertOk(self.client.post(f"/api/workspace/{route}", json={path_key: str(project)}))
+                item = opened.get("workspace", opened)
+                self.assertFalse(item["readOnly"])
+                self.assertFalse(item["trusted"])
+                with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": True}):
+                    preview = asyncio.run(McpLayer().fs_write("example.txt", "editable project", workspace_path=item["id"]))
+                    self.assertTrue(preview["preview"])
+                    self.assertFalse((project / "example.txt").exists())
+                    self.assertOk(self.client.post(f"/api/approvals/{preview['approval_id']}/approve"))
+                    asyncio.run(McpLayer().fs_write("example.txt", "editable project", workspace_path=item["id"], approval_id=preview["approval_id"]))
+                self.assertEqual((project / "example.txt").read_text(), "editable project")
+            project = project_base / "read-only"
+            project.mkdir()
+            item = self.assertOk(self.client.post("/api/workspace/approve", json={"path": str(project), "readOnly": True}))
+            self.assertTrue(item["readOnly"])
+            self.assertOk(self.client.post("/api/workspace/select", json={"path": item["id"]}))
+            with patch("backend.core.security.load", return_value={"allow_file_write": True, "approval_required_file_write": False}):
+                with self.assertRaises(PermissionError):
+                    asyncio.run(McpLayer().fs_write("blocked.txt", "blocked", workspace_path=item["id"]))
+            self.assertFalse((project / "blocked.txt").exists())
+            from backend.core import workspace as project_store
+            unapproved = project_base / "unapproved"
+            unapproved.mkdir()
+            with self.assertRaises(PermissionError):
+                project_store.select(str(unapproved), username="other-member", is_admin=False)
+            self.assertIsNone(project_store.workspace_for_path(unapproved))
+
     def testWorkspaceMountApplyRequiresDockerControl(self):
         with patch("backend.core.security.load", return_value={"allow_docker_control": False}):
             response = self.client.post("/api/workspace/mount-apply", json={

@@ -703,7 +703,7 @@ workspace_router = APIRouter(prefix="/api", tags=["workspace"])
 class WorkspaceIn(CamelModel):
     path: str = "."
     name: str | None = None
-    read_only: bool = True
+    read_only: bool = False
 
 class WorkspaceRemoveIn(CamelModel):
     workspace_id: str
@@ -758,12 +758,12 @@ class WorkspaceSearchIn(CamelModel):
 class WorkspaceApproveIn(CamelModel):
     path: str
     name: str | None = None
-    read_only: bool = True
+    read_only: bool = False
 
 class WorkspaceMountIn(CamelModel):
     host_path: str
     name: str | None = None
-    read_only: bool = True
+    read_only: bool = False
 
 class HostBrowseIn(CamelModel):
     path: str | None = None

@@ -346,6 +346,10 @@ def _read_only_profile():
     return {"read": True, "write": False, "reorganize": False}
 
 
+def _project_profile():
+    return {"read": True, "write": True, "reorganize": False}
+
+
 def _root_entry(root_id, name, path, mounted=True):
     target = _root_from_value(path)
     return {
@@ -597,7 +601,7 @@ def search_files(root_id=None, path=None, query="", max_results=40, include_cont
     }
 
 
-def approve(path, name=None, read_only=True, owner_username=None):
+def approve(path, name=None, read_only=False, owner_username=None):
     profile = {"read": True, "write": not bool(read_only), "reorganize": False}
     return add(path, name or _display_name(path), profile, owner_username)
 
@@ -616,7 +620,7 @@ def is_native():
     return os.environ.get("WRAPPER_RUNTIME") != "docker"
 
 
-def mount_plan(host_path, name=None, read_only=True):
+def mount_plan(host_path, name=None, read_only=False):
     raw = str(host_path or "").strip()
     if not raw:
         raise ValueError("host folder path is required")
@@ -685,7 +689,7 @@ def _write_compose_mounts_override(requests):
     return True
 
 
-def save_mount_request(host_path, name=None, read_only=True):
+def save_mount_request(host_path, name=None, read_only=False):
     """Register a host folder to be bind-mounted, regenerating the Compose
     override from every registered mount. Entries here are permanent once
     saved: this is the only record of which host path a given
@@ -1078,7 +1082,7 @@ def add(path=".", name=None, permission_profile=None, owner_username=None):
         "id": wid,
         "name": name or target.name or "Workspace",
         "root": _stored_root(target),
-        "permission_profile": permission_profile or _read_only_profile(),
+        "permission_profile": permission_profile or _project_profile(),
         "indexed": False,
         "last_used": None,
         "trusted": False,
@@ -1095,6 +1099,8 @@ def select(path, username=None, is_admin=False):
     try:
         _, item = _find(path)
     except ValueError:
+        if username and not is_admin:
+            raise PermissionError("an administrator must open this project folder first")
         # `path` may be the id of a synthetic pseudo-root that approved_roots()
         # surfaces (e.g. "workspace-folder" for ./workspace) but that was never
         # actually registered in data["workspaces"]. Resolve it to its real
@@ -1107,7 +1113,7 @@ def select(path, username=None, is_admin=False):
                 resolved = root.get("absolute_path")
                 resolved_name = root.get("name")
                 break
-        add(resolved, name=resolved_name, permission_profile=_read_only_profile())
+        add(resolved, name=resolved_name, owner_username=username)
         data = _load()
         _, item = _find(resolved)
     if username:
