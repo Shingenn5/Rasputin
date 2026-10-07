@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8").replaceAll("\r\n", "\n");
 
 test("normal startup leaves chat model unselected", () => {
   const start = app.indexOf("function pickBootModel");

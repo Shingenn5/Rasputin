@@ -20,10 +20,7 @@
     "preview": "vite preview --config vite.config.mjs --host 127.0.0.1",
     "testUi": "playwright test",
     "testUiHeaded": "playwright test --headed",
-    "testHarness": "powershell -ExecutionPolicy Bypass -File ./scripts/test.ps1",
     "checkRepoSafety": "powershell -ExecutionPolicy Bypass -File ./scripts/check-repo-safety.ps1",
-    "preview:gui": "powershell -ExecutionPolicy Bypass -File ./scripts/start-gui-preview.ps1",
-    "test:gui-preview": "powershell -ExecutionPolicy Bypass -File ./scripts/test-gui-preview.ps1",
     "capture:gui-preview": "node ./scripts/capture-gui-preview.mjs",
     "desktop:runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-desktop-runtime.ps1"
   },
@@ -35,7 +32,6 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.41.0",
     "lucide-react": "^0.468.0",
-    "pdfjs-dist": "^6.0.227",
     "pyodide": "^314.0.0",
     "react": "^18.3.1",
     "react-bootstrap": "^2.10.10",

@@ -51,7 +51,7 @@ function Root() {
       return (
         <main className="preview-disabled">
           <h1>Preview UI Disabled</h1>
-          <p>Start the isolated RasputinTest container with <code>RASPUTIN_UI_PREVIEW=1</code> to use preview routes.</p>
+          <p>Enable preview routes on an isolated Native Host with <code>RASPUTIN_UI_PREVIEW=1</code>.</p>
         </main>
       );
     }

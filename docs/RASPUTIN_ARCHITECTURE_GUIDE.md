@@ -110,7 +110,7 @@ Styling        HYBRID of three layers — see below:
 UI libs        lucide-react (icons) · framer-motion (motion) · recharts (charts)
                react-markdown + rehype-sanitize (markdown)
 Class utils    clsx · tailwind-merge · class-variance-authority
-Heavy features pyodide (in-browser Python) · pdfjs-dist (PDF)
+Heavy features pyodide (in-browser Python)
 Fonts          @fontsource-variable/atkinson-hyperlegible-next
 Testing        Playwright (npm run testUi)
 ```
@@ -192,7 +192,7 @@ frontend-src/src/
     AppProviders.jsx
   components/
     AppShell.jsx
-    Sidebar.jsx
+    shell/DashSidebar.jsx
   features/
     audit/
       AuditView.jsx
@@ -200,6 +200,14 @@ frontend-src/src/
       LoginShell.jsx
     chat/
       HomeView.jsx
+    runtime/
+      AgentsView.jsx
+      ApprovalsView.jsx
+      MemoryView.jsx
+      SchedulesView.jsx
+      SessionsView.jsx
+      SkillsView.jsx
+      TelegramView.jsx
     settings/
       SettingsView.jsx
     tasks/
@@ -419,7 +427,7 @@ Wraps the app frame:
 - sidebar
 - main content area
 
-### Sidebar.jsx
+### shell/DashSidebar.jsx
 
 The persistent navigation:
 

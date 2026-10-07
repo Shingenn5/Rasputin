@@ -43,7 +43,7 @@ REQUIRED_MARKERS: dict[str, tuple[str, ...]] = {
         "getUserMedia({ audio: true })",
     ),
     "lastingMemory": (
-        "frontend-src/src/features/runtime/RuntimeViews.jsx",
+        "frontend-src/src/features/runtime/MemoryView.jsx",
         'data-testid="memory-create-form"',
         'data-testid="memory-recall-explainer"',
         'data-testid="memory-recall-explanation"',

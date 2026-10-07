@@ -10,7 +10,7 @@ class MemoryUiContractTests(unittest.TestCase):
             / "src"
             / "features"
             / "runtime"
-            / "RuntimeViews.jsx"
+            / "MemoryView.jsx"
         ).read_text(encoding="utf-8")
         self.assertIn('data-testid="memory-recall-explainer"', source)
         self.assertIn("Why these memories were returned", source)

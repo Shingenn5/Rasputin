@@ -15,15 +15,13 @@ import { ActivityView } from "../features/tasks/TasksView.jsx";
 import { TaskDetailsDrawer } from "../features/tasks/TaskDetailsDrawer.jsx";
 import { WorkspacesView } from "../features/workspaces/WorkspacesView.jsx";
 import { AuditView } from "../features/audit/AuditView.jsx";
-import {
-  AgentsView,
-  ApprovalsView,
-  MemoryView,
-  SchedulesView,
-  SessionsView,
-  SkillsView,
-  TelegramView,
-} from "../features/runtime/RuntimeViews.jsx";
+import { AgentsView } from "../features/runtime/AgentsView.jsx";
+import { SessionsView } from "../features/runtime/SessionsView.jsx";
+import { ApprovalsView } from "../features/runtime/ApprovalsView.jsx";
+import { MemoryView } from "../features/runtime/MemoryView.jsx";
+import { SkillsView } from "../features/runtime/SkillsView.jsx";
+import { TelegramView } from "../features/runtime/TelegramView.jsx";
+import { SchedulesView } from "../features/runtime/SchedulesView.jsx";
 import { ArchiveView } from "../features/archive/ArchiveView.jsx";
 import { WarsatView } from "../features/warsat/WarsatView.jsx";
 import { TrialsView } from "../features/trials/TrialsView.jsx";
