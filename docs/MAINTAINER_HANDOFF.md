@@ -45,20 +45,6 @@ boundary:
 npm.cmd run checkRepoSafety
 ```
 
-## Browsing the repository
-
-The source folders are `backend/`, `frontend-src/`, `desktop/`, `runtime/`,
-`scripts/`, `tests/`, and `docs/`. Model and workspace directories are local
-state, not tracked placeholders. The optional reverse-proxy configuration is
-[`Caddyfile.example`](Caddyfile.example); it does not need its own root folder.
-
-VS Code's workspace settings hide dependencies, generated builds, caches,
-test artifacts, local state, and secondary worktrees from the file explorer.
-Those files remain available on disk. To inspect them, temporarily disable
-the relevant `files.exclude` entry in `.vscode/settings.json`. Keep `.venv/`,
-`node_modules/`, generated `frontend/`, and runtime binaries available for
-development; removing them is not a source cleanup.
-
 ## Ownership map
 
 | Area | Primary responsibility | Start reading |
