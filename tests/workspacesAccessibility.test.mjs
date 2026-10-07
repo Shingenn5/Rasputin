@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const component = readFileSync(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../frontend-src/src/styles/rasputin.css", import.meta.url), "utf8") + readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
+const styles = ["workspace-base.css", "responsive.css", "workstation-layout.css", "chat-controls.css", "interface.css"]
+  .map((name) => readFileSync(new URL(`../frontend-src/src/styles/${name}`, import.meta.url), "utf8"))
+  .join("\n");
 
 test("Docker workspace setup exposes saved, restart, recheck, and approval steps", () => {
   assert.match(component, /setMountWorkflowStep\(native \? "ready" : "restart"\)/);

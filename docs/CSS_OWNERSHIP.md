@@ -12,8 +12,7 @@ motion behavior.
 
 1. `theme.css` — design tokens, Tailwind bridge, and theme-specific variables.
 2. Bootstrap's compiled CSS — external legacy component layer.
-3. `rasputin.css` — accumulated global shell, feature, chat, WarSat, and
-   primitive rules.
+3. `rasputin.css` — ordered imports for the global component and feature styles.
 4. `dashboard.css` — dashboard shell and current typography adjustments.
 5. `interface.css` — late-cascade workstation and legacy-surface refinement.
 6. `secondary-views.css` — shared secondary-view consolidation.
@@ -36,32 +35,43 @@ cascade differences.
 | File | Intended responsibility | Current warning |
 | --- | --- | --- |
 | `theme.css` | Tokens and theme mappings only | Do not add feature layout |
-| `rasputin.css` | Transitional global compatibility layer | Largest maintenance hotspot; no new feature blocks |
+| `rasputin.css` | Global stylesheet import order only | Keep rule bodies in the named files below |
 | `dashboard.css` | Dashboard shell and dashboard-specific layout | Do not absorb unrelated view styling |
 | `interface.css` | Shared workstation presentation | Contains later overrides; extraction requires cascade checks |
 | `secondary-views.css` | Shared secondary-view layout and hierarchy | Keep shared rather than copying into features |
 | `motion.css` | Motion preferences and global reduced-motion behavior | Must remain last in the global cascade |
 | Feature CSS files | One feature root and its responsive states | Avoid unscoped global selectors |
 
-## `rasputin.css` extraction boundaries
+## Where to edit global styles
 
-The line numbers below describe the 2026-08-28 baseline. Run
-`scripts/audit_repository.py` and re-inspect section markers before moving a
-later block because earlier extractions will shift these numbers.
+The following files are imported in this exact order by `rasputin.css`.
+The extraction preserves the original cascade; base styles and later overrides
+stay separate so they do not silently change priority. Do not alphabetize imports.
 
-| Baseline range | Boundary | Target |
-| --- | --- | --- |
-| 1–10,602 | Tokens, shell, legacy feature views, chat, responsive rules | Split only after selector-family inventory |
-| 10,603–10,856 | Command Center foundation | `command-center.css` |
-| 10,857–11,150 | Workstation v2 foundations and per-view grids | `workstation-layout.css` |
-| 11,151–11,230 | Trials and workspace explorer adjustments | Feature-owned files after overlap review |
-| 11,231–12,133 | WarSat deployment/runtime/discovery dashboards | `warsat.css` |
-| 12,134–12,222 | View/list motion additions | Merge into `motion.css` after reduced-motion comparison |
-| 12,223–12,413 | Modal and drawer primitives | `overlays.css` — first extraction |
-| 12,414–12,465 | Chat autogrow and avatar polish | Future chat primitive file |
-| 12,466–12,588 | First-run onboarding overlay | `onboarding.css` |
-| 12,589–13,283 | Header model state, composer tools, attachments, queue, command menu | `chat-controls.css` |
-| 13,284–end | Assistant control plane and responsive adjustments | `assistant.css` after selector review |
+| File | Edit here for |
+| --- | --- |
+| `overlays.css` | Shared modal and drawer primitives |
+| `foundations.css` | Global defaults, loading placeholders, toast notifications |
+| `shell.css` | Application frame, navigation, sidebar, shared shell controls |
+| `chat-base.css` | Conversation layout, messages, composer base styles |
+| `view-primitives.css` | Page headers, shared cards, task-mode controls |
+| `workspace-base.css` | Workspace folders, files, graphs, mount review |
+| `activity-integrations.css` | Activity tabs, task messages, MCP relay controls |
+| `archive-trials.css` | Archive editor and trials panels |
+| `model-runtime-base.css` | Model library, catalog, runtime and safety panels |
+| `session-task-controls.css` | Session folders, streamed steps, task details, forms |
+| `preview.css` | Optional design-preview screens |
+| `responsive.css` | Original responsive rules and shared surface refinements |
+| `workstation-layout.css` | Workstation grids, compact views, explorer and shell overrides |
+| `warsat-controls.css` | Retained WarSat stepper, runtime cards, discovery and logs |
+| `view-motion.css` | Original view transitions and interaction feedback |
+| `chat-overlays.css` | Chat avatars, autogrow behavior and first-run onboarding |
+| `chat-controls.css` | Composer pill, model indicator, attachments, queue, command menu, folder approvals |
+| `assistant.css` | Assistant essential controls and advanced disclosures |
+
+Feature-owned `models-workspace-v3.css`, `history-workspace-v3.css`, and
+`settings-workspace-v3.css` still override the base styles through their original
+component imports. `interface.css` and `motion.css` retain their later global positions.
 
 ## Extraction rules
 

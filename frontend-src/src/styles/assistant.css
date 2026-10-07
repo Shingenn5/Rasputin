@@ -1,0 +1,103 @@
+/* Assistant essential-first control plane */
+.assistant-dashboard .assistant-essential-card {
+  border-color: color-mix(in srgb, var(--ras-border, #d7dce5) 80%, var(--ras-accent, #4f46e5));
+}
+
+.assistant-performance-control,
+.assistant-needs-attention,
+.assistant-essential-capability,
+.assistant-recommendation {
+  border: 1px solid var(--ras-border, #d7dce5);
+  border-radius: 0.75rem;
+  background: var(--ras-surface-subtle, rgba(127, 127, 127, 0.06));
+}
+
+.assistant-performance-control,
+.assistant-needs-attention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.assistant-essential-capability {
+  display: flex;
+  flex-direction: column;
+  padding: 0.9rem;
+}
+
+.assistant-capability-eyebrow {
+  color: var(--ras-text-muted, #6b7280);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-recommendation {
+  padding: 0.55rem 0.65rem;
+}
+
+.assistant-advanced-group {
+  margin-block: 0.75rem;
+}
+
+.assistant-advanced-group > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--ras-border, #d7dce5);
+  border-radius: 0.75rem;
+  background: var(--ras-surface-subtle, rgba(127, 127, 127, 0.06));
+  font-weight: 700;
+}
+
+.assistant-advanced-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.assistant-advanced-group > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1rem;
+  color: var(--ras-text-muted, #6b7280);
+}
+
+.assistant-advanced-group[open] > summary::before {
+  content: "−";
+}
+
+.assistant-advanced-group > summary span {
+  color: var(--ras-text-muted, #6b7280);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.assistant-advanced-group > summary:focus-visible,
+.assistant-performance-control input:focus-visible,
+.assistant-essential-capability button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ras-accent, #4f46e5) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.assistant-advanced-group > .settings-card {
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 720px) {
+  .assistant-performance-control,
+  .assistant-needs-attention,
+  .assistant-advanced-group > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .assistant-advanced-group > summary span {
+    margin-left: 1rem;
+  }
+}

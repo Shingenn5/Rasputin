@@ -1,0 +1,1019 @@
+@media (max-width: 1400px) and (min-width: 981px) {
+  .compact-workspace-hero {
+    min-height: 84px;
+    align-items: flex-start;
+    padding: 1rem 1.1rem;
+  }
+
+  .workspace-hero h1 {
+    font-size: clamp(1.7rem, 3vw, 2.45rem);
+  }
+
+  .workspace-hero p {
+    max-width: 680px;
+    line-height: 1.35;
+  }
+
+  .workspace-layout {
+    grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+    grid-template-areas:
+      "workspace-side workspace-main"
+      "workspace-preview workspace-preview";
+    align-items: start;
+    overflow: auto;
+    padding: .85rem;
+  }
+
+  .workspace-side,
+  .workspace-main {
+    height: min(640px, calc(100dvh - 132px));
+    min-height: min(520px, calc(100dvh - 132px));
+    overflow: auto;
+  }
+
+  .workspace-preview-panel {
+    overflow: visible;
+  }
+
+  .workspace-preview-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .workspace-mount-panel,
+  .workspace-guide {
+    grid-column: 1 / -1;
+  }
+
+  .workspace-guide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .models-grid,
+  .deployment-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .deployment-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .models-content,
+  .activity-view .task-dashboard,
+  .settings-panels {
+    padding: 1rem;
+  }
+
+  .model-command-top,
+  .task-card-head,
+  .browser-head,
+  .warsat-runtime-card {
+    align-items: flex-start;
+  }
+
+  .model-action-row,
+  .models-header-actions,
+  .drawer-control-row,
+  .mount-plan-actions {
+    flex-wrap: wrap;
+  }
+
+  .settings-layout {
+    grid-template-columns: minmax(210px, 230px) minmax(0, 1fr);
+  }
+
+  .safety-form .row > .col-lg-4 {
+    width: 100%;
+  }
+
+  .task-run-info {
+    grid-template-columns: 1fr;
+  }
+
+  .task-run-info dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .run-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .warsat-safety-grid {
+    grid-template-columns: repeat(2, auto minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1240px) {
+  .warsat-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .warsat-summary-strip,
+  .warsat-panel,
+  .warsat-library-panel,
+  .warsat-plan-card {
+    grid-column: 1;
+  }
+
+  .warsat-plan-card {
+    grid-row: auto;
+    position: relative;
+    top: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .warsat-deploy-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .warsat-deploy-actions {
+    justify-content: flex-start;
+  }
+
+  .warsat-model-finder-grid {
+    grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  }
+
+  .warsat-model-selected {
+    grid-column: 1 / -1;
+  }
+
+  .model-catalog-layout {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  }
+
+  .model-catalog-detail {
+    grid-column: 1 / -1;
+  }
+
+  .model-readiness-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .archive-layout {
+    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  }
+
+  .archive-support {
+    grid-column: 1 / -1;
+  }
+
+  .archive-preview {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .home-commandbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .home-title {
+    flex: 1 1 260px;
+  }
+
+  .home-runtime-strip {
+    flex: 1 1 360px;
+    justify-content: flex-end;
+    max-width: 100%;
+  }
+
+  .runtime-chip {
+    max-width: 42vw;
+  }
+
+  .prompt-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .composer-runbar {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-segment {
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  }
+
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "workspace-side"
+      "workspace-main"
+      "workspace-preview";
+    overflow: auto;
+  }
+
+  .workspace-side,
+  .workspace-main,
+  .workspace-preview-panel {
+    overflow: visible;
+  }
+
+  .workspace-preview-panel,
+  .workspace-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-flow-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-root-card,
+  .warsat-model-finder-grid,
+  .warsat-model-result {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-root-actions,
+  .warsat-model-result-tags {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .warsat-model-result-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .mount-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .run-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .warsat-safety-grid {
+    grid-template-columns: repeat(2, auto minmax(0, 1fr));
+  }
+
+  .task-run-info {
+    grid-template-columns: 1fr;
+  }
+
+  .task-run-info dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--ras-border);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+    max-height: 34dvh;
+  }
+
+  .models-grid,
+  .model-readiness-grid,
+  .deployment-layout,
+  .archive-layout,
+  .trials-layout,
+  .local-model-form {
+    grid-template-columns: 1fr;
+  }
+
+  .archive-session-list,
+  .trial-run-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .deployment-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .test-checklist-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .model-readiness-head,
+  .model-readiness-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    overflow: hidden;
+  }
+
+  .cc-status-area {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .app-frame,
+  body.sidebar-collapsed .app-frame {
+    grid-template-columns: 1fr;
+  }
+
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1060;
+    width: min(318px, calc(100vw - 46px));
+    transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .22s ease;
+    box-shadow: 16px 0 36px rgba(0, 0, 0, .28);
+  }
+
+  body.mobile-sidebar-open .app-sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  /* NOTE: no body-level ::before backdrop here — DashSidebar renders its own
+     scrim with a close handler. A fixed z-1050 pseudo-element sits above the
+     drawer (z-30) and eats every tap, locking mobile nav entirely. */
+
+  body.sidebar-collapsed .app-sidebar {
+    padding: .8rem;
+  }
+
+  body.sidebar-collapsed .brand-button,
+  body.sidebar-collapsed .sidebar-title,
+  body.sidebar-collapsed .nav-label,
+  body.sidebar-collapsed .nav-count,
+  body.sidebar-collapsed .sidebar-context {
+    display: flex !important;
+  }
+
+  body.sidebar-collapsed .sidebar-section {
+    display: block !important;
+  }
+
+  body.sidebar-collapsed .sidebar-recent-section[open],
+  .sidebar-recent-section[open] {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  body.sidebar-collapsed .nav-item,
+  body.sidebar-collapsed .new-task-btn {
+    width: 100%;
+    justify-content: flex-start;
+    padding-inline: .72rem;
+  }
+
+  .mobile-close {
+    display: inline-grid;
+    position: absolute;
+    right: .75rem;
+    bottom: .75rem;
+  }
+
+  .home-menu-button {
+    display: none;
+  }
+
+  .mobile-shell-toggle {
+    position: fixed;
+    top: .6rem;
+    left: .65rem;
+    z-index: 1040;
+    color: var(--ras-text);
+    background: color-mix(in srgb, var(--ras-panel) 86%, transparent);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .12);
+  }
+
+  .mobile-shell-toggle.icon-button {
+    display: inline-grid;
+  }
+
+  .home-commandbar {
+    min-height: 58px;
+    padding: .6rem .7rem .6rem 3.35rem;
+  }
+
+  .app-view > .page-header {
+    padding: .7rem .75rem .7rem 3.35rem;
+  }
+
+  .app-view > .page-header > div,
+  .app-view > .page-header > button,
+  .app-view > .page-header > .btn,
+  .app-view > .page-header > .ras-button {
+    width: 100%;
+  }
+
+  .home-title {
+    display: none;
+  }
+
+  .home-runtime-strip {
+    flex: 1;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: .12rem;
+  }
+
+  .home-runtime-strip .runtime-chip {
+    flex: 0 0 auto;
+    max-width: 72vw;
+  }
+
+  .thread-scroll {
+    padding: 1rem .75rem .7rem;
+  }
+
+  .welcome-panel {
+    padding-block: 1.25rem .75rem;
+  }
+
+  .welcome-panel h1 {
+    font-size: 2rem;
+  }
+
+  .welcome-panel p {
+    font-size: .92rem;
+  }
+
+  .prompt-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .prompt-chip {
+    min-height: 46px;
+    padding: .55rem;
+  }
+
+  .chat-composer {
+    width: calc(100% - 1rem);
+    margin-bottom: .55rem;
+  }
+
+  .composer-chip-row,
+  .composer-meta {
+    align-items: stretch;
+  }
+
+  .composer-context-actions,
+  .model-health {
+    width: 100%;
+  }
+
+  .agent-lane-current dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .secondary-action {
+    flex: 1 1 130px;
+  }
+
+  .model-select-chip {
+    width: 100%;
+    max-width: none;
+  }
+
+  .model-select-chip select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .model-trigger,
+  .mode-trigger {
+    min-height: 48px;
+  }
+
+  .run-trigger-copy {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .run-trigger-copy em {
+    grid-column: 2;
+  }
+
+  .composer-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .task-dashboard,
+  .settings-panels,
+  .models-content {
+    padding: .75rem;
+  }
+
+  .workspace-hero {
+    min-height: auto;
+    align-items: stretch;
+    flex-direction: column;
+    padding: 1rem .85rem;
+  }
+
+  .workspace-layout {
+    padding: .75rem;
+  }
+
+  .workspace-guide,
+  .mount-form,
+  .run-summary-grid,
+  .warsat-model-finder-grid,
+  .warsat-model-result,
+  .warsat-deploy-strip,
+  .warsat-profile-strip,
+  .warsat-lifecycle,
+  .warsat-plan-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .warsat-safety-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .browser-head,
+  .task-card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .activity-view .task-dashboard {
+    padding: .75rem;
+  }
+
+  .activity-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: .15rem;
+  }
+
+  .activity-tab {
+    flex: 0 0 auto;
+  }
+
+  .activity-panel {
+    padding-right: 0;
+  }
+
+  .task-run-info dl {
+    grid-template-columns: 1fr;
+  }
+
+  .task-run-info dd {
+    white-space: normal;
+  }
+
+  .model-inline-select,
+  .parallel-agent-options {
+    width: 100%;
+  }
+
+  .mode-side-panel {
+    top: 64px;
+    left: .5rem;
+    right: .5rem;
+    bottom: .5rem;
+    width: auto;
+  }
+
+  .model-side-panel {
+    top: 64px;
+    left: .5rem;
+    right: .5rem;
+    bottom: .5rem;
+    width: auto;
+  }
+
+  .mode-segment {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mode-segment-label {
+    grid-column: 1 / -1;
+  }
+
+  .page-header,
+  .section-row {
+    align-items: stretch;
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .page-header {
+    justify-content: flex-start;
+    min-height: auto;
+  }
+
+  .settings-save-strip,
+  .output-folder-row,
+  .chat-folder-create div,
+  .session-folder-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .setup-step,
+  .test-checklist-item {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-save-strip .hstack,
+  .output-folder-row .btn {
+    width: 100%;
+  }
+
+  .settings-save-strip .hstack {
+    flex-wrap: wrap;
+  }
+
+  .session-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .models-header-actions,
+  .model-action-row {
+    justify-content: stretch;
+  }
+
+  .models-header-actions .ras-button,
+  .model-action-row .ras-button {
+    width: 100%;
+  }
+
+  .model-command-top,
+  .model-truth-grid,
+  .model-catalog-layout,
+  .model-catalog-row,
+  .hardware-profile-grid,
+  .deployment-steps,
+  .warsat-runtime-card {
+    grid-template-columns: 1fr;
+  }
+
+  .model-catalog-head,
+  .model-catalog-actions,
+  .model-catalog-meta,
+  .model-catalog-row-meta {
+    justify-content: flex-start;
+  }
+
+  .model-catalog-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .local-model-form,
+  .local-model-notes {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+
+  .warsat-runtime-actions {
+    justify-content: stretch;
+  }
+
+  .warsat-runtime-actions .btn {
+    flex: 1 1 120px;
+  }
+
+  .detail-grid,
+  .model-meta-grid,
+  .mount-plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-entry-row,
+  .workspace-entry {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .workspace-entry-meta {
+    display: block;
+    text-align: left;
+  }
+
+  .warsat-plan-form .form-text {
+    min-height: auto;
+  }
+
+  .model-health-pill {
+    justify-self: start;
+  }
+
+  .task-details-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+
+  .task-details-header {
+    padding: .85rem;
+  }
+
+  .task-details-tabs {
+    padding: .65rem .85rem;
+  }
+
+  .task-details-body {
+    padding: .85rem;
+  }
+
+  .task-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 460px) {
+  .app-view > .page-header,
+  .home-commandbar {
+    padding-right: .55rem;
+  }
+
+  .home-runtime-strip .runtime-chip:not(#workspacePill) {
+    display: none;
+  }
+
+  .home-runtime-strip .runtime-chip {
+    max-width: calc(100vw - 4.25rem);
+  }
+
+  .composer-actions .secondary-action {
+    width: 100%;
+  }
+
+  .prompt-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .warmind-sigil {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+.task-dashboard,
+.settings-panels,
+.models-content,
+.warsat-dashboard {
+  gap: clamp(.72rem, 1.3vw, 1rem);
+}
+
+.workspace-section,
+.workspace-browser,
+.workspace-preview-panel,
+.activity-panel,
+.settings-card,
+.model-command-card,
+.model-health-card,
+.model-readiness-panel,
+.model-builder-panel,
+.model-catalog-panel,
+.warsat-panel,
+.warsat-plan-card {
+  box-shadow: none !important;
+}
+
+.workspace-section,
+.workspace-browser,
+.activity-panel,
+.settings-card,
+.model-command-card,
+.model-health-card,
+.model-readiness-panel,
+.model-builder-panel,
+.model-catalog-panel,
+.warsat-panel,
+.warsat-plan-card {
+  border-color: color-mix(in srgb, var(--ras-border) 72%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-panel-2) 34%, transparent), transparent 160px),
+    color-mix(in srgb, var(--ras-panel) 90%, transparent);
+}
+
+.section-row {
+  gap: .7rem;
+}
+
+.section-row p,
+.page-header p,
+.workspace-hero p,
+.model-readiness-head p,
+.model-catalog-head p,
+.model-health-card p,
+.model-builder-panel p,
+.warsat-dashboard .text-body-secondary,
+.workspace-help-text,
+.test-checklist-item p,
+.setup-step-body p {
+  max-width: 72ch;
+}
+
+.models-view .model-builder-panel p,
+.models-view .model-health-card p,
+.warsat-dashboard .text-body-secondary,
+.workspaces-view .workspace-help-text,
+.settings-view .text-body-secondary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.model-readiness-grid,
+.knowledge-stat-grid,
+.run-summary-grid,
+.warsat-summary-strip,
+.model-catalog-meta,
+.warsat-model-finder-meta {
+  gap: .45rem;
+}
+
+.model-readiness-step,
+.stat-card,
+.knowledge-stat-grid > *,
+.warsat-summary-strip > *,
+.model-catalog-meta span,
+.model-catalog-meta strong,
+.warsat-model-finder-meta span,
+.warsat-model-finder-meta strong {
+  min-height: auto;
+  padding: .58rem .65rem;
+}
+
+.model-readiness-step p,
+.model-catalog-row small,
+.warsat-model-result small,
+.workspace-root-main small,
+.workspace-entry-name small,
+.task-run-info dd,
+.task-card .meta-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-readiness-step strong,
+.model-readiness-step p,
+.model-readiness-step .ras-button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.models-content,
+.settings-pane {
+  overflow-x: hidden;
+}
+
+.model-catalog-row-meta,
+.warsat-model-result-tags,
+.workspace-root-actions,
+.model-action-row,
+.warsat-model-finder-actions,
+.models-header-actions {
+  gap: .4rem;
+}
+
+.model-catalog-row-meta em,
+.warsat-model-result-tags em,
+.workspace-permission,
+.status-pill,
+.model-health-pill {
+  padding-block: .12rem;
+}
+
+.model-catalog-list,
+.warsat-model-result-list,
+.workspace-entry-list,
+.activity-list {
+  scrollbar-gutter: stable;
+}
+
+.models-view .local-model-panel,
+.models-view .api-model-panel {
+  padding: 0;
+}
+
+.models-view .local-model-panel[open],
+.models-view .api-model-panel[open] {
+  padding: .85rem;
+}
+
+.models-view .local-model-panel > summary,
+.models-view .api-model-panel > summary {
+  min-height: 50px;
+  padding: .72rem .85rem;
+}
+
+.workspace-guide[open] {
+  display: grid;
+  gap: .65rem;
+}
+
+.workspace-guide > summary {
+  min-height: 48px;
+}
+
+.workspace-guide > .guide-card {
+  margin-top: .65rem;
+}
+
+.activity-tabs {
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.activity-tab {
+  flex: 0 0 auto;
+}
+
+.tool-relay-card,
+.task-card,
+.approval-card,
+.workspace-root-card,
+.workspace-entry-row,
+.model-catalog-row,
+.warsat-model-result {
+  border-color: color-mix(in srgb, var(--ras-border) 70%, transparent);
+}
+
+.tool-relay-card p,
+.task-message-block,
+.approval-card p,
+.model-warning,
+.knowledge-explainer {
+  line-height: 1.45;
+}
+
+.knowledge-explainer p,
+.mount-intro p,
+.model-warning span {
+  margin-bottom: 0;
+}
+
+.settings-view .setup-ordered-list,
+.settings-view .test-checklist-grid {
+  margin-top: .65rem;
+}
+
+@media (min-width: 1040px) {
+  .model-readiness-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .warsat-summary-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1401px) {
+  .workspace-layout {
+    grid-template-columns: minmax(260px, .82fr) minmax(420px, 1.28fr) minmax(320px, .9fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .workspace-layout,
+  .model-catalog-layout,
+  .warsat-model-finder-grid {
+    gap: .75rem;
+  }
+
+  .workspace-side,
+  .workspace-main,
+  .workspace-preview-panel {
+    padding: .75rem;
+  }
+
+  .warsat-dashboard.has-plan {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .warsat-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .warsat-workflow-steps {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: .2rem;
+  }
+
+  .warsat-workflow-steps li {
+    flex: 0 0 160px;
+  }
+}
+
+@scope (html[data-motion="reduced"]) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

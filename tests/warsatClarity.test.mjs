@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = fs.readFileSync("frontend-src/src/features/warsat/WarsatView.jsx", "utf8");
 const guidanceSource = fs.readFileSync("frontend-src/src/features/shared/blockerGuidance.js", "utf8");
-const styles = fs.readFileSync("frontend-src/src/styles/rasputin.css", "utf8");
+const styles = fs.readFileSync("frontend-src/src/styles/chat-controls.css", "utf8");
 
 test("WarSat maps known blockers to plain-language next actions", () => {
   assert.match(source, /combined_vram_requires_explicit_opt_in/);

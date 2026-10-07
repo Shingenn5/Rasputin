@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 TASKS = (ROOT / "frontend-src/src/features/tasks/TasksView.jsx").read_text(encoding="utf-8")
-STYLES = (ROOT / "frontend-src/src/styles/rasputin.css").read_text(encoding="utf-8")
+STYLES = (ROOT / "frontend-src/src/styles/activity-integrations.css").read_text(encoding="utf-8")
 
 
 class ActivityUiContractTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class ActivityUiContractTests(unittest.TestCase):
     def test_activity_tabs_have_responsive_keyboard_friendly_contract(self):
         self.assertIn('role="tablist"', TASKS)
         self.assertIn('role="tab"', TASKS)
-        self.assertIn("aria-selected={tab === t}", TASKS)
+        self.assertIn("aria-selected={tab === item}", TASKS)
         self.assertIn(".activity-tabs-scroll", STYLES)
         self.assertIn("overflow-x: auto", STYLES)
         self.assertIn("Scroll for more activity views", STYLES)

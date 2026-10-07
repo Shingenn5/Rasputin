@@ -1,0 +1,400 @@
+:root {
+  --ras-sidebar: 252px;
+  --ras-sidebar-collapsed: 70px;
+  --ras-bg: var(--dash-bg);
+  --ras-canvas: var(--dash-bg-2);
+  --ras-panel: var(--dash-panel);
+  --ras-panel-2: var(--dash-panel-2);
+  --ras-rail: var(--dash-bg);
+  --ras-rail-soft: var(--dash-panel);
+  --ras-sidebar-bg: var(--dash-bg);
+  --ras-sidebar-bg-soft: var(--dash-panel);
+  --ras-sidebar-text: var(--dash-text);
+  --ras-sidebar-muted: var(--dash-muted);
+  --ras-sidebar-active-bg: var(--dash-panel-hover);
+  --ras-sidebar-active-border: var(--dash-accent);
+  --ras-sidebar-hover-bg: var(--dash-panel-hover);
+  --ras-text: var(--dash-text);
+  --ras-muted: var(--dash-muted);
+  --ras-border: var(--dash-border);
+  --ras-border-strong: var(--dash-border-strong);
+  --ras-accent: var(--dash-accent);
+  --ras-accent-2: var(--dash-accent);
+  --ras-blue: var(--dash-accent);
+  --ras-safe: var(--dash-up);
+  --ras-warn: #f59e0b;
+  /* Amber for *words*: #f59e0b is ~2:1 contrast on the cream themes, fine for
+     fills/borders/icons but unreadable as text. Use this darker amber
+     whenever warning-colored text is rendered. */
+  --ras-warn-text: #d97706;
+  --ras-danger: var(--dash-down);
+  --ras-shadow: var(--ras-shadow-low);
+  --ras-focus: color-mix(in srgb, var(--dash-accent) 72%, #fff);
+
+  /* Command Center Design Tokens mapped to theme */
+  --cc-bg: var(--ras-canvas);
+  --cc-surface: var(--ras-panel);
+  --cc-border: var(--ras-border);
+  --cc-text: var(--ras-text);
+  --cc-accent: var(--ras-accent);
+  --cc-muted: var(--ras-muted);
+  --cc-shadow: var(--ras-shadow);
+  --ras-heading-font: var(--ras-font-display);
+  --bs-body-bg: var(--ras-canvas);
+  --bs-body-color: var(--ras-text);
+  --bs-border-color: var(--ras-border);
+  --bs-primary: var(--ras-accent);
+  --bs-primary-rgb: 189, 74, 40; /* fallback only — overridden per-theme by index.html's apply() */
+  --bs-secondary-color: var(--ras-muted);
+  --bs-tertiary-bg: var(--ras-panel-2);
+  --bs-card-bg: var(--ras-panel);
+  --bs-list-group-bg: var(--ras-panel);
+  --bs-light-rgb: 238, 232, 220;
+  --bs-body-font-family: var(--ras-font-ui);
+}
+
+/* Bootstrap's default warning yellow (#ffc107) is unreadable as text on the
+   cream themes. Yellow *fills* (bg-warning badges/tints) keep their color;
+   warning text renders in the readable amber. !important matches Bootstrap's
+   own utility weight. */
+.text-warning {
+  color: var(--ras-warn-text) !important;
+}
+
+/* Soft warning chip — replaces the glaring solid-yellow bg-warning badges
+   (Dry-Run, Approval Req.) with a quiet amber tint + readable amber text. */
+.badge-soft-warn {
+  background-color: color-mix(in srgb, var(--ras-warn) 14%, transparent) !important;
+  color: var(--ras-warn-text) !important;
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 34%, transparent);
+}
+
+:root {
+
+  /* ── Systematic design scales (additive; theme-independent) ──
+     Consumed by shared components (Toast, Skeleton, Button, ...).
+     Existing ad-hoc values are intentionally left untouched. */
+
+  /* Spacing — 4px base unit */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Type scale */
+  --fs-xs: 0.75rem;    /* 12px */
+  --fs-sm: 0.8125rem;  /* 13px */
+  --fs-base: 0.875rem; /* 14px */
+  --fs-md: 1rem;       /* 16px */
+  --fs-lg: 1.125rem;   /* 18px */
+  --fs-xl: 1.25rem;    /* 20px */
+  --fs-2xl: 1.5rem;    /* 24px */
+
+  /* Elevation */
+  --elev-1: 0 1px 2px rgba(23, 20, 17, .08);
+  --elev-2: 0 6px 16px rgba(23, 20, 17, .12);
+  --elev-3: 0 14px 30px rgba(23, 20, 17, .16);
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 260ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--ras-bg);
+  color: var(--ras-text);
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+.system-label,
+.brand-mark,
+.sidebar-title strong,
+.nav-label,
+.eyebrow,
+.mode-trigger strong,
+.mode-card-main strong {
+  font-family: var(--ras-heading-font);
+  letter-spacing: .015em;
+}
+
+button {
+  color: inherit;
+}
+
+svg {
+  flex: 0 0 auto;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ras-focus);
+  outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  z-index: 1080;
+  transform: translateY(-140%);
+  border: 1px solid var(--ras-accent);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  padding: .55rem .75rem;
+  color: var(--ras-text);
+  font-weight: 800;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.global-status {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1070;
+  max-width: min(440px, calc(100vw - 2rem));
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 45%, var(--ras-border));
+  border-radius: 8px;
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  box-shadow: var(--ras-shadow);
+  padding: .75rem .875rem;
+}
+
+.global-status span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.global-status button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ras-muted);
+  cursor: pointer;
+}
+
+/* ── Toast notifications (ras-toast: namespaced to avoid Bootstrap's .toast) ── */
+.ras-toast-viewport {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 1080;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: min(420px, calc(100vw - 2 * var(--sp-4)));
+  pointer-events: none;
+}
+
+.ras-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--ras-border);
+  border-left: 3px solid var(--ras-border-strong);
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  box-shadow: var(--elev-2);
+  font-size: var(--fs-base);
+  animation: ras-toast-in var(--dur) var(--ease);
+}
+
+.ras-toast__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.ras-toast__message {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.ras-toast__dismiss {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ras-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.ras-toast__dismiss:hover {
+  background: color-mix(in srgb, var(--ras-text) 8%, transparent);
+  color: var(--ras-text);
+}
+
+.ras-toast--success {
+  border-left-color: var(--ras-safe);
+}
+.ras-toast--success .ras-toast__icon { color: var(--ras-safe); }
+
+.ras-toast--error {
+  border-left-color: var(--ras-danger);
+}
+.ras-toast--error .ras-toast__icon { color: var(--ras-danger); }
+
+.ras-toast--info {
+  border-left-color: var(--ras-blue);
+}
+.ras-toast--info .ras-toast__icon { color: var(--ras-blue); }
+
+@keyframes ras-toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@scope (html[data-motion="reduced"]) {
+  .ras-toast { animation: none; }
+}
+
+/* ── Skeleton loading placeholders ── */
+.ras-skeleton {
+  display: block;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--ras-text) 7%, transparent) 30%,
+    color-mix(in srgb, var(--ras-text) 14%, transparent) 50%,
+    color-mix(in srgb, var(--ras-text) 7%, transparent) 70%
+  );
+  background-size: 200% 100%;
+  animation: ras-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.ras-skeleton-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.ras-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ras-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--ras-border);
+  border-radius: var(--radius);
+  background: var(--ras-panel);
+}
+
+.ras-skeleton-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.ras-skeleton-card__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+}
+
+@keyframes ras-skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@scope (html[data-motion="reduced"]) {
+  .ras-skeleton {
+    animation: none;
+    background: color-mix(in srgb, var(--ras-text) 9%, transparent);
+  }
+}
+
+/* ── Spinner + button loading state ── */
+.ras-spin {
+  animation: ras-spin 0.8s linear infinite;
+}
+
+@keyframes ras-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* w2-button had no disabled treatment; add one so loading/disabled reads clearly. */
+.w2-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.w2-button.is-loading {
+  cursor: progress;
+}
+
+@scope (html[data-motion="reduced"]) {
+  .ras-spin { animation-duration: 1.6s; }
+}

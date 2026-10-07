@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("../frontend-src/src/features/assistant/AssistantView.jsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../frontend-src/src/styles/rasputin.css", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../frontend-src/src/styles/assistant.css", import.meta.url), "utf8");
 
 const advancedGroups = [
   "assistant-advanced-diagnostics",

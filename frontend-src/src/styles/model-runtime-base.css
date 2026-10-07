@@ -1,0 +1,1897 @@
+.settings-card,
+.stat-card,
+.task-card {
+  border-color: var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  box-shadow: none !important;
+}
+
+.warsat-panel,
+.warsat-plan-card {
+  border-color: color-mix(in srgb, var(--ras-accent) 26%, var(--ras-border));
+}
+
+.warsat-dashboard {
+  display: grid;
+  align-content: start;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.warsat-dashboard.has-plan {
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, .92fr);
+}
+
+.warsat-summary-strip {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .75rem;
+}
+
+.warsat-workflow-steps {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warsat-workflow-steps li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 32%, transparent);
+  color: var(--ras-muted);
+  padding: .52rem .62rem;
+}
+
+.warsat-workflow-steps span {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: .76rem;
+  font-weight: 900;
+}
+
+.warsat-workflow-steps strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .84rem;
+}
+
+.warsat-workflow-steps li.is-current,
+.warsat-workflow-steps li.is-complete {
+  border-color: color-mix(in srgb, var(--ras-accent) 44%, var(--ras-border));
+  color: var(--ras-text);
+}
+
+.warsat-workflow-steps li.is-complete span {
+  background: color-mix(in srgb, var(--ras-safe) 22%, transparent);
+  color: var(--ras-safe);
+}
+
+.warsat-summary-strip .border {
+  border-color: var(--ras-border) !important;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, var(--ras-panel)) !important;
+}
+
+.warsat-panel,
+.warsat-library-panel {
+  grid-column: 1;
+}
+
+.warsat-model-finder {
+  grid-column: 1 / -1;
+}
+
+.warsat-hardware-panel {
+  grid-column: 1 / -1;
+}
+
+.warsat-readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
+.warsat-readiness-pill {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-panel-2) 58%, transparent);
+  color: var(--ras-muted);
+  padding: .25rem .7rem;
+  font-size: .78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.warsat-readiness-pill.is-ready,
+.warsat-hardware-check.is-pass span {
+  border-color: color-mix(in srgb, #3fbf7f 48%, var(--ras-border));
+  color: #63d99a;
+}
+
+.warsat-readiness-pill.is-warning,
+.warsat-hardware-check.is-warn span {
+  border-color: color-mix(in srgb, var(--ras-warn, #d99a32) 52%, var(--ras-border));
+  color: var(--ras-warn, #d99a32);
+}
+
+.warsat-readiness-pill.is-blocked,
+.warsat-hardware-check.is-block span {
+  border-color: color-mix(in srgb, var(--ras-danger) 52%, var(--ras-border));
+  color: var(--ras-danger);
+}
+
+.warsat-hardware-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .65rem;
+}
+
+.warsat-hardware-check {
+  display: grid;
+  align-content: start;
+  gap: .35rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 40%, transparent);
+  padding: .75rem;
+}
+
+.warsat-hardware-check span {
+  width: fit-content;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  padding: .12rem .5rem;
+  font-size: .68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.warsat-hardware-check strong,
+.warsat-hardware-check p,
+.warsat-hardware-check small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warsat-hardware-check p {
+  margin: 0;
+  color: var(--ras-text);
+  font-size: .86rem;
+}
+
+.warsat-hardware-check small {
+  color: var(--ras-muted);
+}
+
+.warsat-hardware-details {
+  border: 1px solid color-mix(in srgb, var(--ras-border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 30%, transparent);
+  padding: .75rem;
+}
+
+.warsat-model-finder-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.warsat-model-finder-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .85rem;
+}
+
+.warsat-model-finder-meta span,
+.warsat-model-finder-meta strong {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 75%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-panel-2) 50%, transparent);
+  color: var(--ras-muted);
+  padding: .2rem .6rem;
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.warsat-model-finder-meta strong {
+  border-color: color-mix(in srgb, var(--ras-danger) 40%, var(--ras-border));
+  color: var(--ras-danger);
+}
+
+.warsat-model-finder-grid {
+  display: grid;
+  grid-template-columns: minmax(170px, 210px) minmax(0, 1fr) minmax(250px, 310px);
+  gap: .75rem;
+  margin-top: .85rem;
+}
+
+.warsat-model-filters,
+.warsat-model-selected {
+  display: grid;
+  align-content: start;
+  gap: .65rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 75%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  padding: .75rem;
+}
+
+.warsat-model-filters label {
+  display: grid;
+  gap: .28rem;
+  color: var(--ras-muted);
+  font-size: .76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.warsat-model-filters input,
+.warsat-model-filters select {
+  min-height: 38px;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-input-bg);
+  color: var(--ras-text);
+  padding: .4rem .6rem;
+  text-transform: none;
+}
+
+.warsat-model-result-list {
+  display: grid;
+  align-content: start;
+  gap: .45rem;
+  min-width: 0;
+  max-height: min(42vh, 420px);
+  overflow: auto;
+  padding-right: .15rem;
+}
+
+.warsat-model-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .65rem;
+  align-items: center;
+  min-height: 62px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 34%, transparent);
+  color: var(--ras-text);
+  padding: .65rem;
+  text-align: left;
+}
+
+.warsat-model-result:hover,
+.warsat-model-result:focus-visible,
+.warsat-model-result.is-selected {
+  border-color: color-mix(in srgb, var(--ras-accent) 54%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel));
+}
+
+.warsat-model-result span:first-child,
+.warsat-model-selected dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warsat-model-result strong,
+.warsat-model-result small {
+  display: block;
+}
+
+.warsat-model-result small,
+.warsat-model-result-tags em {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-style: normal;
+}
+
+.warsat-model-result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .3rem;
+}
+
+.warsat-model-result-tags em {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 30%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-blue) 8%, transparent);
+  padding: .14rem .42rem;
+}
+
+.warsat-model-selected h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.warsat-model-selected p {
+  margin: 0;
+  color: var(--ras-muted);
+}
+
+.warsat-plan-card {
+  grid-column: 2;
+  grid-row: 2 / span 5;
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+  max-height: calc(100dvh - 8rem);
+  overflow: auto;
+}
+
+.warsat-section-title {
+  display: grid;
+  gap: .15rem;
+  margin-top: .25rem;
+}
+
+.warsat-section-title h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.warsat-section-title p {
+  margin: 0;
+  color: var(--ras-muted);
+}
+
+.warsat-approval-pill,
+.warsat-risk-pill {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 52%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-warn) 18%, var(--ras-panel));
+  color: var(--ras-text);
+  font-size: .78rem;
+  font-weight: 900;
+  letter-spacing: .03em;
+  padding: .28rem .72rem;
+  text-transform: uppercase;
+}
+
+.warsat-risk-pill {
+  color: var(--ras-warn);
+}
+
+.warsat-plan-form .form-label {
+  color: var(--ras-text);
+  font-weight: 800;
+}
+
+.warsat-plan-form .form-text {
+  min-height: 2.3em;
+  color: var(--ras-muted);
+}
+
+.warsat-action-col {
+  align-self: end;
+}
+
+.warsat-form-section,
+.warsat-tuning-panel {
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  padding: .85rem;
+}
+
+.warsat-form-section + .warsat-tuning-panel,
+.warsat-tuning-panel + .warsat-tuning-panel {
+  margin-top: .85rem;
+}
+
+.warsat-form-title {
+  display: grid;
+  gap: .12rem;
+  margin-bottom: .75rem;
+}
+
+.warsat-form-title strong {
+  font-size: 1rem;
+}
+
+.warsat-form-title span {
+  color: var(--ras-muted);
+}
+
+.warsat-runtime-message {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 28%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-blue) 8%, var(--ras-panel));
+  color: var(--ras-text);
+  font-size: .92rem;
+  padding: .7rem .85rem;
+}
+
+.warsat-runtime-list {
+  display: grid;
+  gap: .75rem;
+}
+
+.warsat-runtime-card {
+  display: grid;
+  grid-template-columns: minmax(170px, .55fr) minmax(0, 1fr) auto;
+  gap: .85rem;
+  align-items: start;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 28%, transparent);
+  padding: .85rem;
+}
+
+.warsat-runtime-card > div:first-child {
+  display: grid;
+  gap: .15rem;
+}
+
+.warsat-runtime-card span,
+.warsat-runtime-card dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warsat-runtime-card span {
+  color: var(--ras-muted);
+  font-size: .86rem;
+}
+
+.warsat-runtime-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .4rem;
+}
+
+.warsat-tuning-panel summary {
+  color: var(--ras-accent);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.warsat-library-panel {
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 36%, transparent);
+  padding: .82rem .9rem;
+}
+
+.warsat-library-panel + .warsat-library-panel {
+  margin-top: -.25rem;
+}
+
+.warsat-library-panel summary {
+  display: grid;
+  gap: .12rem;
+  color: var(--ras-text);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.warsat-library-panel summary small {
+  color: var(--ras-muted);
+  font-size: .86rem;
+  font-weight: 650;
+}
+
+.warsat-profile-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: .75rem;
+  margin: 1rem 0 .25rem;
+}
+
+.warsat-profile-card {
+  display: grid;
+  gap: .2rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  padding: .78rem;
+  text-align: left;
+}
+
+.warsat-profile-card span,
+.warsat-profile-card small {
+  color: var(--ras-muted);
+}
+
+.warsat-profile-card.is-selected,
+.warsat-profile-card:hover,
+.warsat-profile-card:focus-visible {
+  border-color: color-mix(in srgb, var(--ras-accent) 50%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel));
+}
+
+.warsat-protocol-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.warsat-protocol-card::before,
+.warsat-plan-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ras-accent), transparent 72%);
+  opacity: .78;
+}
+
+.warsat-note-list {
+  display: grid;
+  gap: .35rem;
+  padding-left: 1.1rem;
+  color: var(--ras-muted);
+  font-size: .92rem;
+}
+
+.warsat-best-for {
+  display: flex;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+
+.warsat-best-for span {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 28%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-blue) 8%, var(--ras-panel));
+  color: var(--ras-blue);
+  font-size: .75rem;
+  font-weight: 850;
+  padding: .16rem .5rem;
+}
+
+.warsat-warning-list {
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 38%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-warn) 16%, var(--ras-panel));
+  padding: .75rem .85rem;
+  color: var(--ras-text);
+}
+
+.warsat-warning-list p {
+  color: var(--ras-text);
+  font-weight: 750;
+}
+
+.warsat-deploy-strip,
+.warsat-deployment-result {
+  display: grid;
+  gap: .85rem;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 30%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-accent) 9%, var(--ras-panel));
+  padding: .85rem;
+}
+
+.warsat-deploy-strip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.warsat-deploy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .45rem;
+}
+
+.warsat-deploy-strip > div,
+.warsat-deployment-result > div {
+  display: grid;
+  gap: .15rem;
+}
+
+.warsat-deploy-strip span,
+.warsat-deployment-result span {
+  color: var(--ras-muted);
+  font-size: .92rem;
+}
+
+.warsat-plan-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .55rem;
+  margin-top: .85rem;
+}
+
+.warsat-plan-summary div {
+  display: grid;
+  gap: .12rem;
+  min-width: 0;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 38%, transparent);
+  padding: .62rem .68rem;
+}
+
+.warsat-plan-summary span {
+  color: var(--ras-muted);
+  font-size: .72rem;
+  font-weight: 850;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.warsat-plan-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ras-text);
+  font-size: .92rem;
+}
+
+.warsat-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .55rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warsat-lifecycle-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .55rem;
+  min-width: 0;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel) 86%, transparent);
+  padding: .7rem;
+}
+
+.warsat-lifecycle-step > span {
+  width: .72rem;
+  height: .72rem;
+  margin-top: .2rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  background: var(--ras-panel-2);
+}
+
+.warsat-lifecycle-step.is-done > span {
+  border-color: color-mix(in srgb, var(--ras-success, #287d3c) 70%, var(--ras-border));
+  background: var(--ras-success, #287d3c);
+}
+
+.warsat-lifecycle-step.is-active > span {
+  border-color: var(--ras-accent);
+  background: var(--ras-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ras-accent) 16%, transparent);
+}
+
+.warsat-lifecycle-step.is-error {
+  border-color: color-mix(in srgb, var(--ras-danger, #b42318) 50%, var(--ras-border));
+}
+
+.warsat-lifecycle-step.is-error > span {
+  border-color: var(--ras-danger, #b42318);
+  background: var(--ras-danger, #b42318);
+}
+
+.warsat-lifecycle-step strong,
+.warsat-lifecycle-step small,
+.warsat-lifecycle-step p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.warsat-lifecycle-step strong {
+  display: block;
+  color: var(--ras-text);
+  font-size: .9rem;
+}
+
+.warsat-lifecycle-step small {
+  display: block;
+  color: var(--ras-muted);
+  font-size: .72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.warsat-lifecycle-step p {
+  margin: .25rem 0 0;
+  color: var(--ras-muted);
+  font-size: .78rem;
+}
+
+.warsat-deployment-log-list {
+  display: grid;
+  gap: .65rem;
+}
+
+.warsat-deployment-log {
+  display: grid;
+  gap: .45rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 32%, transparent);
+  padding: .7rem;
+}
+
+.warsat-deployment-log p {
+  margin: 0;
+  color: var(--ras-muted);
+}
+
+.warsat-deployment-log code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ras-text);
+}
+
+.warsat-safety-grid {
+  grid-template-columns: repeat(4, auto minmax(0, 1fr));
+}
+
+.warsat-file-list {
+  display: flex;
+  gap: .45rem;
+  flex-wrap: wrap;
+}
+
+.warsat-file-list span {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 38%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-blue) 10%, var(--ras-panel));
+  color: var(--ras-blue);
+  padding: .18rem .55rem;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.warsat-plan-card .log-box {
+  max-height: min(42vh, 360px);
+}
+
+.settings-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.settings-nav {
+  align-content: start;
+  gap: .35rem;
+  overflow: auto;
+  border-right: 1px solid var(--ras-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-panel-2) 76%, transparent), color-mix(in srgb, var(--ras-panel) 90%, transparent)) !important;
+  padding: 1rem .9rem;
+}
+
+.settings-tab {
+  min-height: 44px;
+  width: 100%; /* uniform boxes — never sized by the label text */
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 88%, transparent) !important;
+  background: color-mix(in srgb, var(--ras-panel) 80%, transparent) !important;
+  color: var(--ras-text) !important;
+  box-shadow: none !important;
+  padding: .45rem .6rem;
+}
+
+.settings-tab small {
+  display: block;
+  margin-top: .08rem;
+  color: var(--ras-muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+}
+
+.settings-tab:hover,
+.settings-tab:focus-visible {
+  border-color: color-mix(in srgb, var(--ras-accent) 40%, var(--ras-border)) !important;
+  background: color-mix(in srgb, var(--ras-accent) 8%, var(--ras-panel)) !important;
+}
+
+/* Active tab: highlight ring around the box — same size as every other tab
+   (the old inline ::before dot widened the active tab by its own width). */
+.settings-tab.btn-primary {
+  border-color: var(--ras-accent) !important;
+  background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel)) !important;
+  color: var(--ras-text) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ras-accent) 30%, transparent) !important;
+}
+
+.settings-pane {
+  width: 100%;
+  display: grid;
+  gap: .875rem;
+  max-width: 1180px;
+}
+
+.pane-title h2,
+.section-row h3 {
+  margin-bottom: .25rem;
+}
+
+.section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.workspace-root-list,
+.workspace-browser-list,
+.model-list {
+  display: grid;
+  gap: .625rem;
+}
+
+.workspace-root-card {
+  display: grid;
+  gap: .25rem;
+  border-radius: 8px;
+}
+
+.workspace-root-card small {
+  opacity: .8;
+}
+
+.ras-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  border: 1px solid color-mix(in srgb, var(--ras-border-strong) 62%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 56%, transparent);
+  color: var(--ras-text);
+  font-weight: 850;
+  line-height: 1;
+  padding: .55rem .78rem;
+}
+
+.ras-button:hover,
+.ras-button:focus-visible {
+  border-color: color-mix(in srgb, var(--ras-accent) 52%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 11%, var(--ras-panel));
+}
+
+.ras-button.primary {
+  border-color: color-mix(in srgb, var(--ras-accent) 56%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 17%, var(--ras-panel));
+}
+
+.ras-button.ghost {
+  background: transparent;
+}
+
+.ras-button.small-button {
+  min-height: 34px;
+  padding: .43rem .62rem;
+  font-size: .82rem;
+}
+
+.ras-button:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.models-view {
+  background:
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--ras-accent) 13%, transparent), transparent 28rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--ras-bg) 92%, var(--ras-panel) 8%), var(--ras-bg));
+}
+
+.models-header {
+  align-items: flex-start;
+}
+
+.models-header-actions,
+.model-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .55rem;
+  flex-wrap: wrap;
+}
+
+.models-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.25rem;
+}
+
+.models-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, .8fr);
+  gap: 1rem;
+  max-width: 1260px;
+}
+
+.model-command-card,
+.model-health-card,
+.model-readiness-panel,
+.model-builder-panel,
+.model-catalog-panel,
+.advanced-model-registry {
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel) 94%, transparent);
+  box-shadow: var(--ras-shadow);
+}
+
+.model-command-card,
+.model-health-card,
+.model-readiness-panel,
+.model-builder-panel,
+.model-catalog-panel {
+  padding: 1rem;
+}
+
+.model-readiness-panel {
+  display: grid;
+  gap: .85rem;
+  max-width: 1260px;
+  margin-bottom: 1rem;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ras-accent) 8%, transparent), transparent 48%),
+    color-mix(in srgb, var(--ras-panel) 94%, transparent);
+}
+
+.model-readiness-head,
+.model-readiness-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .85rem;
+}
+
+.model-readiness-head h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.model-readiness-head p,
+.model-readiness-step p {
+  margin: .25rem 0 0;
+  color: var(--ras-muted);
+}
+
+.model-readiness-summary {
+  align-items: flex-end;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+
+.model-readiness-summary strong {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.model-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .65rem;
+}
+
+.model-readiness-step {
+  display: grid;
+  align-content: space-between;
+  gap: .65rem;
+  min-width: 0;
+  min-height: 156px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  padding: .75rem;
+}
+
+.model-readiness-step.is-ready {
+  border-left-color: var(--ras-safe);
+}
+
+.model-readiness-step.is-warning {
+  border-left-color: var(--ras-warn);
+}
+
+.model-readiness-step.is-blocked {
+  border-left-color: var(--ras-danger, #b42318);
+}
+
+.model-readiness-step span {
+  display: block;
+  color: var(--ras-muted);
+  font-size: .7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.model-readiness-step strong {
+  display: block;
+  margin-top: .18rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-readiness-step p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: .8rem;
+  line-height: 1.4;
+}
+
+.model-readiness-step .ras-button {
+  justify-self: start;
+}
+
+.model-section-card,
+.model-side-summary {
+  display: grid;
+  gap: .65rem;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ras-accent) 8%, transparent), transparent 60%),
+    color-mix(in srgb, var(--ras-panel-2) 44%, transparent);
+  padding: .85rem;
+}
+
+.model-section-card h2,
+.model-side-summary h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
+
+.model-section-card p,
+.model-side-summary p {
+  margin: 0;
+  color: var(--ras-muted);
+  font-size: .88rem;
+  line-height: 1.45;
+}
+
+.model-section-status {
+  display: grid;
+  gap: .32rem;
+  min-width: 0;
+}
+
+.model-section-status strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-section-status small {
+  color: var(--ras-muted);
+}
+
+.model-section-tabs,
+.model-side-actions {
+  display: grid;
+  gap: .45rem;
+}
+
+.model-section-tab {
+  display: grid;
+  gap: .14rem;
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 34%, transparent);
+  color: var(--ras-text);
+  padding: .62rem .7rem;
+  text-align: left;
+}
+
+.model-section-tab span {
+  font-weight: 900;
+}
+
+.model-section-tab small {
+  color: var(--ras-muted);
+  font-size: .78rem;
+}
+
+.model-section-tab:hover,
+.model-section-tab:focus-visible,
+.model-section-tab.is-active {
+  border-color: color-mix(in srgb, var(--ras-accent) 52%, var(--ras-border));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--ras-accent) 12%, transparent), transparent 72%),
+    color-mix(in srgb, var(--ras-panel) 96%, transparent);
+}
+
+.model-section-tab.is-active {
+  box-shadow: inset 3px 0 0 var(--ras-accent);
+}
+
+.model-plan-details {
+  margin-top: .85rem;
+}
+
+.model-plan-details summary {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 48%, transparent);
+  color: var(--ras-accent);
+  cursor: pointer;
+  font-weight: 900;
+  padding: .42rem .65rem;
+}
+
+.model-command-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: .8rem;
+}
+
+.model-command-top h2,
+.model-health-card h2,
+.model-builder-panel h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.model-command-top p,
+.model-health-card p,
+.model-builder-panel p,
+.runtime-option p {
+  margin: .25rem 0 0;
+  color: var(--ras-muted);
+}
+
+.model-glyph {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 38%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-accent) 12%, var(--ras-panel));
+  color: var(--ras-accent);
+}
+
+.model-health-pill {
+  border: 1px solid var(--ras-border);
+  border-radius: 999px;
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 900;
+  padding: .3rem .62rem;
+  white-space: nowrap;
+}
+
+.model-health-pill.is-healthy {
+  border-color: color-mix(in srgb, var(--ras-safe) 44%, var(--ras-border));
+  color: var(--ras-safe);
+}
+
+.model-health-pill.is-unhealthy {
+  border-color: color-mix(in srgb, var(--ras-warn) 44%, var(--ras-border));
+  color: var(--ras-warn);
+}
+
+.model-truth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .7rem;
+  margin-top: 1rem;
+}
+
+.model-truth-grid > div,
+.runtime-option,
+.hardware-profile {
+  border: 1px solid color-mix(in srgb, var(--ras-border) 76%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 52%, transparent);
+  padding: .75rem;
+}
+
+.model-truth-grid span,
+.model-discovery-list > span,
+.hardware-profile span {
+  display: block;
+  color: var(--ras-muted);
+  font-size: .76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.model-truth-grid strong {
+  display: block;
+  margin-top: .15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  border: 1px solid color-mix(in srgb, var(--ras-warn) 44%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-warn) 10%, var(--ras-panel));
+  color: var(--ras-text);
+  margin-top: .85rem;
+  padding: .7rem;
+}
+
+.model-discovery-list {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+  margin-top: .85rem;
+}
+
+.model-discovery-list code {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 36%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-blue) 10%, var(--ras-panel));
+  color: var(--ras-blue);
+  padding: .18rem .46rem;
+}
+
+.model-action-row {
+  justify-content: flex-start;
+  margin-top: 1rem;
+}
+
+.model-health-card {
+  display: grid;
+  align-content: start;
+  gap: .85rem;
+}
+
+.safety-stack {
+  display: grid;
+  gap: .45rem;
+}
+
+.safety-stack span {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--ras-muted);
+  font-weight: 700;
+}
+
+.model-builder-panel,
+.model-catalog-panel,
+.advanced-model-registry {
+  max-width: 1260px;
+  margin-top: 1rem;
+}
+
+.model-catalog-panel {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--ras-panel) 92%, var(--ras-accent) 8%), var(--ras-panel));
+}
+
+.model-catalog-head,
+.model-catalog-actions,
+.model-catalog-meta {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.model-catalog-head h2,
+.model-catalog-detail h3 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.model-catalog-head p,
+.model-catalog-detail p,
+.model-catalog-note {
+  margin: .25rem 0 0;
+  color: var(--ras-muted);
+}
+
+.model-catalog-note-list {
+  display: grid;
+  gap: .35rem;
+  margin: .15rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ras-muted);
+  font-size: .84rem;
+}
+
+.model-catalog-note-list li::marker {
+  color: var(--ras-accent);
+}
+
+.model-catalog-actions,
+.model-catalog-meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.model-catalog-meta {
+  margin-top: .85rem;
+  justify-content: flex-start;
+}
+
+.model-catalog-meta span,
+.model-catalog-meta strong {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 75%, transparent);
+  border-radius: 999px;
+  padding: .24rem .65rem;
+  background: color-mix(in srgb, var(--ras-panel-2) 54%, transparent);
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+}
+
+.model-catalog-meta strong {
+  border-color: color-mix(in srgb, var(--ras-danger) 40%, var(--ras-border));
+  color: var(--ras-danger);
+}
+
+.model-catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: .85rem;
+  margin-top: 1rem;
+}
+
+.model-catalog-filters,
+.model-catalog-detail {
+  display: grid;
+  align-content: start;
+  gap: .75rem;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 48%, transparent);
+  padding: .85rem;
+}
+
+.model-catalog-filters label {
+  display: grid;
+  gap: .3rem;
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.model-catalog-filters input,
+.model-catalog-filters select {
+  min-height: 40px;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-input-bg);
+  color: var(--ras-text);
+  padding: .45rem .65rem;
+  text-transform: none;
+}
+
+.model-catalog-list {
+  display: grid;
+  align-content: start;
+  gap: .55rem;
+  min-width: 0;
+  max-height: min(58vh, 620px);
+  overflow: auto;
+  padding-right: .15rem;
+}
+
+.model-catalog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid color-mix(in srgb, var(--ras-border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 36%, transparent);
+  color: var(--ras-text);
+  padding: .75rem;
+  text-align: left;
+}
+
+.model-catalog-row:hover,
+.model-catalog-row:focus-visible,
+.model-catalog-row.is-selected {
+  border-color: color-mix(in srgb, var(--ras-accent) 50%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 10%, var(--ras-panel));
+}
+
+.model-catalog-row span:first-child,
+.model-catalog-detail-grid dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-catalog-row strong,
+.model-catalog-row small {
+  display: block;
+}
+
+.model-catalog-row small,
+.model-catalog-row-meta em {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-style: normal;
+}
+
+.model-catalog-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .35rem;
+}
+
+.model-catalog-row-meta em,
+.model-catalog-capabilities span {
+  border: 1px solid color-mix(in srgb, var(--ras-blue) 30%, var(--ras-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ras-blue) 8%, transparent);
+  padding: .16rem .45rem;
+}
+
+.model-catalog-detail-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .45rem .75rem;
+  margin: 0;
+}
+
+.model-catalog-detail-grid dt {
+  color: var(--ras-muted);
+  font-size: .75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.model-catalog-detail-grid dd {
+  margin: 0;
+  color: var(--ras-text);
+  font-weight: 750;
+}
+
+.model-catalog-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.model-catalog-capabilities span {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.model-catalog-empty {
+  border: 1px dashed var(--ras-border);
+  border-radius: 8px;
+  color: var(--ras-muted);
+  padding: 1rem;
+}
+
+.local-model-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .85rem;
+  margin-top: 1rem;
+}
+
+.local-model-form label {
+  min-width: 0;
+  display: grid;
+  gap: .28rem;
+}
+
+.local-model-form label span {
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.local-model-form input,
+.local-model-form select {
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: var(--ras-panel);
+  color: var(--ras-text);
+  padding: 0 .7rem;
+}
+
+.local-model-notes {
+  grid-column: span 2;
+}
+
+.local-model-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.local-model-actions small {
+  color: var(--ras-muted);
+}
+
+.api-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: .75rem;
+  margin-top: 1rem;
+}
+
+.deployment-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, .85fr);
+  gap: .9rem;
+  margin-top: 1rem;
+}
+
+.deployment-column h3 {
+  margin: 0 0 .55rem;
+}
+
+.runtime-option-grid,
+.hardware-profile-grid,
+.registry-grid {
+  display: grid;
+  gap: .65rem;
+}
+
+.hardware-profile-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.runtime-option strong,
+.hardware-profile strong {
+  display: block;
+}
+
+.runtime-option small,
+.hardware-profile small {
+  color: var(--ras-muted);
+}
+
+.deployment-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .6rem;
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.deployment-steps li {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--ras-accent) 24%, var(--ras-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-accent) 7%, var(--ras-panel));
+  padding: .75rem;
+}
+
+.deployment-steps span {
+  display: block;
+  color: var(--ras-accent);
+  font-weight: 900;
+}
+
+.deployment-steps p {
+  margin: .3rem 0 0;
+  color: var(--ras-muted);
+  font-size: .9rem;
+}
+
+.advanced-model-registry {
+  padding: .85rem;
+}
+
+.advanced-model-registry summary {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--ras-accent);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.advanced-model-body {
+  display: grid;
+  gap: .85rem;
+  margin-top: .85rem;
+}
+
+.testing-mode-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 50%, transparent);
+  padding: .75rem;
+}
+
+.testing-mode-label {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin: 0;
+}
+
+.testing-mode-control input {
+  flex: 0 0 auto;
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--ras-accent);
+}
+
+.testing-mode-control small {
+  display: block;
+  color: var(--ras-muted);
+}
+
+.registry-row {
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 44%, transparent);
+  padding: .78rem;
+}
+
+.workspace-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .625rem;
+  background: var(--ras-panel);
+  color: var(--ras-text);
+}
+
+.entry-name {
+  min-width: 0;
+  padding: 0;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.breadcrumb-line {
+  margin: .75rem 0;
+  color: var(--ras-muted);
+  font-size: .875rem;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .625rem;
+}
+
+.theme-card {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .625rem;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.theme-card span {
+  min-width: 0;
+  display: grid;
+  gap: .1rem;
+  text-align: left;
+}
+
+.theme-card strong,
+.theme-card small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.theme-card small {
+  color: currentColor;
+  opacity: .74;
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.settings-save-strip,
+.safety-state-note,
+.output-folder-row,
+.chat-folder-create div,
+.session-folder-control {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.settings-save-strip {
+  justify-content: space-between;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel) 78%, transparent);
+  margin-bottom: 1rem;
+  padding: .85rem;
+}
+
+.settings-save-strip.is-dirty {
+  border-color: color-mix(in srgb, var(--ras-warn) 48%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-warn) 9%, var(--ras-panel));
+}
+
+.settings-save-strip strong,
+.settings-save-strip span {
+  display: block;
+}
+
+.settings-save-strip span,
+.safety-card p,
+.settings-inline-status {
+  color: var(--ras-muted);
+}
+
+.safety-switch-list {
+  display: grid;
+  gap: .55rem;
+}
+
+.safety-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: .7rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 42%, transparent);
+  padding: .7rem;
+}
+
+.safety-switch.is-on {
+  border-color: color-mix(in srgb, var(--ras-safe) 36%, var(--ras-border));
+}
+
+.safety-switch span {
+  display: grid;
+  gap: .12rem;
+  min-width: 0;
+}
+
+.safety-switch strong {
+  line-height: 1.15;
+}
+
+.safety-switch small {
+  color: var(--ras-muted);
+  line-height: 1.3;
+}
+
+.safety-switch input {
+  width: 2.75rem;
+  height: 1.5rem;
+  accent-color: var(--ras-accent);
+  cursor: pointer;
+}
+
+.safety-switch em {
+  min-width: 28px;
+  color: var(--ras-muted);
+  font-size: .78rem;
+  font-style: normal;
+  font-weight: 900;
+  text-align: right;
+}
+
+.safety-state-note {
+  min-height: 40px;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 38%, transparent);
+  padding: .55rem .65rem;
+}
+
+.output-folder-row {
+  align-items: stretch;
+}
+
+.output-folder-row .form-control {
+  min-width: 0;
+}
+
+.output-folder-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  white-space: nowrap;
+}
+
+.chat-folder-create {
+  display: grid;
+  gap: .4rem;
+  margin: 1rem 0;
+}
+
+.chat-folder-create div {
+  align-items: stretch;
+}
+
+.chat-folder-list {
+  display: grid;
+  gap: .45rem;
+}
+
+.chat-folder-list button {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  border: 1px solid var(--ras-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ras-panel-2) 38%, transparent);
+  color: var(--ras-text);
+  cursor: pointer;
+  padding: 0 .7rem;
+  text-align: left;
+}
+
+.chat-folder-list button:hover,
+.chat-folder-list button.is-active {
+  border-color: color-mix(in srgb, var(--ras-accent) 46%, var(--ras-border));
+  background: color-mix(in srgb, var(--ras-accent) 9%, var(--ras-panel));
+}
+
+.chat-folder-list small {
+  color: var(--ras-muted);
+  font-weight: 900;
+}
