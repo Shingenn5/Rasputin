@@ -1,0 +1,27 @@
+{
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/node_modules": true,
+    ".venv": true,
+    ".worktrees": true,
+    ".claude/worktrees": true,
+    ".playwright-mcp": true,
+    "frontend": true,
+    "build": true,
+    "dist": true,
+    "data": true,
+    "backend/data": true,
+    "backend/data-backup-*": true,
+    "models": true,
+    "workspace": true,
+    "backend/workspace": true,
+    "testdata": true,
+    "playwright-report": true,
+    "test-results": true,
+    "runtime/llama/bundled": true,
+    "**/*.log": true
+  }
+}

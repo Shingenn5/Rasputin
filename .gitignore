@@ -51,9 +51,9 @@ scripts/hatch_wrapper_spark.py
 data/
 backend/data/
 backend/data-backup-*/
-workspace/*
+workspace/
 backend/workspace/
-models/*
+models/
 output/
 testdata/
 playwright-report/
@@ -97,10 +97,6 @@ graph.json
 *.pth
 *.onnx
 *.ckpt
-
-# keep placeholder folders visible
-!workspace/.gitkeep
-!models/.gitkeep
 
 # llama.cpp binaries are generated and verified during desktop packaging; they
 # are included in the installer artifact, not committed to the source branch.

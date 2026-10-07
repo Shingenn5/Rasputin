@@ -77,7 +77,8 @@ implemented behavior or security policy.
 | `frontend/` | Vite production output | Generated; never hand-edit |
 | `tests/` | Backend, integration, and UI verification | Extend with behavior changes |
 | `scripts/` | Verification, deployment, and maintenance helpers | Keep commands documented in README |
-| `desktop/`, `deploy/`, `sandbox/` | Desktop shell, deployment assets, and sandbox runtime | Runtime-specific source |
+| `desktop/`, `runtime/` | Desktop shell and native runtime manifests | Runtime-specific source |
+| [`Caddyfile.example`](Caddyfile.example) | Optional Native Host reverse-proxy example | Configuration example |
 | `workspace/`, `models/`, `data/` | Local mounts, model files, and runtime state | Local state; ignored by Git |
 | `build/`, `dist/`, `node_modules/`, `.venv/` | Build output and local dependencies | Generated/local; ignored by Git |
 

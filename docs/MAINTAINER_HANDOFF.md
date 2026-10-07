@@ -36,7 +36,7 @@ secrets or operator procedures. It is not a copy of the working directory.
 | `desktop/`, deployment configuration, runtime manifests | `frontend/`, `build/`, `dist/` |
 | Current contracts and maintainer documentation | `.worktrees/`, caches, test reports |
 | `.env.example` and documented configuration names | `.env`, credentials, certificates, model weights |
-| Empty tracked placeholders such as `workspace/.gitkeep` | `workspace/`, `data/`, `testdata/`, local databases |
+| Source files and configuration examples only | `models/`, `workspace/`, `data/`, `testdata/`, local databases |
 
 The repository safety check enforces the most important version-control
 boundary:
@@ -44,6 +44,20 @@ boundary:
 ```powershell
 npm.cmd run checkRepoSafety
 ```
+
+## Browsing the repository
+
+The source folders are `backend/`, `frontend-src/`, `desktop/`, `runtime/`,
+`scripts/`, `tests/`, and `docs/`. Model and workspace directories are local
+state, not tracked placeholders. The optional reverse-proxy configuration is
+[`Caddyfile.example`](Caddyfile.example); it does not need its own root folder.
+
+VS Code's workspace settings hide dependencies, generated builds, caches,
+test artifacts, local state, and secondary worktrees from the file explorer.
+Those files remain available on disk. To inspect them, temporarily disable
+the relevant `files.exclude` entry in `.vscode/settings.json`. Keep `.venv/`,
+`node_modules/`, generated `frontend/`, and runtime binaries available for
+development; removing them is not a source cleanup.
 
 ## Ownership map
 
