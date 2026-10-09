@@ -1,22 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import { catalogItemPassesFilters } from "../frontend-src/src/features/models/catalogFitFilter.js";
-
-const source = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
-const helperStart = source.indexOf("/* ── Guided advisor helpers ── */");
-const helperEnd = source.indexOf("function advisorProfileFromPayload", helperStart);
-assert.ok(helperStart >= 0 && helperEnd > helperStart, "catalog assessment helpers are present");
-const helperSource = source
-  .slice(helperStart, helperEnd)
-  .replaceAll("export const ", "const ")
-  .replaceAll("export function ", "function ");
-const {
+import {
   catalogVramEstimateGb,
   catalogPlacementAssessment,
-} = new Function(
-  helperSource + "\nreturn { catalogVramEstimateGb, catalogPlacementAssessment };",
-)();
+} from "../frontend-src/src/features/models/modelPlacement.js";
 
 function assess(item, hardware = null) {
   return catalogPlacementAssessment(item, hardware);

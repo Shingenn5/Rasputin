@@ -3,32 +3,27 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { blockerGuidanceForReason } from "../frontend-src/src/features/shared/blockerGuidance.js";
 
-const source = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
+const source = ["ModelsView.jsx", "ModelAdvisor.jsx", "CatalogCard.jsx", "ModelDownloadProgress.jsx", "advisorSelection.js"]
+  .map((file) => readFileSync(new URL("../frontend-src/src/features/models/" + file, import.meta.url), "utf8"))
+  .join("\n");
 const guidanceSource = readFileSync(new URL("../frontend-src/src/features/shared/blockerGuidance.js", import.meta.url), "utf8");
-const helperStart = source.indexOf("/* ── Guided advisor helpers ── */");
-const helperEnd = source.indexOf("function advisorProfileFromPayload", helperStart);
-assert.ok(helperStart >= 0, "advisor helper block is present");
-assert.ok(helperEnd > helperStart, "advisor helper block has a pure-function boundary");
-
-const helperSource = source
-  .slice(helperStart, helperEnd)
-  .replaceAll("export const ", "const ")
-  .replaceAll("export function ", "function ");
-const {
+import {
   shortlistAdvisorModels,
   selectAdvisorWinner,
-  hardwarePlacementCapacity,
-  catalogPlacementAssessment,
-  shouldProbeHardware,
   withAdvisorTimeout,
-  normalizeHardwareSnapshot,
   advisorStateForInputs,
+} from "../frontend-src/src/features/models/advisorSelection.js";
+import {
+  hardwarePlacementCapacity,
+  shouldProbeHardware,
+  normalizeHardwareSnapshot,
+  systemMemoryCapacity,
+} from "../frontend-src/src/features/models/hardwareSnapshot.js";
+import {
+  catalogPlacementAssessment,
   catalogVramEstimateGb,
   catalogSystemRamEstimateGb,
-  systemMemoryCapacity,
-} = new Function(
-  helperSource + "\nreturn { shortlistAdvisorModels, selectAdvisorWinner, hardwarePlacementCapacity, catalogPlacementAssessment, shouldProbeHardware, withAdvisorTimeout, normalizeHardwareSnapshot, advisorStateForInputs, catalogVramEstimateGb, catalogSystemRamEstimateGb, systemMemoryCapacity };",
-)();
+} from "../frontend-src/src/features/models/modelPlacement.js";
 
 test("system RAM fit evidence gets host-memory guidance", () => {
   const guidance = blockerGuidanceForReason("Estimated 2.8 GB system RAM fits 24.6 GB safely available now.");

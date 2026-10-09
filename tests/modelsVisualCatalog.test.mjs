@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const models = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
+const models = [
+  "ModelsView.jsx", "ModelStatus.jsx", "ModelDownloadProgress.jsx", "ModelAdvisor.jsx",
+  "ModelCatalogRows.jsx", "DiscoverModelInspector.jsx", "CatalogCard.jsx",
+  "InstalledModelRow.jsx", "ModelRuntimePanel.jsx",
+]
+  .map((file) => readFileSync(new URL("../frontend-src/src/features/models/" + file, import.meta.url), "utf8"))
+  .join("\n");
 const identity = readFileSync(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url), "utf8");
 const publisherLogo = readFileSync(new URL("../frontend-src/src/features/models/PublisherLogo.jsx", import.meta.url), "utf8");
 const loader = readFileSync(new URL("../frontend-src/src/features/models/ModelLoadDialog.jsx", import.meta.url), "utf8");
