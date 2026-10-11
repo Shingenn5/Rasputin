@@ -1,12 +1,13 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { blockerGuidanceForReason } from "../frontend-src/src/features/shared/blockerGuidance.js";
 
 const source = ["ModelsView.jsx", "ModelAdvisor.jsx", "CatalogCard.jsx", "ModelDownloadProgress.jsx", "advisorSelection.js"]
-  .map((file) => readFileSync(new URL("../frontend-src/src/features/models/" + file, import.meta.url), "utf8"))
+  .map((file) => readFeatureSource(new URL("../frontend-src/src/features/models/" + file, import.meta.url)))
   .join("\n");
-const guidanceSource = readFileSync(new URL("../frontend-src/src/features/shared/blockerGuidance.js", import.meta.url), "utf8");
+const guidanceSource = readFeatureSource(new URL("../frontend-src/src/features/shared/blockerGuidance.js", import.meta.url));
 import {
   shortlistAdvisorModels,
   selectAdvisorWinner,

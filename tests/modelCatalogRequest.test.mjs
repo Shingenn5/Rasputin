@@ -1,9 +1,10 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-const app = fs.readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
-const warsat = fs.readFileSync(new URL("../frontend-src/src/features/warsat/WarsatView.jsx", import.meta.url), "utf8");
+const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
+const warsat = readFeatureSource(new URL("../frontend-src/src/features/warsat/WarsatView.jsx", import.meta.url));
 
 function deferred() {
   let resolve;

@@ -1,10 +1,11 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const models = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
-const serving = readFileSync(new URL("../frontend-src/src/features/models/ModelServingPanel.jsx", import.meta.url), "utf8");
-const interfaceCss = readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
+const models = readFeatureSource(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url));
+const serving = readFeatureSource(new URL("../frontend-src/src/features/models/ModelServingPanel.jsx", import.meta.url));
+const interfaceCss = readFeatureSource(new URL("../frontend-src/src/styles/interface.css", import.meta.url));
 const backend = readFileSync(new URL("../backend/api/serving.py", import.meta.url), "utf8");
 
 test("Models rail collapses persistently to accessible icon-only navigation", () => {

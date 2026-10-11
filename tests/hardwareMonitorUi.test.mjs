@@ -1,13 +1,14 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const shell = readFileSync(new URL("../frontend-src/src/components/AppShell.jsx", import.meta.url), "utf8");
-const monitor = readFileSync(new URL("../frontend-src/src/components/shell/HardwareMonitor.jsx", import.meta.url), "utf8");
-const resources = readFileSync(new URL("../frontend-src/src/features/settings/ResourceSettings.jsx", import.meta.url), "utf8");
-const modelSettings = readFileSync(new URL("../frontend-src/src/features/settings/ModelSettings.jsx", import.meta.url), "utf8");
-const settingsView = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
-const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const shell = readFeatureSource(new URL("../frontend-src/src/components/AppShell.jsx", import.meta.url));
+const monitor = readFeatureSource(new URL("../frontend-src/src/components/shell/HardwareMonitor.jsx", import.meta.url));
+const resources = readFeatureSource(new URL("../frontend-src/src/features/settings/ResourceSettings.jsx", import.meta.url));
+const modelSettings = readFeatureSource(new URL("../frontend-src/src/features/settings/ModelSettings.jsx", import.meta.url));
+const settingsView = readFeatureSource(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url));
+const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
 
 test("AppShell mounts the persistent hardware monitor from settings", () => {
   assert.match(shell, /useSettingsStore/);

@@ -1,40 +1,12 @@
-import { formatGenerationMetrics } from "../../lib/generationMetrics.js";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowUp,
-  Bot,
-  BookOpen,
-  Box,
-  Brain,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Cpu,
-  FileText,
-  ListPlus,
-  Laptop,
-  Paperclip,
-  Pause,
-  PanelLeftOpen,
-  Play,
-  Search,
-  Settings,
-  ShieldCheck,
-  SquareSlash,
-  Square,
-  X,
-} from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
-import {
-  displayModelName,
-  displayModelSecondary,
-  displayWorkspaceName,
-  labelize,
-  modelHealthLine,
-  runtimeStatus,
-} from "../../lib/display.js";
+import { TaskThread } from "./TaskThread.jsx";
+import { ModeSidePanel } from "./ModeSidePanel.jsx";
+import { ModelSidePanel } from "./ModelSidePanel.jsx";
+import { useChatCommands } from "./useChatCommands.js";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, Bot, BookOpen, Box, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Cpu, FileText, ListPlus, Laptop, Paperclip, PanelLeftOpen, Settings, ShieldCheck, SquareSlash, Square, X } from "lucide-react";
+
+import { displayModelName, labelize, modelHealthLine, runtimeStatus } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";
 import {
   deleteAttachment,
@@ -42,11 +14,9 @@ import {
   updateAttachmentRetention,
   uploadAttachment,
 } from "../../lib/fileExtraction.js";
-import { Avatar } from "../../components/Avatar.jsx";
-import { Modal } from "../../components/Modal.jsx";
-import { CodeSandbox } from "../../components/CodeSandbox.jsx";
+
 import { PromptRecipePanel } from "./PromptRecipePanel.jsx";
-import { featuredRecipes, recipesForMode } from "./promptRecipes.js";
+import { featuredRecipes } from "./promptRecipes.js";
 
 const modeOptions = [
   {
@@ -276,235 +246,59 @@ export function HomeView(props) {
     ? objective.slice(1).trim().toLowerCase()
     : "";
 
-  const closeCmd = useCallback((consumeSlashText = false) => {
-    setCmd(null);
-    setCmdIndex(0);
-    setSlashMenuDismissed(false);
-    if (consumeSlashText) {
-      setObjective((current) => (typeof current === "string" && current.startsWith("/") ? "" : current));
-    }
-    window.requestAnimationFrame(() => composerRef.current?.focus());
-  }, [setObjective]);
-
-  const openCmd = useCallback((path = null) => {
-    // With an empty composer, seed a "/" so typing filters the menu just like
-    // a typed slash command; with a draft in progress, leave the text alone.
-    const draft = composerRef.current?.value ?? "";
-    if (!draft.trim()) {
-      setObjective("/");
-      setCmd({ path, source: "typed" });
-    } else {
-      setCmd({ path, source: "button" });
-    }
-    setSlashMenuDismissed(false);
-    setCmdIndex(0);
-    window.requestAnimationFrame(() => composerRef.current?.focus());
-  }, [setObjective]);
-
-  const openRecipePanel = useCallback((mode = taskMode, recipeId = null) => {
-    setCmd(null);
-    setCmdIndex(0);
-    setModePanelOpen(false);
-    setModelPanelOpen(false);
-    setRecipePanelMode(mode);
-    setRecipePanelRecipeId(recipeId);
-    setRecipePanelOpen(true);
-  }, [taskMode]);
-
-  const applyRecipe = useCallback(({ recipe: selectedRecipe, objective: nextObjective }) => {
-    setTaskMode(selectedRecipe.mode);
-    if (selectedRecipe.reasoning && selectedRecipe.reasoning !== "auto") {
-      setReasoningMode(selectedRecipe.reasoning);
-    }
-    setObjective(nextObjective);
-    setRecipePanelOpen(false);
-    setRecipePanelRecipeId(null);
-    window.requestAnimationFrame(() => {
-      composerRef.current?.focus();
-      resizeComposer();
-    });
-  }, [resizeComposer, setObjective, setReasoningMode, setTaskMode]);
-
-  function openFilePicker() {
-    fileInputRef.current?.click();
-  }
-
-  function queueCurrentDraft() {
-    if (attachments.length) {
-      setUiState({ status: "failed", message: "Send attachments directly; attachment-aware queueing is not available yet." });
-      return;
-    }
-    const text = buildOutgoingMessage();
-    if (!text) return;
-    queueMessage(text);
-    setObjective("");
-    setAttachments([]);
-  }
-
-  const cmdItems = useMemo(() => {
-    let items = [];
-    if (cmd?.path === "mode") {
-      items = modeOptions.map((mode) => ({
-        id: `mode-${mode.value}`,
-        name: mode.label,
-        hint: mode.description,
-        active: taskMode === mode.value,
-        run: () => setTaskMode(mode.value),
-      }));
-      items.push({
-        id: "configure-modes",
-        name: "Configure modes...",
-        hint: "Per-mode model overrides and parallel sub-agents.",
-        run: () => setModePanelOpen(true),
-      });
-    } else if (cmd?.path === "model") {
-      items = visibleModels.map((model) => ({
-        id: `model-${model.key}`,
-        name: displayModelName(model, models),
-        hint: displayModelSecondary(model, models) || model.key,
-        dotStatus: model.key === "dry-run" || model.provider === "mock" ? "reachable" : runtimeStatus(model),
-        active: model.key === selectedModel,
-        run: () => setSelectedModel(model.key),
-      }));
-      items.push({
-        id: "manage-models",
-        name: "Manage models...",
-        hint: "Deploy, test, and register models.",
-        run: () => go("models"),
-      });
-    } else if (cmd?.path === "reasoning") {
-      items = reasoningOptions.map((option) => ({
-        id: `reasoning-${option.value}`,
-        name: option.label,
-        hint: option.description,
-        active: reasoningMode === option.value,
-        run: () => setReasoningMode(option.value),
-      }));
-    } else if (cmd?.path === "prompts") {
-      items = modeOptions.map((mode) => ({
-        id: `prompt-mode-${mode.value}`,
-        name: mode.label,
-        hint: `${recipesForMode(mode.value).length} guided recipes - ${mode.description}`,
-        run: () => openRecipePanel(mode.value),
-      }));
-    } else {
-      items = [
-        { id: "mode", name: "/mode", hint: `Switch task mode - now ${activeMode.label}.`, submenu: "mode" },
-        { id: "model", name: "/model", hint: `Switch model - now ${displayModelName(selectedModelObject, models)}.`, submenu: "model" },
-        { id: "reasoning", name: "/reasoning", hint: `Reasoning effort - now ${activeReasoning.label}.`, submenu: "reasoning" },
-        { id: "attach", name: "/attach", hint: "Attach files to the next message.", run: openFilePicker },
-        { id: "queue", name: "/queue", hint: "Queue the current draft to run after the active task.", run: queueCurrentDraft },
-        ...(queuedMessages.length ? [{ id: "clear-queue", name: "/clear-queue", hint: `Remove ${queuedMessages.length} queued message${queuedMessages.length === 1 ? "" : "s"}.`, run: clearQueuedMessages }] : []),
-        { id: "prompts", name: "/prompts", hint: "Guided prompt recipes for each mode.", submenu: "prompts" },
-        { id: "new", name: "/new", hint: "Start a new chat session.", run: () => startNewChat?.() },
-        ...(latestActiveTask ? [{ id: "stop", name: "/stop", hint: "Stop the latest running task.", run: () => cancelTask(latestActiveTask.id) }] : []),
-        { id: "models-view", name: "/models", hint: "Open the Models view.", run: () => go("models") },
-        { id: "workspaces-view", name: "/workspaces", hint: "Open the Workspaces view.", run: () => go("workspaces") },
-        { id: "activity-view", name: "/activity", hint: "Open the Activity view.", run: () => go("activity") },
-        { id: "settings-view", name: "/settings", hint: "Open Settings.", run: () => go("settings", "general") },
-      ];
-    }
-    if (!cmdQuery) return items;
-    return items.filter((item) =>
-      `${item.name} ${item.hint || ""}`.toLowerCase().includes(cmdQuery));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cmd, cmdQuery, taskMode, reasoningMode, selectedModel, selectedModelObject, models, visibleModels, queuedMessages.length, latestActiveTask?.id, openRecipePanel]);
-
-  useEffect(() => { setCmdIndex(0); }, [cmdQuery, cmd?.path]);
-
-  useEffect(() => {
-    if (!cmd) return undefined;
-    function closeOnOutsideClick(event) {
-      if (cmdMenuRef.current && !cmdMenuRef.current.contains(event.target)) {
-        setCmd(null);
-        setCmdIndex(0);
-        if (cmd.source === "typed") setSlashMenuDismissed(true);
-      }
-    }
-    const attachTimer = window.setTimeout(() => {
-      document.addEventListener("mousedown", closeOnOutsideClick);
-    }, 0);
-    return () => {
-      window.clearTimeout(attachTimer);
-      document.removeEventListener("mousedown", closeOnOutsideClick);
-    };
-  }, [cmd]);
-
-  function runCmdItem(item) {
-    if (!item) return;
-    if (item.submenu) {
-      setCmd((current) => ({ path: item.submenu, source: current?.source || "button" }));
-      setCmdIndex(0);
-      if (cmd?.source === "typed") setObjective("/");
-      return;
-    }
-    closeCmd(true);
-    item.run?.();
-    if (item.keepText) setObjective(item.keepText);
-  }
-
-  function handleComposerChange(event) {
-    const value = event.target.value;
-    setObjective(value);
-    if (value.startsWith("/")) {
-      if (!cmd && !slashMenuDismissed) {
-        setCmd({ path: null, source: "typed" });
-        setCmdIndex(0);
-      }
-    } else {
-      setSlashMenuDismissed(false);
-      if (cmd?.source === "typed") setCmd(null);
-    }
-  }
-
-  function handleComposerKeyDown(event) {
-    if (cmd) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setCmdIndex((index) => Math.min(index + 1, Math.max(cmdItems.length - 1, 0)));
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setCmdIndex((index) => Math.max(index - 1, 0));
-        return;
-      }
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        runCmdItem(cmdItems[cmdIndex]);
-        return;
-      }
-      if (event.key === "Tab" && event.shiftKey) {
-        setCmd(null);
-        return;
-      }
-      if (event.key === "Tab") {
-        event.preventDefault();
-        runCmdItem(cmdItems[cmdIndex]);
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        if (cmd.path) {
-          setCmd((current) => ({ ...current, path: null }));
-          setCmdIndex(0);
-          return;
-        }
-        closeCmd(true);
-        return;
-      }
-      if (event.key === "Backspace" && cmd.path && !cmdQuery) {
-        event.preventDefault();
-        setCmd((current) => ({ ...current, path: null }));
-        setCmdIndex(0);
-        return;
-      }
-    }
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      event.currentTarget.form.requestSubmit();
-    }
-  }
+  const {
+    closeCmd,
+    openCmd,
+    openRecipePanel,
+    applyRecipe,
+    openFilePicker,
+    cmdItems,
+    runCmdItem,
+    handleComposerChange,
+    handleComposerKeyDown,
+  } = useChatCommands({
+    setCmd,
+    setCmdIndex,
+    setSlashMenuDismissed,
+    setObjective,
+    composerRef,
+    taskMode,
+    setModePanelOpen,
+    setModelPanelOpen,
+    setRecipePanelMode,
+    setRecipePanelRecipeId,
+    setRecipePanelOpen,
+    setTaskMode,
+    setReasoningMode,
+    resizeComposer,
+    fileInputRef,
+    attachments,
+    setUiState,
+    get buildOutgoingMessage() { return buildOutgoingMessage; },
+    queueMessage,
+    setAttachments,
+    cmd,
+    visibleModels,
+    models,
+    selectedModel,
+    setSelectedModel,
+    go,
+    reasoningMode,
+    activeMode,
+    selectedModelObject,
+    activeReasoning,
+    queuedMessages,
+    clearQueuedMessages,
+    startNewChat,
+    latestActiveTask,
+    cancelTask,
+    cmdQuery,
+    cmdMenuRef,
+    slashMenuDismissed,
+    cmdIndex,
+    modeOptions,
+    reasoningOptions,
+  });
 
   // ---- Sending / queueing ---------------------------------------------
   function buildOutgoingMessage() {
@@ -1135,271 +929,5 @@ export function HomeView(props) {
         </div>
       </div>
     </section>
-  );
-}
-
-function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close, onOpenModels, returnFocusRef }) {
-  const [query, setQuery] = useState("");
-  const items = visibleModels.filter((model) => {
-    const text = [displayModelName(model, models), displayModelSecondary(model, models), model.key, model.model].join(" ").toLowerCase();
-    return text.includes(query.trim().toLowerCase());
-  });
-  return (
-    <Modal open onClose={close} title="Select a model to load" size="lg" className="studio-model-picker" returnFocusRef={returnFocusRef}>
-      <div ref={panelRef} data-testid="model-side-panel">
-        <label className="studio-model-picker-search">
-          <Search size={16} aria-hidden="true" />
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter local models..." autoFocus />
-        </label>
-        <div className="studio-model-picker-head"><strong>Your models</strong><span>Available</span></div>
-        <div className="studio-model-picker-list">
-          {!items.length && (
-            <p className="model-panel-empty" role="status">
-              No available chat model matches this filter.
-            </p>
-          )}
-          {items.map((model) => {
-            const selected = model.key === selectedModel;
-            const status = runtimeStatus(model);
-            const context = model.context_window || model.contextWindow;
-            return (
-              <button
-                key={model.key}
-                type="button"
-                className={selected ? "model-choice is-active" : "model-choice"}
-                data-testid="model-option"
-                aria-pressed={selected}
-                onClick={() => setSelectedModel(model.key)}
-              >
-                <span className={"model-choice-status status-" + status} aria-hidden="true" />
-                <span>
-                  <strong>{displayModelName(model, models)}</strong>
-                  <small>{displayModelSecondary(model, models) || model.model || model.key}</small>
-                </span>
-                <em>{context ? Number(context).toLocaleString() + " ctx" : status}</em>
-              </button>
-            );
-          })}
-        </div>
-        <footer className="studio-model-picker-footer">
-          <span>Only healthy chat-capable models are selectable here.</span>
-          <button type="button" className="w2-button" onClick={() => { close(); onOpenModels?.(); }}>Manage models</button>
-        </footer>
-      </div>
-    </Modal>
-  );
-}
-
-function ModeSidePanel({
-  panelRef,
-  modes,
-  activeMode,
-  models,
-  visibleModels,
-  modeModelOverrides,
-  setModeModelOverride,
-  modelKeyForMode,
-  setTaskMode,
-  subagentCount,
-  setSubagentCount,
-  close,
-}) {
-  function modelForMode(mode) {
-    const key = modelKeyForMode?.(mode.value, modeModelOverrides);
-    return visibleModels.find((model) => model.key === key)
-      || visibleModels.find((model) => model.role === mode.role)
-      || null;
-  }
-
-  return (
-    <aside
-      ref={panelRef}
-      className="mode-side-panel"
-      data-testid="mode-side-panel"
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby="modePanelTitle"
-    >
-      <header className="mode-panel-head">
-        <div>
-          <span className="eyebrow">Task routing</span>
-          <h2 id="modePanelTitle">Choose mode</h2>
-        </div>
-        <button className="icon-button" type="button" aria-label="Close mode panel" onClick={close}>
-          <X size={18} />
-        </button>
-      </header>
-
-      <div className="mode-panel-list">
-        {modes.map((mode) => {
-          const routed = modelForMode(mode);
-          const override = modeModelOverrides?.[mode.value] || "";
-          return (
-            <article className={activeMode === mode.value ? "mode-card is-active" : "mode-card"} key={mode.value} data-testid="mode-option">
-              <button type="button" className="mode-card-main" aria-pressed={activeMode === mode.value} onClick={() => setTaskMode(mode.value)}>
-                <Bot size={18} aria-hidden="true" />
-                <span>
-                  <strong>{mode.label}</strong>
-                  <small>{mode.description}</small>
-                </span>
-              </button>
-              <dl className="mode-route-grid">
-                <dt>Role</dt>
-                <dd>{labelize(mode.role)}</dd>
-                <dt>Model</dt>
-                <dd>{routed ? displayModelName(routed, models) : "No available model"}</dd>
-                {routed && displayModelSecondary(routed, models) && (
-                  <>
-                    <dt>Registry</dt>
-                    <dd>{displayModelSecondary(routed, models)}</dd>
-                  </>
-                )}
-              </dl>
-              <label className="mode-model-override">
-                <span>Override model</span>
-                <select
-                  value={override}
-                  aria-label={`${mode.label} model override`}
-                  onChange={(event) => setModeModelOverride(mode.value, event.target.value)}
-                >
-                  <option value="">Use {labelize(mode.role)} route</option>
-                  {visibleModels.map((model) => (
-                    <option key={model.key} value={model.key}>{displayModelName(model, models)}</option>
-                  ))}
-                </select>
-              </label>
-              <p>{mode.permission}</p>
-            </article>
-          );
-        })}
-      </div>
-
-      <section className="mode-subagent-panel" aria-label="Parallel sub-agent controls">
-        <div>
-          <h3>Parallel sub-agents</h3>
-          <p>Use these for larger non-chat jobs. Normal chat messages can already run at the same time.</p>
-        </div>
-        <label>
-          <span>Count</span>
-          <input
-            type="number"
-            min="0"
-            max="4"
-            value={subagentCount}
-            onChange={(event) => setSubagentCount(Math.max(0, Math.min(Number(event.target.value || 0), 4)))}
-          />
-        </label>
-      </section>
-    </aside>
-  );
-}
-
-
-function TaskThread({ task, models, cancelTask, pauseTask, resumeTask, openTaskDetails }) {
-  const status = task.status || "queued";
-  const deploymentProfile = task.deploymentProfile || task.deployment_profile || {};
-  const taskModel = displayModelName(task.model || deploymentProfile.key, models);
-  const taskMode = task.mode || "chat";
-  const taskWorkspace = displayWorkspaceName(task.workspace);
-  const taskRuntime = deploymentProfile.runtime || deploymentProfile.provider || "unknown";
-  const taskRuntimeIdentity = "Model " + taskModel + " · Mode " + taskMode + " · Workspace " + taskWorkspace + " · Runtime " + taskRuntime;
-  const active = ["queued", "running", "paused"].includes(status);
-  const runningPhase = [...(task.steps || [])].reverse().find((step) => step.kind === "phase" && step.status === "running")?.name;
-  // Planning/execution streams remain available in task details; the chat
-  // bubble presents only a direct chat reply or the final reflection so it
-  // never flashes internal intermediate drafts as if they were the answer.
-  const presentsAnswer = task.mode === "chat" || runningPhase === "chat" || runningPhase === "reflection";
-  const liveText = presentsAnswer ? String(task.streamText || "") : "";
-  const streaming = status === "running" && Boolean(liveText);
-  const response = task.result || liveText || task.logs?.slice(-4).join("\n") || "Working...";
-  const generation = formatGenerationMetrics(task.generationMetrics);
-  return (
-    <article className="thread-item">
-      <div className="message user-message">
-        <div className="message-label">
-          <Avatar kind="user" name="You" size="sm" />
-          <span>You</span>
-        </div>
-        <div className="message-body user-bubble">{task.objective}</div>
-      </div>
-      <div className="message assistant-message">
-        <div className="message-label assistant-label">
-          <Avatar kind="model" name={displayModelName(task.model, models) || "Rasputin"} size="sm" />
-          <span>Rasputin</span>
-          <span className={`status-pill status-${status}`}>{status}</span>
-          {active && (
-            <span className="status-pill status-running">
-              {streaming ? "Generating…" : status === "queued" ? "Queued" : status === "paused" ? "Paused" : runningPhase === "chat" ? "Waiting for first token…" : "Working…"}
-            </span>
-          )}
-          <span className="task-runtime-identity" data-testid="task-runtime-identity" title={taskRuntimeIdentity}>
-            {taskRuntimeIdentity}
-          </span>
-        </div>
-        <div
-          className={`markdown-body${streaming ? " is-streaming" : ""}`}
-          data-testid="chat-assistant-response"
-          data-streaming={streaming ? "true" : "false"}
-        >
-          <ReactMarkdown
-            rehypePlugins={[rehypeSanitize]}
-            components={{
-              code: CodeSandbox
-            }}
-          >
-            {response}
-          </ReactMarkdown>
-        </div>
-        <details className="runtime-details" data-testid="runtime-details-toggle">
-          <summary>Details</summary>
-          <dl className="detail-grid">
-            <dt>Model</dt><dd>{displayModelName(task.model, models)}</dd>
-            <dt>Mode</dt><dd>{task.mode || "chat"}</dd>
-            <dt>Memory</dt><dd>{labelize(task.memoryMode || "auto")}</dd>
-            {task.reasoning && task.reasoning !== "auto" && (
-              <>
-                <dt>Reasoning</dt><dd>{labelize(task.reasoning)}</dd>
-              </>
-            )}
-            <dt>Workspace</dt><dd>{displayWorkspaceName(task.workspace)}</dd>
-            <dt>Status</dt><dd>{status}</dd>
-            <dt>Request throughput (all calls)</dt>
-            <dd data-testid="message-generation-tps">{generation.tokensPerSecond}</dd>
-            <dt>Generation speed (last call)</dt>
-            <dd data-testid="message-decode-tps">{generation.decodeSpeed}</dd>
-            <dt>First visible token (last call)</dt>
-            <dd data-testid="message-first-token">{generation.firstToken}</dd>
-            <dt>Prompt processing (last call)</dt><dd>{generation.promptTime}</dd>
-            <dt>Request time (last call)</dt><dd>{generation.requestTime}</dd>
-            <dt>Output tokens</dt>
-            <dd>{generation.outputTokens}</dd>
-          </dl>
-          <div className="task-inline-actions" aria-label="Task details">
-            <button type="button" className="tiny-action" data-testid="activity-task-details" onClick={() => openTaskDetails(task.id)}>
-              Open details
-            </button>
-          </div>
-          {active && (
-            <div className="task-inline-actions" aria-label="Task controls">
-              {status === "paused" ? (
-                <button type="button" className="tiny-action" onClick={() => resumeTask(task.id)}>
-                  <Play size={13} />
-                  Resume
-                </button>
-              ) : (
-                <button type="button" className="tiny-action" onClick={() => pauseTask(task.id)}>
-                  <Pause size={13} />
-                  Pause
-                </button>
-              )}
-              <button type="button" className="tiny-action danger" onClick={() => cancelTask(task.id)}>
-                <Square size={13} />
-                Stop
-              </button>
-            </div>
-          )}
-        </details>
-      </div>
-    </article>
   );
 }

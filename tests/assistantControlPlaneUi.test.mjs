@@ -1,9 +1,10 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("../frontend-src/src/features/assistant/AssistantView.jsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../frontend-src/src/styles/assistant.css", import.meta.url), "utf8");
+const source = readFeatureSource(new URL("../frontend-src/src/features/assistant/AssistantView.jsx", import.meta.url));
+const styles = readFeatureSource(new URL("../frontend-src/src/styles/assistant.css", import.meta.url));
 
 const advancedGroups = [
   "assistant-advanced-diagnostics",

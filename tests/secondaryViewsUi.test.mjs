@@ -1,3 +1,4 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -10,7 +11,7 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "u
 const main = read("frontend-src/src/main.jsx");
 const css = read("frontend-src/src/styles/secondary-views.css");
 const history = read("frontend-src/src/features/tasks/TasksView.jsx");
-const models = read("frontend-src/src/features/models/ModelsView.jsx");
+const models = readFeatureSource(path.join(root, "frontend-src/src/features/models/ModelsView.jsx"));
 const settings = read("frontend-src/src/features/settings/SettingsView.jsx");
 
 test("loads the secondary workspace layer after the base interface and before motion", () => {

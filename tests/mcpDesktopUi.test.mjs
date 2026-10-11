@@ -1,11 +1,12 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const settings = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
-const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
-const constants = readFileSync(new URL("../frontend-src/src/lib/constants.js", import.meta.url), "utf8");
-const mcp = readFileSync(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url), "utf8");
+const settings = readFeatureSource(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url));
+const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
+const constants = readFeatureSource(new URL("../frontend-src/src/lib/constants.js", import.meta.url));
+const mcp = readFeatureSource(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url));
 
  test("desktop settings exposes the MCP management surface", () => {
   assert.match(constants, /\["mcp", "MCP Servers"/);

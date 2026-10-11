@@ -238,7 +238,10 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("key must not be blank", blank.text)
 
     def testModelCatalogSupportsWarsatPlanning(self):
-        with tempfile.TemporaryDirectory() as model_dir, patch.dict(os.environ, {"CONTAINER_MODELS_DIR": model_dir, "RASPUTIN_NATIVE_DOCKER_CACHE": "0"}):
+        # Only inventory the fixture, never models in the maintainer's HF caches.
+        with tempfile.TemporaryDirectory() as model_dir, \
+             patch.dict(os.environ, {"CONTAINER_MODELS_DIR": model_dir, "RASPUTIN_NATIVE_DOCKER_CACHE": "0"}), \
+             patch("backend.models.catalog._local_model_roots", return_value=[Path(model_dir)]):
             local_file = Path(model_dir) / "demo-model.gguf"
             local_file.write_bytes(b"GGUF")
             local = self.assertOk(self.client.get("/api/model-catalog"))
@@ -249,7 +252,10 @@ class BackendSmokeTests(unittest.TestCase):
 
         ready_item = model_catalog._local_item("demo-model", "Demo model", "Docker cache: demo", "vllmCudaOpenai", "local-warsat-cache")
         ready_item.update({"runtime_status": "reachable", "container_status": "running", "readyWithinThreeMinutes": True})
-        with patch("backend.models.catalog._warsat_cache_items", return_value=[ready_item]):
+        with patch("backend.models.catalog._warsat_cache_items", return_value=[ready_item]), \
+             patch("backend.models.catalog._local_items", return_value=[]), \
+             patch("backend.models.catalog._native_docker_cache_items", return_value=[]), \
+             patch("backend.models.catalog._native_managed_container_items", return_value=[]):
             local = model_catalog.local_catalog()
         self.assertEqual(local["count"], 1)
         self.assertTrue(local["items"][0]["readyWithinThreeMinutes"])

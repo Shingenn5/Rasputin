@@ -1,9 +1,10 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const view = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
-const css = readFileSync(new URL("../frontend-src/src/styles/settings-workspace-v3.css", import.meta.url), "utf8");
+const view = readFeatureSource(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url));
+const css = readFeatureSource(new URL("../frontend-src/src/styles/settings-workspace-v3.css", import.meta.url));
 
 test("Settings v3 has a dedicated command-center composition", () => {
   assert.match(view, /settings-workspace-v3\.css/);

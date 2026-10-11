@@ -1,17 +1,18 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
-const settings = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
-const models = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
-const mcp = readFileSync(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url), "utf8");
-const modal = readFileSync(new URL("../frontend-src/src/components/Modal.jsx", import.meta.url), "utf8");
-const history = readFileSync(new URL("../frontend-src/src/features/tasks/TasksView.jsx", import.meta.url), "utf8");
-const projects = readFileSync(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url), "utf8");
-const interfaceCss = readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
-const indexHtml = readFileSync(new URL("../frontend-src/index.html", import.meta.url), "utf8");
+const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
+const sidebar = readFeatureSource(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url));
+const settings = readFeatureSource(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url));
+const models = readFeatureSource(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url));
+const mcp = readFeatureSource(new URL("../frontend-src/src/features/settings/McpSettings.jsx", import.meta.url));
+const modal = readFeatureSource(new URL("../frontend-src/src/components/Modal.jsx", import.meta.url));
+const history = readFeatureSource(new URL("../frontend-src/src/features/tasks/TasksView.jsx", import.meta.url));
+const projects = readFeatureSource(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url));
+const interfaceCss = readFeatureSource(new URL("../frontend-src/src/styles/interface.css", import.meta.url));
+const indexHtml = readFeatureSource(new URL("../frontend-src/index.html", import.meta.url));
 
 test("desktop navigation uses minimal project and history aliases", () => {
   assert.match(app, /rawView === "project" \? "workspaces"/);

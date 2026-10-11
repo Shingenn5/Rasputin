@@ -112,8 +112,6 @@
   --ease: cubic-bezier(.2, .8, .2, 1);
 }
 
-
-
 * {
   box-sizing: border-box;
 }
@@ -144,7 +142,6 @@ h2,
 h3,
 .system-label,
 .brand-mark,
-.sidebar-title strong,
 .nav-label,
 .eyebrow,
 .mode-trigger strong,

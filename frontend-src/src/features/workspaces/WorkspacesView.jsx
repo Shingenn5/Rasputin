@@ -1,36 +1,12 @@
+import { useWorkspaceMountActions } from "./useWorkspaceMountActions.js";
+import { useWorkspaceKnowledge } from "./useWorkspaceKnowledge.js";
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Check,
-  ChevronRight,
-  Clock,
-  Copy,
-  Database,
-  Eye,
-  File,
-  FileText,
-  Folder,
-  FolderOpen,
-  HardDrive,
-  Info,
-  Lock,
-  PlusCircle,
-  RefreshCw,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  ShieldPlus,
-  Activity,
-  AlertTriangle,
-  ArrowLeft,
-  BrainCircuit,
-  Terminal,
-  X
-} from "lucide-react";
-import { Modal, Button, Table, Spinner, Badge } from "react-bootstrap";
-import { api, postJson } from "../../api/client.js";
+import { Check, ChevronRight, Clock, Copy, Database, Eye, File, FileText, Folder, FolderOpen, HardDrive, Lock, PlusCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldPlus, AlertTriangle, ArrowLeft, BrainCircuit, Terminal, X } from "lucide-react";
+import { Modal, Button, Spinner, Badge } from "react-bootstrap";
+
 import { displayWorkspaceName } from "../../lib/display.js";
-import { GraphEdgeCard, GraphNodeCard } from "../knowledge/GraphEvidence.jsx";
-import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";
+
+import { useReliableAction } from "../../lib/actionRegistry.js";
 
 export function WorkspacesView({
   view,
@@ -182,367 +158,114 @@ export function WorkspacesView({
     setCommandsStatus("");
   }, [activeId]);
 
-  async function submitWorkspaceCommands(event) {
-    event.preventDefault();
-    if (!activeId || !saveWorkspaceCommands) return;
-    setCommandsBusy(true);
-    setCommandsStatus("Saving validation commands...");
-    try {
-      await saveWorkspaceCommands(activeId, commandDraft);
-      setCommandsStatus("Validation commands saved. Code-mode edits can now run these checks.");
-    } catch (error) {
-      setCommandsStatus(error.message);
-    } finally {
-      setCommandsBusy(false);
-    }
-  }
-
-  async function inspectEntry(entry) {
-    setSelectedEntry(entry);
-    setPreview(null);
-    setPreviewError("");
-    if (entry.kind !== "file" || !entry.previewable) return;
-    try {
-      setPreviewMode(true);
-      setPreviewLoading(true);
-      setPreview(await previewWorkspaceFile(currentRoot.id, entry.path));
-    } catch (error) {
-      setPreviewError(error.message);
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
-
-  async function openEntry(entry) {
-    if (entry.kind === "folder" || entry.kind === "parent") {
-      await browseWorkspace(currentRoot.id, entry.path);
-      return;
-    }
-    await inspectEntry(entry);
-  }
-
-  function closePreview() {
-    setPreviewMode(false);
-    setPreview(null);
-  }
-
-  async function indexCurrentFolder() {
-    if (!indexWorkspaceKnowledge) return;
-    try {
-      await executeAction("IndexWorkspace", workspaceBrowse?.path || workspace.activePath || ".", async () => {
-        setKnowledgeStatus("Indexing this workspace...");
-        const result = await indexWorkspaceKnowledge(workspaceBrowse?.path || workspace.activePath || ".");
-        const docs = result.ragResult?.docsIndexed || 0;
-        const chunks = result.ragResult?.chunksIndexed || 0;
-        setKnowledgeStatus(`Indexed ${docs} docs into ${chunks} local chunks, then rebuilt Graphify links.`);
-        refreshKnowledgeStats?.();
-      }, setUiState);
-    } catch (error) {
-      setKnowledgeStatus(error.message);
-    }
-  }
-
-  async function exportCurrentGraphToObsidian() {
-    if (!exportWorkspaceGraphToObsidian || activeReadOnly || !taskAccess) return;
-    const path = workspaceBrowse?.path || workspace.activePath || ".";
-    try {
-      await executeAction("ExportGraphToObsidian", path, async () => {
-        setKnowledgeStatus("Refreshing the graph and exporting Obsidian notes...");
-        const result = await exportWorkspaceGraphToObsidian(path);
-        setKnowledgeStatus(
-          `Exported ${result.nodesExported || 0} nodes and ${result.edgesExported || 0} relationships to ${result.relativePath || "Rasputin Graph/Index.md"}.`,
-        );
-      }, setUiState);
-    } catch (error) {
-      setKnowledgeStatus(error.message);
-    }
-  }
-
-  async function searchKnowledge(event) {
-    event.preventDefault();
-    if (!knowledgeQuery.trim() || !searchWorkspaceKnowledge) return;
-    try {
-      await executeAction("SearchKnowledge", knowledgeQuery.trim(), async () => {
-        setKnowledgeStatus("Searching local knowledge...");
-        const result = await searchWorkspaceKnowledge(knowledgeQuery.trim(), workspaceBrowse?.path || workspace.activePath || ".");
-        setKnowledgeResults(result);
-        const hits = result.ragResult?.hits?.length || 0;
-        const nodes = result.graphResult?.nodes?.length || 0;
-        setKnowledgeStatus(`${hits} retrieval hits and ${nodes} graph nodes found.`);
-      }, setUiState);
-    } catch (error) {
-      setKnowledgeStatus(error.message);
-    }
-  }
+  const {
+    submitWorkspaceCommands,
+    openEntry,
+    closePreview,
+    indexCurrentFolder,
+    exportCurrentGraphToObsidian,
+    searchKnowledge,
+  } = useWorkspaceKnowledge({
+    activeId,
+    saveWorkspaceCommands,
+    setCommandsBusy,
+    setCommandsStatus,
+    commandDraft,
+    setSelectedEntry,
+    setPreview,
+    setPreviewError,
+    setPreviewMode,
+    setPreviewLoading,
+    previewWorkspaceFile,
+    currentRoot,
+    browseWorkspace,
+    indexWorkspaceKnowledge,
+    executeAction,
+    workspaceBrowse,
+    workspace,
+    setKnowledgeStatus,
+    refreshKnowledgeStats,
+    setUiState,
+    exportWorkspaceGraphToObsidian,
+    activeReadOnly,
+    taskAccess,
+    knowledgeQuery,
+    searchWorkspaceKnowledge,
+    setKnowledgeResults,
+  });
 
   // Approve a folder that is already visible under an approved root as its
   // own workspace. Unlike mounting, this needs no Docker restart, and the new
   // workspace gets its own access mode and Trusted Dev Mode toggle.
-  async function approveSubfolder(path) {
-    if (!approvePath || !path) return;
-    try {
-      await executeAction("ApproveSubfolder", path, async () => {
-        await approvePath(path);
-        await loadWorkspaceRoots();
-      }, setUiState);
-    } catch (error) {
-      setKnowledgeStatus(error.message);
-    }
-  }
-
-  function launchTask(type) {
-    if (!setPrompt) return;
-    const folderName = displayWorkspaceName(currentPath);
-    const path = currentPath;
-    
-    switch(type) {
-      case 'summarize':
-        setPrompt(`Summarize the contents and purpose of the approved workspace "${folderName}" at ${path}.`, "write");
-        break;
-      case 'analyze':
-        setPrompt(`Analyze the approved workspace "${folderName}" at ${path}. Use local files, RAG citations, and Graphify evidence to summarize what the folder contains, call out important files, and list any uncertainty.`, "analyze");
-        break;
-      case 'search':
-        setPrompt(`Search the workspace "${folderName}" for any security vulnerabilities or API keys left in the code.`, "analyze");
-        break;
-      case 'graph':
-        setPrompt(`Review the Graphify relationships for the workspace "${folderName}". Identify any disjoint nodes or missing documentation links.`, "research");
-        break;
-      case 'docs':
-        setPrompt(`Generate comprehensive documentation for the workspace "${folderName}" based on its indexed files.`, "write");
-        break;
-      case 'review':
-        setPrompt(`Perform a code review on the active workspace "${folderName}". Point out any style violations or performance issues.`, "code");
-        break;
-      default:
-        break;
-    }
-  }
-
-  // --- Guided Mount Workflow (Streamlined Modal) ---
-  const resetMountModal = () => {
-    setShowAddModal(false);
-    setMountHostPath("");
-    setMountReadOnly(true);
-    setMountStatus("");
-    setMountSuccess(false);
-    setMountWorkflowStep("saved");
-    setMountWorkflowPath("");
-    setMountWorkflowItem(null);
-    setRecheckBusy(false);
-    setRecheckStatus("");
-    setIsMounting(false);
-    setCopied(false);
-    setHostListing(null);
-    setHostBrowseError("");
-    setHostBrowseLoading(false);
-    setHostPathDraft("");
-  };
-
-  // Load host starting points (project folder, home, drive) when the picker opens.
-  useEffect(() => {
-    if (!showAddModal || (!native && !security?.allowDockerControl)) return;
-    postJson("/api/workspace/host-browse", {})
-      .then((data) => {
-        const roots = data.roots || [];
-        setHostRoots(roots);
-        setHostRootsMessage(data.message || "");
-        if (roots[0]?.path) browseHost(roots[0].path);
-      })
-      .catch((error) => setHostRootsMessage(error.message));
-  }, [showAddModal, native, security?.allowDockerControl]);
-
-  async function browseHost(path) {
-    const target = String(path || "").trim();
-    if (!target || hostBrowseLoading) return;
-    setHostBrowseLoading(true);
-    setHostBrowseError("");
-    try {
-      const listing = await postJson("/api/workspace/host-browse", { path: target });
-      setHostListing(listing);
-      setMountHostPath(listing.path);
-      setHostPathDraft(listing.path);
-    } catch (error) {
-      setHostBrowseError(error.message);
-    } finally {
-      setHostBrowseLoading(false);
-    }
-  }
-
-  async function handleAddFolderSubmit(e) {
-    e.preventDefault();
-    if (!mountHostPath) {
-      setMountStatus("Host path is required.");
-      return;
-    }
-
-    setIsMounting(true);
-    setMountStatus("");
-
-    try {
-      await executeAction("MountFolder", mountHostPath, async () => {
-        const formData = new FormData();
-        formData.append("hostPath", mountHostPath);
-        formData.append("name", displayWorkspaceName(mountHostPath));
-        if (mountReadOnly) formData.append("readOnly", "on");
-
-        // Linear chain: plan, then save the request exactly once. (This used
-        // to hand off to a useEffect keyed on the parent's mountPlan state;
-        // requestMount's own setMountPlan(...) call retriggered that same
-        // effect, so every submit re-saved the same mount request in a tight
-        // loop until the modal closed.)
-        const plan = await previewMount({ preventDefault: () => {}, currentTarget: formData });
-        if (plan?.error) throw new Error(plan.error);
-        const saved = await requestMount(plan);
-        if (native) {
-          await selectWorkspace?.(saved?.workspace?.id || saved?.workspace?.path || plan.hostPath);
-        }
-        await loadWorkspaceRoots();
-      }, setUiState);
-
-      setMountSuccess(true);
-      setMountWorkflowPath(mountHostPath);
-      setMountWorkflowStep(native ? "ready" : "restart");
-      setRecheckStatus(native ? "Folder is ready immediately." : "Restart Rasputin, then recheck this page.");
-    } catch (error) {
-      setMountStatus(error.message);
-    } finally {
-      setIsMounting(false);
-    }
-  }
-
-  // --- Trusted Dev Mode ---
-  function handleTrustToggleClick() {
-    if (!activeId) return;
-    if (activeTrusted) {
-      revokeTrust();
-    } else {
-      setShowTrustModal(true);
-    }
-  }
-
-  async function confirmEnableTrust() {
-    if (!setWorkspaceTrust || !activeId) return;
-    setTrustBusy(true);
-    try {
-      await setWorkspaceTrust(activeId, true);
-      setShowTrustModal(false);
-    } finally {
-      setTrustBusy(false);
-    }
-  }
-
-  async function revokeTrust() {
-    if (!setWorkspaceTrust || !activeId) return;
-    setTrustBusy(true);
-    try {
-      await setWorkspaceTrust(activeId, false);
-    } finally {
-      setTrustBusy(false);
-    }
-  }
-
-  // --- Host Shell capability ---
-  function handleShellToggleClick() {
-    if (!activeId || hostShellUnavailable) return;
-    if (activeHostShell) {
-      revokeShell();
-    } else {
-      setShowShellModal(true);
-    }
-  }
-
-  async function confirmEnableShell() {
-    if (!setWorkspaceHostShell || !activeId) return;
-    setShellBusy(true);
-    try {
-      await setWorkspaceHostShell(activeId, true);
-      setShowShellModal(false);
-    } finally {
-      setShellBusy(false);
-    }
-  }
-
-  async function revokeShell() {
-    if (!setWorkspaceHostShell || !activeId) return;
-    setShellBusy(true);
-    try {
-      await setWorkspaceHostShell(activeId, false);
-    } finally {
-      setShellBusy(false);
-    }
-  }
-
-  async function copyMountVolume() {
-    if (!mountPlan?.composeVolume) return;
-    try {
-      await navigator.clipboard.writeText(mountPlan.composeVolume);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setMountStatus("Copy failed. Select and copy the volume line manually.");
-    }
-  }
-
-  // --- Pending Mounts panel ---
-  async function copyPendingVolume(item) {
-    if (!item?.composeVolume) return;
-    try {
-      await navigator.clipboard.writeText(item.composeVolume);
-      setCopiedPendingPath(item.hostPath);
-      setTimeout(() => setCopiedPendingPath(""), 2000);
-    } catch (error) {
-      console.error("Clipboard copy failed", error);
-    }
-  }
-
-  async function refreshPendingMounts() {
-    const payload = await api("/api/workspace/mount-requests");
-    const requests = payload.requests || [];
-    setPendingMountsOverride(requests);
-    await loadWorkspaceRoots?.();
-    return requests;
-  }
-
-  async function recheckMountWorkflow() {
-    if (native) {
-      await loadWorkspaceRoots?.();
-      setMountWorkflowStep("ready");
-      setRecheckStatus("Native folders are available immediately.");
-      return;
-    }
-    setRecheckBusy(true);
-    setRecheckStatus("Checking whether the restarted mount is available...");
-    try {
-      const requests = await refreshPendingMounts();
-      const matching = requests.find((item) => normalizePath(item.hostPath) === normalizePath(mountWorkflowPath));
-      setMountWorkflowItem(matching || null);
-      if (matching?.ready) {
-        setMountWorkflowStep("approve");
-        setRecheckStatus("The mount is ready. Approve it to start working.");
-      } else {
-        setMountWorkflowStep("restart");
-        setRecheckStatus("The mount is not ready yet. Restart Rasputin, then check again.");
-      }
-    } catch (error) {
-      setRecheckStatus(`Recheck failed: ${error.message}`);
-    } finally {
-      setRecheckBusy(false);
-    }
-  }
-
-  function handleApprovePendingMount(item) {
-    return executeAction("ApprovePendingMount", item.hostPath, async () => {
-      await approvePendingMount?.(item);
-      await loadWorkspaceRoots?.();
-    }, setUiState);
-  }
-
-  function handleRemovePendingMount(item) {
-    return executeAction("RemovePendingMount", item.hostPath, async () => {
-      await removePendingMount?.(item.hostPath);
-    }, setUiState);
-  }
+  const {
+    approveSubfolder,
+    launchTask,
+    resetMountModal,
+    browseHost,
+    handleAddFolderSubmit,
+    handleTrustToggleClick,
+    confirmEnableTrust,
+    handleShellToggleClick,
+    confirmEnableShell,
+    copyMountVolume,
+    copyPendingVolume,
+    refreshPendingMounts,
+    recheckMountWorkflow,
+    handleApprovePendingMount,
+    handleRemovePendingMount,
+  } = useWorkspaceMountActions({
+    approvePath,
+    executeAction,
+    loadWorkspaceRoots,
+    setUiState,
+    setKnowledgeStatus,
+    setPrompt,
+    currentPath,
+    setShowAddModal,
+    setMountHostPath,
+    setMountReadOnly,
+    setMountStatus,
+    setMountSuccess,
+    setMountWorkflowStep,
+    setMountWorkflowPath,
+    setMountWorkflowItem,
+    setRecheckBusy,
+    setRecheckStatus,
+    setIsMounting,
+    setCopied,
+    setHostListing,
+    setHostBrowseError,
+    setHostBrowseLoading,
+    setHostPathDraft,
+    showAddModal,
+    native,
+    security,
+    setHostRoots,
+    setHostRootsMessage,
+    hostBrowseLoading,
+    mountHostPath,
+    mountReadOnly,
+    previewMount,
+    requestMount,
+    selectWorkspace,
+    activeId,
+    activeTrusted,
+    setShowTrustModal,
+    setWorkspaceTrust,
+    setTrustBusy,
+    hostShellUnavailable,
+    activeHostShell,
+    setShowShellModal,
+    setWorkspaceHostShell,
+    setShellBusy,
+    mountPlan,
+    setCopiedPendingPath,
+    setPendingMountsOverride,
+    mountWorkflowPath,
+    approvePendingMount,
+    removePendingMount,
+    normalizePath,
+  });
 
   // Clicking an approved folder both switches to it (updates the header,
   // the highlight, and what "Index Workspace" / task launches target) and

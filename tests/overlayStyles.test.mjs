@@ -1,3 +1,4 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 /**
  * Structural contract for the first behavior-neutral stylesheet extraction.
  *
@@ -9,9 +10,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const legacy = readFileSync("frontend-src/src/styles/rasputin.css", "utf8");
-const overlays = readFileSync("frontend-src/src/styles/overlays.css", "utf8");
-const modal = readFileSync("frontend-src/src/components/Modal.jsx", "utf8");
+const legacy = readFeatureSource("frontend-src/src/styles/rasputin.css");
+const overlays = readFeatureSource("frontend-src/src/styles/overlays.css");
+const modal = readFeatureSource("frontend-src/src/components/Modal.jsx");
 
 test("modal and drawer primitives have one explicit stylesheet owner", () => {
   assert.match(legacy, /^@import "\.\/overlays\.css";/);

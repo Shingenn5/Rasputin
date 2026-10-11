@@ -1,10 +1,11 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const component = readFileSync(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url), "utf8");
+const component = readFeatureSource(new URL("../frontend-src/src/features/workspaces/WorkspacesView.jsx", import.meta.url));
 const styles = ["workspace-base.css", "responsive.css", "workstation-layout.css", "chat-controls.css", "interface.css"]
-  .map((name) => readFileSync(new URL(`../frontend-src/src/styles/${name}`, import.meta.url), "utf8"))
+  .map((name) => readFeatureSource(new URL(`../frontend-src/src/styles/${name}`, import.meta.url)))
   .join("\n");
 
 test("Docker workspace setup exposes saved, restart, recheck, and approval steps", () => {

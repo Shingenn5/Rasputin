@@ -1,11 +1,12 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const main = readFileSync(new URL("../frontend-src/src/main.jsx", import.meta.url), "utf8");
-const dashboardStyles = readFileSync(new URL("../frontend-src/src/styles/dashboard.css", import.meta.url), "utf8");
-const interfaceStyles = readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
-const startup = readFileSync(new URL("../frontend-src/index.html", import.meta.url), "utf8");
+const main = readFeatureSource(new URL("../frontend-src/src/main.jsx", import.meta.url));
+const dashboardStyles = readFeatureSource(new URL("../frontend-src/src/styles/dashboard.css", import.meta.url));
+const interfaceStyles = readFeatureSource(new URL("../frontend-src/src/styles/interface.css", import.meta.url));
+const startup = readFeatureSource(new URL("../frontend-src/index.html", import.meta.url));
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 test("application typography bundles one readable variable font", () => {

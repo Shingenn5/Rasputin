@@ -1,10 +1,11 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const app = readFileSync("frontend-src/src/app/App.jsx", "utf8");
-const home = readFileSync("frontend-src/src/features/chat/HomeView.jsx", "utf8");
-const onboarding = readFileSync("frontend-src/src/components/Onboarding.jsx", "utf8");
+const app = readFeatureSource("frontend-src/src/app/App.jsx");
+const home = readFeatureSource("frontend-src/src/features/chat/HomeView.jsx");
+const onboarding = readFeatureSource("frontend-src/src/components/Onboarding.jsx");
 
 test("chat keeps a persistent recovery path when no healthy model is routeable", () => {
   assert.match(app, /hasHealthyRouteableChatModel/);

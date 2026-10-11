@@ -1,91 +1,28 @@
-import { usesNativeModels, needsNativeModelDownload } from "./nativeDeployment.js";
+import { InstalledModelInspector } from "./InstalledModelInspector.jsx";
+import { useModelActions } from "./useModelActions.js";
+import { usesNativeModels } from "./nativeDeployment.js";
 import { useState, useMemo, useEffect, useRef } from "react";
-import {
-  Activity,
-  CheckCircle2,
-  Cloud,
-  Copy,
-  Cpu,
-  Database,
-  Download,
-  Gauge,
-  HardDrive,
-  KeyRound,
-  Link2,
-  Package,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Play,
-  Pin,
-  PinOff,
-  Power,
-  RadioTower,
-  RefreshCw,
-  Search,
-  Settings,
-  SlidersHorizontal,
-  Trash2,
-} from "lucide-react";
-import {
-  displayModelName,
-  isModelHealthy,
-  isManagedModelRunning,
-  labelize,
-  modelMismatchLine,
-  runtimeStatus,
-} from "../../lib/display.js";
+import { Activity, CheckCircle2, Cloud, Cpu, Database, Gauge, HardDrive, KeyRound, Package, PanelLeftClose, PanelLeftOpen, Play, RadioTower, RefreshCw, Search, Settings, SlidersHorizontal } from "lucide-react";
+import { displayModelName, isModelHealthy, isManagedModelRunning, labelize, runtimeStatus } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";
 import { showsGlobalDownloadProgress } from "../../lib/modelDownloadVisibility.js";
-import { api, postJson } from "../../api/client.js";
+import { api } from "../../api/client.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
-import { PublisherLogo } from "./PublisherLogo.jsx";
+
 import { ModelLoadDialog } from "./ModelLoadDialog.jsx";
 import { ModelServingPanel } from "./ModelServingPanel.jsx";
 import { catalogItemPassesFilters } from "./catalogFitFilter.js";
 import { findInstalledCatalogModel } from "./modelEcosystem.js";
 import "../../styles/models-workspace-v3.css";
-import {
-  artifactModelMatch,
-  catalogDownloadFor,
-  completedArtifactFor,
-  downloadJobIdentity,
-  downloadJobState,
-  downloadJobsFromPayload,
-  preferredDownloadVariant,
-  variantCompatibility,
-} from "./downloadState.js";
+import { downloadJobIdentity, downloadJobState, downloadJobsFromPayload } from "./downloadState.js";
 import { hardwarePlacementCapacity, normalizeHardwareSnapshot, shouldProbeHardware, systemHardwareSummary } from "./hardwareSnapshot.js";
-import {
-  ADVISOR_REQUEST_TIMEOUT_MS,
-  advisorModelId,
-  advisorProfileFromPayload,
-  advisorProfileSlots,
-  advisorStateForInputs,
-  normalizeAdvisorProfile,
-  normalizeHuggingFaceSearchInput,
-  selectAdvisorWinner,
-  shortlistAdvisorModels,
-  withAdvisorTimeout,
-} from "./advisorSelection.js";
-import {
-  catalogModelId,
-  contextWindowFor,
-  installedModelArchitecture,
-  installedModelCategory,
-  installedModelFile,
-  installedModelFormat,
-  installedModelParameters,
-  installedModelPath,
-  installedModelPublisher,
-  installedModelQuantization,
-  installedModelSize,
-  modelOperationalSignal,
-} from "./modelPresentation.js";
+import { ADVISOR_REQUEST_TIMEOUT_MS, advisorModelId, advisorProfileFromPayload, advisorProfileSlots, advisorStateForInputs, normalizeAdvisorProfile, selectAdvisorWinner, shortlistAdvisorModels, withAdvisorTimeout } from "./advisorSelection.js";
+import { contextWindowFor, installedModelCategory, modelOperationalSignal } from "./modelPresentation.js";
 import { catalogPlacementAssessment, catalogVramEstimateGb } from "./modelPlacement.js";
 import { GuidedRecommendations } from "./ModelAdvisor.jsx";
 import { CatalogPagination, DiscoverCatalogRow, DiscoverInstalledSummary } from "./ModelCatalogRows.jsx";
@@ -197,7 +134,6 @@ export function ModelsView({
   const [hardwareProbeState, setHardwareProbeState] = useState({ status: warsatHardware ? "ready" : "idle", error: "" });
   const [advisorState, setAdvisorState] = useState({ status: "idle", profiles: {}, errors: [] });
   const hardwareProbeAttempt = useRef(-1);
-
 
   // Back to page 1 whenever the visible set changes shape.
   useEffect(() => {
@@ -464,7 +400,6 @@ export function ModelsView({
     });
   }, [catalogItems, catalogSearch, catalogPurpose, catalogRuntime]);
 
-
   const advisorCandidates = useMemo(() => shortlistAdvisorModels(catalogItems), [catalogItems]);
 
   useEffect(() => {
@@ -651,155 +586,59 @@ export function ModelsView({
   }, [selectedCatalogItem, selectedCatalogId]);
 
   /* reliable actions */
-  const handleRefresh = () => executeAction("RefreshRegistry", "system", async () => loadModels?.(), setUiState);
-  const handleScanGguf = () => executeAction("ScanGGUF", "system", async () => scanGguf?.(), setUiState);
-  const handleLoadCatalog = (remote) => executeAction("LoadCatalog", "system", async () => loadModelCatalog?.(remote), setUiState);
-  const openSpecificHuggingFaceModel = () => {
-    setShowAllModels(true);
-    setSearchMode("huggingface");
-    setCatalogPurpose("all");
-    setCatalogFit("all");
-    setPage(1);
-    requestAnimationFrame(() => hfSearchInputRef.current?.focus());
-  };
-  const submitHfSearch = (event) => {
-    event?.preventDefault?.();
-    const query = normalizeHuggingFaceSearchInput(hfSearchDraft);
-    if (!query) {
-      setHfResults([]);
-      setHfError("Enter a model name, org/model ID, or Hugging Face URL.");
-      requestAnimationFrame(() => hfSearchInputRef.current?.focus());
-      return;
-    }
-    setHfSearchDraft(query);
-    setHfQuery(query);
-    setHfError("");
-    setSearchMode("huggingface");
-    setPage(1);
-  };
-  const configureNativeLoad = async (model) => {
-    if (!needsNativeModelDownload(model, nativeModels)) {
-      setLoadDialogModel(model);
-      return;
-    }
-    const path = model.hostModelPath || model.host_model_path || model.modelPath;
-    if (path && String(path).toLowerCase().endsWith(".gguf")) {
-      const imported = await prepareCatalogModelForWarsat?.(model);
-      if (imported?.key) setLoadDialogModel(imported);
-      return;
-    }
-    const source = model.repository || model.warsatModelRef || model.model || model.name || "";
-    const query = String(source).split("/").pop().replace(/\.gguf$/i, "") + " GGUF";
-    nativeRecoveryQueryRef.current = query;
-    go?.("discover");
-    setActiveTab("library");
-    openSpecificHuggingFaceModel();
-    setHfSearchDraft(query);
-    setHfQuery(query);
-    setUiState({ status: "info", message: "This entry uses a retired runtime. Choose a GGUF version below for native llama.cpp." });
-  };
-  const handleAdvisorRefresh = () => {
-    setAdvisorRefreshToken((value) => value + 1);
-    if (!warsatHardware) setHardwareRefreshToken((value) => value + 1);
-  };
-  const startDownload = async (modelId, variant = null) => {
-    try {
-      const installed = findInstalledCatalogModel({ modelId }, registeredModels, variant);
-      if (installed) {
-        await configureNativeLoad(installed);
-        return true;
-      }
-      if (nativeModels && !variant) throw new Error("Choose a compatible GGUF variant for native llama.cpp; raw model weights cannot be loaded here.");
-      if (variant && !variantCompatibility(variant).safe) throw new Error(variantCompatibility(variant).reasons[0] || "This GGUF variant is incompatible. Choose another variant.");
-      const body = variant ? { modelId, variant } : { modelId };
-      await postJson("/api/models/download", body);
-      setDownloadRefreshToken((value) => value + 1);
-      setUiState({ status: "success", message: "Started download of " + (variant?.id || modelId) });
-      return true;
-    } catch (e) {
-      setUiState({ status: "failed", message: "Failed to start download: " + (e.message || "unknown error") });
-      return false;
-    }
-  };
-  const onDownloadAction = async (action, jobId) => {
-    if (!jobId || !["pause", "resume", "cancel", "retry"].includes(action)) return;
-    try {
-      await postJson("/api/models/downloads/" + encodeURIComponent(jobId) + "/" + action, {});
-      setDownloadRefreshToken((value) => value + 1);
-    } catch (e) {
-      setDownloadError("Unable to " + action + " download: " + (e.message || "unknown error"));
-    }
-  };
-
-  const downloadCatalogItem = async (item) => {
-    const modelId = catalogModelId(item);
-    const installedModel = findInstalledCatalogModel(item, registeredModels);
-    if (installedModel) {
-      await configureNativeLoad(installedModel);
-      return;
-    }
-    const existing = catalogDownloadFor(item, activeDownloads);
-    const existingState = existing ? downloadJobState(existing) : "";
-    if (existing && !["completed", "failed", "cancelled"].includes(existingState)) {
-      await onDownloadAction("cancel", downloadJobIdentity(existing));
-      return;
-    }
-    if (existingState === "completed") {
-      setSelectedCatalogId(item.id || item.modelId);
-      setDiscoverInspectorTab("download");
-      return;
-    }
-    if (searchMode === "catalog" && item.source !== "huggingface") {
-      await prepareCatalogModelForWarsat?.(item);
-      return;
-    }
-    setUiState({ status: "running", message: "Choosing a balanced GGUF download for " + modelId + "..." });
-    try {
-      const encodedModelId = modelId.split("/").map(encodeURIComponent).join("/");
-      const detail = await api("/api/model-catalog/model/" + encodedModelId);
-      if (detail?.error) throw new Error(detail.error);
-      const variants = Array.isArray(detail?.variants) ? detail.variants : [];
-      const capabilities = [...(item.capabilities || []), ...(item.modalities || [])]
-        .map((value) => String(value).toLowerCase());
-      const preferred = preferredDownloadVariant(variants, capabilities.some((value) => ["vision", "image", "multimodal"].includes(value)));
-      await startDownload(modelId, preferred);
-    } catch (error) {
-      setUiState({ status: "failed", message: "Failed to start download: " + (error?.message || "unknown error") });
-    }
-  };
-
-  const manageInstalledModel = (model) => {
-    if (!model?.key) return;
-    setInstalledSearch("");
-    setInstalledCategory("all");
-    setSelectedInstalledKey(model.key);
-    setInstalledInspectorTab(isManagedModelRunning(model) ? "load" : "info");
-    setActiveTab("installed");
-    go?.("models");
-  };
-
-  const loadCompletedArtifact = async (download) => {
-    const artifact = completedArtifactFor(download);
-    const identity = downloadJobIdentity(download);
-    setLoadingArtifact(identity);
-    try {
-      let registry = models || [];
-      let model = artifactModelMatch(registry, artifact);
-      if (!model && loadModels) {
-        registry = await loadModels();
-        model = artifactModelMatch(registry, artifact);
-      }
-      if (!model?.key) {
-        throw new Error("The completed artifact is not available in the model registry yet. Use Refresh and try Load again.");
-      }
-      setLoadDialogModel(model);
-      setUiState({ status: "success", message: "Download complete. Review load settings, then start the model." });
-    } catch (error) {
-      setUiState({ status: "failed", message: "Unable to load completed model: " + (error?.message || "unknown error") });
-    } finally {
-      setLoadingArtifact(null);
-    }
-  };
+  const {
+    handleRefresh,
+    handleScanGguf,
+    handleLoadCatalog,
+    openSpecificHuggingFaceModel,
+    submitHfSearch,
+    configureNativeLoad,
+    handleAdvisorRefresh,
+    startDownload,
+    onDownloadAction,
+    downloadCatalogItem,
+    manageInstalledModel,
+    loadCompletedArtifact,
+  } = useModelActions({
+    executeAction,
+    loadModels,
+    setUiState,
+    scanGguf,
+    loadModelCatalog,
+    setShowAllModels,
+    setSearchMode,
+    setCatalogPurpose,
+    setCatalogFit,
+    setPage,
+    hfSearchInputRef,
+    hfSearchDraft,
+    setHfResults,
+    setHfError,
+    setHfSearchDraft,
+    setHfQuery,
+    nativeModels,
+    setLoadDialogModel,
+    prepareCatalogModelForWarsat,
+    nativeRecoveryQueryRef,
+    go,
+    setActiveTab,
+    setAdvisorRefreshToken,
+    warsatHardware,
+    setHardwareRefreshToken,
+    registeredModels,
+    setDownloadRefreshToken,
+    setDownloadError,
+    activeDownloads,
+    setSelectedCatalogId,
+    setDiscoverInspectorTab,
+    searchMode,
+    setInstalledSearch,
+    setInstalledCategory,
+    setSelectedInstalledKey,
+    setInstalledInspectorTab,
+    setLoadingArtifact,
+    models,
+  });
 
   /* stats */
   const totalModels = registeredModels.length;
@@ -1583,273 +1422,4 @@ export function ModelsView({
   }
 
   return modelsSurface;
-}
-
-function InstalledModelInspector({ nativeModels = false, model, allModels, chatActive = false, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, activeTab, onTabChange }) {
-  const [busy, setBusy] = useState("");
-  const [deleteArmed, setDeleteArmed] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const [inference, setInference] = useState({
-    systemPrompt: "",
-    reasoningEnabled: false,
-    reasoningEffort: "unrestricted",
-    temperature: 0.8,
-    limitResponse: false,
-    maxTokens: 2048,
-    contextOverflow: "truncate-middle",
-    stopStrings: "",
-    cpuThreads: "",
-  });
-
-  useEffect(() => {
-    setDeleteArmed(false);
-    if (!model?.key || typeof window === "undefined") return;
-    try {
-      const pins = JSON.parse(window.localStorage.getItem("rasputin-pinned-models") || "[]");
-      setPinned(Array.isArray(pins) && pins.includes(model.key));
-      const saved = JSON.parse(window.localStorage.getItem(`rasputin-inference-${model.key}`) || "null");
-      setInference((current) => saved && typeof saved === "object" ? { ...current, ...saved } : {
-        systemPrompt: "",
-        reasoningEnabled: false,
-        reasoningEffort: "unrestricted",
-        temperature: 0.8,
-        limitResponse: false,
-        maxTokens: 2048,
-        contextOverflow: "truncate-middle",
-        stopStrings: "",
-        cpuThreads: "",
-      });
-    } catch {
-      setPinned(false);
-    }
-  }, [model?.key]);
-
-  if (!model) {
-    return (
-      <aside id="installed-model-inspector" className="models-model-inspector is-empty" data-testid="installed-model-inspector">
-        <Cpu size={24} aria-hidden="true" />
-        <p>Select a model to inspect its developer, runtime, source, and inference profile.</p>
-      </aside>
-    );
-  }
-
-  const name = model.name || displayModelName(model, allModels);
-  const developer = installedModelPublisher(model);
-  const st = runtimeStatus(model);
-  const healthy = isModelHealthy(model);
-  const nativeRuntime = model.runtime === "native-llamacpp";
-  const needsGguf = needsNativeModelDownload(model, nativeModels);
-  const isRunning = isManagedModelRunning(model);
-  const operationalSignal = modelOperationalSignal(model);
-  const path = installedModelPath(model);
-  const context = contextWindowFor(model);
-  const mismatch = modelMismatchLine(model);
-  const modelId = String(model.model || model.key);
-  const sourceUrl = model.sourceUrl || model.source_url || (modelId.includes("/") ? `https://huggingface.co/${modelId}` : "");
-  const capabilities = Array.isArray(model.capabilities) && model.capabilities.length ? model.capabilities : ["Text"];
-  const tabs = ["info", "load", "inference", "actions"];
-
-  const updateInference = (patch) => {
-    setInference((current) => {
-      const next = { ...current, ...patch };
-      try {
-        window.localStorage.setItem(`rasputin-inference-${model.key}`, JSON.stringify(next));
-      } catch {
-        // Local preferences remain usable for this session when storage is unavailable.
-      }
-      return next;
-    });
-  };
-
-  const handleLoad = async () => {
-    if (isRunning) return;
-    if (nativeRuntime || needsGguf) {
-      onConfigureLoad?.(model);
-      return;
-    }
-    setBusy("load");
-    try {
-      await executeAction("StartModel", model.key, async () => runModelAction?.("start", model.key), setUiState);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleStop = async () => {
-    setBusy("stop");
-    try {
-      await executeAction("StopModel", model.key, async () => runModelAction?.("stop", model.key), setUiState);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const copyValue = async (value, label) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setUiState({ status: "success", message: `${label} copied.` });
-    } catch {
-      setUiState({ status: "failed", message: `Unable to copy ${label.toLowerCase()}.` });
-    }
-  };
-
-  const togglePinned = () => {
-    try {
-      const stored = JSON.parse(window.localStorage.getItem("rasputin-pinned-models") || "[]");
-      const pins = new Set(Array.isArray(stored) ? stored : []);
-      if (pins.has(model.key)) pins.delete(model.key);
-      else pins.add(model.key);
-      window.localStorage.setItem("rasputin-pinned-models", JSON.stringify([...pins]));
-      setPinned(pins.has(model.key));
-      setUiState({ status: "success", message: pins.has(model.key) ? "Model pinned." : "Model unpinned." });
-    } catch {
-      setUiState({ status: "failed", message: "Unable to update pinned models." });
-    }
-  };
-
-  const handleDelete = async () => {
-    setBusy("delete");
-    try {
-      await executeAction("DeleteModel", model.key, async () => runModelAction?.("delete", model.key), setUiState);
-      setDeleteArmed(false);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const infoFacts = [
-    ["Developer", developer],
-    ["Family", model.family || model.model_family || installedModelArchitecture(model)],
-    ["Architecture", installedModelArchitecture(model)],
-    ["Parameters", installedModelParameters(model)],
-    ["Format", installedModelFormat(model)],
-    ["Quantization", installedModelQuantization(model)],
-    ["Context", context > 0 ? context.toLocaleString() + " tokens" : "Runtime default"],
-    ["Modalities", capabilities.map(labelize).join(", ")],
-    ["Purpose", labelize(model.purpose || model.role || "chat")],
-    ["License", model.license || "Not declared"],
-    ["Downloads", Number(model.downloads || 0).toLocaleString()],
-    ["Size on disk", installedModelSize(model)],
-    ["Hardware fit", mismatch || (healthy ? "Ready on this workstation" : "Check runtime")],
-  ];
-
-  return (
-    <aside id="installed-model-inspector" className="models-model-inspector" data-testid="installed-model-inspector" aria-label={`${name} model inspector`}>
-      <header className="models-inspector-header">
-        <div className="models-inspector-title">
-          <PublisherLogo item={model} size="lg" />
-          <div><strong>{name}</strong><small>{developer} · {modelId}</small></div>
-        </div>
-        <ModelStateSignal signal={operationalSignal} chatActive={chatActive} />
-        <div className="models-inspector-primary-actions">
-          <button type="button" className="w2-button" onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
-          {model.managed && (
-            isRunning
-              ? <Button onClick={handleStop} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={13} />}>Stop Model</Button>
-              : <Button onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>{needsGguf ? "Get GGUF" : "Load Model"}</Button>
-          )}
-        </div>
-      </header>
-
-      <div className="models-inspector-tabs" role="tablist" aria-label="Model inspector sections">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            id={`model-inspector-tab-${tab}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab}
-            aria-controls={`model-inspector-panel-${tab}`}
-            tabIndex={activeTab === tab ? 0 : -1}
-            onClick={() => onTabChange?.(tab)}
-          >
-            {labelize(tab)}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === "info" && (
-        <section id="model-inspector-panel-info" role="tabpanel" aria-labelledby="model-inspector-tab-info" className="models-inspector-section">
-          <h3>Model Information</h3>
-          <p className="models-inspector-summary">{model.summary || model.description || `A ${labelize(model.role || "chat")} model trained by ${developer}.`}</p>
-          <details className="models-inspector-disclosure models-inspector-technical">
-            <summary><SlidersHorizontal size={14} /> Technical Details</summary>
-            <dl className="models-inspector-facts">
-              {infoFacts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
-            </dl>
-          </details>
-        </section>
-      )}
-
-      {activeTab === "load" && (
-        <section id="model-inspector-panel-load" role="tabpanel" aria-labelledby="model-inspector-tab-load" className="models-inspector-section">
-          <h3>Load Profile</h3>
-          <div className="models-inspector-callout"><Gauge size={16} /><span><strong>Automatic placement</strong><small>Rasputin selects a fitting GPU and preserves combined VRAM when this model needs it.</small></span></div>
-          <dl className="models-inspector-facts">
-            {[
-              ["Runtime", model.runtime || model.provider || "Local"],
-              ["Device", nativeRuntime ? "Automatic GPU placement" : "Managed endpoint"],
-              ["State", labelize(st)],
-              ["Compatibility", mismatch || (healthy ? "Ready" : "Needs health check")],
-              ["Source file", installedModelFile(model)],
-            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={String(value)}>{value}</dd></div>)}
-          </dl>
-          {model.managed && <button type="button" className="models-inspector-wide-action" onClick={() => onConfigureLoad?.(model)}><SlidersHorizontal size={14} /> Configure advanced load settings</button>}
-        </section>
-      )}
-
-      {activeTab === "inference" && (
-        <section id="model-inspector-panel-inference" role="tabpanel" aria-labelledby="model-inspector-tab-inference" className="models-inspector-section models-inference-panel">
-          <div className="models-inference-heading"><h3>System Prompt</h3><span>{inference.systemPrompt.length.toLocaleString()} characters</span></div>
-          <textarea aria-label="System prompt" value={inference.systemPrompt} onChange={(event) => updateInference({ systemPrompt: event.target.value })} placeholder={'Example, "Only answer in rhymes"'} />
-          <div className="models-inference-group">
-            <h3>Reasoning</h3>
-            <label className="models-control-row"><span>Reasoning budget</span><input type="checkbox" checked={inference.reasoningEnabled} onChange={(event) => updateInference({ reasoningEnabled: event.target.checked })} /></label>
-            <label className="models-control-row"><span>Effort</span><select value={inference.reasoningEffort} onChange={(event) => updateInference({ reasoningEffort: event.target.value })}><option value="unrestricted">Unrestricted</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
-          </div>
-          <div className="models-inference-group">
-            <h3>Generation Settings</h3>
-            <label className="models-control-stack"><span>Temperature <output>{Number(inference.temperature).toFixed(1)}</output></span><input type="range" min="0" max="2" step="0.1" value={inference.temperature} onChange={(event) => updateInference({ temperature: Number(event.target.value) })} /></label>
-            <label className="models-control-row"><span>Limit response length</span><input type="checkbox" checked={inference.limitResponse} onChange={(event) => updateInference({ limitResponse: event.target.checked })} /></label>
-            {inference.limitResponse && <label className="models-control-row"><span>Maximum tokens</span><input className="models-compact-input" type="number" min="64" step="64" value={inference.maxTokens} onChange={(event) => updateInference({ maxTokens: Number(event.target.value) })} /></label>}
-            <label className="models-control-row"><span>Context overflow</span><select value={inference.contextOverflow} onChange={(event) => updateInference({ contextOverflow: event.target.value })}><option value="truncate-middle">Truncate Middle</option><option value="truncate-oldest">Truncate Oldest</option><option value="stop">Stop Generation</option></select></label>
-            <label className="models-control-stack"><span>Stop strings</span><input type="text" value={inference.stopStrings} onChange={(event) => updateInference({ stopStrings: event.target.value })} placeholder="Enter strings separated by commas" /></label>
-            <label className="models-control-row"><span>CPU threads</span><input className="models-compact-input" type="number" min="1" value={inference.cpuThreads} onChange={(event) => updateInference({ cpuThreads: event.target.value })} placeholder="Auto" /></label>
-          </div>
-          <p className="models-inference-note">Saved locally for this model. Runtime-specific GPU and context settings remain in Load Model.</p>
-        </section>
-      )}
-
-      {activeTab === "actions" && (
-        <section id="model-inspector-panel-actions" role="tabpanel" aria-labelledby="model-inspector-tab-actions" className="models-inspector-section models-actions-panel">
-          <h3>Model Actions</h3>
-          <button type="button" onClick={togglePinned}>{pinned ? <PinOff size={15} /> : <Pin size={15} />}<span><strong>{pinned ? "Unpin model" : "Pin model"}</strong><small>{pinned ? "Remove it from your priority models." : "Keep it at the top of your model workflow."}</small></span></button>
-          <button type="button" onClick={() => copyValue(modelId, "Model ID")}><Copy size={15} /><span><strong>Copy model ID</strong><small>{modelId}</small></span></button>
-          {path && <button type="button" onClick={() => copyValue(path, "Model path")}><HardDrive size={15} /><span><strong>Copy absolute path</strong><small>{path}</small></span></button>}
-          {sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer"><Link2 size={15} /><span><strong>Show on web</strong><small>Open the developer source page.</small></span></a>}
-          {!deleteArmed ? (
-            <button type="button" className="is-danger" onClick={() => setDeleteArmed(true)}><Trash2 size={15} /><span><strong>Delete model</strong><small>Remove this model from Rasputin.</small></span></button>
-          ) : (
-            <div className="models-delete-confirm" role="alert">
-              <p>Delete {name}? This removes its registry entry and may stop a running model.</p>
-              <button type="button" onClick={() => setDeleteArmed(false)}>Cancel</button>
-              <Button onClick={handleDelete} loading={busy === "delete"} loadingLabel="Deleting…">Confirm Delete</Button>
-            </div>
-          )}
-        </section>
-      )}
-
-      <div className="models-inspector-spacer" />
-      <details className="models-inspector-disclosure">
-        <summary><SlidersHorizontal size={14} /> Domain Control</summary>
-        <div><span>Purpose</span><strong>{labelize(installedModelCategory(model))}</strong></div>
-        <div><span>Compatibility</span><strong>{mismatch || "No mismatch detected"}</strong></div>
-      </details>
-      <details className="models-inspector-disclosure">
-        <summary><HardDrive size={14} /> Source File</summary>
-        <div><span>Path</span><strong title={path || "No local source path"}>{path || "Managed endpoint — no local file"}</strong></div>
-        <div><span>Override</span><strong>{nativeRuntime ? "Available in Load Model" : "Managed externally"}</strong></div>
-      </details>
-    </aside>
-  );
 }

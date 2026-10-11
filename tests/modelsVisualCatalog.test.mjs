@@ -1,3 +1,4 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -7,13 +8,13 @@ const models = [
   "ModelCatalogRows.jsx", "DiscoverModelInspector.jsx", "CatalogCard.jsx",
   "InstalledModelRow.jsx", "ModelRuntimePanel.jsx",
 ]
-  .map((file) => readFileSync(new URL("../frontend-src/src/features/models/" + file, import.meta.url), "utf8"))
+  .map((file) => readFeatureSource(new URL("../frontend-src/src/features/models/" + file, import.meta.url)))
   .join("\n");
-const identity = readFileSync(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url), "utf8");
-const publisherLogo = readFileSync(new URL("../frontend-src/src/features/models/PublisherLogo.jsx", import.meta.url), "utf8");
-const loader = readFileSync(new URL("../frontend-src/src/features/models/ModelLoadDialog.jsx", import.meta.url), "utf8");
-const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
-const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
+const identity = readFeatureSource(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url));
+const publisherLogo = readFeatureSource(new URL("../frontend-src/src/features/models/PublisherLogo.jsx", import.meta.url));
+const loader = readFeatureSource(new URL("../frontend-src/src/features/models/ModelLoadDialog.jsx", import.meta.url));
+const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
+const sidebar = readFeatureSource(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url));
 
 test("desktop Discover Models opens into a native llama.cpp visual catalog", () => {
   assert.match(models, /data-testid="model-catalog-grid"/);

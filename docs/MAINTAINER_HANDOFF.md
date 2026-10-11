@@ -65,11 +65,28 @@ For Models, start in `frontend-src/src/features/models/`:
 | --- | --- |
 | Screen sections, filters, requests, and selected model | `ModelsView.jsx` |
 | Catalog rows, pagination, and selected-model details | `ModelCatalogRows.jsx`, `DiscoverModelInspector.jsx`, `CatalogCard.jsx` |
-| Installed-model rows and runtime details | `InstalledModelRow.jsx`, `ModelRuntimePanel.jsx` |
+| Installed-model rows, selected-model details, and runtime status | `InstalledModelRow.jsx`, `InstalledModelInspector.jsx`, `ModelRuntimePanel.jsx` |
 | Recommendation display and ranking | `ModelAdvisor.jsx`, `advisorSelection.js` |
 | Hardware facts and GPU/system-memory fit | `hardwareSnapshot.js`, `modelPlacement.js` |
-| Download controls and progress | `downloadState.js`, `ModelDownloadProgress.jsx` |
+| Model actions, downloads, and progress | `useModelActions.js`, `downloadState.js`, `ModelDownloadProgress.jsx` |
 | Model labels, metadata, and status indicators | `modelPresentation.js`, `ModelStatus.jsx` |
+
+Other extracted responsibilities:
+
+| To change | Edit |
+| --- | --- |
+| App wiring and shared action groups | `frontend-src/src/app/App.jsx`, named `use*Actions.js` modules in the same directory |
+| Chat commands, model/mode panels, and task thread | `features/chat/useChatCommands.js`, `ModelSidePanel.jsx`, `ModeSidePanel.jsx`, `TaskThread.jsx` |
+| Trials tabs and selected result | `features/trials/*Tab.jsx`, `TrialInspector.jsx` |
+| WarSat planning, deployment, containers, and safety panels | `features/warsat/PlannerTab.jsx`, `PlanPreview.jsx`, `DeployTab.jsx`, `ContainersTab.jsx`, `SafetyTab.jsx` |
+| Workspace knowledge and mount actions | `features/workspaces/useWorkspaceKnowledge.js`, `useWorkspaceMountActions.js` |
+| Backend catalog metadata and hardware fit | `backend/models/catalog_metadata.py`, `catalog_fit.py` |
+| Hugging Face repository-reference parsing | `backend/models/hf_reference.py` |
+| SQLite table creation and migrations | `backend/core/runtime_schema.py`; connection and locking remain in `runtime_store.py` |
+| Task fields, bounded history, and generation metrics | `backend/engine/task_state.py`; execution remains in `agent.py` |
+
+Frontend feature paths above are relative to `frontend-src/src/`. Keep state ownership close
+to the feature; extracting actions alone does not finish reducing App's shared-state coupling.
 
 ## Source and state boundaries
 
@@ -95,10 +112,10 @@ Work through these boundaries in this order:
 1. Reduce custom CSS component by component. `rasputin.css` now imports owned
    stylesheets; its extraction preserved styling rather than reducing it. Follow
    [`CSS_OWNERSHIP.md`](CSS_OWNERSHIP.md).
-2. Finish separating Models screen state and requests from its composition. Its
-   calculations and embedded catalog, advisor, download, and runtime panels are extracted.
-3. Extract routing and orchestration responsibilities from
-   `frontend-src/src/app/App.jsx`.
+2. Continue moving feature state out of Models and App. Model actions and embedded panels
+   are extracted; Models still owns its filters, requests, and selection state.
+3. Reduce App's shared-state coupling. Named action groups are extracted, but routing,
+   state, effects, and view composition remain in `frontend-src/src/app/App.jsx`.
 4. Separate native hardware probing, planning, validation, and lifecycle code; keep retained
    legacy provider adapters outside the current operator workflow.
 5. Extract governed-chat policy and tool-loop state transitions from the agent runtime.

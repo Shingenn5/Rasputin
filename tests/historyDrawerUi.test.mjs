@@ -1,8 +1,9 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const sidebar = readFileSync(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url), "utf8");
+const sidebar = readFeatureSource(new URL("../frontend-src/src/components/shell/DashSidebar.jsx", import.meta.url));
 
 test("primary navigation keeps history compact instead of a full destination", () => {
   assert.doesNotMatch(sidebar, /view: "activity", label: "History"/);

@@ -1,3 +1,4 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -22,14 +23,14 @@ test("downloaded artifact keys resolve to the same readable name used in task de
 });
 
 test("header, composer and task identity use the display-name resolver", () => {
-  const home = readFileSync(new URL("../frontend-src/src/features/chat/HomeView.jsx", import.meta.url), "utf8");
+  const home = readFeatureSource(new URL("../frontend-src/src/features/chat/HomeView.jsx", import.meta.url));
   assert.equal((home.match(/displayModelName\(selectedModelObject \|\| selectedModel, models\)/g) || []).length, 2);
   assert.match(home, /const taskModel = displayModelName\(task.model \|\| deploymentProfile.key, models\)/);
   assert.match(home, /data-model-key=\{selectedModel \|\| ""\}/);
 });
 
 test("catalog metadata count is not described as locally cached model weights", () => {
-  const view = readFileSync(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url), "utf8");
+  const view = readFeatureSource(new URL("../frontend-src/src/features/models/ModelsView.jsx", import.meta.url));
   assert.match(view, /v: catalogItems.length, l: "Catalog entries"/);
   assert.doesNotMatch(view, /l: "Cached locally"/);
 });

@@ -1,3 +1,4 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -7,7 +8,7 @@ const icon = readFileSync(new URL("../desktop/assets/rasputin.ico", import.meta.
 const logo = readFileSync(new URL("../desktop/assets/rasputin-logo.png", import.meta.url));
 const frontendLogo = readFileSync(new URL("../frontend-src/public/rasputin-logo.png", import.meta.url));
 const main = readFileSync(new URL("../desktop/main.cjs", import.meta.url), "utf8");
-const app = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function iconFrames(buffer) {

@@ -1,9 +1,10 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../frontend-src/src/styles/interface.css", import.meta.url), "utf8");
+const source = readFeatureSource(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url));
+const styles = readFeatureSource(new URL("../frontend-src/src/styles/interface.css", import.meta.url));
 
 test("reset opens a confirmation and keeps restore behind explicit confirm", () => {
   const resetButton = source.match(/<button[^>]+className="is-danger"[^>]+onClick=\{\(\) => setResetDialogOpen\(true\)\}[^>]*>[^<]*<RefreshCw[\s\S]*?<\/button>/)?.[0];

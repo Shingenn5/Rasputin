@@ -1,3 +1,4 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -8,10 +9,10 @@ const models = [
   "InstalledModelRow.jsx", "ModelRuntimePanel.jsx", "advisorSelection.js",
   "hardwareSnapshot.js", "downloadState.js",
 ]
-  .map((file) => readFileSync(new URL("../frontend-src/src/features/models/" + file, import.meta.url), "utf8"))
+  .map((file) => readFeatureSource(new URL("../frontend-src/src/features/models/" + file, import.meta.url)))
   .join("\n");
-const modelIdentity = readFileSync(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../frontend-src/src/styles/models-workspace-v3.css", import.meta.url), "utf8");
+const modelIdentity = readFeatureSource(new URL("../frontend-src/src/features/models/ModelIdentity.jsx", import.meta.url));
+const styles = readFeatureSource(new URL("../frontend-src/src/styles/models-workspace-v3.css", import.meta.url));
 
 test("Models workspace v3 adds a distinct command-console hierarchy", () => {
   assert.match(models, /models-workspace-v3/);

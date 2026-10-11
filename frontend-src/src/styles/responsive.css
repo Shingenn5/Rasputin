@@ -309,62 +309,13 @@
     gap: 8px;
   }
 
-  .app-frame,
-  body.sidebar-collapsed .app-frame {
+  .app-frame {
     grid-template-columns: 1fr;
-  }
-
-  .app-sidebar {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 1060;
-    width: min(318px, calc(100vw - 46px));
-    transform: translateX(-105%);
-    visibility: hidden;
-    pointer-events: none;
-    transition: transform .22s ease;
-    box-shadow: 16px 0 36px rgba(0, 0, 0, .28);
-  }
-
-  body.mobile-sidebar-open .app-sidebar {
-    transform: translateX(0);
-    visibility: visible;
-    pointer-events: auto;
   }
 
   /* NOTE: no body-level ::before backdrop here — DashSidebar renders its own
      scrim with a close handler. A fixed z-1050 pseudo-element sits above the
      drawer (z-30) and eats every tap, locking mobile nav entirely. */
-
-  body.sidebar-collapsed .app-sidebar {
-    padding: .8rem;
-  }
-
-  body.sidebar-collapsed .brand-button,
-  body.sidebar-collapsed .sidebar-title,
-  body.sidebar-collapsed .nav-label,
-  body.sidebar-collapsed .nav-count,
-  body.sidebar-collapsed .sidebar-context {
-    display: flex !important;
-  }
-
-  body.sidebar-collapsed .sidebar-section {
-    display: block !important;
-  }
-
-  body.sidebar-collapsed .sidebar-recent-section[open],
-  .sidebar-recent-section[open] {
-    display: grid !important;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-  }
-
-  body.sidebar-collapsed .nav-item,
-  body.sidebar-collapsed .new-task-btn {
-    width: 100%;
-    justify-content: flex-start;
-    padding-inline: .72rem;
-  }
 
   .mobile-close {
     display: inline-grid;

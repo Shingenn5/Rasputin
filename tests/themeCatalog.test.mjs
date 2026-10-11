@@ -1,11 +1,12 @@
+import { readFeatureSource } from "./sourceModules.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { darkThemes, themeOptions } from "../frontend-src/src/lib/constants.js";
 
-const indexHtml = readFileSync(new URL("../frontend-src/index.html", import.meta.url), "utf8");
-const appSource = readFileSync(new URL("../frontend-src/src/app/App.jsx", import.meta.url), "utf8");
+const indexHtml = readFeatureSource(new URL("../frontend-src/index.html", import.meta.url));
+const appSource = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
 const preferenceSource = readFileSync(new URL("../backend/core/preferences.py", import.meta.url), "utf8");
 const bootThemeEntries = [...indexHtml.matchAll(/^\s+"([a-z0-9-]+)": \{[^\n]+dark: (true|false) \}/gm)]
   .map((match) => ({ key: match[1], dark: match[2] === "true" }));

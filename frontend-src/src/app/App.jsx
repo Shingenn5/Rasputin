@@ -1,14 +1,25 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useWarsatActions } from "./useWarsatActions.js";
+import { useIntegrationActions } from "./useIntegrationActions.js";
+import { useApprovalMemoryActions } from "./useApprovalMemoryActions.js";
+import { useSessionActions } from "./useSessionActions.js";
+import { useArchiveTrialActions } from "./useArchiveTrialActions.js";
+import { useAssistantActions } from "./useAssistantActions.js";
+import { useWorkspaceActions } from "./useWorkspaceActions.js";
+import { useModelRegistryActions } from "./useModelRegistryActions.js";
+import { useTaskActions } from "./useTaskActions.js";
+import { useEventConnection } from "./useEventConnection.js";
+import { useMcpActions } from "./useMcpActions.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { Onboarding } from "../components/Onboarding.jsx";
-import { api, postJson, postJsonStream } from "../api/client.js";
+import { api, postJson } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
 import { DashboardView } from "../features/dashboard/DashboardView.jsx";
-import { usesNativeModels, prepareNativeModel } from "../features/models/nativeDeployment.js";
-import { ModelsView, preferredDownloadVariant } from "../features/models/ModelsView.jsx";
+import { usesNativeModels } from "../features/models/nativeDeployment.js";
+import { ModelsView } from "../features/models/ModelsView.jsx";
 import { AssistantView } from "../features/assistant/AssistantView.jsx";
 import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
@@ -30,17 +41,10 @@ import {
   settingsItems,
   themeOptions,
 } from "../lib/constants.js";
-import {
-  displayModelName,
-  displayWorkspaceName,
-  isModelHealthy,
-  isModelRouteable,
-  isUserFacingModel,
-  runtimeStatus,
-} from "../lib/display.js";
-import { useSettingsStore } from "../features/settings/settingsStore.js";
+import { displayModelName, displayWorkspaceName, isModelHealthy, isModelRouteable, isUserFacingModel } from "../lib/display.js";
+
 import { loadSettings } from "../features/settings/settingsActions.js";
-import { ENGINE_PROTOCOLS } from "../lib/engines.js";
+
 import { canAccessRoute } from "../lib/access.js";
 import { applyMotionMode, normalizeMotionMode, readStoredMotionMode } from "../lib/motion.js";
 
@@ -658,84 +662,26 @@ export function App() {
     return nextTools;
   }
 
-  async function loadMcpRelays() {
-    const nextRelays = await api("/api/mcp/servers");
-    setMcpRelays(nextRelays || { servers: [] });
-    return nextRelays;
-  }
-
-  async function registerMcpRelay(payload) {
-    const registered = await postJson("/api/mcp/servers", payload);
-    await Promise.allSettled([loadMcpRelays(), refreshApprovals()]);
-    setGlobalStatus(registered.approval?.code ? `MCP registration approval ${registered.approval.code} created.` : "MCP server registered.");
-    return registered;
-  }
-
-  async function registerMcpFixture() {
-    const registered = await postJson("/api/mcp/fixtures/operator/register", {});
-    await Promise.allSettled([loadMcpRelays(), refreshApprovals()]);
-    setGlobalStatus(registered.approval?.code ? `Operator fixture approval ${registered.approval.code} created.` : "Operator MCP fixture registered.");
-    return registered;
-  }
-
-  async function startMcpRelay(server) {
-    const approvalId = server?.pendingApprovalId || "";
-    const started = await postJson(`/api/mcp/servers/${server.id}/start`, { approvalId });
-    await Promise.allSettled([loadMcpRelays(), loadTools(), refreshApprovals()]);
-    setGlobalStatus(`${started.name || server.id} started.`);
-    return started;
-  }
-
-  async function stopMcpRelay(server) {
-    const stopped = await postJson(`/api/mcp/servers/${server.id}/stop`, {});
-    await Promise.allSettled([loadMcpRelays(), loadTools()]);
-    setGlobalStatus(`${stopped.name || server.id} stopped.`);
-    return stopped;
-  }
-
-  async function restartMcpRelay(server) {
-    const restarted = await postJson(`/api/mcp/servers/${server.id}/restart`, { approvalId: server?.pendingApprovalId || "" });
-    await Promise.allSettled([loadMcpRelays(), loadTools(), refreshApprovals()]);
-    setGlobalStatus(`${restarted.name || server.id} restarted.`);
-    return restarted;
-  }
-
-  async function removeMcpRelay(server) {
-    const removed = await api(`/api/mcp/servers/${encodeURIComponent(server.id)}`, { method: "DELETE" });
-    await Promise.allSettled([loadMcpRelays(), loadTools(), refreshApprovals()]);
-    setGlobalStatus(`${server.name || server.id} removed.`);
-    return removed;
-  }
-
-  async function discoverMcpRelay(server) {
-    const discovered = await postJson(`/api/mcp/servers/${server.id}/discover`, {});
-    await Promise.allSettled([loadMcpRelays(), loadTools()]);
-    setGlobalStatus(discovered.message || `Discovered tools for ${server.name || server.id}.`);
-    return discovered;
-  }
-
-  async function testMcpRelay(server) {
-    const tested = await postJson(`/api/mcp/servers/${server.id}/test`, {});
-    await Promise.allSettled([loadMcpRelays(), loadTools()]);
-    setGlobalStatus(tested.message || `${server.name || server.id} initialized.`);
-    return tested;
-  }
-
-  async function classifyMcpTool(toolId, payload) {
-    const classified = await postJson(`/api/mcp/tools/${encodeURIComponent(toolId)}/classify`, payload);
-    await Promise.allSettled([loadMcpRelays(), loadTools()]);
-    setGlobalStatus(`${classified.displayName || classified.id} classified.`);
-    return classified;
-  }
-
-  async function callMcpTestTool(toolId, message = "operator fixture ok") {
-    const detail = await postJson(`/api/mcp/tools/${encodeURIComponent(toolId)}/test-call`, { message });
-    await Promise.allSettled([loadTasks(), loadTools(), loadMcpRelays()]);
-    const taskId = detail?.task?.id;
-    if (taskId) openTaskDetails(taskId);
-    setGlobalStatus("MCP fixture tool call recorded in task details.");
-    return detail;
-  }
+  const {
+    loadMcpRelays,
+    registerMcpRelay,
+    registerMcpFixture,
+    startMcpRelay,
+    stopMcpRelay,
+    restartMcpRelay,
+    removeMcpRelay,
+    discoverMcpRelay,
+    testMcpRelay,
+    classifyMcpTool,
+    callMcpTestTool,
+  } = useMcpActions({
+    setMcpRelays,
+    get refreshApprovals() { return refreshApprovals; },
+    setGlobalStatus,
+    loadTools,
+    loadTasks,
+    openTaskDetails,
+  });
 
   async function refreshActivity() {
     const [nextTasks] = await Promise.all([
@@ -851,105 +797,28 @@ export function App() {
     });
   }, [modelKeyForMode, taskMode]);
 
-  function clearEventTimers() {
-    if (eventReconnectTimerRef.current) {
-      window.clearTimeout(eventReconnectTimerRef.current);
-      eventReconnectTimerRef.current = null;
-    }
-    if (eventFallbackTimerRef.current) {
-      window.clearInterval(eventFallbackTimerRef.current);
-      eventFallbackTimerRef.current = null;
-    }
-  }
-
-  function disconnectEvents(status = "disconnected") {
-    eventGenerationRef.current += 1;
-    clearEventTimers();
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
-    if (mountedRef.current) setEventConnectionStatus(status);
-  }
-
-  function scheduleEventReconnect(generation) {
-    if (!mountedRef.current || generation !== eventGenerationRef.current || eventReconnectTimerRef.current) return;
-    const attempt = eventRetryAttemptRef.current;
-    const delay = Math.min(30000, 1000 * (2 ** attempt));
-    eventRetryAttemptRef.current = Math.min(attempt + 1, 5);
-    eventReconnectTimerRef.current = window.setTimeout(() => {
-      eventReconnectTimerRef.current = null;
-      if (mountedRef.current && generation === eventGenerationRef.current) connectEvents();
-    }, delay);
-  }
-
-  function startEventFallbackRefresh(generation) {
-    if (eventFallbackTimerRef.current) return;
-    const refresh = () => {
-      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
-      loadTasks().catch(() => {});
-    };
-    refresh();
-    eventFallbackTimerRef.current = window.setInterval(refresh, 3000);
-  }
-
-  function connectEvents() {
-    if (!mountedRef.current) return;
-    disconnectEvents("connecting");
-    const generation = eventGenerationRef.current;
-    const source = new EventSource("/api/events");
-    eventSourceRef.current = source;
-    source.onopen = () => {
-      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
-      eventRetryAttemptRef.current = 0;
-      if (eventFallbackTimerRef.current) {
-        window.clearInterval(eventFallbackTimerRef.current);
-        eventFallbackTimerRef.current = null;
-      }
-      setEventConnectionStatus("connected");
-    };
-    source.onerror = () => {
-      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
-      source.close();
-      if (eventSourceRef.current === source) eventSourceRef.current = null;
-      setEventConnectionStatus("degraded");
-      startEventFallbackRefresh(generation);
-      scheduleEventReconnect(generation);
-    };
-    source.onmessage = (message) => {
-      if (!mountedRef.current || generation !== eventGenerationRef.current) return;
-      try {
-        const data = JSON.parse(message.data);
-        if (data.tasks) {
-          queryClient.setQueryData(["tasks"], data.tasks);
-          setTasks(data.tasks);
-        }
-        if (data.task) {
-          setTasks((current) => [data.task, ...current.filter((task) => task.id !== data.task.id)]);
-          queryClient.setQueryData(["tasks"], (current = []) => [data.task, ...current.filter((task) => task.id !== data.task.id)]);
-          if (selectedTaskIdRef.current === data.task.id) {
-            // Merge the streamed snapshot straight into the open drawer so
-            // tokens/steps paint live; only refetch the full detail (events,
-            // approvals, children) once the task leaves the running state.
-            setTaskDetails((current) =>
-              current?.task?.id === data.task.id ? { ...current, task: { ...current.task, ...data.task } } : current,
-            );
-            if (!["running", "queued"].includes(data.task.status)) {
-              loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-            }
-          } else if (selectedTaskIdRef.current) {
-            loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-          }
-          if (["done", "error", "cancelled"].includes(data.task.status)) {
-            queryClient.invalidateQueries({ queryKey: ["inbox"] });
-          }
-        }
-        if (data.approvals) setApprovals(data.approvals);
-        if (data.memoryReview) setMemoryReview(data.memoryReview);
-        if (data.telegram) setTelegramConfig(data.telegram);
-      } catch {
-        setGlobalStatus("Live update failed.");
-      }
-    };
-  }
+  const {
+    disconnectEvents,
+    connectEvents,
+  } = useEventConnection({
+    eventReconnectTimerRef,
+    eventFallbackTimerRef,
+    eventGenerationRef,
+    eventSourceRef,
+    mountedRef,
+    setEventConnectionStatus,
+    eventRetryAttemptRef,
+    loadTasks,
+    queryClient,
+    setTasks,
+    selectedTaskIdRef,
+    setTaskDetails,
+    loadTaskDetails,
+    setApprovals,
+    setMemoryReview,
+    setTelegramConfig,
+    setGlobalStatus,
+  });
 
   function applyView(nextView, section) {
     setView(nextView);
@@ -1049,579 +918,97 @@ export function App() {
     setLoginVisible(true);
   }
 
-  async function startNewChat() {
-    try {
-      const listedSession = (sessions?.sessions || []).find((item) => item.id === activeChatSessionId);
-      const selectedIsEmpty = selectedSession?.session?.id === activeChatSessionId
-        && !(selectedSession?.messages || []).some((message) => String(message.content || "").trim())
-        && !(selectedSession?.tasks || []).length;
-      if (activeChatSessionId && (listedSession?.isEmpty || selectedIsEmpty)) {
-        setObjective("");
-        go("chat");
-        setGlobalStatus("The current chat is already empty and ready.");
-        return selectedSession || { session: listedSession, messages: [], tasks: [] };
-      }
-      const detail = await postJson("/api/sessions", {
-        title: "New chat",
-        workspace: workspace.activePath || ".",
-        model: selectedModel,
-        mode: taskMode,
-        skill: "general",
-        folder: activeChatFolder && !["all", "unfiled"].includes(activeChatFolder) ? activeChatFolder : "",
-      });
-      const sessionId = detail?.session?.id;
-      setHomeTaskIds(new Set());
-      setSelectedSession(detail);
-      setActiveChatSessionId(sessionId || null);
-      setObjective("");
-      go("chat");
-      loadChatFolders().catch((error) => setGlobalStatus(error.message));
-      setGlobalStatus("New chat created.");
-      return detail;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
+  const {
+    startNewChat,
+    sendTask,
+    queueMessage,
+    removeQueuedMessage,
+    clearQueuedMessages,
+    cancelTask,
+    pauseTask,
+    resumeTask,
+    retryTask,
+    setTaskPriority,
+    updateInboxEvent,
+    markAllInboxRead,
+  } = useTaskActions({
+    sessions,
+    activeChatSessionId,
+    selectedSession,
+    setObjective,
+    go,
+    setGlobalStatus,
+    workspace,
+    selectedModel,
+    taskMode,
+    activeChatFolder,
+    setHomeTaskIds,
+    setSelectedSession,
+    setActiveChatSessionId,
+    get loadChatFolders() { return loadChatFolders; },
+    objective,
+    memoryMode,
+    reasoningMode,
+    selectedTaskContextCapsuleId,
+    models,
+    setComposerStatus,
+    isolateWorkspace,
+    setTasks,
+    subagentCount,
+    queryClient,
+    setSessions,
+    queuedMessages,
+    loadTasks,
+    selectedTaskIdRef,
+    loadTaskDetails,
+    supportsAgenticMode,
+    reconcileCreatedTaskSnapshot,
+  });
 
-  async function sendTask(event, customMessage = null, options = {}) {
-    if (event) event.preventDefault();
-    const message = customMessage || objective.trim();
-    const mode = options.mode || taskMode;
-    const requestedMemoryMode = options.memoryMode || memoryMode;
-    const reasoning = options.reasoning || reasoningMode;
-    const modelKey = options.model || selectedModel;
-    const contextCapsuleId = options.contextCapsuleId || selectedTaskContextCapsuleId || undefined;
-    const requestedModel = models.find((model) => model.key === modelKey) || null;
-    if (mode !== "chat" && !supportsAgenticMode(requestedModel, mode)) {
-      setComposerStatus("This workflow requires a healthy, tool-capable model certified for the selected mode.");
-      return false;
-    }
-    if (!isModelHealthy(requestedModel)) {
-      setComposerStatus("Select Testing Mode or test a healthy local model before sending.");
-      return false;
-    }
-    if (!message) {
-      setComposerStatus("Write a message first.");
-      return false;
-    }
-    const tempId = `pending-${Date.now()}`;
-    const tempTask = {
-      id: tempId,
-      sessionId: activeChatSessionId,
-      objective: message,
-      model: modelKey,
-      skill: "general",
-      mode,
-      memoryMode: requestedMemoryMode,
-      reasoning,
-      isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
-      contextCapsuleId,
-      status: "queued",
-      progress: 0,
-      logs: ["queued"],
-      result: "",
-      outputs: [],
-      sources: [],
-      graph: [],
-      trace: [],
-      workspace: workspace.activePath || ".",
-      parentId: null,
-      createdAt: Date.now() / 1000,
-    };
-    setTasks((current) => [tempTask, ...current.filter((item) => item.id !== tempId)]);
-    setHomeTaskIds((current) => new Set([...current, tempId]));
-    if (!options.fromQueue) setObjective("");
-    try {
-      setComposerStatus("");
-      const task = await postJson("/api/tasks", {
-        objective: message,
-        model: modelKey,
-        deploymentFingerprint: requestedModel?.deployment_fingerprint || requestedModel?.deploymentFingerprint || undefined,
-        skill: "general",
-        mode,
-        memoryMode: requestedMemoryMode,
-        reasoning,
-        subagents: subagentCount,
-        workspacePath: workspace.activePath || ".",
-        sessionId: activeChatSessionId || undefined,
-        priority: options.priority || 0,
-        scheduledFor: options.scheduledFor || undefined,
-        maxAttempts: options.maxAttempts || 1,
-        attachmentIds: options.attachmentIds || [],
-        isolateWorkspace: Boolean(isolateWorkspace && mode === "code"),
-        contextCapsuleId,
-      });
-      setTasks((current) => reconcileCreatedTaskSnapshot(current, task, tempId));
-      queryClient.setQueryData(["tasks"], (current = []) => reconcileCreatedTaskSnapshot(current, task, tempId));
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      setHomeTaskIds((current) => {
-        const next = new Set(current);
-        next.delete(tempId);
-        next.add(task.id);
-        return next;
-      });
-      setActiveChatSessionId(task.sessionId || activeChatSessionId);
-      api("/api/sessions").then(setSessions).catch(() => {});
-      setGlobalStatus(subagentCount ? `Agent run started with ${subagentCount} sub-agent${subagentCount === 1 ? "" : "s"}.` : "Task started.");
-      return true;
-    } catch (error) {
-      setTasks((current) => current.filter((item) => item.id !== tempId));
-      setHomeTaskIds((current) => {
-        const next = new Set(current);
-        next.delete(tempId);
-        return next;
-      });
-      if (!options.fromQueue) setObjective(message);
-      setComposerStatus(error.message);
-      return false;
-    }
-  }
+  const {
+    runModelAction,
+    registerLocalModel,
+    registerApiModel,
+    scanGguf,
+  } = useModelRegistryActions({
+    setGlobalStatus,
+    loadModels,
+    setSelectedModel,
+  });
 
-  async function queueMessage(text, options = {}) {
-    const trimmed = String(text || "").trim();
-    if (!trimmed) return null;
-    const sent = await sendTask(null, trimmed, {
-      ...options,
-      mode: options.mode || taskMode,
-      memoryMode: options.memoryMode || memoryMode,
-      reasoning: options.reasoning || reasoningMode,
-      fromQueue: true,
-    });
-    if (!sent) setObjective((current) => current || trimmed);
-    return sent;
-  }
-
-  async function removeQueuedMessage(id) {
-    await cancelTask(id);
-  }
-
-  async function clearQueuedMessages() {
-    await Promise.all(queuedMessages.map((entry) => postJson(`/api/tasks/${entry.id}/cancel`, {})));
-    await loadTasks();
-    queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    setGlobalStatus("Queued tasks cleared.");
-  }
-
-  async function cancelTask(taskId) {
-    try {
-      await postJson(`/api/tasks/${taskId}/cancel`, {});
-      setGlobalStatus("Task stop requested.");
-      await loadTasks();
-      if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function pauseTask(taskId) {
-    try {
-      await postJson(`/api/tasks/${taskId}/pause`, {});
-      setGlobalStatus("Task paused.");
-      await loadTasks();
-      if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function resumeTask(taskId) {
-    try {
-      await postJson(`/api/tasks/${taskId}/resume`, {});
-      setGlobalStatus("Task resumed.");
-      await loadTasks();
-      if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function retryTask(taskId) {
-    try {
-      const task = await postJson(`/api/tasks/${taskId}/retry`, {});
-      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
-      setGlobalStatus("Task queued for retry.");
-      return task;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function setTaskPriority(taskId, priority) {
-    try {
-      const task = await postJson(`/api/tasks/${taskId}/priority`, { priority });
-      setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
-      return task;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function updateInboxEvent(eventId, action) {
-    try {
-      await postJson(`/api/inbox/${eventId}/${action}`, {});
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function markAllInboxRead() {
-    try {
-      await postJson("/api/inbox/read-all", {});
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function runModelAction(action, key, options = {}) {
-    const resolvedKey = typeof key === "string" ? key.trim() : "";
-    if (!resolvedKey) {
-      const message = "Select a registered model before running this action.";
-      setGlobalStatus(message);
-      throw new Error(message);
-    }
-    try {
-      const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey, ...options });
-      if (result?.ok === false) {
-        throw new Error(result.error?.message || result.error || result.message || "Model action failed.");
-      }
-      setGlobalStatus(action === "repair" && result.repaired ? "Model repaired." : `${action} finished.`);
-      await loadModels();
-    } catch (error) {
-      setGlobalStatus(error.message);
-      throw error;
-    }
-  }
-
-  async function registerLocalModel(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const model = {
-      key: form.get("key") || undefined,
-      name: form.get("name") || form.get("model") || "Local Model",
-      provider: form.get("provider") || "openai-compatible",
-      role: form.get("role") || "helper",
-      baseUrl: form.get("baseUrl"),
-      model: form.get("model"),
-      runtime: "external-local",
-      contextWindow: Number(form.get("contextWindow") || 0) || undefined,
-      maxTokens: Number(form.get("maxTokens") || 0) || undefined,
-      enabled: true,
-      managed: false,
-      notes: form.get("notes") || "Connected from the Models tab.",
-    };
-    if (!model.baseUrl || !model.model) {
-      setGlobalStatus("Enter a local endpoint and model id.");
-      return null;
-    }
-    try {
-      const saved = await postJson("/api/model-registry/upsert", model);
-      await loadModels();
-      setSelectedModel(saved.key);
-      setGlobalStatus(`Connected ${saved.name || saved.model}. Run Test health next.`);
-      event.currentTarget.reset();
-      return saved;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function registerApiModel(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const provider = form.get("provider") || "openai";
-    const modelId = form.get("model");
-    const apiKey = form.get("apiKey");
-    const apiKeyEnv = form.get("apiKeyEnv");
-    const model = {
-      name: form.get("name") || modelId || "API Model",
-      provider,
-      role: form.get("role") || "helper",
-      baseUrl: form.get("baseUrl"),
-      model: modelId,
-      apiKey: apiKey || undefined,
-      apiKeyEnv: apiKeyEnv || undefined,
-      anthropicVersion: form.get("anthropicVersion") || undefined,
-      runtime: "remote-api",
-      contextWindow: Number(form.get("contextWindow") || 0) || undefined,
-      maxTokens: Number(form.get("maxTokens") || 0) || undefined,
-      enabled: true,
-      managed: false,
-      notes: form.get("notes") || "External API model. Requires remote models to be enabled in Safety.",
-    };
-    if (!model.model) {
-      setGlobalStatus("Enter a provider model id.");
-      return null;
-    }
-    if (!model.apiKey && !model.apiKeyEnv) {
-      setGlobalStatus("Use an environment variable name or paste a key into the local secret store.");
-      return null;
-    }
-    try {
-      const saved = await postJson("/api/model-registry/upsert", model);
-      await loadModels();
-      setSelectedModel(saved.key);
-      setGlobalStatus(`Registered ${saved.name || saved.model}. Run Test health after Safety allows remote models.`);
-      event.currentTarget.reset();
-      return saved;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function scanGguf() {
-    try {
-      const result = await postJson("/api/model-registry/scan-gguf", {});
-      setGlobalStatus(`Added ${result.registered?.length || 0} models; ${result.existing?.length || 0} already in My Models.${result.truncated ? " Scan limit reached; scan a smaller model folder to find the rest." : ""}`);
-      await loadModels();
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function browseWorkspace(rootId, path) {
-    const browsed = await postJson("/api/workspace/browse", { rootId, path });
-    setWorkspaceBrowse(browsed);
-    setWorkspaceExplorer({ rootId, path: browsed.path });
-  }
-
-  async function previewWorkspaceFile(rootId, path) {
-    return postJson("/api/workspace/preview-file", { rootId, path });
-  }
-
-  async function refreshKnowledgeStats(workspaceId) {
-    // "RAG Indexed" is scoped to a single approved folder -- default to
-    // whichever one is currently active rather than the combined total
-    // across every folder, which is what made the count look frozen when
-    // switching folders (it genuinely never changed).
-    const scopeId = workspaceId !== undefined ? workspaceId : (workspace.activeId || workspace.active_id);
-    const ragQuery = scopeId ? `?workspace_id=${encodeURIComponent(scopeId)}` : "";
-    const [nextRagStats, nextGraphStats] = await Promise.all([
-      api(`/api/rag/stats${ragQuery}`),
-      api("/api/graph/stats"),
-    ]);
-    setRagStats(nextRagStats);
-    setGraphStats(nextGraphStats);
-    return { ragStats: nextRagStats, graphStats: nextGraphStats };
-  }
-
-  async function indexWorkspaceKnowledge(path) {
-    const targetPath = path || workspace.activePath || ".";
-    const ragResult = await postJson("/api/rag/ingest", { path: targetPath, label: displayWorkspaceName(targetPath) });
-    const graphResult = await postJson("/api/graph/build", { path: targetPath });
-    await refreshKnowledgeStats();
-    setWorkspace(await api("/api/workspace"));
-    await loadWorkspaceRoots(targetPath, { rootId: workspaceBrowse?.root?.id || workspaceExplorer?.rootId, path: targetPath });
-    setGlobalStatus(`Knowledge indexed for ${displayWorkspaceName(targetPath)}.`);
-    return { ragResult, graphResult };
-  }
-
-  async function exportWorkspaceGraphToObsidian(path) {
-    const targetPath = path || workspace.activePath || ".";
-    const result = await postJson("/api/graph/export-obsidian", { path: targetPath });
-    await refreshKnowledgeStats();
-    setWorkspace(await api("/api/workspace"));
-    await loadWorkspaceRoots(targetPath, {
-      rootId: workspaceBrowse?.root?.id || workspaceExplorer?.rootId,
-      path: targetPath,
-    });
-    setGlobalStatus(`Exported ${result.nodesExported || 0} graph nodes to Obsidian.`);
-    return result;
-  }
-
-  async function searchWorkspaceKnowledge(query, path) {
-    const targetPath = path || workspace.activePath || ".";
-    const [ragResult, graphResult] = await Promise.all([
-      postJson("/api/rag/search", { query, path: targetPath, limit: 5 }),
-      postJson("/api/graph/search", { query, limit: 8 }),
-    ]);
-    return { ragResult, graphResult };
-  }
-
-  async function approvePath(path) {
-    const approved = await postJson("/api/workspace/approve", {
-      path,
-      name: displayWorkspaceName(path),
-      readOnly: true,
-    });
-    const active = await postJson("/api/workspace/select", { path: approved.id || path });
-    setWorkspace(active);
-    await loadWorkspaceRoots(active.activePath);
-  }
-
-  async function selectWorkspace(path) {
-    try {
-      const active = await postJson("/api/workspace/select", { path });
-      setWorkspace(active);
-      // Fire-and-forget: the knowledge panel should catch up to the newly
-      // active folder, but switching folders shouldn't wait on it -- this
-      // path is already slow enough without adding a blocking round trip.
-      refreshKnowledgeStats(active.activeId || active.active_id).catch(() => {});
-      // Explicitly point at the just-activated root rather than relying on
-      // loadWorkspaceRoots' default (the closure's workspaceExplorer, which
-      // is still the *previous* root at this point) -- otherwise it browses
-      // the old folder and overwrites the explorer back to it a moment
-      // after the switch, undoing the click.
-      await loadWorkspaceRoots(active.activePath, { rootId: active.activeId || active.active_id, path: undefined });
-      setGlobalStatus(`Workspace set to ${active.activeName || displayWorkspaceName(active.activePath)}.`);
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function setWorkspaceTrust(workspaceId, trusted) {
-    try {
-      await postJson("/api/workspace/trust", { workspaceId, trusted });
-      setWorkspace(await api("/api/workspace"));
-      await loadWorkspaceRoots(workspace.activePath);
-      setGlobalStatus(
-        trusted
-          ? "Trusted Dev Mode enabled. File writes and git run without per-action approval in this workspace."
-          : "Trusted Dev Mode revoked for this workspace."
-      );
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function setWorkspaceHostShell(workspaceId, enabled) {
-    try {
-      await postJson("/api/workspace/host-shell", { workspaceId, enabled });
-      setWorkspace(await api("/api/workspace"));
-      await loadWorkspaceRoots(workspace.activePath);
-      setGlobalStatus(
-        enabled ? "Host Shell enabled. The agent can run commands on your machine in this workspace." : "Host Shell disabled for this workspace."
-      );
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function saveWorkspaceCommands(workspaceId, commands) {
-    try {
-      const result = await postJson("/api/workspace/commands", {
-        workspaceId,
-        test: commands.test,
-        build: commands.build,
-        lint: commands.lint,
-      });
-      // The command save is complete once its own endpoint returns. Refresh
-      // the workspace snapshot in the background so a slow browse/scan cannot
-      // leave the settings form stuck on "Saving...".
-      api("/api/workspace").then(setWorkspace).catch(() => {});
-      setGlobalStatus("Workspace validation commands saved.");
-      return result;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      throw error;
-    }
-  }
-
-  async function previewMount(event) {
-    event.preventDefault();
-    // Callers pass either a real form submit event or a synthetic
-    // { currentTarget: FormData } (WorkspacesView's guided modal).
-    const source = event.currentTarget;
-    const form = source instanceof FormData ? source : new FormData(source);
-    try {
-      const plan = await postJson("/api/workspace/mount-plan", {
-        hostPath: form.get("hostPath"),
-        name: form.get("name") || undefined,
-        readOnly: form.get("readOnly") === "on",
-      });
-      setMountPlan(plan);
-      return plan;
-    } catch (error) {
-      setMountPlan({ error: error.message });
-      throw error;
-    }
-  }
-
-  async function requestMount(plan) {
-    if (!plan?.hostPath) return null;
-    try {
-      const saved = await postJson("/api/workspace/mount-apply", {
-        hostPath: plan.hostPath,
-        name: plan.displayName || undefined,
-        readOnly: !!plan.readOnly,
-      });
-      setMountPlan({ ...saved, saved: true });
-      setGlobalStatus(saved.registered
-        ? `Project opened: ${saved.displayName || saved.hostPath}.`
-        : saved.composeWritten
-          ? `Mount saved and written to ${saved.composeFile}. Restart Rasputin to pick up ${saved.displayName || "the folder"}.`
-          : "Mount request saved. Restart Rasputin with the generated volume before browsing that folder.");
-      loadPendingMounts().catch(() => {});
-      return saved;
-    } catch (error) {
-      setMountPlan({ ...plan, applyError: error.message });
-      setGlobalStatus(error.message);
-      throw error;
-    }
-  }
-
-  async function loadPendingMounts() {
-    // Legacy mount requests are unavailable on native hosts. This may also
-    // run before bootstrap finishes; an empty panel is the safe fallback.
-    try {
-      const payload = await api("/api/workspace/mount-requests");
-      setPendingMounts(payload.requests || []);
-      return payload;
-    } catch {
-      setPendingMounts([]);
-      return { requests: [] };
-    }
-  }
-
-  async function removePendingMount(hostPath, options = {}) {
-    try {
-      const result = await postJson("/api/workspace/mount-requests/remove", { hostPath });
-      setPendingMounts(result.requests || []);
-      if (!options.silent) setGlobalStatus("Pending mount removed.");
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function approvePendingMount(item) {
-    if (!item?.containerPath) return;
-    try {
-      await approvePath(item.containerPath);
-      // Don't remove the underlying mount registration here: it's the only
-      // record of which host folder this container path came from, and it
-      // must keep producing a Compose volume line on every future restart
-      // or the now-approved workspace goes empty. loadPendingMounts() just
-      // re-filters the panel -- the server already hides entries that match
-      // an approved workspace, so this one naturally drops off the list.
-      await loadPendingMounts();
-      setGlobalStatus(`${item.displayName || displayWorkspaceName(item.hostPath)} approved as a workspace.`);
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function saveSafety(event) {
-    let payload = event;
-    if (event?.preventDefault) {
-      event.preventDefault();
-      const form = new FormData(event.currentTarget);
-      const keys = [
-        "privacyLock", "allowFileRead", "allowFileWrite", "allowFileReorganize", "allowShellExecution",
-        "allowWebSearch", "allowDockerControl", "allowModelTests", "allowModelRegistryEdit", "allowRemoteModels",
-        "approvalRequiredFileWrite", "approvalRequiredFileMove", "approvalRequiredWebSearch", "auditEnabled",
-      ];
-      payload = Object.fromEntries(keys.map((key) => [key, form.get(key) === "on"]));
-      payload.webSearchMaxChars = Number(form.get("webSearchMaxChars") || 180);
-    }
-    setSecurity(await postJson("/api/security", payload));
-    setGlobalStatus("Safety settings saved.");
-  }
+  const {
+    browseWorkspace,
+    previewWorkspaceFile,
+    refreshKnowledgeStats,
+    indexWorkspaceKnowledge,
+    exportWorkspaceGraphToObsidian,
+    searchWorkspaceKnowledge,
+    approvePath,
+    selectWorkspace,
+    setWorkspaceTrust,
+    setWorkspaceHostShell,
+    saveWorkspaceCommands,
+    previewMount,
+    requestMount,
+    loadPendingMounts,
+    removePendingMount,
+    approvePendingMount,
+    saveSafety,
+  } = useWorkspaceActions({
+    setWorkspaceBrowse,
+    setWorkspaceExplorer,
+    workspace,
+    setRagStats,
+    setGraphStats,
+    setWorkspace,
+    loadWorkspaceRoots,
+    workspaceBrowse,
+    workspaceExplorer,
+    setGlobalStatus,
+    setMountPlan,
+    setPendingMounts,
+    setSecurity,
+  });
 
   async function saveOutputConfig(payload) {
     try {
@@ -1658,826 +1045,157 @@ export function App() {
     setSchedulesList(nextSchedules);
   }
 
-  async function loadAssistantData() {
-    setAssistantLoading(true);
-    setAssistantError("");
-    try {
-      const [nextProfile, nextCapabilities, nextPlans, nextCapsules, nextPacks, nextHandoffs, nextModelRequests] = await Promise.all([
-        api("/api/assistant/profile"),
-        api("/api/assistant/capabilities"),
-        api("/api/assistant/plans"),
-        api("/api/assistant/context-capsules"),
-        api("/api/assistant/model-packs"),
-        api("/api/assistant/handoffs"),
-        api("/api/assistant/model-requests"),
-      ]);
-      setAssistantProfile(nextProfile);
-      setAssistantCapabilities(nextCapabilities);
-      setAssistantPlans(nextPlans || { plans: [] });
-      setAssistantContextCapsules(nextCapsules || { capsules: [] });
-      const approvedCapsules = (nextCapsules?.capsules || []).filter((capsule) => capsule.status === "approved");
-      setSelectedTaskContextCapsuleId((current) => approvedCapsules.some((capsule) => capsule.id === current) ? current : "");
-      setAssistantModelPacks(nextPacks || { packs: [] });
-      setAssistantHandoffs(nextHandoffs || { handoffs: [] });
-      setAssistantModelRequests(Array.isArray(nextModelRequests) ? { requests: nextModelRequests } : nextModelRequests || { requests: [] });
-      return { profile: nextProfile, capabilities: nextCapabilities, plans: nextPlans, contextCapsules: nextCapsules, modelPacks: nextPacks, handoffs: nextHandoffs };
-    } catch (error) {
-      setAssistantError(error.message);
-      throw error;
-    } finally {
-      setAssistantLoading(false);
-    }
-  }
+  const {
+    loadAssistantData,
+    requestAssistantModel,
+    prepareAssistantModelRequest,
+    createAssistantPlan,
+    saveAssistantModelPack,
+    saveAssistantProfile,
+    reviewAssistantPlan,
+    requestAssistantHandoff,
+    prepareAssistantHandoff,
+    dispatchAssistantHandoff,
+    previewAssistantVoice,
+    previewAssistantCommand,
+    previewAssistantContext,
+    createAssistantContextCapsule,
+    reviewAssistantContextCapsule,
+  } = useAssistantActions({
+    setAssistantLoading,
+    setAssistantError,
+    setAssistantProfile,
+    setAssistantCapabilities,
+    setAssistantPlans,
+    setAssistantContextCapsules,
+    setSelectedTaskContextCapsuleId,
+    setAssistantModelPacks,
+    setAssistantHandoffs,
+    setAssistantModelRequests,
+    setGlobalStatus,
+    get prepareCatalogModelForWarsat() { return prepareCatalogModelForWarsat; },
+    get refreshApprovals() { return refreshApprovals; },
+    setAssistantVoicePreview,
+    workspace,
+    setAssistantCommandPreview,
+    setAssistantContextPreview,
+    assistantProfileToWarsatStrengthProfile,
+  });
 
-  async function requestAssistantModel(request) {
-    const payload = request?.currentTarget
-      ? Object.fromEntries(new FormData(request.currentTarget).entries())
-      : request || {};
-    try {
-      const created = await postJson("/api/assistant/model-requests", payload);
-      await loadAssistantData();
-      setGlobalStatus("Assistant model request created for candidate review.");
-      return created;
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
+  const {
+    loadArchive,
+    saveArchiveDraft,
+    exportArchiveDraft,
+    searchArchiveCitations,
+    loadTrials,
+    refreshSetupStatus,
+    runTrialCompare,
+    revealTrial,
+    saveTrialRoute,
+  } = useArchiveTrialActions({
+    setArchiveSessions,
+    setArchiveStatus,
+    workspace,
+    setTrialsRuns,
+    setSetup,
+    setTrialsStatus,
+    modeModelOverridesRef,
+    setModeModelOverrides,
+    taskMode,
+    setSelectedModel,
+  });
 
-  async function prepareAssistantModelRequest(requestId, candidateId) {
-    const resolvedRequestId = typeof requestId === "object" ? requestId?.id : requestId;
-    const resolvedCandidateId = typeof candidateId === "object" ? candidateId?.candidateId : candidateId;
-    if (!resolvedRequestId || !resolvedCandidateId) return null;
-    try {
-      const selectedRequest = await postJson(
-        `/api/assistant/model-requests/${encodeURIComponent(resolvedRequestId)}/select`,
-        { candidateId: resolvedCandidateId },
-      );
-      await loadAssistantData();
-      const candidate = selectedRequest?.selectedCandidate
-        || selectedRequest?.recommendations?.find((item) => item.candidateId === resolvedCandidateId)
-        || selectedRequest?.candidate
-        || selectedRequest?.selectedCandidateSnapshot;
-      const planSeed = candidate?.planSeed || {};
-      const protocolId = candidate?.protocolId || planSeed.protocolId;
-      const profile = planSeed.strengthProfile || planSeed.profile || candidate?.profile || selectedRequest?.profile;
-      if (!candidate?.catalogItem || !protocolId) {
-        throw new Error("The selected Assistant model candidate has no deployable WarSat catalog plan.");
-      }
-      return await prepareCatalogModelForWarsat(candidate.catalogItem, {
-        ...planSeed,
-        protocolId,
-        role: candidate.role || selectedRequest?.role,
-        strengthProfile: assistantProfileToWarsatStrengthProfile(profile),
-        assistantRequestId: resolvedRequestId,
-      });
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
+  const {
+    loadChatFolders,
+    deleteSession,
+    cleanupEmptySessions,
+    createChatFolder,
+    assignSessionFolder,
+    loadSession,
+    resumeSession,
+  } = useSessionActions({
+    setSessions,
+    setChatFolders,
+    selectedSession,
+    setSelectedSession,
+    activeChatSessionId,
+    setActiveChatSessionId,
+    setHomeTaskIds,
+    setObjective,
+    setGlobalStatus,
+    setTasks,
+    go,
+  });
 
-  async function createAssistantPlan(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const operations = form.getAll("requestedOperations").map(String);
-    try {
-      await postJson("/api/assistant/plans", {
-        objective: String(form.get("objective") || "").trim(),
-        sessionId: String(form.get("contextSessionId") || "").trim() || undefined,
-        contextQuery: String(form.get("contextQuery") || "").trim() || undefined,
-        contextCapsuleId: String(form.get("contextCapsuleId") || "").trim() || undefined,
-        modelPackId: String(form.get("modelPackId") || "").trim() || undefined,
-        requestedOperations: operations,
-      });
-      await loadAssistantData();
-      setGlobalStatus("Assistant plan created for review.");
-      event.currentTarget.reset();
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
+  const {
+    refreshApprovals,
+    approveApproval,
+    denyApproval,
+    searchMemory,
+    addMemory,
+    updateMemory,
+    deleteMemory,
+    approveMemory,
+    rejectMemory,
+  } = useApprovalMemoryActions({
+    setApprovals,
+    selectedTaskIdRef,
+    loadTaskDetails,
+    setGlobalStatus,
+    get deployWarsatPlan() { return deployWarsatPlan; },
+    setMemorySearchResults,
+    setMemoryItems,
+    setMemoryExpiredItems,
+    setMemoryReview,
+  });
 
-  async function saveAssistantModelPack(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const roles = form.getAll("packRoles").map(String);
-    const entries = (roles.length ? roles : ["main"]).map((role) => ({
-      id: role.replace(/_/g, "-"),
-      role,
-      required: role === "main",
-      capabilities: role === "speech_to_text" ? ["audio.transcribe"] : role === "text_to_speech" ? ["audio.synthesize"] : [role],
-    }));
-    try {
-      await postJson("/api/assistant/model-packs", {
-        packId: String(form.get("packId") || "").trim(),
-        version: "0.1",
-        entries,
-      });
-      await loadAssistantData();
-      setGlobalStatus("Model pack saved without launching any models.");
-      event.currentTarget.reset();
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
+  const {
+    createSkillFromSession,
+    enableSkill,
+    disableSkill,
+    configureTelegram,
+    testTelegram,
+    createSchedule,
+  } = useIntegrationActions({
+    setSkillPreview,
+    setGlobalStatus,
+    setSkillRegistry,
+    setTelegramConfig,
+    telegramConfig,
+    setSchedulesList,
+  });
 
-  async function saveAssistantProfile(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    try {
-      const profile = await postJson("/api/assistant/profile", {
-        displayName: String(form.get("displayName") || "Rasputin").trim() || "Rasputin",
-        persona: {
-          summary: String(form.get("personaSummary") || "").trim(),
-          style: {
-            tone: String(form.get("personaTone") || "dry"),
-            sarcasm: String(form.get("personaSarcasm") || "light"),
-            respectful: true,
-          },
-        },
-      });
-      setAssistantProfile(profile);
-      setGlobalStatus("Assistant personality saved. Safety policy remains broker-only.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function reviewAssistantPlan(planId, status) {
-    try {
-      await postJson(`/api/assistant/plans/${encodeURIComponent(planId)}/${status === "approved" ? "approve" : "reject"}`, {});
-      await loadAssistantData();
-      setGlobalStatus(status === "approved" ? "Assistant plan approved for broker review." : "Assistant plan rejected.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function requestAssistantHandoff(planId, operation) {
-    try {
-      await postJson(`/api/assistant/plans/${encodeURIComponent(planId)}/handoffs`, { operation });
-      await Promise.allSettled([loadAssistantData(), refreshApprovals()]);
-      setGlobalStatus("Broker handoff recorded. No host action has started.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function prepareAssistantHandoff(handoffId) {
-    try {
-      await postJson(`/api/assistant/handoffs/${encodeURIComponent(handoffId)}/prepare`, {});
-      await loadAssistantData();
-      setGlobalStatus("Broker handoff prepared. No host action has started.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function dispatchAssistantHandoff(handoffId, operation) {
-    try {
-      await postJson(`/api/assistant/handoffs/${encodeURIComponent(handoffId)}/dispatch`, {});
-      await Promise.allSettled([loadAssistantData(), refreshApprovals()]);
-      setGlobalStatus(operation === "open_vscode"
-        ? "VS Code launch dispatched for the approved workspace."
-        : operation === "start_coding_task"
-          ? "Governed Code task started from the approved Assistant handoff."
-          : "Read-only Docker status collected. No container mutation was requested.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function previewAssistantVoice(modelPackId = "") {
-    try {
-      const preview = await postJson("/api/assistant/voice-preview", modelPackId ? { modelPackId } : {});
-      setAssistantVoicePreview(preview);
-      setGlobalStatus(preview.ready ? "Voice loop is ready for an approved local audio adapter." : "Voice loop readiness checked; resolve the listed model blockers first.");
-      return preview;
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function previewAssistantCommand(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const command = String(form.get("assistantCommand") || "").trim();
-    if (!command) return;
-    try {
-      const preview = await postJson("/api/assistant/command-preview", {
-        command,
-        workspacePath: workspace.activePath || ".",
-      });
-      setAssistantCommandPreview(preview);
-      setGlobalStatus(preview.route?.status === "recognized"
-        ? "Command recognized; review is required before any broker handoff."
-        : "Command stayed in preview and was not executed.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function previewAssistantContext(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    try {
-      const preview = await postJson("/api/assistant/context-preview", {
-        objective: String(form.get("contextObjective") || "").trim(),
-        contextQuery: String(form.get("contextQuery") || "").trim() || undefined,
-        sessionId: String(form.get("contextSessionId") || "").trim() || undefined,
-        workspacePath: workspace.activePath || ".",
-      });
-      setAssistantContextPreview(preview);
-      setGlobalStatus("Context preview refreshed; sensitive items remain excluded by default.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function createAssistantContextCapsule(contextPreview) {
-    try {
-      await postJson("/api/assistant/context-capsules", {
-        objective: contextPreview?.query || "Shared context",
-        contextQuery: contextPreview?.query || undefined,
-        sessionId: contextPreview?.selectedSession?.id || undefined,
-        workspacePath: contextPreview?.workspaceRef || workspace.activePath || ".",
-      });
-      await loadAssistantData();
-      setGlobalStatus("Context capsule saved for explicit review.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function reviewAssistantContextCapsule(capsuleId, status) {
-    try {
-      await postJson(`/api/assistant/context-capsules/${encodeURIComponent(capsuleId)}/${status === "approved" ? "approve" : "reject"}`, {});
-      await loadAssistantData();
-      setGlobalStatus(status === "approved" ? "Context capsule approved for plan use." : "Context capsule rejected.");
-    } catch (error) {
-      setAssistantError(error.message);
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function loadArchive() {
-    const nextArchive = await api("/api/archive/sessions");
-    setArchiveSessions(nextArchive);
-    return nextArchive;
-  }
-
-  async function saveArchiveDraft(payload) {
-    setArchiveStatus("");
-    const saved = await postJson("/api/archive/sessions", payload);
-    const nextArchive = await loadArchive();
-    setArchiveStatus(`Saved ${saved.title}.`);
-    return { saved, archive: nextArchive };
-  }
-
-  async function exportArchiveDraft(id) {
-    setArchiveStatus("");
-    const exported = await postJson("/api/archive/export", { id });
-    setArchiveStatus(`Exported to ${exported.path}.`);
-    return exported;
-  }
-
-  async function searchArchiveCitations(query) {
-    const targetPath = workspace.activePath || ".";
-    return postJson("/api/archive/citations", {
-      query,
-      path: targetPath,
-      limit: 6,
-    });
-  }
-
-  async function loadTrials() {
-    const nextTrials = await api("/api/trials");
-    setTrialsRuns(nextTrials);
-    return nextTrials;
-  }
-
-  async function refreshSetupStatus() {
-    const nextSetup = await api("/api/setup/status");
-    setSetup(nextSetup);
-    return nextSetup;
-  }
-
-  async function runTrialCompare(payload) {
-    setTrialsStatus("Running blind comparison.");
-    const run = await postJson("/api/trials/compare", payload);
-    const nextTrials = await loadTrials();
-    setTrialsStatus(`Trial ${run.id} finished.`);
-    return { run, trials: nextTrials };
-  }
-
-  async function revealTrial(runId) {
-    const run = await postJson(`/api/trials/${runId}/reveal`, {});
-    await loadTrials();
-    setTrialsStatus(`Revealed trial ${run.id}.`);
-    return run;
-  }
-
-  async function saveTrialRoute(runId, outputId, mode) {
-    const result = await postJson(`/api/trials/${runId}/routing`, { outputId, mode });
-    const route = result.route || {};
-    const routeModelKey = route.modelKey || route.model_key;
-    const overrides = result.preferences?.modeModelOverrides || result.preferences?.mode_model_overrides || (
-      routeModelKey ? { ...modeModelOverridesRef.current, [mode]: routeModelKey } : modeModelOverridesRef.current
-    );
-    modeModelOverridesRef.current = overrides;
-    setModeModelOverrides(overrides);
-    await postJson("/api/preferences", { modeModelOverrides: overrides });
-    if (mode === taskMode && routeModelKey) {
-      setSelectedModel(routeModelKey);
-    }
-    await loadTrials();
-    setTrialsStatus(`Saved ${route.modelName || route.model_name || routeModelKey || "model route"} for ${mode}.`);
-    return result;
-  }
-
-  async function loadChatFolders() {
-    const [nextSessions, nextFolders] = await Promise.all([
-      api("/api/sessions"),
-      api("/api/chat-folders"),
-    ]);
-    setSessions(nextSessions);
-    setChatFolders(nextFolders);
-    return { sessions: nextSessions, chatFolders: nextFolders };
-  }
-
-  function clearDeletedSessionSelection(sessionIds) {
-    if (sessionIds.includes(selectedSession?.session?.id)) setSelectedSession(null);
-    if (!sessionIds.includes(activeChatSessionId)) return;
-    setActiveChatSessionId(null);
-    setHomeTaskIds(new Set());
-    setObjective("");
-  }
-
-  async function deleteSession(sessionItem) {
-    const sessionId = sessionItem?.id;
-    if (!sessionId) return null;
-    try {
-      const result = await postJson(`/api/sessions/${sessionId}/delete`, {});
-      clearDeletedSessionSelection([sessionId]);
-      await loadChatFolders();
-      return result;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function cleanupEmptySessions() {
-    try {
-      const result = await postJson("/api/sessions/cleanup-empty", {});
-      clearDeletedSessionSelection(result.sessionIds || []);
-      await loadChatFolders();
-      return result;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function createChatFolder(event) {
-    event.preventDefault();
-    // currentTarget is nulled once the handler's synchronous phase ends, so
-    // grab the form element before any await.
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const name = String(form.get("name") || "").trim();
-    if (!name) {
-      setGlobalStatus("Enter a folder name.");
-      return null;
-    }
-    const nextFolders = await postJson("/api/chat-folders", { name });
-    setChatFolders(nextFolders);
-    formElement.reset();
-    setGlobalStatus("Chat folder created.");
-    return nextFolders;
-  }
-
-  async function assignSessionFolder(sessionId, folder) {
-    if (!sessionId) return null;
-    const detail = await postJson(`/api/sessions/${sessionId}/folder`, { folder: folder || "" });
-    await loadChatFolders();
-    if (selectedSession?.session?.id === sessionId) setSelectedSession(detail);
-    setGlobalStatus(folder ? "Chat moved to folder." : "Chat moved to Unfiled.");
-    return detail;
-  }
-
-  async function loadSession(sessionId) {
-    try {
-      setSelectedSession(await api(`/api/sessions/${sessionId}`));
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function resumeSession(sessionId) {
-    try {
-      const detail = await api(`/api/sessions/${sessionId}`);
-      const sessionTasks = detail.tasks || [];
-      setSelectedSession(detail);
-      setActiveChatSessionId(sessionId);
-      setHomeTaskIds(new Set(sessionTasks.filter((task) => !task.parentId).map((task) => task.id)));
-      setTasks((current) => {
-        const next = new Map(current.map((task) => [task.id, task]));
-        sessionTasks.forEach((task) => next.set(task.id, task));
-        return Array.from(next.values()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-      });
-      setObjective("");
-      go("chat");
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function refreshApprovals() {
-    setApprovals(await api("/api/approvals"));
-  }
-
-  async function approveApproval(id) {
-    const approval = await postJson(`/api/approvals/${id}/approve`, {});
-    await refreshApprovals();
-    if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-    
-    // Auto-resume Warsat deployments
-    if (approval.action_type === "warsat_deploy" || approval.actionType === "warsat_deploy") {
-      setGlobalStatus("Approval accepted. Starting deployment...");
-      deployWarsatPlan();
-    } else {
-      setGlobalStatus("Approval accepted.");
-    }
-  }
-
-  async function denyApproval(id) {
-    await postJson(`/api/approvals/${id}/deny`, {});
-    await refreshApprovals();
-    if (selectedTaskIdRef.current) await loadTaskDetails(selectedTaskIdRef.current, { silent: true });
-    setGlobalStatus("Approval denied.");
-  }
-
-  async function searchMemory(query) {
-    if (!query.trim()) return;
-    setMemorySearchResults(await postJson("/api/memory/search", { query, limit: 10 }));
-  }
-
-  async function refreshMemoryItems() {
-    const [saved, expired] = await Promise.all([
-      api("/api/memory/items?status=saved&limit=200"),
-      api("/api/memory/items?status=expired&limit=200"),
-    ]);
-    setMemoryItems(saved);
-    setMemoryExpiredItems(expired);
-  }
-
-  async function addMemory(payload) {
-    const result = await postJson("/api/memory", payload);
-    await refreshMemoryItems();
-    setGlobalStatus("Memory saved.");
-    return result;
-  }
-
-  async function updateMemory(id, payload) {
-    const result = await api(`/api/memory/items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    await refreshMemoryItems();
-    setMemorySearchResults((current) => ({
-      ...current,
-      items: (current.items || []).map((item) => item.id === id ? result : item),
-    }));
-    setGlobalStatus("Memory updated.");
-    return result;
-  }
-
-  async function deleteMemory(id) {
-    await api(`/api/memory/items/${id}`, { method: "DELETE" });
-    await refreshMemoryItems();
-    setMemorySearchResults((current) => ({ ...current, items: (current.items || []).filter((item) => item.id !== id) }));
-    setGlobalStatus("Memory deleted.");
-  }
-
-  async function approveMemory(id) {
-    await postJson("/api/memory/review", { id, action: "approve" });
-    setMemoryReview(await api("/api/memory/review"));
-    setGlobalStatus("Memory saved.");
-  }
-
-  async function rejectMemory(id) {
-    await postJson("/api/memory/review", { id, action: "reject" });
-    setMemoryReview(await api("/api/memory/review"));
-    setGlobalStatus("Memory rejected.");
-  }
-
-  async function createSkillFromSession(sessionId) {
-    if (!sessionId) return;
-    setSkillPreview(await postJson("/api/skills/create-from-session", { sessionId, save: false }));
-    setGlobalStatus("Skill preview created.");
-  }
-
-  async function enableSkill(name) {
-    await postJson(`/api/skills/${name}/enable`, {});
-    setSkillRegistry(await api("/api/skills"));
-  }
-
-  async function disableSkill(name) {
-    await postJson(`/api/skills/${name}/disable`, {});
-    setSkillRegistry(await api("/api/skills"));
-  }
-
-  async function configureTelegram(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setTelegramConfig(await postJson("/api/integrations/telegram/configure", {
-      botToken: form.get("botToken") || undefined,
-      allowedChatId: form.get("allowedChatId"),
-      redactionMode: form.get("redactionMode") || "summary",
-      enabled: form.get("enabled") === "on",
-    }));
-    setGlobalStatus("Telegram settings saved.");
-  }
-
-  async function testTelegram() {
-    try {
-      const result = await postJson("/api/integrations/telegram/test", {});
-      setTelegramConfig(result.result || telegramConfig);
-      setGlobalStatus(result.sent ? "Telegram test sent." : "Telegram test skipped.");
-    } catch (error) {
-      setGlobalStatus(error.message);
-    }
-  }
-
-  async function createSchedule(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await postJson("/api/schedules", {
-      name: form.get("name"),
-      prompt: form.get("prompt"),
-      intervalSeconds: Number(form.get("intervalSeconds") || 0),
-      enabled: form.get("enabled") === "on",
-    });
-    event.currentTarget.reset();
-    setSchedulesList(await api("/api/schedules"));
-    setGlobalStatus("Schedule saved.");
-  }
-
-  async function loadWarsatHardware(nativeModels = usesNativeModels(security)) {
-    if (security?.native === undefined && security?.desktopOnly === undefined) return null;
-    const hardware = await api(nativeModels ? "/api/warsat/hardware?native_models=true" : "/api/warsat/hardware").catch((error) => ({
-      ok: false,
-      status: "blocked",
-      checks: [],
-      warnings: [],
-      blockedReasons: [error.message],
-      recommendations: ["Check the Rasputin backend logs for Warsat hardware probe errors."],
-      detectedHardware: {},
-    }));
-    setWarsatHardware(hardware);
-    return hardware;
-  }
-
-  async function loadWarsat() {
-    // Bootstrap may not have resolved when a saved legacy hash is restored.
-    // Never probe retired providers unless a legacy runtime is explicit.
-    if (nativeModels || security?.native !== false) return null;
-    const [nextWarsat, runtimes, hardware] = await Promise.all([
-      api("/api/warsat/protocols"),
-      api("/api/warsat/runtimes"),
-      loadWarsatHardware(false),
-    ]);
-    setWarsat(nextWarsat);
-    setWarsatRuntimes(runtimes);
-    return { warsat: nextWarsat, runtimes, hardware };
-  }
-
-  async function prepareCatalogModelForWarsat(item, options = {}) {
-    if (!item) return null;
-    if (usesNativeModels(security)) {
-      try {
-        const result = await prepareNativeModel(item, options, { api, postJson, selectVariant: preferredDownloadVariant });
-        if (result.key) {
-          await loadModels();
-          setSelectedModel(result.key);
-          setGlobalStatus("Imported the GGUF into the native llama.cpp library. Choose Load Model to start it.");
-        } else {
-          setGlobalStatus("GGUF download started. Rasputin will register it for native llama.cpp when complete.");
-        }
-        return result;
-      } catch (error) {
-        setGlobalStatus(error.message);
-        return null;
-      }
-    }
-    // Honor the Default Inference Engine setting when this model actually
-    // offers that runtime; explicit choices and API-only entries still win.
-    const preferredProtocol = ENGINE_PROTOCOLS[useSettingsStore.getState().models?.defaultEngine];
-    const engineProtocol = preferredProtocol && item.runtimeOptions?.some((option) => option.protocolId === preferredProtocol)
-      ? preferredProtocol
-      : null;
-    const protocolId = options.protocolId || engineProtocol || item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai";
-    if (!protocolId || protocolId === "apiOnly") {
-      setGlobalStatus("This catalog entry is API-only. Register it as an API model instead of sending it to Warsat.");
-      return null;
-    }
-    const profile = options.strengthProfile || item.recommendedProfile || "balanced";
-    const modelRef = item.warsatModelRef || item.modelId || item.id;
-    const port = Number(options.hostPort || 0) || undefined;
-    const toolCallParser = options.toolCallParser || item.toolCallParserHint || undefined;
-    setWarsatError("");
-    try {
-      const loaded = await loadWarsat();
-      const plan = await postJson("/api/warsat/plan", {
-        protocolId,
-        modelRef,
-        modelRevision: options.modelRevision || item.modelRevision || item.model_revision || undefined,
-        contextWindow: Number(options.contextWindow || 0) || undefined,
-        multiGpu: options.multiGpu === true ? true : undefined,
-        benchmarkCertificateId: options.benchmarkCertificateId || undefined,
-        concurrency: Number(options.concurrency || 0) || undefined,
-        // Only a real local file/folder goes in modelPath; for HF repos the
-        // backend resolves a GGUF file and lets llama.cpp download it.
-        modelPath: item.modelPath || undefined,
-        strengthProfile: profile,
-        hostPort: port,
-        role: options.role || (item.purpose === "coding" ? "coder" : item.purpose === "research" ? "researcher" : "helper"),
-        maxModelLen: !options.contextWindow && item.contextWindow && item.contextWindow <= 32768 ? item.contextWindow : undefined,
-        vramEstimateGb: item.vramEstimateGb || undefined,
-        quantization: options.quantization || item.quantization || undefined,
-        resourceManifest: item.resourceManifest || undefined,
-        capabilityProfile: loaded?.hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
-        containerName: options.containerName || undefined,
-        assistantRequestId: options.assistantRequestId || undefined,
-        // Catalog hints are deliberately conservative. When one is present,
-        // use it so a known tool-capable model is deployed agent-ready.
-        toolCallParser,
-      });
-      setWarsatPlan(plan);
-      setWarsatDeployment(null);
-      go("warsat");
-      // Surface fit problems the moment the plan lands, not at deploy time.
-      const fitWarning = (plan.warnings || []).find((w) => w.includes("VRAM"));
-      setGlobalStatus(fitWarning
-        ? `Plan created for ${item.name || modelRef} — heads-up: ${fitWarning}`
-        : `Warsat launch plan created for ${item.name || modelRef}.`);
-      return plan;
-    } catch (error) {
-      setWarsatError(error.message);
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function loadWarsatRuntimes() {
-    const runtimes = await api("/api/warsat/runtimes");
-    setWarsatRuntimes(runtimes);
-    return runtimes;
-  }
-
-  async function loadWarsatLogs(containerName) {
-    if (!containerName) return null;
-    try {
-      const logs = await postJson("/api/warsat/logs", { containerName, limit: 160 });
-      setWarsatLogs(logs);
-      return logs;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function requestWarsatOperation(action, containerName) {
-    if (!containerName) return null;
-    const currentApprovalId = warsatOperation?.containerName === containerName && warsatOperation?.action === action
-      ? warsatOperation?.approval?.id || warsatOperation?.approvalId
-      : null;
-    try {
-      const result = await postJson(`/api/warsat/${action}`, { containerName, approvalId: currentApprovalId });
-      setWarsatOperation({ ...result, action });
-      if (result.approvalRequired) {
-        await refreshApprovals();
-        setGlobalStatus(`Approval ${result.approval?.code || ""} created. Approve it before Warsat can ${action} ${containerName}.`);
-      } else {
-        await Promise.allSettled([loadWarsatRuntimes(), loadModels(), refreshApprovals()]);
-        setGlobalStatus(`Warsat ${action} completed for ${containerName}.`);
-      }
-      return result;
-    } catch (error) {
-      setGlobalStatus(error.message);
-      return null;
-    }
-  }
-
-  async function createWarsatPlan(event) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const gpuLayers = form.get("gpuLayers");
-    setWarsatError("");
-    try {
-      const hardware = await loadWarsatHardware();
-      const plan = await postJson("/api/warsat/plan", {
-        protocolId: form.get("protocolId"),
-        modelRef: form.get("modelRef") || undefined,
-        modelPath: form.get("modelPath") || undefined,
-        strengthProfile: form.get("strengthProfile") || undefined,
-        contextWindow: Number(form.get("contextWindow") || 0) || undefined,
-        maxModelLen: Number(form.get("maxModelLen") || 0) || undefined,
-        gpuMemoryUtilization: Number(form.get("gpuMemoryUtilization") || 0) || undefined,
-        gpuLayers: gpuLayers == null || gpuLayers === "" ? undefined : Number(gpuLayers),
-        tensorParallelSize: Number(form.get("tensorParallelSize") || 0) || undefined,
-        multiGpu: form.get("multiGpu") === "on",
-        cpuThreads: Number(form.get("cpuThreads") || 0) || undefined,
-        batchSize: Number(form.get("batchSize") || 0) || undefined,
-        maxNumSeqs: Number(form.get("maxNumSeqs") || 0) || undefined,
-        dtype: form.get("dtype") || undefined,
-        quantization: form.get("quantization") || undefined,
-        kvCacheDtype: form.get("kvCacheDtype") || undefined,
-        swapSpaceGb: Number(form.get("swapSpaceGb") || 0) || undefined,
-        memoryLimitGb: Number(form.get("memoryLimitGb") || 0) || undefined,
-        cpuLimit: Number(form.get("cpuLimit") || 0) || undefined,
-        shmSizeGb: Number(form.get("shmSizeGb") || 0) || undefined,
-        gpuDevice: form.get("gpuDevice") || undefined,
-        hostPort: Number(form.get("hostPort") || 0) || undefined,
-        role: form.get("role") || undefined,
-        containerName: form.get("containerName") || undefined,
-        toolCallParser: form.get("toolCallParser") || undefined,
-        capabilityProfile: hardware?.capabilityProfile || warsatHardware?.capabilityProfile || undefined,
-      });
-      setWarsatPlan(plan);
-      setWarsatDeployment(null);
-      setGlobalStatus("Launch plan ready — review the Mission Brief below, then request deploy approval.");
-      return plan;
-    } catch (error) {
-      setWarsatError(error.message);
-      setWarsatPlan(null);
-      return null;
-    }
-  }
-
-  async function deployWarsatPlan() {
-    if (!warsatPlan) return null;
-    setWarsatError("");
-    setWarsatDeploying(true);
-    const approvalId = warsatDeployment?.approval?.id || warsatDeployment?.approvalId;
-    const assistantRequestId = warsatPlan.assistantRequestId;
-    setGlobalStatus(approvalId || warsatPlan.approvalGranted
-      ? "Warsat is starting the deployment. Large image pulls stream their progress below."
-      : "Creating Warsat deployment approval.");
-    try {
-      // The endpoint streams NDJSON progress when the deploy executes and
-      // answers plain JSON when it only creates an approval request —
-      // postJsonStream handles both.
-      const deployment = await postJsonStream("/api/warsat/deploy", { plan: warsatPlan, approvalId }, (partial) => {
-        setWarsatDeployment(partial);
-      });
-      setWarsatDeployment(deployment);
-      if (deployment.approvalRequired) {
-        await refreshApprovals();
-        setGlobalStatus(`Approval ${deployment.approval?.code || ""} created. Approve it in Warsat, then run the approved deploy.`);
-      } else if (deployment.status === "starting") {
-        await Promise.allSettled([loadWarsat(), loadModels(), refreshApprovals()]);
-        setGlobalStatus(`Warsat registered ${deployment.modelKey}; its container is still downloading or warming up. Leave it running until it reports healthy.`);
-      } else if (deployment.status === "failed") {
-        await Promise.allSettled([loadWarsat(), refreshApprovals()]);
-        setGlobalStatus(`Warsat deployment failed during ${deployment.failedPhase || deployment.phase || "deployment"}. Check the launch plan details.`);
-      } else {
-        await Promise.allSettled([loadWarsat(), loadModels(), refreshApprovals()]);
-        setGlobalStatus(`Warsat registered ${deployment.modelKey}. You can test and select it from Models.`);
-      }
-      if (deployment.status === "registered" && deployment.modelKey && assistantRequestId) {
-        const verification = await postJson(
-          `/api/assistant/model-requests/${encodeURIComponent(assistantRequestId)}/verify`,
-          { modelKey: deployment.modelKey },
-        );
-        await Promise.allSettled([loadAssistantData(), loadModels()]);
-        if (verification?.status === "selected") {
-          setSelectedModel(deployment.modelKey);
-          setGlobalStatus(`Assistant verified and selected ${deployment.modelKey}.`);
-        }
-      }
-      return deployment;
-    } catch (error) {
-      setWarsatError(error.message);
-      setGlobalStatus(error.message);
-      return null;
-    } finally {
-      setWarsatDeploying(false);
-    }
-  }
+  const {
+    loadWarsatHardware,
+    loadWarsat,
+    prepareCatalogModelForWarsat,
+    loadWarsatLogs,
+    requestWarsatOperation,
+    createWarsatPlan,
+    deployWarsatPlan,
+  } = useWarsatActions({
+    security,
+    setWarsatHardware,
+    nativeModels,
+    setWarsat,
+    setWarsatRuntimes,
+    loadModels,
+    setSelectedModel,
+    setGlobalStatus,
+    setWarsatError,
+    warsatHardware,
+    setWarsatPlan,
+    setWarsatDeployment,
+    go,
+    setWarsatLogs,
+    warsatOperation,
+    setWarsatOperation,
+    refreshApprovals,
+    warsatPlan,
+    setWarsatDeploying,
+    warsatDeployment,
+    loadAssistantData,
+  });
 
   if (loginVisible) {
     return <LoginShell onSubmit={login} status={loginStatus} />;
@@ -2964,63 +1682,6 @@ export function App() {
       )}
     </AppShell>
   );
-}
-
-function DeleteChatDialog({ session, busy, onCancel, onConfirm }) {
-  return null;
-
-  /*
-  const confirmRef = useRef(null);
-  const title = session?.title || "Untitled chat";
-
-  useEffect(() => {
-    confirmRef.current?.focus();
-  }, []);
-
-  function onKeyDown(event) {
-    if (event.key === "Escape" && !busy) {
-      event.preventDefault();
-      onCancel();
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-chat-title"
-        aria-describedby="delete-chat-description"
-        onKeyDown={onKeyDown}
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
-      >
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-400">Permanent action</p>
-        <h2 id="delete-chat-title" className="mt-2 text-xl font-semibold text-foreground">Delete this chat?</h2>
-        <p id="delete-chat-description" className="mt-2 text-sm leading-6 text-muted-foreground">
-          <strong className="text-foreground">{title}</strong> and its messages and tasks will be permanently removed.
-        </p>
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="w2-button" disabled={busy} onClick={onCancel}>Cancel</button>
-          <button
-            ref={confirmRef}
-            type="button"
-            disabled={busy}
-            onClick={onConfirm}
-            className="inline-flex items-center justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy ? "Deleting…" : "Delete chat"}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-  */
 }
 
 async function fetchModels() {
