@@ -561,6 +561,14 @@ class GgufScanIn(CamelModel):
     root: str | None = None
 
 
+class ModelRepairIn(CamelModel):
+    key: str
+    path: str | None = None
+    base_url: str | None = None
+    model_id: str | None = None
+    api_key: str | None = None
+
+
 class ModelInferenceIn(CamelModel):
     key: str
     temperature: float = 0.8
@@ -877,6 +885,13 @@ async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(
 @models_router.get("/model-registry/local-sources")
 async def model_registry_local_sources(_user=Depends(require_admin)):
     return ok(await asyncio.to_thread(model_registry.local_model_sources))
+
+
+@models_router.post("/model-registry/repair-settings")
+async def model_registry_repair_settings(req: ModelRepairIn, _user=Depends(require_admin)):
+    return ok(await asyncio.to_thread(model_registry.repair_model_settings, req.key,
+                                     path=req.path, base_url=req.base_url,
+                                     model_id=req.model_id, api_key=req.api_key))
 
 
 @models_router.post("/model-registry/inference-profile")

@@ -23,6 +23,7 @@ export function useModelRegistryActions(context) {
       await loadModels();
     } catch (error) {
       setGlobalStatus(error.message);
+      if (action === "start") await loadModels().catch(() => {});
       throw error;
     }
   }

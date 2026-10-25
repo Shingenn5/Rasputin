@@ -32,15 +32,11 @@ test("Models workspace v3 adds a distinct command-console hierarchy", () => {
 test("My Models opens as a relaxed selectable inventory with a persistent inspector", () => {
   assert.match(models, /useState\(\(\) => view === "discover" \? "library" : "installed"\)/);
   assert.match(models, /className="models-inventory-workbench"/);
-  assert.match(models, /role="table" aria-label="Installed models"/);
-  for (const heading of ["Model", "Status", "Actions"]) {
-    assert.match(models, new RegExp(`role="columnheader">${heading}<`));
-  }
+  assert.match(models, /role="list" aria-label="Your models"/);
   assert.match(models, /data-testid="installed-model-row"/);
   assert.match(models, /data-runtime-state=\{operationalSignal\.key\}/);
-  assert.match(models, /aria-selected=\{selected\}/);
-  assert.match(models, /aria-current=\{chatActive \? "true" : undefined\}/);
-  assert.match(models, /> Chat Target<\/span>/);
+  assert.match(models, /aria-pressed=\{selected\}/);
+  assert.match(models, /> Selected for chat<\/span>/);
   assert.match(styles, /models-state-signal/);
   assert.match(styles, /models-state-glyph/);
   assert.match(models, /data-testid="installed-model-inspector"/);
@@ -50,7 +46,7 @@ test("My Models opens as a relaxed selectable inventory with a persistent inspec
   assert.match(models, /if \(view === "discover"\) setActiveTab\("library"\)/);
   assert.doesNotMatch(models, /data-testid="models-search-button"/);
   assert.match(models, /<PublisherLogo item=\{model\} size="md" \/>/);
-  assert.match(models, /data-table-kind="installed-model-table"/);
+  assert.match(models, /model-library-card/);
   assert.match(models, /data-testid="models-inspector-resizer"/);
   assert.match(models, /!desktopOnly && activeTab !== "installed"/);
   assert.match(models, /aria-valuemin=\{260\}/);

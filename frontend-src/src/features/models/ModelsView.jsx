@@ -72,6 +72,8 @@ export function ModelsView({
   go,
 }) {
   const [activeTab, setActiveTab] = useState(() => view === "discover" ? "library" : "installed");
+  const [libraryStatus, setLibraryStatus] = useState("all");
+  const [showModelSources, setShowModelSources] = useState(false);
   const [uiState, setUiState] = useState({ status: "idle", message: "" });
   const [modelsRailCollapsed, setModelsRailCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -341,7 +343,13 @@ export function ModelsView({
   const registeredModels = useMemo(() => (models || []).filter(m => (
     m.key !== "dry-run" && !["mock", "hash-vector"].includes(m.provider)
   )), [models]);
-  const installedModels = registeredModels;
+  const installedModels = useMemo(() => {
+    const rank = (model) => {
+      const signal = modelOperationalSignal(model);
+      return signal.key === "live" ? 0 : signal.label === "Not loaded" ? 1 : signal.key === "down" ? 3 : 2;
+    };
+    return [...registeredModels].sort((left, right) => rank(left) - rank(right));
+  }, [registeredModels]);
   const discoverInstalledModels = useMemo(() => registeredModels.filter((model) => {
     const path = model.hostModelPath || model.host_model_path || model.modelPath || model.model_path;
     const artifactAvailable = model.artifactAvailable ?? model.artifact_available;
@@ -351,6 +359,10 @@ export function ModelsView({
   const filteredInstalledModels = useMemo(() => {
     const query = installedSearch.trim().toLowerCase();
     return installedModels.filter((model) => {
+      const signal = modelOperationalSignal(model);
+      if (libraryStatus === "ready" && signal.key !== "live") return false;
+      if (libraryStatus === "help" && signal.key !== "down") return false;
+      if (libraryStatus === "idle" && signal.label !== "Not loaded") return false;
       if (installedCategory !== "all" && installedModelCategory(model) !== installedCategory) return false;
       if (!query) return true;
       const searchable = [
@@ -366,7 +378,7 @@ export function ModelsView({
       ].filter(Boolean).join(" ").toLowerCase();
       return searchable.includes(query);
     });
-  }, [installedModels, installedSearch, installedCategory]);
+  }, [installedModels, installedSearch, installedCategory, libraryStatus]);
   const selectedInstalledModel = filteredInstalledModels.find((model) => model.key === selectedInstalledKey)
     || filteredInstalledModels[0]
     || null;
@@ -689,14 +701,14 @@ export function ModelsView({
 
       {/* ── Tab Bar ── */}
       {modelsWorkspaceOpen && <div className="models-page-rail">
-        <div id="models-navigation" className="models-page-tabs" role="tablist" aria-orientation={desktopOnly ? "vertical" : "horizontal"} aria-label="Model management areas">
+        <div id="models-navigation" className="models-page-tabs" role="tablist" aria-orientation="horizontal" aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
           const desktopItem = {
             library: { label: "Discover", hint: "Find & download" },
             installed: { label: "My Models", hint: "Local and connected" },
             running: { label: "Loaded", hint: "Active runtime" },
-            serving: { label: "Serving", hint: "APIs, MCP, metrics" },
+            serving: { label: "Share models", hint: "Connect other tools" },
             settings: { label: "Advanced", hint: "Connections & diagnostics" },
           }[t.id];
           return (
@@ -1132,10 +1144,22 @@ export function ModelsView({
             <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section models-v3-panel studio-installed-panel" style={{ flex: 1 }}>
               <div className="models-inventory-workbench" style={{ "--models-inspector-width": `${inspectorWidth}px` }}>
                 <section className="models-inventory-main" aria-labelledby="models-inventory-title">
-                  <LocalModelSources onImported={loadModels} />
+                  <header className="model-library-welcome">
+                    <div><span className="model-library-eyebrow">Your library</span><h2>Choose a model. Start a conversation.</h2><p>See what's ready, load a saved model, or fix a connection here.</p></div>
+                    <div className="model-library-add-actions"><UIButton type="button" onClick={() => setActiveTab("library")}><Search size={15} /> Find a model</UIButton><UIButton type="button" variant="outline" onClick={() => setShowModelSources((value) => !value)} aria-expanded={showModelSources} aria-controls="model-library-sources">Add existing model</UIButton></div>
+                  </header>
+                  {showModelSources && <div id="model-library-sources"><LocalModelSources onImported={loadModels} /></div>}
+                  <div className="model-library-filters" role="group" aria-label="Filter models by availability">
+                    {[
+                      ["all", "All models", installedModels.length],
+                      ["ready", "Ready to use", installedModels.filter((item) => modelOperationalSignal(item).key === "live").length],
+                      ["idle", "Not loaded", installedModels.filter((item) => modelOperationalSignal(item).label === "Not loaded").length],
+                      ["help", "Needs a fix", installedModels.filter((item) => modelOperationalSignal(item).key === "down").length],
+                    ].map(([id, label, count]) => <button type="button" key={id} aria-pressed={libraryStatus === id} onClick={() => setLibraryStatus(id)}><span>{label}</span><strong>{count}</strong></button>)}
+                  </div>
                   <div className="models-inventory-toolbar">
                     <div className="models-inventory-heading">
-                      <h2 id="models-inventory-title">My Models</h2>
+                      <h2 id="models-inventory-title">My models</h2>
                       <label className="models-inventory-category">
                         <span className="sr-only">Model category</span>
                         <select value={installedCategory} onChange={(event) => setInstalledCategory(event.target.value)}>
@@ -1158,17 +1182,12 @@ export function ModelsView({
                       />
                     </label>
                     <div className="models-inventory-tools">
-                      <button className="w2-button" type="button" onClick={handleScanGguf}><HardDrive size={14} /> Scan GGUF</button>
+                      <button className="w2-button" type="button" onClick={handleScanGguf}><HardDrive size={14} /> Find local files</button>
                       <button className="w2-button" type="button" onClick={handleRefresh}><RefreshCw size={14} /> Refresh</button>
                     </div>
                   </div>
 
-                  <div className="studio-installed-list models-inventory-table" data-testid="studio-installed-list" data-table-kind="installed-model-table" role="table" aria-label="Installed models">
-                    <div className="studio-installed-head" role="row">
-                      <span role="columnheader">Model</span>
-                      <span role="columnheader">Status</span>
-                      <span role="columnheader">Actions</span>
-                    </div>
+                  <div className="studio-installed-list models-inventory-table" data-testid="studio-installed-list" role="list" aria-label="Your models">
                     {filteredInstalledModels.map(model => (
                       <InstalledCard
                         key={model.key}
@@ -1176,7 +1195,12 @@ export function ModelsView({
                         allModels={models}
                         selected={selectedInstalledModel?.key === model.key}
                         chatActive={selectedModel === model.key}
-                        onSelect={() => setSelectedInstalledKey(model.key)}
+                        onSelect={() => {
+                          setSelectedInstalledKey(model.key);
+                          setInstalledInspectorTab("info");
+                          if (window.matchMedia("(max-width: 1100px)").matches) requestAnimationFrame(() => document.getElementById("installed-model-inspector")?.scrollIntoView({ block: "start" }));
+                        }}
+                        onUseInChat={(item) => { setSelectedModel?.(item.key); go?.("chat"); }}
                         runModelAction={runModelAction}
                         executeAction={executeAction}
                         setUiState={setUiState}
@@ -1192,7 +1216,9 @@ export function ModelsView({
 
                   {!filteredInstalledModels.length && (
                     <div className="models-inventory-empty">
-                      {installedModels.length ? "No installed models match this filter." : "No models registered. Use Discover to download a model, or Advanced to connect an endpoint."}
+                      <h3>{installedModels.length ? "No models in this view" : "Your first model starts here"}</h3>
+                      <p>{installedModels.length ? "Try a different filter or search term." : "Find a model to download, or add one you already have."}</p>
+                      {installedModels.length ? <button type="button" className="w2-button" onClick={() => { setLibraryStatus("all"); setInstalledCategory("all"); setInstalledSearch(""); }}>Clear filters</button> : <button type="button" className="w2-button primary" onClick={() => setActiveTab("library")}>Find a model</button>}
                     </div>
                   )}
                   <footer className="models-inventory-footer">
@@ -1229,6 +1255,8 @@ export function ModelsView({
                   setUiState={setUiState}
                   nativeModels={nativeModels}
                   onConfigureLoad={configureNativeLoad}
+                  onSaved={loadModels}
+                  onFindModels={() => setActiveTab("library")}
                 />
               </div>
             </div>

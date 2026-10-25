@@ -789,6 +789,45 @@ def _upsert(model, *, require_permission):
 def upsert(model):
     return _upsert(model, require_permission=True)
 
+
+def repair_model_settings(key, *, path=None, base_url=None, model_id=None, api_key=None):
+    security.require("allow_model_registry_edit")
+    current = next((item for item in _load()["models"] if item.get("key") == key), None)
+    if not current:
+        raise AppError("model_missing", "Model is no longer registered.", 404)
+    updated = dict(current)
+    if path is not None:
+        security.require("allow_file_read")
+        if current.get("runtime") != NATIVE_RUNTIME:
+            raise AppError("native_model_required", "Choose a downloaded GGUF model to replace its file.", 400)
+        if str(current.get("container_status") or "").lower() == "running":
+            raise AppError("model_running", "Stop this model before replacing its file.", 409)
+        provider_status = get_provider(current).status(current)
+        if str(provider_status).lower() in {"running", "starting"}:
+            raise AppError("model_running", "Stop this model before replacing its file.", 409)
+        target = _safe_file(path)
+        with target.open("rb") as handle:
+            if handle.read(4) != b"GGUF":
+                raise AppError("invalid_gguf", "This file is not a GGUF model. Choose an exported GGUF file.", 400)
+        updated.update(host_model_path=str(target), model=target.name)
+        for field in ("artifact_id", "artifact_files", "artifact_destination", "repository", "revision", "variant_id", "quantization", "compatibility", "tool_support", "certification_status"):
+            updated.pop(field, None)
+    else:
+        if current.get("managed") or current.get("runtime") == NATIVE_RUNTIME:
+            raise AppError("external_model_required", "A downloaded model uses load settings, not an external connection.", 400)
+        if not str(base_url or "").strip() or not str(model_id or "").strip():
+            raise AppError("connection_required", "Enter both a server address and a model ID.", 400)
+        updated.update(base_url=str(base_url).strip(), model=str(model_id).strip(), enabled=True)
+        if api_key:
+            updated["api_key"] = api_key
+    updated.pop("last_health", None)
+    updated.pop("last_error", None)
+    updated.pop("last_load_failure", None)
+    updated["runtime_status"] = "stopped" if path is not None else "unknown"
+    saved = _upsert(updated, require_permission=True)
+    audit.log("model_settings_repaired", {"key": key, "kind": "file" if path is not None else "connection"})
+    return saved
+
 PROTECTED_KEYS = {"dry-run", "local-embeddings"}
 
 
@@ -1241,6 +1280,22 @@ def _native_model_with_desktop_preferences(model):
     return resolved
 
 
+def _record_load_outcome(key, result):
+    data = _load()
+    for item in data["models"]:
+        if item.get("key") != key:
+            continue
+        if result.get("ok"):
+            item.pop("last_load_failure", None)
+        else:
+            item["last_load_failure"] = {"message": str(result.get("error") or result.get("message") or "The model did not load."),
+                                         "code": result.get("failureCode", "model_load_failed"),
+                                         "guidance": result.get("recoveryGuidance", "Review load settings and retry."),
+                                         "at": time.time()}
+        _save(data)
+        break
+
+
 def start_model(key, load_profile=None):
     model = get_model(key)
     if not model:
@@ -1259,6 +1314,8 @@ def start_model(key, load_profile=None):
     try:
         provider = get_provider(model)
         result = provider.start(model)
+        if model.get("runtime") == NATIVE_RUNTIME:
+            _record_load_outcome(key, result)
         if result.get("ok"):
             if model.get("runtime") == NATIVE_RUNTIME:
                 detected = context_detection.detect_runtime_context(model)
@@ -1269,6 +1326,8 @@ def start_model(key, load_profile=None):
         return result
     except Exception as exc:
         audit.log("model_start_failed", {"key": key, "error": str(exc)})
+        if model.get("runtime") == NATIVE_RUNTIME:
+            _record_load_outcome(key, {"ok": False, "error": str(exc)})
         return {"ok": False, "error": str(exc)}
 
 

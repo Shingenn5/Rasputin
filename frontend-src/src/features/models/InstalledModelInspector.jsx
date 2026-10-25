@@ -18,8 +18,9 @@ import { PublisherLogo } from "./PublisherLogo.jsx";
 import { contextWindowFor, installedModelArchitecture, installedModelCategory, installedModelFile, installedModelFormat, installedModelParameters, installedModelPath, installedModelPublisher, installedModelQuantization, installedModelSize, modelOperationalSignal } from "./modelPresentation.js";
 
 import { ModelStateSignal } from "./ModelStatus.jsx";
+import { ModelRecovery } from "./ModelRecovery.jsx";
 
-export function InstalledModelInspector({ nativeModels = false, model, allModels, chatActive = false, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, activeTab, onTabChange }) {
+export function InstalledModelInspector({ nativeModels = false, model, allModels, chatActive = false, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, onSaved, onFindModels, activeTab, onTabChange }) {
   const [busy, setBusy] = useState("");
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -62,7 +63,7 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
   const name = model.name || displayModelName(model, allModels);
   const developer = installedModelPublisher(model);
   const st = runtimeStatus(model);
-  const healthy = isModelHealthy(model);
+  const healthy = modelOperationalSignal(model).key === "live";
   const nativeRuntime = model.runtime === "native-llamacpp";
   const needsGguf = needsNativeModelDownload(model, nativeModels);
   const isRunning = isManagedModelRunning(model);
@@ -173,13 +174,13 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
           <PublisherLogo item={model} size="lg" />
           <div><strong>{name}</strong><small>{developer} · {modelId}</small></div>
         </div>
-        <ModelStateSignal signal={operationalSignal} chatActive={chatActive} />
+        <ModelStateSignal signal={operationalSignal} chatActive={chatActive} compact />
         <div className="models-inspector-primary-actions">
-          <button type="button" className="w2-button" onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
+          <button type="button" className="w2-button" disabled={!healthy || model.enabled === false} onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
           {model.managed && (
             isRunning
               ? <Button onClick={handleStop} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={13} />}>Stop Model</Button>
-              : <Button onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>{needsGguf ? "Get GGUF" : "Load Model"}</Button>
+              : <Button disabled={operationalSignal.action === "file" || operationalSignal.action === "wait"} onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>{needsGguf ? "Get GGUF" : "Load Model"}</Button>
           )}
         </div>
       </header>
@@ -195,16 +196,27 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
             aria-controls={`model-inspector-panel-${tab}`}
             tabIndex={activeTab === tab ? 0 : -1}
             onClick={() => onTabChange?.(tab)}
+            onKeyDown={(event) => {
+              let next = tabs.indexOf(tab);
+              if (event.key === "ArrowRight") next = (next + 1) % tabs.length;
+              else if (event.key === "ArrowLeft") next = (next - 1 + tabs.length) % tabs.length;
+              else if (event.key === "Home") next = 0;
+              else if (event.key === "End") next = tabs.length - 1;
+              else return;
+              event.preventDefault();
+              onTabChange?.(tabs[next]);
+              requestAnimationFrame(() => document.getElementById(`model-inspector-tab-${tabs[next]}`)?.focus());
+            }}
           >
-            {labelize(tab)}
+            {{ info: "Overview", load: "Load settings", inference: "Response", actions: "More" }[tab]}
           </button>
         ))}
       </div>
 
       {activeTab === "info" && (
         <section id="model-inspector-panel-info" role="tabpanel" aria-labelledby="model-inspector-tab-info" className="models-inspector-section">
-          <h3>Model Information</h3>
-          <p className="models-inspector-summary">{model.summary || model.description || `A ${labelize(model.role || "chat")} model trained by ${developer}.`}</p>
+          <ModelRecovery key={model.key} model={model} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} />
+          {(model.summary || model.description) && <p className="models-inspector-summary">{model.summary || model.description}</p>}
           <details className="models-inspector-disclosure models-inspector-technical">
             <summary><SlidersHorizontal size={14} /> Technical Details</summary>
             <dl className="models-inspector-facts">
@@ -268,7 +280,7 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
 
       <div className="models-inspector-spacer" />
       <details className="models-inspector-disclosure">
-        <summary><SlidersHorizontal size={14} /> Domain Control</summary>
+        <summary><SlidersHorizontal size={14} /> Model purpose</summary>
         <div><span>Purpose</span><strong>{labelize(installedModelCategory(model))}</strong></div>
         <div><span>Compatibility</span><strong>{mismatch || "No mismatch detected"}</strong></div>
       </details>

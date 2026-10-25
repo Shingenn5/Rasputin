@@ -39,6 +39,32 @@ does not guarantee architecture compatibility or enough memory to load a model.
 
 ## Model settings
 
+My Models now uses availability filters and model cards with an explicit state,
+reason, and next action. A saved model that is stopped is **Not loaded**, not an
+error. Missing files, rejected credentials, unavailable servers, and memory
+failures have separate explanations. New load failures retain their diagnostic
+message and recovery guidance until a successful load or settings repair.
+
+Open **Details & settings → Overview** to recover inside Rasputin:
+
+- Edit a connection address, model ID, or API key, then save and check it.
+- Choose a model ID returned by the connected server.
+- Relink a missing GGUF from an allowed model folder. Import a new folder first
+  if it is outside existing model locations. File replacement refuses a running
+  native process, checks the GGUF signature, and invalidates artifact/capability
+  metadata for the previous file.
+- Open load settings to reduce memory use, retry loading, or acquire the native
+  runtime through the existing loading flow.
+
+Connection and file repairs preserve other registry settings, require an
+administrator and registry-edit permission, and use the existing endpoint and
+file-access policy. Relinking also requires file-read permission. Rasputin does
+not start or configure another app's private model process through this UI.
+
+**Add existing model** opens import/connection controls. **Response** contains
+generation settings; **More** holds less common actions. The library and details
+stack in smaller windows, and both navigation levels support keyboard controls.
+
 **Load Model** provides automatic, lower-memory, and CPU-only presets, plus context,
 GPU layers, RAM/VRAM placement, batch sizes, threads, KV precision, and device splits.
 Placement is checked before launch. Changing weight quantization requires a different

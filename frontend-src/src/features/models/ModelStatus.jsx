@@ -5,8 +5,8 @@ export function ModelStateSignal({ signal, chatActive = false, compact = false, 
   return (
     <span className={`models-state-signal is-${signal.key} ${compact ? "is-compact" : ""}`} role={role}>
       <span className="models-state-glyph" aria-hidden="true"><i /><i /><i /></span>
-      <span className="models-state-copy"><strong>{signal.label}</strong><small>{signal.detail}</small></span>
-      {chatActive && <span className="models-chat-target"><Crosshair size={11} aria-hidden="true" /> Chat Target</span>}
+      <span className="models-state-copy"><strong>{signal.label}</strong>{!compact && <small>{signal.detail}</small>}</span>
+      {chatActive && <span className="models-chat-target"><Crosshair size={11} aria-hidden="true" /> Selected for chat</span>}
     </span>
   );
 }

@@ -29,6 +29,7 @@ test("model workspace keeps all areas reachable across window sizes", async ({ p
       await expect(tab).toHaveAttribute("aria-selected", "true");
     }
     await dialog.getByRole("tab", { name: "My Models", exact: true }).click();
+    await dialog.getByRole("button", { name: "Add existing model", exact: true }).click();
     await dialog.locator(".local-model-sources > summary").click();
     await expect(dialog.getByRole("button", { name: "Scan known model folders" })).toBeVisible();
     const bounds = await dialog.boundingBox();
@@ -39,6 +40,7 @@ test("model workspace keeps all areas reachable across window sizes", async ({ p
     const overflow = await dialog.evaluate((element) => element.scrollWidth - element.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     await page.screenshot({ path: test.info().outputPath(`models-${width}-${height}.png`) });
+    await dialog.getByRole("button", { name: "Add existing model", exact: true }).click();
   }
 });
 
@@ -90,6 +92,7 @@ test("connect a local engine and apply saved inference controls to a real reques
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
+    await page.getByRole("button", { name: "Add existing model", exact: true }).click();
     const sources = page.getByTestId("local-model-sources");
     await sources.locator(":scope > summary").click();
     await sources.getByText("Connect a running local engine", { exact: true }).click();
@@ -103,7 +106,7 @@ test("connect a local engine and apply saved inference controls to a real reques
     modelKey = connected.models.find((item) => item.model === "integration-fixture" && item.baseUrl.endsWith(`:${server.address().port}/v1`)).key;
     await page.locator(`[data-model-key="${modelKey}"]`).click();
     const inspector = page.getByTestId("installed-model-inspector");
-    await inspector.getByRole("tab", { name: "Inference", exact: true }).click();
+    await inspector.getByRole("tab", { name: "Response", exact: true }).click();
     await inspector.getByLabel("System prompt").fill("Use the saved fixture instruction.");
     await inspector.getByRole("slider", { name: "Temperature" }).fill("0.6");
     await inspector.getByLabel("Limit response length").check();
@@ -136,6 +139,7 @@ test("import an exported GGUF and deploy with a selected load preset", async ({ 
   let modelKey;
   let start;
   try {
+    await page.getByRole("button", { name: "Add existing model", exact: true }).click();
     const sources = page.getByTestId("local-model-sources");
     await sources.locator(":scope > summary").click();
     await sources.getByLabel("Model export folder").fill(folder);
