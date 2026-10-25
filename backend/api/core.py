@@ -560,6 +560,42 @@ class GgufImportIn(CamelModel):
 class GgufScanIn(CamelModel):
     root: str | None = None
 
+
+class ModelInferenceIn(CamelModel):
+    key: str
+    temperature: float = 0.8
+    system_prompt: str = ""
+    max_tokens: int | None = None
+    stop_strings: list[str] = []
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, value):
+        if not 0 <= value <= 2:
+            raise ValueError("Temperature must be between 0 and 2.")
+        return value
+
+    @field_validator("max_tokens")
+    @classmethod
+    def validate_max_tokens(cls, value):
+        if value is not None and not 64 <= value <= 131072:
+            raise ValueError("Maximum tokens must be between 64 and 131072.")
+        return value
+
+    @field_validator("system_prompt")
+    @classmethod
+    def validate_system_prompt(cls, value):
+        if len(value) > 16000:
+            raise ValueError("System prompt must be at most 16000 characters.")
+        return value
+
+    @field_validator("stop_strings")
+    @classmethod
+    def validate_stop_strings(cls, value):
+        if len(value) > 4 or any(not item or len(item) > 256 for item in value):
+            raise ValueError("Use up to four nonempty stop strings of at most 256 characters.")
+        return value
+
 class ModelKeyIn(CamelModel):
     key: str
     profile: dict[str, Any] | None = None
@@ -836,6 +872,34 @@ async def model_registry_import_gguf(req: GgufImportIn, _user=Depends(require_ad
 
 async def model_registry_scan_gguf(req: GgufScanIn | None = None, _user=Depends(require_admin)):
     return ok(await asyncio.to_thread(model_registry.scan_gguf, req.root if req else None))
+
+
+@models_router.get("/model-registry/local-sources")
+async def model_registry_local_sources(_user=Depends(require_admin)):
+    return ok(await asyncio.to_thread(model_registry.local_model_sources))
+
+
+@models_router.post("/model-registry/inference-profile")
+async def model_registry_inference_profile(req: ModelInferenceIn, _user=Depends(require_admin)):
+    security.require("allow_model_registry_edit")
+    model = model_registry.get_model(req.key)
+    if not model:
+        raise AppError("model_missing", "Model is not registered.", 404)
+    if model.get("runtime") not in {"native-llamacpp", "external-local"}:
+        raise AppError("local_model_required", "These settings apply to local models.", 400)
+    profile = req.model_dump(exclude={"key"})
+    return ok(await asyncio.to_thread(model_registry.upsert, {**model, "inference_profile": profile}))
+
+
+@models_router.post("/model-registry/local-sources/probe")
+async def model_registry_probe_local_source(req: ModelIn, _user=Depends(require_admin)):
+    security.require("allow_model_registry_edit")
+    return ok(await asyncio.to_thread(model_registry.probe_local_endpoint, req.base_url, req.api_key))
+
+
+@models_router.post("/model-registry/local-sources/scan")
+async def model_registry_scan_local_sources(req: GgufScanIn | None = None, _user=Depends(require_admin)):
+    return ok(await asyncio.to_thread(model_registry.scan_local_model_sources, req.root if req else None))
 
 @models_router.post("/model-registry/start")
 

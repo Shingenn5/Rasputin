@@ -173,6 +173,12 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         <div><Layers size={18} /><span><small>Placement</small><strong>{profile.memoryMode === "cpu_only" ? "System RAM" : profile.splitMode === "layer" ? "Combined GPU pool" : "Automatic"}</strong></span></div>
       </div>
 
+      <div className="model-load-presets" role="group" aria-label="Model load presets">
+        <button className="w2-button" type="button" onClick={() => setProfile({ ...DEFAULT_PROFILE })}>Automatic defaults</button>
+        <button className="w2-button" type="button" onClick={() => setProfile((current) => ({ ...current, contextLength: 4096, batchSize: 256, ubatchSize: 128, cacheTypeK: "q8_0", cacheTypeV: "q8_0" }))}>Lower memory</button>
+        <button className="w2-button" type="button" onClick={() => setProfile((current) => ({ ...current, memoryMode: "cpu_only", gpuLayers: "0", kvOffload: "off" }))}>CPU only</button>
+      </div>
+      <p className="model-load-guidance">Adjust runtime settings before loading. Weight precision comes from the GGUF variant; changing it requires a different file. Placement is checked before launch.</p>
       <div className="studio-load-form">
         <Field label="Context length" hint="Maximum tokens retained per conversation">
           <input className="w2-input" type="number" min="512" step="512" value={profile.contextLength} onChange={set("contextLength")} />

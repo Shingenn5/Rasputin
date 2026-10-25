@@ -1,4 +1,5 @@
 import { InstalledModelInspector } from "./InstalledModelInspector.jsx";
+import { LocalModelSources } from "./LocalModelSources.jsx";
 import { useModelActions } from "./useModelActions.js";
 import { usesNativeModels } from "./nativeDeployment.js";
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -19,6 +20,7 @@ import { ModelServingPanel } from "./ModelServingPanel.jsx";
 import { catalogItemPassesFilters } from "./catalogFitFilter.js";
 import { findInstalledCatalogModel } from "./modelEcosystem.js";
 import "../../styles/models-workspace-v3.css";
+import "./modelWorkspace.css";
 import { downloadJobIdentity, downloadJobState, downloadJobsFromPayload } from "./downloadState.js";
 import { hardwarePlacementCapacity, normalizeHardwareSnapshot, shouldProbeHardware, systemHardwareSummary } from "./hardwareSnapshot.js";
 import { ADVISOR_REQUEST_TIMEOUT_MS, advisorModelId, advisorProfileFromPayload, advisorProfileSlots, advisorStateForInputs, normalizeAdvisorProfile, selectAdvisorWinner, shortlistAdvisorModels, withAdvisorTimeout } from "./advisorSelection.js";
@@ -35,6 +37,7 @@ import { ModelStateSignal } from "./ModelStatus.jsx";
 export { preferredDownloadVariant } from "./downloadState.js";
 
 const modelsTabs = [
+  { id: "library", label: "Discover", icon: Search },
   { id: "installed",  label: "Installed",   icon: Package },
   { id: "running",    label: "Running",     icon: Activity },
   { id: "serving",    label: "Serving",     icon: RadioTower },
@@ -84,7 +87,6 @@ export function ModelsView({
 
   useEffect(() => {
     if (view === "discover") setActiveTab("library");
-    else if (view === "models") setActiveTab((current) => current === "library" ? "installed" : current);
   }, [view]);
 
   const focusModelTab = (tabId) => {
@@ -204,7 +206,7 @@ export function ModelsView({
   };
 
   useEffect(() => {
-    if (view !== "discover") return;
+    if (!modelsWorkspaceOpen || activeTab !== "library") return;
     setShowAllModels(true);
     const recoveryQuery = nativeRecoveryQueryRef.current;
     nativeRecoveryQueryRef.current = "";
@@ -215,7 +217,7 @@ export function ModelsView({
       requestAnimationFrame(() => hfSearchInputRef.current?.focus());
     }
     setPage(1);
-  }, [view]);
+  }, [view, activeTab]);
 
   useEffect(() => {
     if (!modelsWorkspaceOpen) return undefined;
@@ -377,7 +379,7 @@ export function ModelsView({
   }, [selectedInstalledModel, selectedInstalledKey]);
 
   useEffect(() => {
-    if (view !== "models" || activeTab !== "installed") return undefined;
+    if (!modelsWorkspaceOpen || activeTab !== "installed") return undefined;
     const focusInstalledSearch = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -646,7 +648,7 @@ export function ModelsView({
 
   const modelsSurface = (
     <section
-      className={`w2-layout app-view models-view models-workspace-v3 tw ${view === "discover" ? "is-discover-route" : ""} ${modelsWorkspaceOpen ? "active" : ""}`}
+      className={`w2-layout app-view models-view models-workspace-v3 models-unified tw ${activeTab === "library" ? "is-discover-route" : ""} ${modelsWorkspaceOpen ? "active" : ""}`}
       id="modelsView"
       data-app-view={view === "discover" ? "discover" : "models"}
       data-models-rail-collapsed={view === "models" && desktopOnly && modelsRailCollapsed ? "true" : undefined}
@@ -656,8 +658,8 @@ export function ModelsView({
       {/* ── Header ── */}
       <div className="models-page-header models-v3-command-band">
         <div className="models-v3-command-copy">
-          <h1>{view === "discover" ? "Discover Models" : "Models"}</h1>
-          <p>{view === "discover" ? "Find and download a model for your hardware." : "Manage your local model library and native llama.cpp runtime."}</p>
+          <h1>Models</h1>
+          <p>Discover, import, configure, and run models in one workspace.</p>
         </div>
         {desktopOnly && (
           <div className="models-header-runtime" aria-label="Native runtime status">
@@ -686,11 +688,12 @@ export function ModelsView({
       </div>
 
       {/* ── Tab Bar ── */}
-      {view === "models" && <div className="models-page-rail">
+      {modelsWorkspaceOpen && <div className="models-page-rail">
         <div id="models-navigation" className="models-page-tabs" role="tablist" aria-orientation={desktopOnly ? "vertical" : "horizontal"} aria-label="Model management areas">
         {modelsTabs.map(t => {
           const Icon = t.icon;
           const desktopItem = {
+            library: { label: "Discover", hint: "Find & download" },
             installed: { label: "My Models", hint: "Local and connected" },
             running: { label: "Loaded", hint: "Active runtime" },
             serving: { label: "Serving", hint: "APIs, MCP, metrics" },
@@ -753,7 +756,7 @@ export function ModelsView({
 
           {/* ═══ LIBRARY TAB ═══ */}
           {activeTab === "library" && (
-            <div id="models-panel-library" role="region" aria-label="Discover models" className="w2-section models-v3-panel" style={{ flex: 1 }}>
+            <div id="models-panel-library" role="tabpanel" aria-labelledby="models-tab-library" className="w2-section models-v3-panel" style={{ flex: 1 }}>
               {!showAllModels ? (
                 <GuidedRecommendations
                   advisorState={advisorState}
@@ -1129,6 +1132,7 @@ export function ModelsView({
             <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section models-v3-panel studio-installed-panel" style={{ flex: 1 }}>
               <div className="models-inventory-workbench" style={{ "--models-inspector-width": `${inspectorWidth}px` }}>
                 <section className="models-inventory-main" aria-labelledby="models-inventory-title">
+                  <LocalModelSources onImported={loadModels} />
                   <div className="models-inventory-toolbar">
                     <div className="models-inventory-heading">
                       <h2 id="models-inventory-title">My Models</h2>
@@ -1411,7 +1415,7 @@ export function ModelsView({
       <Modal
         open={modelsWorkspaceOpen}
         onClose={() => go?.("chat")}
-        title={view === "discover" ? "Discover Models" : "Models"}
+        title="Models"
         size="xl"
         className="studio-models-modal"
         data-testid="desktop-models-dialog"

@@ -336,6 +336,9 @@ def _openai_payload(model, messages, max_tokens, temperature, tools=None):
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    stop_strings = (model.get("inference_profile") or {}).get("stop_strings")
+    if stop_strings:
+        payload["stop"] = stop_strings
     if tools:
         openai_tools = []
         for t in tools:

@@ -32,9 +32,13 @@ async def _chat(model_key, messages, tools=None, on_delta=None, reasoning="auto"
 
     cfg_for_limits = dict(cfg or {})
     max_tokens = context_governor.output_budget(cfg_for_limits, messages)
+    inference = cfg.get("inference_profile") or {}
+    if inference.get("max_tokens") is not None:
+        max_tokens = min(max_tokens, int(inference["max_tokens"]))
+    temperature = float(inference.get("temperature", 0.2))
 
     try:
-        return await model_providers.chat(cfg, messages, max_tokens, 0.2, tools=tools, on_delta=on_delta, reasoning=reasoning)
+        return await model_providers.chat(cfg, messages, max_tokens, temperature, tools=tools, on_delta=on_delta, reasoning=reasoning)
     except Exception as exc:
         audit.log("model_chat_failed", {
             "key": model_key,
@@ -1700,6 +1704,11 @@ class AgentHub:
                     "phase": phase,
                 })
             sections.extend(phase_sections)
+        model_prompt = (model.get("inference_profile") or {}).get("system_prompt")
+        if model_prompt:
+            sections = [*sections, context_governor.section(
+                "model_instructions", "Operator model instructions", model_prompt, priority=10,
+            )]
         bundle = context_governor.compose_prompt(model_key, phase, sections)
         trace = bundle["trace"]
         task.seen("context_budget", trace)

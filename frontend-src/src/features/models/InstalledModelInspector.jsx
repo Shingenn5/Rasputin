@@ -25,14 +25,10 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
   const [pinned, setPinned] = useState(false);
   const [inference, setInference] = useState({
     systemPrompt: "",
-    reasoningEnabled: false,
-    reasoningEffort: "unrestricted",
     temperature: 0.8,
     limitResponse: false,
     maxTokens: 2048,
-    contextOverflow: "truncate-middle",
     stopStrings: "",
-    cpuThreads: "",
   });
 
   useEffect(() => {
@@ -41,17 +37,13 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
     try {
       const pins = JSON.parse(window.localStorage.getItem("rasputin-pinned-models") || "[]");
       setPinned(Array.isArray(pins) && pins.includes(model.key));
-      const saved = JSON.parse(window.localStorage.getItem(`rasputin-inference-${model.key}`) || "null");
-      setInference((current) => saved && typeof saved === "object" ? { ...current, ...saved } : {
-        systemPrompt: "",
-        reasoningEnabled: false,
-        reasoningEffort: "unrestricted",
-        temperature: 0.8,
-        limitResponse: false,
-        maxTokens: 2048,
-        contextOverflow: "truncate-middle",
-        stopStrings: "",
-        cpuThreads: "",
+      const saved = model.inferenceProfile || model.inference_profile || {};
+      setInference({
+        systemPrompt: saved.systemPrompt ?? saved.system_prompt ?? "",
+        temperature: saved.temperature ?? 0.8,
+        limitResponse: Boolean(saved.maxTokens ?? saved.max_tokens),
+        maxTokens: saved.maxTokens ?? saved.max_tokens ?? 2048,
+        stopStrings: (saved.stopStrings || saved.stop_strings || []).join(", "),
       });
     } catch {
       setPinned(false);
@@ -84,15 +76,22 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
   const tabs = ["info", "load", "inference", "actions"];
 
   const updateInference = (patch) => {
-    setInference((current) => {
-      const next = { ...current, ...patch };
-      try {
-        window.localStorage.setItem(`rasputin-inference-${model.key}`, JSON.stringify(next));
-      } catch {
-        // Local preferences remain usable for this session when storage is unavailable.
-      }
-      return next;
-    });
+    setInference((current) => ({ ...current, ...patch }));
+  };
+
+  const saveInference = async () => {
+    setBusy("inference");
+    try {
+      await runModelAction?.("inference-profile", model.key, {
+        temperature: Number(inference.temperature),
+        systemPrompt: inference.systemPrompt,
+        maxTokens: inference.limitResponse ? Number(inference.maxTokens) : null,
+        stopStrings: inference.stopStrings.split(",").map((value) => value.trim()).filter(Boolean),
+      });
+      setUiState({ status: "success", message: "Inference settings saved. New model requests use this profile." });
+    } catch (error) {
+      setUiState({ status: "failed", message: error.message });
+    } finally { setBusy(""); }
   };
 
   const handleLoad = async () => {
@@ -237,20 +236,14 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
           <div className="models-inference-heading"><h3>System Prompt</h3><span>{inference.systemPrompt.length.toLocaleString()} characters</span></div>
           <textarea aria-label="System prompt" value={inference.systemPrompt} onChange={(event) => updateInference({ systemPrompt: event.target.value })} placeholder={'Example, "Only answer in rhymes"'} />
           <div className="models-inference-group">
-            <h3>Reasoning</h3>
-            <label className="models-control-row"><span>Reasoning budget</span><input type="checkbox" checked={inference.reasoningEnabled} onChange={(event) => updateInference({ reasoningEnabled: event.target.checked })} /></label>
-            <label className="models-control-row"><span>Effort</span><select value={inference.reasoningEffort} onChange={(event) => updateInference({ reasoningEffort: event.target.value })}><option value="unrestricted">Unrestricted</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
-          </div>
-          <div className="models-inference-group">
             <h3>Generation Settings</h3>
-            <label className="models-control-stack"><span>Temperature <output>{Number(inference.temperature).toFixed(1)}</output></span><input type="range" min="0" max="2" step="0.1" value={inference.temperature} onChange={(event) => updateInference({ temperature: Number(event.target.value) })} /></label>
+            <label className="models-control-stack"><span>Temperature <output>{Number(inference.temperature).toFixed(1)}</output></span><input aria-label="Temperature" type="range" min="0" max="2" step="0.1" value={inference.temperature} onChange={(event) => updateInference({ temperature: Number(event.target.value) })} /></label>
             <label className="models-control-row"><span>Limit response length</span><input type="checkbox" checked={inference.limitResponse} onChange={(event) => updateInference({ limitResponse: event.target.checked })} /></label>
             {inference.limitResponse && <label className="models-control-row"><span>Maximum tokens</span><input className="models-compact-input" type="number" min="64" step="64" value={inference.maxTokens} onChange={(event) => updateInference({ maxTokens: Number(event.target.value) })} /></label>}
-            <label className="models-control-row"><span>Context overflow</span><select value={inference.contextOverflow} onChange={(event) => updateInference({ contextOverflow: event.target.value })}><option value="truncate-middle">Truncate Middle</option><option value="truncate-oldest">Truncate Oldest</option><option value="stop">Stop Generation</option></select></label>
             <label className="models-control-stack"><span>Stop strings</span><input type="text" value={inference.stopStrings} onChange={(event) => updateInference({ stopStrings: event.target.value })} placeholder="Enter strings separated by commas" /></label>
-            <label className="models-control-row"><span>CPU threads</span><input className="models-compact-input" type="number" min="1" value={inference.cpuThreads} onChange={(event) => updateInference({ cpuThreads: event.target.value })} placeholder="Auto" /></label>
           </div>
-          <p className="models-inference-note">Saved locally for this model. Runtime-specific GPU and context settings remain in Load Model.</p>
+          <Button onClick={saveInference} loading={busy === "inference"} loadingLabel="Saving…">Save inference settings</Button>
+          <p className="models-inference-note">Saved for new requests to this local model. Response limits stay within Rasputin's context budget. Reasoning is controlled in Chat; GPU, context, and CPU threads are configured in Load Model.</p>
         </section>
       )}
 

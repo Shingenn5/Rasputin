@@ -1,0 +1,20 @@
+/* Let empty-state content shrink when restoring a maximized window. */
+#chatView .cc-main-container,
+#chatView .cc-content-area,
+#chatView .cc-chat-column { min-width: 0; min-height: 0; }
+#chatView .cc-quick-action-center {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 0;
+}
+#chatView .cc-input-container { flex: 0 0 auto; }
+#chatView .chat-launch-readiness {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 30dvh;
+  overflow-y: auto;
+}
+@media (max-height: 800px), (max-width: 900px) {
+  #chatView .cc-quick-action-center { justify-content: flex-start; padding-block: 20px; }
+}

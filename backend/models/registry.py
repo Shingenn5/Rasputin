@@ -94,6 +94,87 @@ def _model_library_roots():
     return roots
 
 
+def _external_model_roots():
+    """Model-only access to known caches and explicitly added export folders."""
+    if not workspace.is_native():
+        return []
+    home = Path.home()
+    hf_home = Path(os.environ.get("HF_HOME") or home / ".cache" / "huggingface").expanduser()
+    candidates = [home / ".lmstudio" / "models", home / ".cache" / "lm-studio" / "models",
+                  Path(os.environ.get("HF_HUB_CACHE") or hf_home / "hub").expanduser()]
+    studio_home = os.environ.get("UNSLOTH_STUDIO_HOME") or os.environ.get("STUDIO_HOME")
+    studio = Path(studio_home).expanduser() if studio_home else Path(os.environ.get("UNSLOTH_HOME") or home / ".unsloth").expanduser() / "studio"
+    candidates.extend([studio / "exports", studio / "cache" / "huggingface" / "hub"])
+    try:
+        settings_file = home / ".lmstudio" / "settings.json"
+        if settings_file.is_file() and settings_file.stat().st_size < 1024 * 1024:
+            settings = json.loads(settings_file.read_text(encoding="utf-8-sig"))
+            downloads = settings.get("downloadsFolder")
+            if isinstance(downloads, str) and downloads.strip():
+                configured = Path(downloads).expanduser().resolve()
+                if configured != Path(configured.anchor) and configured != home.resolve():
+                    candidates.append(configured)
+    except (OSError, ValueError, AttributeError):
+        pass
+    saved = runtime_store.get_kv("external_model_folders", [])
+    candidates.extend(Path(value) for value in saved if isinstance(value, str))
+    return list(dict.fromkeys(path.resolve() for path in candidates))
+
+
+def local_model_sources():
+    security.require("allow_model_registry_edit")
+    return {"sources": [{"path": str(path), "name": path.name, "available": path.is_dir()}
+                        for path in _external_model_roots()]}
+
+
+def probe_local_endpoint(base_url, api_key=None):
+    security.require("allow_model_registry_edit")
+    base = _normalize_base_url(base_url)
+    parsed = urlparse(base)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost", "::1"} or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise AppError("local_endpoint_required", "Enter a loopback OpenAI-compatible endpoint for your local engine.", 400)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(base + "/models", headers=headers)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    try:
+        with opener.open(request, timeout=10) as response:
+            raw = response.read(2 * 1024 * 1024 + 1)
+        if len(raw) > 2 * 1024 * 1024:
+            raise ValueError("response too large")
+        payload = json.loads(raw)
+        ids = model_providers._parse_model_ids(payload, "openai-compatible")
+    except (OSError, ValueError, TypeError, AttributeError):
+        raise AppError("local_endpoint_unavailable", "Could not list models. Check the engine address, API key, and OpenAI API setting.", 400) from None
+    return {"models": ids, "baseUrl": base}
+
+
+def scan_local_model_sources(root=None):
+    security.require("allow_model_registry_edit")
+    security.require("allow_file_read")
+    if not workspace.is_native():
+        raise AppError("native_required", "Local model folders require the native app.", 400)
+    if root:
+        selected = Path(root).expanduser().resolve()
+        if not selected.is_dir() or selected == Path(selected.anchor) or selected == Path.home().resolve():
+            raise AppError("model_source_invalid", "Choose a model folder, not a drive root or home folder.", 400)
+        saved = runtime_store.get_kv("external_model_folders", [])
+        if str(selected) not in saved:
+            runtime_store.set_kv("external_model_folders", [*saved, str(selected)])
+        roots = [selected]
+    else:
+        roots = _external_model_roots()
+    result = _discover_gguf(roots, time_budget_seconds=10.0)
+    audit.log("model_source_scan", {"roots": [str(path) for path in roots], "registered": result["registered"]})
+    return result
+
+
 def _default_main_url():
     env_url = os.environ.get("MAIN_VLLM_BASE_URL")
     if env_url:
@@ -238,7 +319,7 @@ def _safe_file(path):
         raise AppError("model_file_missing", "That GGUF path does not exist or is not visible to Rasputin.", 400)
     if target.suffix.lower() != ".gguf":
         raise AppError("model_file_type", "Expected a .gguf model file.", 400)
-    allowed_roots = _model_library_roots()
+    allowed_roots = _model_library_roots() + _external_model_roots()
     in_model_library = any(_is_relative_to(target, root) or target == root for root in allowed_roots)
     in_workspace = workspace.workspace_for_path(target) is not None
     if not in_model_library and not in_workspace:

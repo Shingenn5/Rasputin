@@ -28,7 +28,6 @@ const NAV_GROUPS = [
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
 
-      { view: "discover", label: "Discover Models", icon: Search, testId: "nav-discover" },
       { view: "models", label: "Models", icon: Box, testId: "nav-models" },
     ],
   },
@@ -113,7 +112,7 @@ export function DashSidebar({
   }, [historyOpen]);
 
   const isActive = (item) =>
-    view === item.view && (item.view !== "settings" || settingsSection === item.section);
+    (view === item.view || (item.view === "models" && view === "discover")) && (item.view !== "settings" || settingsSection === item.section);
   const sessions = (recentSessions || []).slice(0, 12);
   const normalizedHistoryQuery = historyQuery.trim().toLowerCase();
   const filteredSessions = normalizedHistoryQuery

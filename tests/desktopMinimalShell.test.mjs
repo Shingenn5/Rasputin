@@ -52,13 +52,13 @@ test("desktop Settings closes from the visual backdrop", () => {
   assert.match(settings, /onClose=\{\(\) => go\("chat"\)\}/);
 });
 
-test("desktop Discover and Models are separate modal routes over the chat workspace", () => {
+test("desktop Discover and Models share one modal workspace", () => {
   assert.match(app, /desktopOnly && \["discover", "models", "settings"\]\.includes\(view\) \? "chat" : view/);
-  assert.match(sidebar, /view: "discover", label: "Discover Models", icon: Search, testId: "nav-discover"/);
+  assert.doesNotMatch(sidebar, /view: "discover", label: "Discover Models"/);
   assert.match(models, /className="studio-models-modal"/);
   assert.match(models, /data-testid="desktop-models-dialog"/);
   assert.match(models, /open=\{modelsWorkspaceOpen\}/);
-  assert.match(models, /title=\{view === "discover" \? "Discover Models" : "Models"\}/);
+  assert.match(models, /title="Models"/);
   assert.match(models, /onClose=\{\(\) => go\?\.\("chat"\)\}/);
   assert.match(interfaceCss, /\.studio-models-modal > \.ras-modal-body/);
 });

@@ -55,7 +55,7 @@ test("My Models opens as a relaxed selectable inventory with a persistent inspec
   assert.match(models, /!desktopOnly && activeTab !== "installed"/);
   assert.match(models, /aria-valuemin=\{260\}/);
   assert.match(models, /const tabs = \["info", "load", "inference", "actions"\]/);
-  assert.match(models, /Reasoning budget/);
+  assert.match(models, /Save inference settings/);
   assert.match(models, /Delete model/);
   assert.match(models, /runModelAction\?\.\("delete", model\.key\)/);
   assert.match(models, /Use in New Chat/);

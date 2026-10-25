@@ -96,7 +96,7 @@ test("Discover loads a durable My Models artifact through provisional first-load
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true", { timeout: 60000 });
   const onboarding = page.getByRole("dialog", { name: "Welcome to Rasputin" });
   if (await onboarding.isVisible()) await onboarding.getByRole("button", { name: "Skip for now" }).click();
-  await expect(page.getByRole("dialog", { name: "Discover Models" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Models", exact: true })).toBeVisible();
   const row = page.getByTestId("discover-model-row").filter({ hasText: "Qwen3.8 27B" });
   await expect(row).toContainText("In My Models");
   await row.getByRole("button", { name: "Load installed model Qwen3.8 27B" }).click();
