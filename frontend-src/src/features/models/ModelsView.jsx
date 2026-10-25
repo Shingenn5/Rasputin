@@ -663,7 +663,6 @@ export function ModelsView({
       className={`w2-layout app-view models-view models-workspace-v3 models-unified tw ${activeTab === "library" ? "is-discover-route" : ""} ${modelsWorkspaceOpen ? "active" : ""}`}
       id="modelsView"
       data-app-view={view === "discover" ? "discover" : "models"}
-      data-models-rail-collapsed={view === "models" && desktopOnly && modelsRailCollapsed ? "true" : undefined}
     >
       <div className="models-page-shell fx-rise mx-auto flex w-full min-w-0 max-w-[1600px] flex-col">
 
