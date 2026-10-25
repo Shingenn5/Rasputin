@@ -718,7 +718,7 @@ def set_role(key, role):
     raise AppError("model_missing", f"Model '{key}' is not registered.", 404)
 
 
-def _upsert(model, *, require_permission):
+def _upsert(model, *, require_permission, preserve_compatibility=True):
     if require_permission:
         security.require("allow_model_registry_edit")
     model = _normalize_model_payload(model)
@@ -769,7 +769,7 @@ def _upsert(model, *, require_permission):
         model.pop("compatibility", None)
         model.pop("tool_support", None)
         model.pop("certification_status", None)
-    if existing and "compatibility" not in model:
+    if existing and "compatibility" not in model and preserve_compatibility:
         same_runtime = all(
             str(existing.get(field) or "") == str(model.get(field) or existing.get(field) or "")
             for field in ("provider", "runtime", "model", "image", "base_url")
@@ -824,7 +824,7 @@ def repair_model_settings(key, *, path=None, base_url=None, model_id=None, api_k
     updated.pop("last_error", None)
     updated.pop("last_load_failure", None)
     updated["runtime_status"] = "stopped" if path is not None else "unknown"
-    saved = _upsert(updated, require_permission=True)
+    saved = _upsert(updated, require_permission=True, preserve_compatibility=path is None)
     audit.log("model_settings_repaired", {"key": key, "kind": "file" if path is not None else "connection"})
     return saved
 
