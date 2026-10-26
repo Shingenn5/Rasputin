@@ -1,0 +1,748 @@
+{
+  "study_date": "2026-10-26",
+  "scope": "Installed Unsloth static reverse-engineering study. No implementation plan or runtime certification.",
+  "source_root": "<installation>/studio/unsloth_studio/Lib/site-packages/studio",
+  "desktop": {
+    "filename": "unsloth-studio.exe",
+    "file_version": "0.1.911-beta",
+    "bytes": 38833984,
+    "sha256": "c4ecb646ae2c9d2e8d31b92baf94b4c957ac38f03ba68595aa6002622ed7c27a"
+  },
+  "frontend_inventory": {
+    "sha256": "3b88819dec802b0a7349419b0c43379fb405f5fca82acfff6385a7d48b621a95",
+    "inventoried_relevant_files": 723
+  },
+  "toolchain": {
+    "rea_agents": "6.8.0",
+    "node": "24.22.1",
+    "mcp_connected": false,
+    "analysis_route": "CLI"
+  },
+  "rea_records": [
+    {
+      "operation": "inspect_pe_imports",
+      "evidence_id": "ev_e0c4197c1d597a7af80c0f6eb392f85e773727a22ba5e4e36dbfe199c4f4a51d",
+      "status": "completed",
+      "authority": "shipped-artifact",
+      "limits": [
+        "Rows reproduce the PE import and delay-load directories; they do not establish that an import is bound, forwarded or reachable at runtime.",
+        "Bound import snapshots, the import address table as loaded, and export-forward resolution in another DLL remain unobserved."
+      ]
+    },
+    {
+      "operation": "analyze_javascript_application",
+      "evidence_id": "ev_a347f343449010400f2260c3fd67595ebf982473fd6750194c23eb612cd6b020",
+      "status": "completed_selected_scope",
+      "statistics": {
+        "findings": 96,
+        "invalid_utf8_files": 0,
+        "modules": 0,
+        "nested_asar_containers": 0,
+        "parse_failures": 0,
+        "parsed_javascript_files": 2,
+        "relevant_files": 723,
+        "skipped_javascript_files": 0,
+        "text_bytes_read": 16237,
+        "visited_ast_nodes": 4293
+      },
+      "source_selection": {
+        "requested_paths": [
+          "assets/api--bH_9So4.js",
+          "assets/api-base-C_Z6SLrb.js"
+        ],
+        "unselected_files": 721
+      },
+      "limits": [
+        "Caller-selected source analysis leaves 721 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+        "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+        "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+        "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+        "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+        "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+        "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+      ]
+    },
+    {
+      "operation": "analyze_javascript_application",
+      "evidence_id": "ev_8b629112541b5554408e4923a574392f98ab75b9fe0beac4ff0675878c631a1c",
+      "status": "partial_provider_timeout",
+      "statistics": {
+        "relevant_files": 723,
+        "nested_asar_containers": 0,
+        "text_bytes_read": 859330,
+        "invalid_utf8_files": 0,
+        "parsed_javascript_files": 1,
+        "skipped_javascript_files": 4,
+        "visited_ast_nodes": 39090,
+        "findings": 397,
+        "modules": 0,
+        "parse_failures": 0
+      },
+      "source_selection": {
+        "requested_paths": [
+          "assets/library-page-DzKt5R_C.js",
+          "assets/index-B_wuJfvl.js",
+          "assets/api--bH_9So4.js",
+          "assets/api-base-C_Z6SLrb.js",
+          "assets/per-model-config-DJ7uIVUB.js"
+        ],
+        "unselected_files": 718
+      },
+      "limits": [
+        "Caller-selected source analysis leaves 718 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+        "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+        "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+        "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+        "Source analysis was interrupted: Analysis operation timed out after 300000ms: analyze_javascript_application",
+        "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+        "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+        "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code.",
+        "assets/index-B_wuJfvl.js: Analysis operation timed out after 300000ms: analyze_javascript_application"
+      ]
+    }
+  ],
+  "runtime_observation": {
+    "status": "unverified",
+    "reason": "Desktop app-access approval timed out. No live load/download/chat/training/tool-execution flow tested."
+  },
+  "handling": "No target user database, chats, credentials, logs, model weights, or copied upstream implementation code included. Full REA records retained in local session evidence; this index omits machine-specific paths.",
+  "sources": {
+    "S01": [
+      {
+        "path": "package.json",
+        "lines": [
+          1,
+          10
+        ],
+        "sha256": "595a1c6fbd5aec05da559854e5fcd0f338163bf219e68cb744f97e940d479a7b",
+        "bytes": 386
+      },
+      {
+        "path": "frontend/package.json",
+        "lines": [
+          1,
+          100
+        ],
+        "sha256": "d53d98b7e877c02ffdf429cfef816d5f9dbbec041b5135fbeef2b263566b46ed",
+        "bytes": 5179
+      },
+      {
+        "path": "backend/main.py",
+        "lines": [
+          1833,
+          1904
+        ],
+        "sha256": "55cad99538b4d2f30dcba994c6708f135b6ec6b26456349f1a242218a62c99af",
+        "bytes": 134794
+      },
+      {
+        "path": "backend/main.py",
+        "lines": [
+          1096,
+          1110
+        ],
+        "sha256": "55cad99538b4d2f30dcba994c6708f135b6ec6b26456349f1a242218a62c99af",
+        "bytes": 134794
+      }
+    ],
+    "S02": [
+      {
+        "path": "frontend/dist/assets/api-base-C_Z6SLrb.js",
+        "lines": [
+          1,
+          1
+        ],
+        "sha256": "320894bda3302e7965212e47e9229b9b66278fff7947088a9db77f07e9471cb6",
+        "bytes": 657
+      },
+      {
+        "path": "frontend/dist/assets/api--bH_9So4.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "fc189926f668c5041d6cdde937828e4d61a7bc04c79a6bd1bb65fb495e14f4f4",
+        "bytes": 15580
+      },
+      {
+        "path": "frontend/dist/assets/tauri-auto-auth-D9j6-GZw.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "5bc1a14f2a24e59b91fdde9a21c9e67e728c7692695ac8151d16a2676179efd5",
+        "bytes": 5984
+      }
+    ],
+    "S03": [
+      {
+        "path": "frontend/dist/assets/hub-page-CnkUbzTL.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "5a205763bf5911b66ee0c530e314e81858c99766a613c253747a6c3d100692f9",
+        "bytes": 235660
+      }
+    ],
+    "S04": [
+      {
+        "path": "frontend/dist/assets/chat-history-storage-Cb1x3zd0.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "b1a92117ff442acd187ec161085c10c547684622695cce68d920432dd03ed2fb",
+        "bytes": 143441
+      },
+      {
+        "path": "backend/routes/models.py",
+        "lines": [
+          4555,
+          4667
+        ],
+        "sha256": "d4818938697a88fee040e88faa05bf802a15a957d532494642705079023fa9f3",
+        "bytes": 239021
+      }
+    ],
+    "S05": [
+      {
+        "path": "backend/hub/schemas/inventory.py",
+        "lines": [
+          16,
+          190
+        ],
+        "sha256": "737c4780d025d402abeda99bec01a0e303abdbeb8ae4c4e596e2458121e28255",
+        "bytes": 17734
+      },
+      {
+        "path": "backend/hub/utils/gguf_plan.py",
+        "lines": [
+          28,
+          70
+        ],
+        "sha256": "8b606832a844bc662dfe463a38ea443d5c12d79cc4ebb57bbd00acd272f51d0d",
+        "bytes": 22784
+      },
+      {
+        "path": "backend/hub/utils/gguf_plan.py",
+        "lines": [
+          354,
+          520
+        ],
+        "sha256": "8b606832a844bc662dfe463a38ea443d5c12d79cc4ebb57bbd00acd272f51d0d",
+        "bytes": 22784
+      }
+    ],
+    "S06": [
+      {
+        "path": "backend/hub/services/models/local_inventory.py",
+        "lines": [
+          4,
+          87
+        ],
+        "sha256": "919cfd7d4d1ca741ee1df93512ed0cd43c3638da11fae7cddf20b4fcfcc9e988",
+        "bytes": 74806
+      },
+      {
+        "path": "backend/hub/routes/inventory.py",
+        "lines": [
+          63,
+          154
+        ],
+        "sha256": "299670027974f001387941bc2e8d3600d59061b396a08e9048bb650e778beb9b",
+        "bytes": 14747
+      }
+    ],
+    "S07": [
+      {
+        "path": "backend/hub/schemas/downloads.py",
+        "lines": [
+          10,
+          150
+        ],
+        "sha256": "ecc2cd8edd1f7a97c116f3c4d3fa5fe31cf98d12810c797f1e3ce975f70c4352",
+        "bytes": 8758
+      },
+      {
+        "path": "backend/hub/services/models/downloads.py",
+        "lines": [
+          291,
+          474
+        ],
+        "sha256": "21d0ab688151e2419fd100c52b11afc04abc206467c22b54424b30e68e0bdc86",
+        "bytes": 39419
+      },
+      {
+        "path": "backend/hub/services/download_lifecycle.py",
+        "lines": [
+          694,
+          770
+        ],
+        "sha256": "1f7da86962c3663e016bafebf8c729f215adaf01e17dc7ed6c58fdcdcfe4b3b5",
+        "bytes": 72094
+      },
+      {
+        "path": "backend/hub/workers/hf_download.py",
+        "lines": [
+          283,
+          377
+        ],
+        "sha256": "f74be350126b9989fe51b835ca5a5d03251bb40b9089f4a41277a579fa7093a6",
+        "bytes": 41923
+      }
+    ],
+    "S08": [
+      {
+        "path": "backend/models/inference.py",
+        "lines": [
+          108,
+          155
+        ],
+        "sha256": "42fc8884298889ace84fafe8b730ebd5e312ba7714ca7df4d0150dc13844d59e",
+        "bytes": 348492
+      },
+      {
+        "path": "backend/models/inference.py",
+        "lines": [
+          425,
+          553
+        ],
+        "sha256": "42fc8884298889ace84fafe8b730ebd5e312ba7714ca7df4d0150dc13844d59e",
+        "bytes": 348492
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          16786,
+          16910
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          20177,
+          20260
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          20445,
+          20490
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          21604,
+          21650
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/core/inference/llama_cpp.py",
+        "lines": [
+          32233,
+          32290
+        ],
+        "sha256": "22f9c53afc791678bd271c56dc5b22bccb469fe31914bfd0811bf9191b142217",
+        "bytes": 2000495
+      },
+      {
+        "path": "backend/core/inference/llama_cpp.py",
+        "lines": [
+          34055,
+          34120
+        ],
+        "sha256": "22f9c53afc791678bd271c56dc5b22bccb469fe31914bfd0811bf9191b142217",
+        "bytes": 2000495
+      },
+      {
+        "path": "backend/core/inference/gpu_arbiter.py",
+        "lines": [
+          638,
+          750
+        ],
+        "sha256": "4f2ef9142ea2ab4c0187d5520da5560bb5e0b13dfbec300cb900b2604478b2f9",
+        "bytes": 40450
+      }
+    ],
+    "S09": [
+      {
+        "path": "backend/routes/chat_generation_runs.py",
+        "lines": [
+          338,
+          475
+        ],
+        "sha256": "828cfc19f04df138a25a50faf3393e2bdfc8f45ea1e18de4d5d0790cc1bb1d0a",
+        "bytes": 19109
+      },
+      {
+        "path": "backend/storage/chat_generation_runs_db.py",
+        "lines": [
+          4,
+          35
+        ],
+        "sha256": "69b541a4d020c31847a82692c3cb8ac7e3cadfbe8097d8fa7fa8b8bc614ac36b",
+        "bytes": 37485
+      },
+      {
+        "path": "backend/main.py",
+        "lines": [
+          860,
+          950
+        ],
+        "sha256": "55cad99538b4d2f30dcba994c6708f135b6ec6b26456349f1a242218a62c99af",
+        "bytes": 134794
+      }
+    ],
+    "S10": [
+      {
+        "path": "backend/core/inference/studio_tool_loop.py",
+        "lines": [
+          4,
+          18
+        ],
+        "sha256": "5d7aa2040ce858eaf56d2e46b73f2e43f7cc3f3cf16b2da0aec3959e3954b0f2",
+        "bytes": 95265
+      },
+      {
+        "path": "backend/core/inference/studio_tool_loop.py",
+        "lines": [
+          1816,
+          1875
+        ],
+        "sha256": "5d7aa2040ce858eaf56d2e46b73f2e43f7cc3f3cf16b2da0aec3959e3954b0f2",
+        "bytes": 95265
+      },
+      {
+        "path": "backend/state/tool_policy.py",
+        "lines": [
+          108,
+          201
+        ],
+        "sha256": "4b065531f71a68e6db8bc8fac84c21b3105ef6dfaa615579daae9430439ac1bb",
+        "bytes": 9968
+      },
+      {
+        "path": "backend/core/inference/os_sandbox.py",
+        "lines": [
+          976,
+          1005
+        ],
+        "sha256": "62d10fe3aa1fc11dd1d542cadfde090c1acff4c8c8ca94d6720d7601be7db23c",
+        "bytes": 54729
+      },
+      {
+        "path": "backend/core/inference/sandbox_windows_mxc.py",
+        "lines": [
+          3,
+          80
+        ],
+        "sha256": "69dcc47dd634c5c00673d6ae3203d27f2c63085aaba08f54dc61ee2ae19859ff",
+        "bytes": 13470
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          4838,
+          4847
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      }
+    ],
+    "S11": [
+      {
+        "path": "backend/routes/chat_history.py",
+        "lines": [
+          132,
+          188
+        ],
+        "sha256": "3bb56e0bb3b8de02f684fafb8387d23973990e4f1f5800e29c357c2381da311e",
+        "bytes": 84567
+      },
+      {
+        "path": "backend/routes/chat_history.py",
+        "lines": [
+          312,
+          332
+        ],
+        "sha256": "3bb56e0bb3b8de02f684fafb8387d23973990e4f1f5800e29c357c2381da311e",
+        "bytes": 84567
+      },
+      {
+        "path": "backend/routes/chat_history.py",
+        "lines": [
+          1252,
+          1365
+        ],
+        "sha256": "3bb56e0bb3b8de02f684fafb8387d23973990e4f1f5800e29c357c2381da311e",
+        "bytes": 84567
+      }
+    ],
+    "S12": [
+      {
+        "path": "backend/core/rag/ingestion.py",
+        "lines": [
+          4,
+          49
+        ],
+        "sha256": "97dd48e48c79489fceee2a04d325b533ab6ecce33f39847f5ab4d74f5abcbc13",
+        "bytes": 34083
+      },
+      {
+        "path": "backend/core/rag/ingestion.py",
+        "lines": [
+          118,
+          140
+        ],
+        "sha256": "97dd48e48c79489fceee2a04d325b533ab6ecce33f39847f5ab4d74f5abcbc13",
+        "bytes": 34083
+      },
+      {
+        "path": "backend/core/rag/retrieval.py",
+        "lines": [
+          4,
+          139
+        ],
+        "sha256": "f8d817c9039eb93551d0d0d7c4cdb39b98f7bbf0e9f663c672426e0beebb6378",
+        "bytes": 4931
+      },
+      {
+        "path": "backend/routes/rag.py",
+        "lines": [
+          344,
+          389
+        ],
+        "sha256": "dee92021538bc465086ad0216fcaf368e7d128dc40aaa6c22e1d366fa7c363ff",
+        "bytes": 43336
+      },
+      {
+        "path": "backend/routes/rag.py",
+        "lines": [
+          409,
+          678
+        ],
+        "sha256": "dee92021538bc465086ad0216fcaf368e7d128dc40aaa6c22e1d366fa7c363ff",
+        "bytes": 43336
+      }
+    ],
+    "S13": [
+      {
+        "path": "backend/core/training/training.py",
+        "lines": [
+          4,
+          7
+        ],
+        "sha256": "f38cd87964cba2db0b7b8b69a67598293523b88c4feffe34f3f16a41d25da502",
+        "bytes": 162825
+      },
+      {
+        "path": "backend/core/training/training.py",
+        "lines": [
+          680,
+          710
+        ],
+        "sha256": "f38cd87964cba2db0b7b8b69a67598293523b88c4feffe34f3f16a41d25da502",
+        "bytes": 162825
+      },
+      {
+        "path": "backend/core/training/worker.py",
+        "lines": [
+          1,
+          15
+        ],
+        "sha256": "141c722dedda78cfe7cf339f2e8e152846f5c1c05c7cba00b13e5e4de6305867",
+        "bytes": 249697
+      },
+      {
+        "path": "backend/routes/training.py",
+        "lines": [
+          1815,
+          1931
+        ],
+        "sha256": "aa4962d55fee88f7309a81463de69fbd4776d90e35b59a87a772a455275300f5",
+        "bytes": 218442
+      },
+      {
+        "path": "backend/routes/training.py",
+        "lines": [
+          2584,
+          2935
+        ],
+        "sha256": "aa4962d55fee88f7309a81463de69fbd4776d90e35b59a87a772a455275300f5",
+        "bytes": 218442
+      },
+      {
+        "path": "backend/routes/training.py",
+        "lines": [
+          3544,
+          3574
+        ],
+        "sha256": "aa4962d55fee88f7309a81463de69fbd4776d90e35b59a87a772a455275300f5",
+        "bytes": 218442
+      }
+    ],
+    "S14": [
+      {
+        "path": "backend/routes/data_recipe/jobs.py",
+        "lines": [
+          518,
+          543
+        ],
+        "sha256": "0bb739f4ba781d4f6cc8a162ac13edc9b794e8c686ca3eadfdc02ae16ccc47d9",
+        "bytes": 38017
+      },
+      {
+        "path": "backend/routes/data_recipe/jobs.py",
+        "lines": [
+          622,
+          659
+        ],
+        "sha256": "0bb739f4ba781d4f6cc8a162ac13edc9b794e8c686ca3eadfdc02ae16ccc47d9",
+        "bytes": 38017
+      },
+      {
+        "path": "backend/routes/data_recipe/jobs.py",
+        "lines": [
+          752,
+          794
+        ],
+        "sha256": "0bb739f4ba781d4f6cc8a162ac13edc9b794e8c686ca3eadfdc02ae16ccc47d9",
+        "bytes": 38017
+      }
+    ],
+    "S15": [
+      {
+        "path": "backend/routes/video.py",
+        "lines": [
+          685,
+          714
+        ],
+        "sha256": "27737e2b64b1482ff84558f97d74bb8d08f5134d0788bf144aaca201b044f79e",
+        "bytes": 102496
+      },
+      {
+        "path": "backend/routes/video.py",
+        "lines": [
+          829,
+          951
+        ],
+        "sha256": "27737e2b64b1482ff84558f97d74bb8d08f5134d0788bf144aaca201b044f79e",
+        "bytes": 102496
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          24938,
+          24967
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      }
+    ],
+    "S16": [
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          29669,
+          29690
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          35481,
+          35565
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          36295,
+          36310
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          37093,
+          37110
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          39639,
+          39655
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      },
+      {
+        "path": "backend/routes/inference.py",
+        "lines": [
+          42270,
+          42290
+        ],
+        "sha256": "1a0175bb44ce1d3ae44eff92328f122229f24c65b9351488cbebb3af687989f4",
+        "bytes": 2177083
+      }
+    ],
+    "S17": [
+      {
+        "path": "frontend/dist/assets/hub-page-CnkUbzTL.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "5a205763bf5911b66ee0c530e314e81858c99766a613c253747a6c3d100692f9",
+        "bytes": 235660
+      },
+      {
+        "path": "frontend/dist/assets/settings-BNhHYgyP.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "1041e6ab439314a977608a9af8be6518385bcd9ed24176bfd807e97adf174666",
+        "bytes": 473275
+      },
+      {
+        "path": "frontend/dist/assets/settings-dialog-store-C2UukmsB.js",
+        "lines": [
+          1,
+          1
+        ],
+        "sha256": "727dd2872c19a2e4835d2296a08cee62a222c4bd680d84c6e56c63d5997302d5",
+        "bytes": 6735
+      },
+      {
+        "path": "frontend/dist/assets/alert-dialog-ClMtTX4Q.js",
+        "lines": [
+          1,
+          2
+        ],
+        "sha256": "51e6dc100be0e09d01dd188d6f6d6efa1f884bbbc2ef2e7ed2536ec82ea3339e",
+        "bytes": 23698
+      }
+    ]
+  }
+}

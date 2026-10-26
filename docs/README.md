@@ -54,6 +54,7 @@ implemented behavior or security policy.
 
 | Document | Purpose |
 | --- | --- |
+| [`UNSLOTH_REVERSE_ENGINEERING_2026-10-26.md`](UNSLOTH_REVERSE_ENGINEERING_2026-10-26.md) | Installed Unsloth artifact/source reconstruction with REA evidence, feature flows, and explicit runtime unknowns; no implementation plan |
 | [System improvement review - 2026-09-04](reviews/RASPUTIN_SYSTEM_IMPROVEMENT_REVIEW_2026-09-04.md) | Current-code overview, fresh focused checks, and prioritized engineering recommendations; proposal subordinate to the v1 release contract |
 | [`RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.docx) / [`PDF`](RASPUTIN_PERSONAL_ASSISTANT_EVOLUTION_PROPOSAL.pdf) | Native-runtime-aligned visual proposal; proposed features remain proposals |
 | [`RASPUTIN_VS_ODYSSEUS_COMPARISON.md`](RASPUTIN_VS_ODYSSEUS_COMPARISON.md) | Product and architecture comparison |
