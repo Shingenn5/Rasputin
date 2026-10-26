@@ -29,6 +29,7 @@ def defaults():
         "theme": "rasputin-dark",
         "motionMode": "full",
         "sidebarCollapsed": False,
+        "onboarded": False,
         "selectedModel": "",
         "testingMode": False,
         "activeWorkspace": ".",

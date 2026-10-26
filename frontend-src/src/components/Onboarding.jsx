@@ -1,8 +1,8 @@
 /**
  * Onboarding.jsx — Phase 7 first-run guided flow.
  *
- * Shows when no chat model is ready and the `rasputin-onboarded`
- * localStorage flag is unset. Walks a new operator through what Rasputin is
+ * Shows when no chat model is ready and the saved `onboarded` preference
+ * is unset. Walks a new operator through what Rasputin is
  * and how to download or import a GGUF model and load it in the native runtime.
  *
  * Self-contained, accessible lightweight overlay — no external Modal dependency.

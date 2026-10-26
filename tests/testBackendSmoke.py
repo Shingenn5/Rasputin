@@ -1655,6 +1655,7 @@ class BackendSmokeTests(unittest.TestCase):
 
     def testPreferencesRoundTrip(self):
         saved = self.assertOk(self.client.post("/api/preferences", json={
+            "onboarded": True,
             "theme": "bootswatch-slate",
             "motionMode": "reduced",
             "sidebarCollapsed": True,
@@ -1671,6 +1672,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertTrue(saved["sidebarCollapsed"])
         self.assertEqual(saved["taskMode"], "code")
         loaded = self.assertOk(self.client.get("/api/preferences"))
+        self.assertTrue(loaded["onboarded"])
         self.assertEqual(loaded["activeView"], "models")
         self.assertEqual(loaded["activeSettingsSection"], "safety")
         self.assertEqual(loaded["activeChatFolder"], "unfiled")
@@ -1679,6 +1681,7 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(stored["theme"], "bootswatch-slate")
         self.assertEqual(stored["activeChatFolder"], "unfiled")
         self.assertOk(self.client.post("/api/preferences", json={
+            "onboarded": False,
             "theme": "rasputin-light",
             "motionMode": "full",
             "sidebarCollapsed": False,

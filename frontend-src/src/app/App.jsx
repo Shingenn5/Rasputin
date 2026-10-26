@@ -235,7 +235,8 @@ export function App() {
 
   // First-run onboarding is about launch readiness, not registry cardinality:
   // seeded entries can still be stopped or unhealthy and cannot start a chat.
-  const [onboarded, setOnboarded] = useLocalStorageFlag("rasputin-onboarded", false);
+  // Desktop uses a new port each launch, so browser storage cannot remember this.
+  const [onboarded, setOnboarded] = useState(false);
   const hasHealthyRouteableChatModel = useMemo(
     () => models.some((model) => isUserFacingModel(model, testingMode) && isModelRouteable(model) && isModelHealthy(model)),
     [models, testingMode],
@@ -456,6 +457,7 @@ export function App() {
       postJson("/api/preferences", {
         theme,
         sidebarCollapsed,
+        onboarded,
         selectedModel,
         testingMode,
         activeWorkspace: workspace.activePath || ".",
@@ -473,7 +475,7 @@ export function App() {
       }).catch(() => {});
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [theme, sidebarCollapsed, selectedModel, testingMode, taskMode, memoryMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, motionMode, session, ready]);
+  }, [theme, sidebarCollapsed, onboarded, selectedModel, testingMode, taskMode, memoryMode, reasoningMode, modeModelOverrides, subagentCount, workspace.activePath, workspaceExplorer, view, settingsSection, activeChatFolder, motionMode, session, ready]);
 
   async function boot() {
     const markReady = () => {
@@ -504,6 +506,8 @@ export function App() {
   async function loadBasics(activeRole = session?.role) {
     const data = await api("/api/ui/bootstrap");
     const prefs = data.preferences || {};
+    // Migrate Desktop's old dismissal flag while keeping Native Host users separate.
+    setOnboarded(Boolean(prefs.onboarded || (data.security?.desktopOnly && readStoredFlag("rasputin-onboarded"))));
     setModels(data.models || []);
     setModelProviders(data.modelProviders || []);
     const bootstrapCatalog = data.modelCatalog || { items: [], categories: [], runtimes: [], source: {} };
