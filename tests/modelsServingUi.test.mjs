@@ -13,7 +13,7 @@ test("Models rail collapses persistently to accessible icon-only navigation", ()
   assert.match(models, /data-testid="models-rail-toggle"/);
   assert.match(models, /aria-expanded={!modelsRailCollapsed}/);
   assert.match(models, /aria-controls="models-navigation"/);
-  assert.match(models, /role="tablist" aria-orientation=\{desktopOnly \? "vertical" : "horizontal"\}/);
+  assert.match(models, /role="tablist" aria-orientation="horizontal"/);
   assert.match(models, /aria-label={desktopOnly && modelsRailCollapsed \? desktopItem\.label : undefined}/);
   assert.match(models, /tabIndex={activeTab === t\.id \? 0 : -1}/);
   assert.match(models, /ArrowRight/);
@@ -21,7 +21,7 @@ test("Models rail collapses persistently to accessible icon-only navigation", ()
   assert.match(models, /event\.key === "Home"/);
   assert.match(models, /event\.key === "End"/);
   assert.match(interfaceCss, /data-models-rail-collapsed="true".*grid-template-columns: 58px/s);
-  assert.match(interfaceCss, /data-models-rail-collapsed="true".*\[role="tab"\] > span/s);
+  assert.match(interfaceCss, /data-models-rail-collapsed="true".*\[role="tab"\] > span:not\(\.models-v3-tab-icon\)/s);
   assert.match(interfaceCss, /@media \(max-width: 780px\)[\s\S]*models-page-tabs[\s\S]*overflow-x: auto/);
 });
 

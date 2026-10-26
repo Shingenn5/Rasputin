@@ -40,6 +40,8 @@ test("native onboarding owns focus, reaches Discover, and preserves nested Load 
           const json = await response.json();
           json.data.security = { ...json.data.security, native: true, desktopOnly };
           json.data.models = [modelState];
+          // Each fixture iteration exercises a new operator, independent of saved dismissal.
+          json.data.preferences.onboarded = false;
           await route.fulfill({ json });
         });
         await page.route(/\/api\/model-registry(?:\?.*)?$/, (route) => route.fulfill({
@@ -79,7 +81,6 @@ test("native onboarding owns focus, reaches Discover, and preserves nested Load 
         await expect(page).toHaveURL(/#models$/);
 
         // Test the real first-run primary action, including keyboard activation.
-        await page.evaluate(() => localStorage.removeItem("rasputin-onboarded"));
         await page.reload();
         await expect(welcome).toBeVisible();
         await welcome.getByRole("button", { name: "Get started" }).click();
@@ -91,8 +92,9 @@ test("native onboarding owns focus, reaches Discover, and preserves nested Load 
 
         if (desktopOnly) {
           await page.evaluate(() => { window.location.hash = "models"; });
-          const row = page.locator('[data-model-key="native-dialog-fixture"]');
-          await row.getByRole("button", { name: "Load", exact: true }).click();
+          await page.getByRole("tab", { name: "My Models", exact: true }).click();
+          const inspector = page.getByTestId("installed-model-inspector");
+          await inspector.getByRole("button", { name: "Load Model", exact: true }).click();
           const loadDialog = page.locator(".studio-load-modal");
           await expect(loadDialog).toBeVisible();
           await expect(loadDialog.getByRole("button", { name: "Load model", exact: true })).toBeEnabled();
@@ -112,13 +114,12 @@ test("native onboarding owns focus, reaches Discover, and preserves nested Load 
           await expect(loadDialog).toHaveCount(0);
           await expect(page.getByTestId("desktop-models-dialog")).toBeVisible();
           await expect(page.locator("#appFrame")).toHaveAttribute("data-current-view", "models");
-          await row.getByRole("button", { name: "Load", exact: true }).click();
+          await inspector.getByRole("button", { name: "Load Model", exact: true }).click();
           await loadDialog.getByRole("button", { name: "Load model", exact: true }).click();
-          await expect(row.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-          await expect(page.getByTestId("installed-model-inspector").getByRole("button", { name: "Stop Model", exact: true })).toBeVisible();
+          await expect(inspector.getByRole("button", { name: "Stop Model", exact: true })).toBeVisible();
           await expect(page.getByText("1 reachable · 1 loaded", { exact: true })).toBeVisible();
-          await row.getByRole("button", { name: "Stop", exact: true }).click();
-          await expect(row.getByRole("button", { name: "Load", exact: true })).toBeVisible();
+          await inspector.getByRole("button", { name: "Stop Model", exact: true }).click();
+          await expect(inspector.getByRole("button", { name: "Load Model", exact: true })).toBeVisible();
           await expect(page.getByText("0 reachable · 0 loaded", { exact: true })).toBeVisible();
         }
         assert.deepEqual(retiredRequests, [], "Native routes must not request retired deployment APIs");
