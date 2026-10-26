@@ -16,7 +16,7 @@
     "desktop:test": "node --test ./tests/desktopLifecycle.test.cjs",
     "desktop:backend": "powershell -ExecutionPolicy Bypass -File ./scripts/build-desktop-backend.ps1",
     "desktop:package:dir": "npm run build && npm run desktop:runtime && npm run desktop:backend && electron-builder --dir --win && powershell -ExecutionPolicy Bypass -File ./scripts/apply-desktop-acl.ps1 -AppDir ./dist/electron/win-unpacked",
-    "desktop:package": "npm run build && npm run desktop:runtime && npm run desktop:backend && electron-builder --win nsis",
+    "desktop:package": "npm run build && npm run desktop:runtime && npm run desktop:backend && electron-builder --win nsis --publish never",
     "preview": "vite preview --config vite.config.mjs --host 127.0.0.1",
     "testUi": "playwright test",
     "testUiHeaded": "playwright test --headed",
