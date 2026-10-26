@@ -36,6 +36,7 @@ jobs:
       - name: Test desktop contracts
         shell: pwsh
         run: |
+          npm run build
           npm run desktop:check
           npm run desktop:test
           .\.venv\Scripts\python.exe -m unittest tests.testBackendSmoke
