@@ -1,0 +1,85 @@
+.system-status-trigger {
+  position: fixed;
+  top: max(5rem, env(safe-area-inset-top));
+  right: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 4px 16px #0002;
+  cursor: pointer;
+}
+
+.system-status-trigger:hover,
+.system-status-heading button:hover {
+  background: var(--accent);
+}
+
+.system-status-trigger:focus-visible,
+.system-status-heading button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+
+.system-status-popup {
+  position: fixed;
+  inset: max(5rem, env(safe-area-inset-top)) 52px auto auto;
+  margin: 0;
+  width: min(320px, calc(100vw - 64px));
+  max-height: calc(100dvh - 6rem);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 12px 40px #0003;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.system-status-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.system-status-heading button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.system-status-models,
+.system-status-metrics {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.system-status-metrics {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.system-status-label,
+.system-status-model small {
+  display: block;
+  color: var(--muted-foreground);
+}
+
+.system-status-models p { margin: 0; }

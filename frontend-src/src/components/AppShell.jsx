@@ -5,7 +5,7 @@ import { CommandPalette } from "./CommandPalette.jsx";
 import { HardwareMonitor } from "./shell/HardwareMonitor.jsx";
 import { useSettingsStore } from "../features/settings/settingsStore.js";
 
-export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust, commandPaletteProps }) {
+export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarProps, trustedWorkspace, onRevokeTrust, commandPaletteProps, models }) {
   const nativeRuntime = Boolean(sidebarProps?.desktopOnly) || sidebarProps?.runtimeMode === "native";
   const showLiveUsage = useSettingsStore((state) => state.hardware?.showLiveUsage === true);
   const refreshIntervalMs = useSettingsStore((state) => state.hardware?.refreshIntervalMs ?? 2000);
@@ -96,8 +96,8 @@ export function AppShell({ children, globalStatus, clearGlobalStatus, sidebarPro
                 </span>
               )}
             </div>
-            <HardwareMonitor enabled={showLiveUsage} refreshIntervalMs={refreshIntervalMs} />
           </div>
+          <HardwareMonitor enabled={showLiveUsage} refreshIntervalMs={refreshIntervalMs} models={models} />
           {children}
         </main>
       </div>

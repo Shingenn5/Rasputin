@@ -219,20 +219,9 @@ export function HomeView(props) {
   const activeReasoning = reasoningOptions.find((option) => option.value === reasoningMode) || reasoningOptions[0];
   const objectivePlaceholder = modePlaceholders[activeMode.value] || modePlaceholders.chat;
 
-  // Live header indicator: what model is routed and whether it is running.
+  // Composer indicator: what model is routed and whether it is running.
   const modelIsMock = selectedModelObject?.key === "dry-run" || selectedModelObject?.provider === "mock";
   const modelRuntimeStatus = modelIsMock ? "reachable" : runtimeStatus(selectedModelObject);
-  const modelStateLabel = !selectedModelObject
-    ? "No model"
-    : composerBusy && healthy
-      ? "Generating"
-      : modelIsMock
-        ? "Testing"
-        : modelRuntimeStatus === "reachable"
-          ? healthy ? "Running" : "Needs attention"
-          : modelRuntimeStatus === "unknown"
-            ? "Not checked"
-            : "Stopped";
 
   // ---- Command menu (Claude Code style) -------------------------------
   // source "typed": opened by a leading "/" in the composer; the composer
@@ -495,24 +484,6 @@ export function HomeView(props) {
           </div>
         </div>
         <div className="cc-status-area">
-          <button
-            className="cc-model-indicator"
-            data-testid="header-model-indicator"
-            type="button"
-            onClick={() => {
-              setRecipePanelOpen(false);
-              setModelPanelOpen(true);
-            }}
-            title={`${selectedModelHealthLine} Click to change model.`}
-          >
-            <span
-              className={`cc-model-dot status-${modelRuntimeStatus}${composerBusy && healthy ? " is-busy" : ""}`}
-              aria-hidden="true"
-            />
-            <Cpu size={14} />
-            <span className="cc-model-name" data-testid="chat-selected-model-key" data-model-key={selectedModel || ""}>{displayModelName(selectedModelObject || selectedModel, models)}</span>
-            <span className={"cc-model-state state-" + modelRuntimeStatus}>{modelStateLabel}</span>
-          </button>
           <div className="cc-status-item cc-runtime-status" title={security?.native ? "Native workstation runtime" : "Docker server runtime"}>
             {security?.native ? <Laptop size={14} aria-hidden="true" /> : <Box size={14} aria-hidden="true" />}
             <span>{security?.native ? "Native" : "Docker"}</span>
@@ -827,10 +798,14 @@ export function HomeView(props) {
                       className="composer-chip composer-model-chip"
                       data-testid="chat-model-chip"
                       title={selectedModelHealthLine}
-                      onClick={() => (cmd?.path === "model" ? closeCmd(true) : openCmd("model"))}
+                      onClick={() => {
+                        setCmd(null);
+                        setRecipePanelOpen(false);
+                        setModelPanelOpen(true);
+                      }}
                     >
                       <span className={`cc-model-dot status-${modelRuntimeStatus}`} aria-hidden="true" />
-                      <span className="composer-chip-model-name">{displayModelName(selectedModelObject || selectedModel, models)}</span>
+                      <span className="composer-chip-model-name" data-testid="chat-selected-model-key" data-model-key={selectedModel || ""}>{displayModelName(selectedModelObject || selectedModel, models)}</span>
                       <ChevronDown size={12} />
                     </button>
                     <button

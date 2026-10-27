@@ -10,24 +10,28 @@ const modelSettings = readFeatureSource(new URL("../frontend-src/src/features/se
 const settingsView = readFeatureSource(new URL("../frontend-src/src/features/settings/SettingsView.jsx", import.meta.url));
 const app = readFeatureSource(new URL("../frontend-src/src/app/App.jsx", import.meta.url));
 
-test("AppShell mounts the persistent hardware monitor from settings", () => {
+test("AppShell mounts the system popup from settings with runtime models", () => {
   assert.match(shell, /useSettingsStore/);
   assert.match(shell, /HardwareMonitor/);
   assert.match(shell, /showLiveUsage/);
+  assert.match(shell, /models=\{models\}/);
 });
 
-test("hardware monitor polls only when enabled and exposes compact usage", () => {
+test("hardware popup fetches on open and polls only when enabled", () => {
   assert.match(monitor, /enabled = false/);
   assert.match(monitor, /api\("\/api\/warsat\/system-metrics"\)/);
   assert.match(monitor, /data-testid="hardware-monitor"/);
   assert.match(monitor, /GPU telemetry unavailable/);
+  assert.match(monitor, /if \(!open\)/);
+  assert.match(monitor, /enabled \? window.setInterval/);
+  assert.match(monitor, /popover="auto"/);
   assert.doesNotMatch(monitor, /docker/i);
 });
 
-test("resource settings persist the always-show toggle", () => {
+test("resource settings persist the live-update toggle", () => {
   assert.match(resources, /data-testid="hardware-monitor-switch"/);
   assert.match(resources, /updateSetting\("hardware", "showLiveUsage"/);
-  assert.match(resources, /Always show live hardware usage/);
+  assert.match(resources, /Live hardware updates/);
 });
 
 

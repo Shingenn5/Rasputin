@@ -23,17 +23,17 @@ test("chat shows readable artifact names and excludes known model mismatches", a
   await page.addInitScript(() => localStorage.setItem("rasputin-onboarded", "1"));
   await page.goto("/#chat");
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true", { timeout: 60000 });
-  await page.getByTestId("header-model-indicator").click();
+  await page.getByTestId("chat-model-chip").click();
   const panel = page.getByTestId("model-side-panel");
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId("model-option")).toHaveCount(1);
   await panel.getByTestId("model-option").click();
-  await expect(page.getByTestId("header-model-indicator")).toContainText(model.model);
+  await expect(page.getByTestId("chat-model-chip")).toContainText(model.model);
   await expect(page.locator(".composer-chip-model-name")).toContainText(model.model);
   await expect(page.getByTestId("chat-selected-model-key")).toHaveAttribute("data-model-key", model.key);
   for (const width of [1440, 1024, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.getByTestId("header-model-indicator")).toBeVisible();
+    await expect(page.getByTestId("chat-model-chip")).toBeVisible();
     if (width < 640) {
       await expect.poll(() => page.locator("#mainContent").evaluate(element => element.getBoundingClientRect().left)).toBeLessThanOrEqual(1);
     }

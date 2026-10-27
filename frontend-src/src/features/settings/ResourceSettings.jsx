@@ -133,8 +133,8 @@ export function ResourceSettings() {
               </div>
               <div className="d-flex justify-content-between align-items-center mt-3">
                 <div>
-                  <div className="fw-medium">Always show live hardware usage</div>
-                  <div className="text-muted small">Keep a compact RAM, CPU, and per-GPU usage monitor visible across the app.</div>
+                  <div className="fw-medium">Live hardware updates</div>
+                  <div className="text-muted small">Refresh RAM, CPU, and GPU usage while the System status popup is open. When off, show a snapshot each time it opens.</div>
                 </div>
                 <Form.Check
                   type="switch"
@@ -142,7 +142,7 @@ export function ResourceSettings() {
                   data-testid="hardware-monitor-switch"
                   checked={hardware.showLiveUsage === true}
                   onChange={() => updateSetting("hardware", "showLiveUsage", hardware.showLiveUsage !== true)}
-                  aria-label="Always show live hardware usage"
+                  aria-label="Live hardware updates"
                 />
               </div>
             </Card.Body>

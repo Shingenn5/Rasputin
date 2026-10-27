@@ -1207,6 +1207,7 @@ export function App() {
 
   return (
     <AppShell
+      models={models}
       globalStatus={globalStatus}
       clearGlobalStatus={() => setGlobalStatus("")}
       trustedWorkspace={trustedWorkspace}

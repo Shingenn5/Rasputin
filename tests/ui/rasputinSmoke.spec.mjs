@@ -143,7 +143,7 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await page.locator("[data-testid='command-item']").filter({ hasText: "Chat" }).click();
   await expect(page.locator("[data-testid='chat-mode-chip']")).toContainText("Chat");
   await expect(page.locator("#objective")).toBeVisible();
-  await expect(page.locator("[data-testid='header-model-indicator']")).toBeVisible();
+  await expect(page.getByTestId("system-status-trigger")).toBeVisible();
   await expect(page.locator("#taskForm")).toBeVisible();
   const sessionsBefore = await request.get("/api/sessions");
   const sessionsBeforeBody = await sessionsBefore.json();
@@ -181,10 +181,9 @@ test("home shell settings and dry-run task work", async ({ page, request }) => {
   await page.locator("[data-testid='nav-chat']").click();
   await expect(page.locator("#chatView")).toBeVisible();
   await page.locator("[data-testid='chat-model-chip']").click();
-  await expect(page.locator("[data-testid='command-menu']")).toBeVisible();
-  await expect(page.locator("[data-testid='command-menu']")).toContainText("Model");
-  await page.locator("[data-testid='command-item']").filter({ hasText: "Testing Mode" }).click();
-  await expect(page.locator("[data-testid='command-menu']")).toBeHidden();
+  await expect(page.getByTestId("model-side-panel")).toBeVisible();
+  await page.getByTestId("model-option").filter({ hasText: "Testing Mode" }).click();
+  await expect(page.getByTestId("model-side-panel")).toBeHidden();
   await expect(page.locator("[data-testid='chat-model-chip']")).toContainText("Testing Mode");
   await page.locator("#objective").fill("Testing the Rasputin UI harness.");
   await page.locator("#sendBtn").click();

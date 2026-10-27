@@ -115,7 +115,7 @@ test("model filter, selection and clear action work at desktop, tablet and phone
     await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 220 : 0));
     const workspace = await page.locator("#mainContent").boundingBox();
     const composer = await page.locator("#objective").boundingBox();
-    await page.getByTestId("header-model-indicator").click();
+    await page.getByTestId("chat-model-chip").click();
     const dialog = page.getByRole("dialog", { name: "Select a model to load" });
     const input = dialog.getByRole("searchbox", { name: "Filter available models" });
     await expect(input).toBeFocused();
@@ -130,7 +130,7 @@ test("model filter, selection and clear action work at desktop, tablet and phone
     await dialog.getByTestId("model-option").filter({ hasText: "Studio Alpha" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("chat-selected-model-key")).toHaveAttribute("data-model-key", "studio-a");
-    await page.getByTestId("header-model-indicator").click();
+    await page.getByTestId("chat-model-chip").click();
     await expect(dialog.getByTestId("model-option").filter({ hasText: "Studio Alpha" })).toHaveAttribute("aria-pressed", "true");
     await expect(dialog).toHaveCSS("opacity", "1");
     const bounds = await dialog.boundingBox();
@@ -142,7 +142,10 @@ test("model filter, selection and clear action work at desktop, tablet and phone
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("chat-model-chip")).toBeFocused();
     expect(await page.locator("#mainContent").boundingBox()).toEqual(workspace);
-    expect(await page.locator("#objective").boundingBox()).toEqual(composer);
+    // Opening from the composer can scroll it into view on a phone.
+    const restoredComposer = await page.locator("#objective").boundingBox();
+    expect(restoredComposer.width).toBe(composer.width);
+    expect(restoredComposer.height).toBe(composer.height);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   }
 });
