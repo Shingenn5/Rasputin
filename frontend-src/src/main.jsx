@@ -11,6 +11,7 @@ import "./styles/secondary-views.css";
 import "./styles/motion.css";
 import "./styles/window-layout.css";
 import "./styles/studio-chrome.css";
+import "./styles/studio-home.css";
 import { AppProviders } from "./app/AppProviders.jsx";
 import { App } from "./app/App.jsx";
 import { applyMotionMode, readStoredMotionMode } from "./lib/motion.js";

@@ -13,6 +13,9 @@ import {
   PanelLeft,
   Plus,
   Search,
+  ChevronDown,
+  MoreHorizontal,
+  Sparkles,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -20,18 +23,24 @@ import { cn } from "@/lib/utils.js";
 import { canAccessView, canRunTasks, normalizedRole, roleLabel } from "@/lib/access.js";
 import { useFocusTrap } from "../useFocusTrap.js";
 
-/* Keep the daily-driver shell intentionally small. Advanced areas remain
- * reachable through the command palette and their existing routes, while
- * these five destinations describe the normal desktop workflow. */
+/* Shared workflows stay prominent; Rasputin's additional tools have an
+ * explicit, role-filtered home in More. */
 const NAV_GROUPS = [
   {
     label: "Work",
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
-
-      { view: "models", label: "Models", icon: Box, testId: "nav-models" },
+      { view: "models", label: "Model hub", icon: Box, testId: "nav-models" },
+      { view: "archive", label: "Library", icon: Folder, testId: "nav-archive" },
+      { view: "assistant", label: "Assistant", icon: Sparkles, testId: "nav-assistant" },
     ],
   },
+];
+
+const EXTRA_TOOLS = [
+  ["activity", "History and tasks"], ["memory", "Memory"], ["skills", "Skills"],
+  ["agents", "Agents"], ["approvals", "Approvals"], ["schedules", "Schedules"],
+  ["telegram", "Telegram"], ["trials", "Trials"],
 ];
 
 export function DashSidebar({
@@ -150,7 +159,7 @@ export function DashSidebar({
     <div
       className={cn(
         "relative h-dvh shrink-0 w-0 transition-[width] duration-200 ease-out",
-        collapsed ? "sm:w-[54px]" : "sm:w-[220px]",
+        collapsed ? "sm:w-[54px]" : "sm:w-[280px]",
       )}
     >
       {/* Mobile scrim — covers content behind the open sidebar overlay */}
@@ -173,7 +182,7 @@ export function DashSidebar({
         }}
         className={cn(
           "ras-sidebar ras-desktop-rail ras-sidebar-scroll absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
-          expanded ? "w-[220px]" : "w-[54px]",
+          expanded ? "w-[280px]" : "w-[54px]",
           // Mobile-only CSS hides closed controls from tab/AT order; desktop remains persistent.
           !mobileOpen && "is-mobile-closed -translate-x-full sm:translate-x-0",
           mobileOpen ? "shadow-2xl shadow-black/50" : "",
@@ -265,6 +274,17 @@ export function DashSidebar({
               {group.items.map(navBtn)}
             </div>
           ))}
+          <details className={cn("studio-more-tools", !expanded && "is-collapsed")}>
+            <summary aria-label="More Rasputin tools" title={!expanded ? "More Rasputin tools" : undefined}><MoreHorizontal size={18} />{expanded && <><span>More</span><ChevronDown size={13} /></>}</summary>
+            <div className="studio-more-tool-list">
+              {EXTRA_TOOLS.filter(([route]) => canAccessView(role, route)).map(([route, label]) => (
+                <button type="button" key={route} data-testid={`nav-${route}`} aria-current={view === route ? "page" : undefined} onClick={(event) => {
+                  event.currentTarget.closest("details").open = false;
+                  go(route);
+                }}>{label}</button>
+              ))}
+            </div>
+          </details>
 
           {/* The compact rail keeps an icon; the expanded rail exposes recent
            * conversations directly below projects, like the reference shell. */}

@@ -4,11 +4,17 @@ const models = [
   { key: "studio-a", model: "Studio Alpha", role: "main", provider: "openai-compatible", runtime: "external-local", runtimeStatus: "reachable", enabled: true, contextWindow: 32768 },
   { key: "studio-b", model: "Studio Beta", role: "coder", provider: "openai-compatible", runtime: "external-local", runtimeStatus: "reachable", enabled: true, contextWindow: 8192 },
 ];
+let authenticatedCookies;
 
 test.beforeEach(async ({ page, context }) => {
   test.skip(!process.env.RASPUTIN_TEST_PASSWORD, "Requires an isolated authenticated server");
-  const login = await context.request.post("/api/auth/login", { data: { username: "admin", password: process.env.RASPUTIN_TEST_PASSWORD } });
-  expect(login.ok()).toBeTruthy();
+  if (!authenticatedCookies) {
+    const login = await context.request.post("/api/auth/login", { data: { username: "admin", password: process.env.RASPUTIN_TEST_PASSWORD } });
+    expect(login.ok()).toBeTruthy();
+    authenticatedCookies = (await context.storageState()).cookies;
+  } else {
+    await context.addCookies(authenticatedCookies);
+  }
   await page.addInitScript(() => {
     if (!localStorage.getItem("rasputin-theme")) localStorage.setItem("rasputin-theme", "rasputin-dark");
     localStorage.setItem("rasputin-theme-explicit", "1");
@@ -82,7 +88,7 @@ test("search remains reachable in the collapsed rail and mobile drawer with the 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("sidebar-search")).toBeFocused();
   await page.getByTestId("sidebar-toggle").click();
-  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(220);
+  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(280);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "rasputin-light");
   await page.screenshot({ path: test.info().outputPath("light-sidebar.png") });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -112,7 +118,7 @@ test("recent chats traps focus and returns to its trigger", async ({ page }) => 
 test("model filter, selection and clear action work at desktop, tablet and phone widths", async ({ page }) => {
   for (const [width, height] of [[1440, 1000], [1024, 768], [390, 844]]) {
     await page.setViewportSize({ width, height });
-    await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 220 : 0));
+    await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 280 : 0));
     const workspace = await page.locator("#mainContent").boundingBox();
     const composer = await page.locator("#objective").boundingBox();
     await page.getByTestId("header-model-indicator").click();
@@ -140,9 +146,45 @@ test("model filter, selection and clear action work at desktop, tablet and phone
     await page.screenshot({ path: test.info().outputPath(`model-picker-${width}.png`) });
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByTestId("chat-model-chip")).toBeFocused();
+    await expect(page.getByTestId("header-model-indicator")).toBeFocused();
     expect(await page.locator("#mainContent").boundingBox()).toEqual(workspace);
     expect(await page.locator("#objective").boundingBox()).toEqual(composer);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   }
+});
+
+test("Unsloth-style welcome retains Rasputin recipes, modes, memory, and tool destinations", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.getByRole("heading", { name: "Good to see you", exact: true })).toBeVisible();
+  await expect(page.locator("#objective")).toHaveAttribute("placeholder", "Ask anything");
+  const greeting = await page.locator(".cc-quick-action-center").boundingBox();
+  const composer = await page.locator(".composer-box").boundingBox();
+  expect(composer.y).toBeGreaterThan(greeting.y + greeting.height + 25);
+  expect(composer.width).toBeLessThanOrEqual(736);
+  await page.getByTestId("prompt-recipe-trigger").click();
+  await expect(page.getByTestId("prompt-recipe-panel")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("chat-mode-chip").click();
+  await expect(page.getByTestId("command-menu")).toBeVisible();
+  await expect(page.getByTestId("command-item").filter({ hasText: "Code" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("response-options-trigger").click();
+  await expect(page.getByTestId("task-memory-mode-selector")).toBeVisible();
+  await page.getByTestId("task-memory-mode-selector").selectOption("suppress");
+  await expect(page.getByTestId("task-memory-mode-selector")).toHaveValue("suppress");
+  await expect(page.getByTestId("chat-reasoning-chip")).toBeVisible();
+  await page.getByTestId("response-options-trigger").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("response-options-trigger")).toBeFocused();
+  await page.getByLabel("More Rasputin tools", { exact: true }).click();
+  for (const route of ["memory", "skills", "agents", "approvals", "schedules", "telegram", "trials"]) {
+    await expect(page.getByTestId(`nav-${route}`)).toBeVisible();
+  }
+  await page.getByTestId("nav-memory").click();
+  await expect(page).toHaveURL(/#memory$/);
+  await page.getByTestId("sidebar-search").click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByRole("combobox").fill("skills");
+  await palette.getByRole("option").filter({ hasText: "Open Skills" }).click();
+  await expect(page).toHaveURL(/#skills$/);
 });
