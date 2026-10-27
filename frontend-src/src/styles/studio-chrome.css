@@ -1,0 +1,173 @@
+/* Unsloth study UI04–UI12/UI30: token-driven surfaces, soft selection and
+   consistent controls. Scoped to chrome/overlays; no workspace geometry or
+   composer selectors. Remove this import to roll back the visual treatment. */
+:is(#rasputin-sidebar, .ras-history-panel, .ras-command-panel, .ras-studio-overlay, .mode-side-panel) {
+  --studio-radius: 12px;
+  --studio-surface: var(--dash-panel);
+  --studio-hover: color-mix(in srgb, var(--dash-text) 6%, transparent);
+  --studio-selection: color-mix(in srgb, var(--ras-primary) 13%, var(--dash-panel));
+}
+
+#rasputin-sidebar {
+  --sidebar: color-mix(in srgb, var(--dash-bg) 78%, var(--dash-panel));
+  --sidebar-foreground: var(--dash-text);
+  --sidebar-primary: var(--ras-primary);
+  --sidebar-accent: color-mix(in srgb, var(--dash-text) 6%, var(--sidebar));
+  --sidebar-border: var(--dash-border);
+  --sidebar-ring: var(--ras-primary);
+  background: var(--sidebar);
+  border-right-color: var(--sidebar-border);
+  box-shadow: none;
+}
+
+#rasputin-sidebar::after,
+#rasputin-sidebar .ras-nav-item.is-active::before { display: none; }
+
+#rasputin-sidebar .ras-sidebar-brand { padding-block: 5px 16px; }
+#rasputin-sidebar .ras-sidebar-wordmark { font-weight: 650; }
+
+#rasputin-sidebar :is(.ras-nav-item, .ras-new-chat, .ras-open-project, .ras-sidebar-search) {
+  min-height: 40px;
+  border-radius: var(--studio-radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+#rasputin-sidebar .ras-nav-item { color: var(--dash-muted); }
+#rasputin-sidebar .ras-nav-item:hover { background: var(--sidebar-accent); color: var(--dash-text); }
+#rasputin-sidebar .ras-nav-item.is-active {
+  background: var(--studio-selection);
+  color: var(--dash-text);
+  box-shadow: none;
+}
+#rasputin-sidebar .ras-nav-active { border: 0; background: transparent; box-shadow: none; }
+#rasputin-sidebar .ras-nav-item svg { stroke-width: 1.65; }
+#rasputin-sidebar .ras-new-chat { margin-top: 8px; box-shadow: none; }
+#rasputin-sidebar .ras-open-project { border-color: transparent; background: transparent; color: var(--dash-text); }
+#rasputin-sidebar .ras-open-project:hover { background: var(--sidebar-accent); }
+#rasputin-sidebar :is(.ras-sidebar-section-label, #sidebar-projects-heading) {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--dash-muted);
+}
+#rasputin-sidebar .ras-sidebar-projects { margin-top: 18px; border-top-color: var(--dash-border); }
+#rasputin-sidebar .ras-sidebar-projects button { border-radius: 10px; }
+
+#rasputin-sidebar .ras-sidebar-search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--sidebar-border);
+  padding: 8px 10px;
+  background: var(--studio-surface);
+  color: var(--dash-muted);
+  text-align: left;
+}
+#rasputin-sidebar .ras-sidebar-search:hover { border-color: var(--dash-border-strong); color: var(--dash-text); }
+#rasputin-sidebar .ras-sidebar-search > span { min-width: 0; flex: 1; }
+#rasputin-sidebar .ras-sidebar-search kbd {
+  flex-shrink: 0;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 5px;
+  padding: 1px 4px;
+  background: transparent;
+  color: var(--dash-muted);
+  font: 0.6rem var(--ras-font-ui);
+}
+#rasputin-sidebar .ras-sidebar-search.is-collapsed { justify-content: center; padding-inline: 0; }
+#rasputin-sidebar button:focus-visible {
+  outline: 2px solid var(--sidebar-ring);
+  outline-offset: 2px;
+}
+
+.ras-command-panel,
+.ras-studio-overlay,
+.mode-side-panel {
+  border: 1px solid var(--dash-border-strong);
+  border-radius: 20px;
+  background: var(--studio-surface);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 24%);
+}
+.ras-command-layer { padding-top: min(12vh, 80px); }
+.ras-command-panel input { min-width: 0; }
+.ras-command-panel [role="listbox"] { overscroll-behavior: contain; }
+html .ras-command-panel [role="option"] { border-radius: var(--studio-radius); }
+.ras-command-panel [role="option"][aria-selected="true"] { background: var(--studio-selection); }
+.ras-command-panel [role="option"] > span:first-child { border: 0; background: var(--studio-hover); }
+.ras-command-panel footer { flex-wrap: wrap; gap: 6px; padding-block: 12px; }
+.ras-history-panel { border-color: var(--dash-border); background: var(--dash-panel); color: var(--dash-text); }
+.ras-history-panel button { border-radius: var(--studio-radius); }
+.ras-studio-overlay .ras-modal-header { padding: 18px 22px; }
+.ras-studio-overlay .ras-modal-title { font-size: 1rem; font-weight: 600; letter-spacing: -0.015em; }
+.ras-studio-overlay .ras-modal-body { padding: 4px 22px 20px; }
+.ras-studio-overlay .studio-model-picker-search {
+  min-height: 44px;
+  border-color: var(--dash-border);
+  border-radius: var(--studio-radius);
+  background: var(--dash-input);
+  padding: 8px 12px;
+}
+.ras-studio-overlay .studio-model-picker-search:focus-within {
+  border-color: var(--ras-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ras-primary) 15%, transparent);
+}
+.ras-studio-overlay .studio-model-picker-search input { width: 100%; font-size: 0.85rem; }
+.ras-studio-overlay .studio-model-filter-clear {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dash-muted);
+}
+.ras-studio-overlay .studio-model-filter-clear:hover { background: var(--studio-hover); color: var(--dash-text); }
+.ras-studio-overlay .studio-model-picker-head { margin-top: 16px; padding: 8px 4px 12px; border: 0; }
+.ras-studio-overlay .studio-model-picker-head strong { color: var(--dash-text); font-weight: 500; }
+.ras-studio-overlay .studio-model-picker-list { display: grid; gap: 4px; overscroll-behavior: contain; }
+.ras-studio-overlay .studio-model-picker-list .model-choice {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto 17px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--studio-radius);
+  padding: 12px;
+  background: transparent;
+  text-align: left;
+}
+.ras-studio-overlay .model-choice:hover { background: var(--studio-hover); }
+.ras-studio-overlay .model-choice.is-active { border-color: color-mix(in srgb, var(--ras-primary) 35%, transparent); background: var(--studio-selection); }
+.ras-studio-overlay .model-choice strong { font-size: 0.85rem; font-weight: 550; }
+.ras-studio-overlay .model-choice small { margin-top: 4px; font-size: 0.72rem; }
+.ras-studio-overlay .model-choice em { font-size: 0.7rem; }
+.ras-studio-overlay .model-choice-check { visibility: hidden; color: var(--ras-primary); }
+.ras-studio-overlay .model-choice.is-active .model-choice-check { visibility: visible; }
+.ras-studio-overlay .model-panel-empty { padding: 28px 12px; text-align: center; color: var(--dash-muted); }
+.ras-studio-overlay .studio-model-picker-footer { flex-wrap: wrap; margin-top: 14px; border-top: 1px solid var(--dash-border); padding-top: 16px; }
+.ras-studio-overlay .studio-model-picker-footer button { min-height: 36px; border-radius: 10px; }
+.mode-side-panel .mode-card { border-radius: var(--studio-radius); box-shadow: none; }
+.mode-side-panel .mode-card.is-active { background: var(--studio-selection); }
+aside.mode-side-panel :is(select, input, .icon-button) { border-radius: 8px; }
+
+@media (max-width: 639px) {
+  #rasputin-sidebar :is(.ras-nav-item, .ras-new-chat, .ras-open-project, .ras-sidebar-search) { min-height: 44px; }
+  .ras-studio-overlay.studio-model-picker { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .ras-studio-overlay .ras-modal-header { padding: 16px; }
+  .ras-studio-overlay .ras-modal-body { padding-inline: 16px; }
+  .ras-studio-overlay .model-choice { gap: 8px; padding: 10px 8px; }
+  .ras-studio-overlay .model-choice em { max-width: 70px; overflow-wrap: anywhere; }
+  .ras-command-panel [role="option"] { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #rasputin-sidebar button { transition: none; }
+}
+html[data-motion="reduced"] #rasputin-sidebar button { transition: none; }

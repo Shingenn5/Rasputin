@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { canAccessView, canRunTasks, normalizedRole, roleLabel } from "@/lib/access.js";
+import { useFocusTrap } from "../useFocusTrap.js";
 
 /* Keep the daily-driver shell intentionally small. Advanced areas remain
  * reachable through the command palette and their existing routes, while
@@ -73,6 +74,12 @@ export function DashSidebar({
   const historySearchRef = useRef(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
+  const historyPanelRef = useFocusTrap({
+    active: historyOpen,
+    onClose: () => setHistoryOpen(false),
+    initialFocusRef: historySearchRef,
+    returnFocusRef: historyTriggerRef,
+  });
   const wasMobileOpenRef = useRef(mobileOpen);
   const reducedMotion = motionMode === "reduced";
   // Collapsed mode is a deliberate, persistent rail. It never relies on hover
@@ -94,21 +101,7 @@ export function DashSidebar({
   }, [mobileOpen, mobileTriggerRef]);
 
   useEffect(() => {
-    if (!historyOpen) return undefined;
-    historySearchRef.current?.focus();
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setHistoryOpen(false);
-        setHistoryQuery("");
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [historyOpen]);
-
-  useEffect(() => {
-    if (!historyOpen) historyTriggerRef.current?.focus();
+    if (!historyOpen) setHistoryQuery("");
   }, [historyOpen]);
 
   const isActive = (item) =>
@@ -207,6 +200,19 @@ export function DashSidebar({
           )}
         </div>
 
+        <button
+          type="button"
+          data-testid="sidebar-search"
+          aria-label="Search Rasputin"
+          aria-keyshortcuts="Control+k Meta+k"
+          title="Search Rasputin (Ctrl+K)"
+          onClick={() => window.dispatchEvent(new Event("rasputin:open-command-palette"))}
+          className={cn("ras-sidebar-search", !expanded && "is-collapsed")}
+        >
+          <Search size={17} aria-hidden="true" />
+          {expanded && <><span>Search anything</span><kbd aria-hidden="true">Ctrl K</kbd></>}
+        </button>
+
         {/* New chat */}
         {taskAccess ? <button
           type="button"
@@ -250,7 +256,7 @@ export function DashSidebar({
               <div
                 id={`nav-group-${group.label.toLowerCase()}`}
                 className={cn(
-                  "px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35",
+                  "ras-sidebar-section-label px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35",
                   !expanded && "sr-only",
                 )}
               >
@@ -380,13 +386,14 @@ export function DashSidebar({
             className="fixed inset-0 z-40 cursor-default bg-black/25 sm:bg-transparent"
           />
           <section
+            ref={historyPanelRef}
             id="history-drawer"
             data-testid="history-drawer"
             role="dialog"
             aria-modal="true"
             aria-labelledby="history-drawer-title"
             className={cn(
-              "fixed inset-y-0 left-0 z-50 flex w-[min(360px,calc(100vw-1rem))] flex-col border-r border-sidebar-border bg-sidebar px-4 py-4 text-sidebar-foreground shadow-2xl shadow-black/40 sm:left-[220px]",
+              "ras-history-panel fixed inset-y-0 left-0 z-50 flex w-[min(360px,calc(100vw-1rem))] flex-col border-r border-sidebar-border bg-sidebar px-4 py-4 text-sidebar-foreground shadow-2xl shadow-black/40 sm:left-[220px]",
               collapsed && "sm:left-[54px]",
             )}
           >

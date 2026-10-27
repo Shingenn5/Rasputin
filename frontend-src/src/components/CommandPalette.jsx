@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Activity, Command, FileText, MessageSquare, Search, X } from "lucide-react";
 import { api } from "../api/client.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { useFocusTrap } from "./useFocusTrap.js";
 
 function ResultIcon({ type }) {
   if (type === "task") return <Activity size={16} />;
@@ -17,6 +18,12 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
+  const listId = useId();
+  const dialogRef = useFocusTrap({
+    active: open,
+    onClose: () => setOpen(false),
+    initialFocusRef: inputRef,
+  });
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -42,8 +49,11 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
     setQuery("");
     setResults([]);
     setActiveIndex(0);
-    window.requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
+
+  useEffect(() => {
+    if (open) document.getElementById(`${listId}-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex, listId]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -91,8 +101,8 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <section className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div className="ras-command-layer fixed inset-0 z-[1100] flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+      <section ref={dialogRef} className="ras-command-panel w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl" role="dialog" aria-modal="true" aria-label="Command palette">
         <div className="flex items-center gap-3 border-b border-border px-4">
           <Search size={18} className="text-muted-foreground" />
           <input
@@ -107,10 +117,15 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
             className="h-14 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             placeholder="Search chats and artifacts, or run a command..."
             aria-label="Search commands and Rasputin history"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-activedescendant={items[activeIndex] ? `${listId}-${activeIndex}` : undefined}
           />
           <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close command palette"><X size={16} /></Button>
         </div>
-        <div className="max-h-[58vh] overflow-y-auto p-2" role="listbox">
+        <div id={listId} className="max-h-[58vh] overflow-y-auto p-2" role="listbox" aria-label="Commands and search results">
           {items.map((item, index) => {
             const key = item.kind === "command" ? `command-${item.command.label}` : `result-${item.result.type}-${item.result.id}`;
             return (
@@ -118,6 +133,7 @@ export function CommandPalette({ commands = [], onOpenTask, onOpenSession }) {
                 key={key}
                 type="button"
                 role="option"
+                id={`${listId}-${index}`}
                 aria-selected={index === activeIndex}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => activate(item)}
