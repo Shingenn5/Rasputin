@@ -14,6 +14,10 @@ The implementation uses original Rasputin code and existing dependencies.
 ## Scope
 
 - Softer navigation rows, themed surfaces, quieter borders, and a sidebar search shortcut.
+- Visible recent-conversation rows below projects and a bottom settings entry; recent chats
+  no longer require opening a drawer just to see their titles.
+- A contrasting neutral New chat action and a lighter rail make the sidebar treatment visible
+  in the default dark palette. The center and composer keep their existing layout.
 - Search opens the existing command palette through its existing event.
 - Command search and recent chats reuse the shared focus trap and restore trigger focus.
 - The model dialog has a labelled filter, clear action, result count, and selected check.

@@ -9,7 +9,7 @@
 }
 
 #rasputin-sidebar {
-  --sidebar: color-mix(in srgb, var(--dash-bg) 78%, var(--dash-panel));
+  --sidebar: color-mix(in srgb, var(--dash-panel) 94%, var(--dash-text));
   --sidebar-foreground: var(--dash-text);
   --sidebar-primary: var(--ras-primary);
   --sidebar-accent: color-mix(in srgb, var(--dash-text) 6%, var(--sidebar));
@@ -43,8 +43,16 @@
 }
 #rasputin-sidebar .ras-nav-active { border: 0; background: transparent; box-shadow: none; }
 #rasputin-sidebar .ras-nav-item svg { stroke-width: 1.65; }
-#rasputin-sidebar .ras-new-chat { margin-top: 8px; box-shadow: none; }
-#rasputin-sidebar .ras-open-project { border-color: transparent; background: transparent; color: var(--dash-text); }
+#rasputin-sidebar .ras-new-chat {
+  margin-top: 8px;
+  border: 0;
+  background: var(--dash-text);
+  color: var(--dash-bg);
+  font-weight: 600;
+  box-shadow: none;
+}
+#rasputin-sidebar .ras-new-chat:hover { filter: brightness(0.94); }
+#rasputin-sidebar .ras-open-project { border: 0; background: transparent; color: var(--dash-text); box-shadow: none; }
 #rasputin-sidebar .ras-open-project:hover { background: var(--sidebar-accent); }
 #rasputin-sidebar :is(.ras-sidebar-section-label, #sidebar-projects-heading) {
   font-size: 0.7rem;
@@ -55,6 +63,50 @@
 }
 #rasputin-sidebar .ras-sidebar-projects { margin-top: 18px; border-top-color: var(--dash-border); }
 #rasputin-sidebar .ras-sidebar-projects button { border-radius: 10px; }
+#rasputin-sidebar .ras-nav-item.is-active { border: 0; }
+#rasputin-sidebar .ras-nav-active { display: none; }
+#rasputin-sidebar .ras-sidebar-recents { flex-shrink: 0; margin-top: 24px; }
+#rasputin-sidebar .ras-sidebar-recents header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  padding-inline: 12px;
+  color: var(--dash-muted);
+  font-size: 0.7rem;
+}
+#rasputin-sidebar .ras-sidebar-recents header button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 3px 4px;
+  color: var(--dash-muted);
+  font: inherit;
+}
+#rasputin-sidebar .ras-sidebar-recents header button:hover { background: var(--sidebar-accent); color: var(--dash-text); }
+#rasputin-sidebar [data-testid="sidebar-recent-session"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--dash-muted);
+  font-size: 0.78rem;
+  text-align: left;
+}
+#rasputin-sidebar [data-testid="sidebar-recent-session"] span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#rasputin-sidebar [data-testid="sidebar-recent-session"] svg { flex-shrink: 0; opacity: 0.7; }
+#rasputin-sidebar [data-testid="sidebar-recent-session"]:is(:hover, [aria-current="page"]) { background: var(--sidebar-accent); color: var(--dash-text); }
+#rasputin-sidebar .ras-sidebar-recents p { padding: 8px 12px; color: var(--dash-muted); font-size: 0.75rem; line-height: 1.5; }
+#rasputin-sidebar .ras-sidebar-settings { flex-shrink: 0; margin-top: 12px; border-top: 1px solid var(--sidebar-border); padding-top: 10px; }
+#rasputin-sidebar .ras-sidebar-settings button { display: flex; width: 100%; align-items: center; gap: 12px; padding: 8px 12px; text-align: left; }
+#rasputin-sidebar .ras-sidebar-settings button.is-collapsed { justify-content: center; padding-inline: 0; }
 
 #rasputin-sidebar .ras-sidebar-search {
   display: flex;
@@ -159,6 +211,7 @@ aside.mode-side-panel :is(select, input, .icon-button) { border-radius: 8px; }
 
 @media (max-width: 639px) {
   #rasputin-sidebar :is(.ras-nav-item, .ras-new-chat, .ras-open-project, .ras-sidebar-search) { min-height: 44px; }
+  #rasputin-sidebar [data-testid="sidebar-recent-session"] { min-height: 44px; }
   .ras-studio-overlay.studio-model-picker { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
   .ras-studio-overlay .ras-modal-header { padding: 16px; }
   .ras-studio-overlay .ras-modal-body { padding-inline: 16px; }
