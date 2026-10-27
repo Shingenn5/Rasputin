@@ -20,12 +20,31 @@ test.beforeEach(async ({ page, context }) => {
     json.data.security = { ...json.data.security, native: true, desktopOnly: true };
     json.data.preferences = { ...json.data.preferences, onboarded: true, sidebarCollapsed: false, selectedModel: "studio-a" };
     json.data.models = models;
+    json.data.sessions = { sessions: [
+      { id: "studio-session-one", title: "Plan the release", model: "Studio Alpha" },
+      { id: "studio-session-two", title: "Review the interface", model: "Studio Beta" },
+    ] };
     await route.fulfill({ json });
   });
   await page.route("**/api/model-registry", route => route.fulfill({ json: { ok: true, data: { models } } }));
   await page.goto("/#chat");
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   await expect(page.locator("#objective")).toBeVisible();
+});
+
+test("expanded sidebar exposes recent conversations and keeps settings below the workspace groups", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const recents = page.getByTestId("sidebar-recent-sessions");
+  await expect(recents.getByRole("button", { name: "Plan the release" })).toBeVisible();
+  await expect(recents.getByRole("button", { name: "Review the interface" })).toBeVisible();
+  const recentBounds = await recents.boundingBox();
+  const settingsBounds = await page.getByTestId("nav-settings").boundingBox();
+  expect(settingsBounds.y).toBeGreaterThan(recentBounds.y + recentBounds.height);
+  await page.getByTestId("history-drawer-trigger").click();
+  await expect(page.getByTestId("history-drawer")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(recents.getByRole("button", { name: "Plan the release" })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("visible-sidebar-redesign.png") });
 });
 
 test("sidebar search supports keyboard navigation, focus trapping and restoration", async ({ page }) => {

@@ -226,7 +226,7 @@ export function DashSidebar({
           )}
         >
           <Plus size={18} className="shrink-0" />
-          {expanded && <span>New Chat</span>}
+          {expanded && <span>New chat</span>}
         </button> : <div
           data-testid="viewer-read-only-notice"
           className={cn("mb-2 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/60 px-3 py-2 text-[0.68rem] text-sidebar-foreground/65", !expanded && "px-1 text-center")}
@@ -266,9 +266,9 @@ export function DashSidebar({
             </div>
           ))}
 
-          {/* History stays lightweight: recent chats live in a popover instead of
-           * taking a permanent destination in the primary navigation. */}
-          <button
+          {/* The compact rail keeps an icon; the expanded rail exposes recent
+           * conversations directly below projects, like the reference shell. */}
+          {!expanded && <button
             ref={historyTriggerRef}
             type="button"
             data-testid="history-drawer-trigger"
@@ -288,29 +288,7 @@ export function DashSidebar({
             {(runningCount || taskCount) > 0 && (
               <span className={cn("rounded-full bg-sidebar-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-sidebar-primary", !expanded && "absolute -right-0.5 -top-1 px-1.5 py-0")}>{runningCount || taskCount}</span>
             )}
-          </button>
-
-          {/* Settings — pinned with the primary nav, always reachable */}
-          <div className="mt-auto pt-2">
-            <button
-              type="button"
-              data-testid="nav-settings"
-              aria-label="Settings"
-              aria-current={view === "settings" ? "page" : undefined}
-              onClick={() => go("settings", "general")}
-              title={!expanded ? "Settings" : undefined}
-              className={cn(
-                "ras-nav-item flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium transition-colors",
-                view === "settings"
-                  ? "is-active bg-sidebar-accent text-sidebar-foreground"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                !expanded && "justify-center px-0",
-              )}
-            >
-              <Settings size={18} className="shrink-0" />
-              {expanded && <span>Settings</span>}
-            </button>
-          </div>
+          </button>}
         </nav>
 
         {expanded && (
@@ -346,7 +324,55 @@ export function DashSidebar({
           </section>
         )}
 
+        {expanded && (
+          <section className="ras-sidebar-recents" aria-labelledby="sidebar-recents-heading">
+            <header>
+              <span id="sidebar-recents-heading">Recent chats</span>
+              <button
+                ref={historyTriggerRef}
+                type="button"
+                data-testid="history-drawer-trigger"
+                aria-label="Recent chats"
+                aria-expanded={historyOpen}
+                aria-controls="history-drawer"
+                onClick={() => setHistoryOpen(open => !open)}
+              >View all</button>
+            </header>
+            <div data-testid="sidebar-recent-sessions">
+              {sessions.slice(0, 6).map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-testid="sidebar-recent-session"
+                  title={item.title || "Untitled chat"}
+                  aria-current={item.id === activeSessionId ? "page" : undefined}
+                  onClick={() => resumeSession?.(item.id)}
+                >
+                  <MessageSquare size={15} aria-hidden="true" />
+                  <span>{item.title || "Untitled chat"}</span>
+                </button>
+              ))}
+              {!sessions.length && <p>Your conversations will appear here.</p>}
+            </div>
+          </section>
+        )}
+
         <div className="min-h-0 flex-1" aria-hidden="true" />
+
+        <div className="ras-sidebar-settings">
+          <button
+            type="button"
+            data-testid="nav-settings"
+            aria-label="Settings"
+            aria-current={view === "settings" ? "page" : undefined}
+            onClick={() => go("settings", "general")}
+            title={!expanded ? "Settings" : undefined}
+            className={cn("ras-nav-item", view === "settings" && "is-active", !expanded && "is-collapsed")}
+          >
+            <Settings size={18} aria-hidden="true" />
+            {expanded && <span>Settings</span>}
+          </button>
+        </div>
 
         {/* Runtime identity + privacy state — launch-time facts, never browser toggles. */}
         <div className={cn("ras-sidebar-footer mt-2 flex shrink-0 flex-col gap-1", !expanded && "is-collapsed", desktopOnly && "hidden")}>
