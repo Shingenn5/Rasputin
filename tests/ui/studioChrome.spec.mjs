@@ -48,6 +48,113 @@ test("expanded sidebar exposes recent conversations and keeps settings below the
   await page.screenshot({ path: test.info().outputPath("visible-sidebar-redesign.png") });
 });
 
+test("popup families share the workstation surface at desktop tablet and phone sizes", async ({ page }) => {
+  test.setTimeout(60000);
+  for (const [width, height] of [[1440, 1000], [768, 1024], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await page.getByTestId("chat-model-chip").click();
+    const model = page.getByRole("dialog", { name: "Select a model to load" });
+    await expect(model).toBeVisible();
+    const surface = await model.evaluate(element => getComputedStyle(element).backgroundColor);
+    const border = await model.evaluate(element => getComputedStyle(element).borderTopColor);
+    await expect(model).toHaveCSS("background-image", "none");
+    await expect(model).toHaveCSS("border-top-left-radius", "14px");
+    await page.screenshot({ path: test.info().outputPath(`menus-model-${width}.png`) });
+    await page.keyboard.press("Escape");
+    const controls = [
+      ["prompt-recipe-trigger", "prompt-recipe-panel", "recipes"],
+      ["composer-command-button", "command-menu", "commands"],
+      ["response-options-trigger", null, "options"],
+      ["system-status-trigger", null, "hardware"],
+    ];
+    for (const [trigger, testId, name] of controls) {
+      await page.getByTestId(trigger).click();
+      const popup = testId ? page.getByTestId(testId) : page.locator(name === "options" ? ".studio-response-popover" : ".system-status-popup");
+      await expect(popup).toBeVisible();
+      await expect(popup).toHaveCSS("background-color", surface);
+      await expect(popup).toHaveCSS("border-top-color", border);
+      await expect(popup).toHaveCSS("border-top-left-radius", "14px");
+      await expect(popup).toHaveCSS("background-image", "none");
+      const bounds = await popup.boundingBox();
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1);
+      await page.screenshot({ path: test.info().outputPath(`menus-${name}-${width}.png`) });
+      await page.keyboard.press("Escape");
+      await expect(popup).toBeHidden();
+    }
+  }
+});
+
+test("native select popup uses the shared palette and retains keyboard and mouse selection", async ({ page }) => {
+  await page.getByTestId("response-options-trigger").click();
+  const select = page.getByTestId("task-memory-mode-selector");
+  await select.selectOption("suppress");
+  await expect(select).toHaveValue("suppress");
+  expect(await page.evaluate(() => CSS.supports("appearance", "base-select"))).toBe(true);
+  await select.click();
+  await expect(select.locator("option").first()).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("menus-native-picker.png") });
+  await select.locator("option").first().click();
+  await expect(select).toHaveValue("auto");
+  await select.focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await expect(select).not.toHaveValue("auto");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("response-options-trigger")).toBeFocused();
+});
+
+test("agent routing panel follows the shared surface and remains reachable by keyboard", async ({ page }) => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByTestId("response-options-trigger").click();
+    const options = page.locator(".studio-response-popover");
+    const surface = await options.evaluate(element => getComputedStyle(element).backgroundColor);
+    await options.getByRole("button", { name: "Agent roles and helpers" }).click();
+    const modes = page.getByTestId("mode-side-panel");
+    await expect(modes).toBeVisible();
+    await expect(modes).toHaveCSS("background-color", surface);
+    await expect(modes).toHaveCSS("background-image", "none");
+    await expect(modes.getByLabel("Chat model override")).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`menus-routing-${width}.png`) });
+    await page.keyboard.press("Escape");
+    await expect(modes).toBeHidden();
+    if (await options.isVisible()) await page.getByTestId("response-options-trigger").press("Escape");
+  }
+});
+
+test("portalled settings history and folder dialogs share colors in both themes", async ({ page }) => {
+  for (const theme of ["rasputin-dark", "rasputin-light"]) {
+    await page.evaluate(value => localStorage.setItem("rasputin-theme", value), theme);
+    await page.reload();
+    await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
+    await page.getByTestId("chat-model-chip").click();
+    const model = page.getByRole("dialog", { name: "Select a model to load" });
+    const surface = await model.evaluate(element => getComputedStyle(element).backgroundColor);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("history-drawer-trigger").click();
+    await expect(page.getByTestId("history-drawer")).toHaveCSS("background-color", surface);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("nav-settings").click();
+    const settings = page.getByTestId("desktop-settings-dialog");
+    await expect(settings).toBeVisible();
+    await expect(settings).toHaveCSS("background-color", surface);
+    await expect(settings).toHaveCSS("background-image", "none");
+    await page.screenshot({ path: test.info().outputPath(`menus-settings-${theme}.png`) });
+    await page.keyboard.press("Escape");
+    await page.getByTestId("open-project").click();
+    await page.getByTestId("open-project-primary").click();
+    const folder = page.getByRole("dialog").filter({ hasText: "Open a project folder" });
+    await expect(folder.locator(".modal-content")).toHaveCSS("background-color", surface);
+    await expect(folder).toHaveCSS("opacity", "1");
+    await expect(folder.locator(".modal-dialog")).toHaveCSS("transform", "none");
+    await page.screenshot({ path: test.info().outputPath(`menus-folder-${theme}.png`) });
+    await page.keyboard.press("Escape");
+    await page.getByTestId("nav-chat").click();
+  }
+});
+
 test("REA welcome keeps the header removed and options available at every screen size", async ({ page }) => {
   for (const [width, height] of [[1440, 1000], [768, 1024], [390, 844]]) {
     await page.setViewportSize({ width, height });

@@ -1,7 +1,8 @@
 /* Unsloth UI reference: chat welcome pt-[27.5dvh], content 46rem,
    greeting gap-9, composer radius 28px. Restored from commit 415c738.
    Rasputin keeps its existing handlers, roles, and local runtime. */
-html[data-theme="rasputin-dark"] #appFrame {
+/* Portalled dialogs need the same palette as the workstation. */
+html[data-theme="rasputin-dark"] {
   --dash-bg: #191919;
   --dash-panel: #262626;
   --dash-panel-2: #2c2c2c;

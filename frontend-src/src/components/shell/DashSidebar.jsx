@@ -508,7 +508,6 @@ export function DashSidebar({
           >
             <header className="flex items-start justify-between gap-3 border-b border-sidebar-border pb-3">
               <div>
-                <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">Workspace memory</p>
                 <h2 id="history-drawer-title" className="mt-1 text-base font-semibold">Recent chats</h2>
               </div>
               <button type="button" data-testid="history-drawer-close" aria-label="Close recent chats" onClick={() => setHistoryOpen(false)} className="grid size-8 place-items-center rounded-lg text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground">&#215;</button>

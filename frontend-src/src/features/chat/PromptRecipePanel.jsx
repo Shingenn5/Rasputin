@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronRight, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, X } from "lucide-react";
 import { useFocusTrap } from "../../components/useFocusTrap.js";
 import {
   buildRecipeObjective,
@@ -77,7 +77,6 @@ export function PromptRecipePanel({
     >
       <header className="prompt-recipe-head">
         <div>
-          <span className="prompt-recipe-eyebrow"><Sparkles size={13} aria-hidden="true" /> Guided prompts</span>
           <h2 id="promptRecipeTitle">{selected ? selected.title : "Choose a recipe"}</h2>
           <p>{selected ? "Fill what you know, then edit the final objective before using it." : "Start from a proven job instead of a blank prompt."}</p>
         </div>

@@ -34,7 +34,6 @@ export function ModeSidePanel({
     >
       <header className="mode-panel-head">
         <div>
-          <span className="eyebrow">Task routing</span>
           <h2 id="modePanelTitle">Choose mode</h2>
         </div>
         <button className="icon-button" type="button" aria-label="Close mode panel" onClick={close}>

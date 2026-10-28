@@ -1,0 +1,186 @@
+/* Shared overlay treatment. Remove this import to roll back the menu styling.
+   Positioning, focus management and native control semantics stay with their owners. */
+:root {
+  --menu-surface: var(--dash-panel);
+  --menu-input: var(--dash-bg);
+  --menu-text: var(--dash-text);
+  --menu-muted: var(--dash-muted);
+  --menu-border: var(--dash-border-strong);
+  --menu-hover: color-mix(in srgb, var(--menu-text) 8%, var(--menu-surface));
+  --menu-selected: color-mix(in srgb, var(--menu-text) 12%, var(--menu-surface));
+  --menu-radius: 14px;
+  --menu-control-radius: 8px;
+}
+
+/* .modal is Bootstrap's full-screen layer, not the visible dialog surface. */
+html body :is([role="dialog"]:not(.modal), .modal-content, .ras-drawer,
+  .cmd-menu, .studio-response-popover, .workspace-access-popover, .dropdown-menu) {
+  --studio-surface: var(--menu-surface);
+  --studio-hover: var(--menu-hover);
+  --studio-selection: var(--menu-selected);
+  background: var(--menu-surface);
+  color: var(--menu-text);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  box-shadow: none;
+  font-family: var(--ras-font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--menu-border) transparent;
+}
+
+html body :is(.ras-modal-header, .modal-header, .mode-panel-head,
+  .prompt-recipe-head, .ras-drawer-header) {
+  background: transparent;
+  border-color: var(--dash-border);
+  padding: 18px 20px;
+}
+
+html body :is(.ras-modal-title, .modal-title, .mode-panel-head h2,
+  .prompt-recipe-head h2, .ras-drawer-title, .system-status-heading strong) {
+  margin: 0;
+  color: var(--menu-text);
+  font-family: var(--ras-font-ui);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+
+html body :is(.cmd-menu-foot, .cmd-menu-crumb, .studio-model-picker-footer,
+  .modal-footer, .prompt-recipe-footer) {
+  background: transparent;
+  border-color: var(--dash-border);
+  color: var(--menu-muted);
+}
+
+html body :is(.cmd-item, .dropdown-item, .studio-more-tool-list button,
+  .ras-command-panel [role="option"], .studio-model-picker .model-choice,
+  .prompt-recipe-card, .prompt-recipe-modes button, .mode-card) {
+  border-radius: var(--menu-control-radius);
+  box-shadow: none;
+}
+
+html body :is(.cmd-item, .dropdown-item, .studio-more-tool-list button,
+  .ras-command-panel [role="option"], .studio-model-picker .model-choice,
+  .prompt-recipe-card, .prompt-recipe-modes button):hover {
+  background: var(--menu-hover);
+  color: var(--menu-text);
+}
+
+html body :is(.cmd-item.is-active, .dropdown-item.active,
+  .ras-command-panel [role="option"][aria-selected="true"],
+  .studio-model-picker .model-choice.is-active, .mode-card.is-active,
+  .prompt-recipe-modes button.is-active) {
+  background: var(--menu-selected);
+  border-color: var(--menu-border);
+  color: var(--menu-text);
+}
+
+html body :is(.ras-modal-close, .ras-drawer-close,
+  [role="dialog"] .icon-button, .system-status-heading button) {
+  min-width: 36px;
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--menu-control-radius);
+  background: transparent;
+  color: var(--menu-muted);
+  box-shadow: none;
+}
+html body :is(.ras-modal-close, .ras-drawer-close,
+  [role="dialog"] .icon-button, .system-status-heading button):hover {
+  background: var(--menu-hover);
+  color: var(--menu-text);
+}
+
+html body :is([role="dialog"], .modal-content, .ras-drawer,
+  .cmd-menu, .studio-response-popover, .workspace-access-popover, .dropdown-menu)
+  :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea) {
+  border-color: var(--menu-border);
+  border-radius: var(--menu-control-radius);
+  background-color: var(--menu-input);
+  color: var(--menu-text);
+  font-family: var(--ras-font-ui);
+  box-shadow: none;
+}
+
+html body select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-control-radius);
+  background-color: var(--menu-input);
+  color: var(--menu-text);
+  font-family: var(--ras-font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+html body select:disabled { opacity: 0.55; cursor: not-allowed; }
+html body select option { background: var(--menu-surface); color: var(--menu-text); }
+
+/* Chromium's native customizable picker keeps select/onChange, keyboard search,
+   disabled options and form submission while allowing the popup to share tokens. */
+@supports (appearance: base-select) {
+  html body select:not([multiple]),
+  html body select:not([multiple])::picker(select) { appearance: base-select; }
+  html body select:not([multiple]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background-image: none;
+  }
+  html body select:not([multiple])::picker(select) {
+    margin-block: 6px;
+    padding: 5px;
+    border: 1px solid var(--menu-border);
+    border-radius: var(--menu-radius);
+    background: var(--menu-surface);
+    color: var(--menu-text);
+    box-shadow: none;
+    max-height: min(360px, 60dvh);
+    max-width: calc(100vw - 24px);
+    overflow: auto;
+    font-family: var(--ras-font-ui);
+    font-size: 13px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--menu-border) transparent;
+  }
+  html body select:not([multiple]) option {
+    min-height: 36px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: var(--menu-control-radius);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  html body select:not([multiple]) option:is(:hover, :focus, :checked) {
+    background: var(--menu-selected);
+    color: var(--menu-text);
+  }
+  html body select:not([multiple]) option:disabled { color: var(--menu-muted); opacity: 0.55; }
+  html body select::picker-icon { color: var(--menu-muted); }
+}
+
+html body :is([role="dialog"], .modal-content, .ras-drawer,
+  .cmd-menu, .studio-response-popover, .workspace-access-popover, .dropdown-menu)
+  :is(button, input, select, textarea, summary, a[href]):focus-visible,
+html body select:focus-visible {
+  outline: 2px solid var(--ras-primary);
+  outline-offset: 2px;
+}
+
+@media (max-width: 639px) {
+  html body :is(.ras-modal-header, .modal-header, .mode-panel-head, .prompt-recipe-head) { padding: 16px; }
+  html body :is(.cmd-item, .dropdown-item, .studio-more-tool-list button, select) { min-height: 44px; }
+}
+
+@media (min-width: 640px) {
+  .studio-response-popover { left: auto; right: 0; }
+}
