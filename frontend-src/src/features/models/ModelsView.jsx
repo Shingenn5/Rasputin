@@ -669,7 +669,7 @@ export function ModelsView({
       {/* ── Header ── */}
       <div className="models-page-header models-v3-command-band">
         <div className="models-v3-command-copy">
-          <h1>{view === "discover" ? "Model Hub" : "Library"}</h1>
+          <h1>Model Hub</h1>
           <p>{view === "discover" ? "Find the right model, choose an exact variant, and download it." : "Import, configure, and run the models on your workstation."}</p>
         </div>
         {desktopOnly && (

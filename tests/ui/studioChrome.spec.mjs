@@ -13,7 +13,7 @@ test.beforeEach(async ({ page, context }) => {
     if (!localStorage.getItem("rasputin-theme")) localStorage.setItem("rasputin-theme", "rasputin-dark");
     localStorage.setItem("rasputin-theme-explicit", "1");
     localStorage.setItem("rasputin-sidebar-collapsed", "false");
-    if (!localStorage.getItem("rasputin-sidebar-width")) localStorage.setItem("rasputin-sidebar-width", "260");
+    if (!localStorage.getItem("rasputin-sidebar-width")) localStorage.setItem("rasputin-sidebar-width", "280");
   });
   await page.route("**/api/ui/bootstrap", async route => {
     const response = await route.fetch();
@@ -46,6 +46,26 @@ test("expanded sidebar exposes recent conversations and keeps settings below the
   await page.keyboard.press("Escape");
   await expect(recents.getByRole("button", { name: "Plan the release" })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("visible-sidebar-redesign.png") });
+});
+
+test("REA welcome keeps the header removed and options available at every screen size", async ({ page }) => {
+  for (const [width, height] of [[1440, 1000], [768, 1024], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const chat = page.locator("#chatView");
+    await expect(chat).toHaveClass(/studio-home\b.*\bis-welcome/);
+    await expect(chat.locator(".cc-header")).toHaveCount(0);
+    await expect(chat.getByText("Good to see you", { exact: true })).toBeVisible();
+    await expect(chat.locator(".composer-actions").getByTestId("chat-model-chip")).toBeVisible();
+    const options = page.getByTestId("response-options-trigger");
+    await options.click();
+    await expect(page.getByTestId("task-memory-mode-selector")).toBeVisible();
+    await expect(page.getByTestId("chat-reasoning-chip")).toBeVisible();
+    await options.press("Escape");
+    await expect(page.getByTestId("task-memory-mode-selector")).toBeHidden();
+    await expect(options).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: test.info().outputPath(`rea-welcome-${width}.png`) });
+  }
 });
 
 test("sidebar search supports keyboard navigation, focus trapping and restoration", async ({ page }) => {
@@ -83,7 +103,7 @@ test("search remains reachable in the collapsed rail and mobile drawer with the 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("sidebar-search")).toBeFocused();
   await page.getByTestId("sidebar-toggle").click();
-  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(260);
+  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(280);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "rasputin-light");
   await page.screenshot({ path: test.info().outputPath("light-sidebar.png") });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -129,12 +149,12 @@ test("workstation sidebar resizes with mouse and keyboard, persists, and resets"
   await page.reload();
   await expect(separator).toHaveAttribute("aria-valuenow", "320");
   await separator.dblclick();
-  await expect(separator).toHaveAttribute("aria-valuenow", "260");
+  await expect(separator).toHaveAttribute("aria-valuenow", "280");
   await page.getByTestId("sidebar-toggle").click();
   await expect(separator).toHaveCount(0);
   await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(54);
   await page.getByTestId("sidebar-toggle").click();
-  await expect(separator).toHaveAttribute("aria-valuenow", "260");
+  await expect(separator).toHaveAttribute("aria-valuenow", "280");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(separator).toBeHidden();
   await page.getByTestId("mobile-sidebar-toggle").click();
@@ -142,20 +162,24 @@ test("workstation sidebar resizes with mouse and keyboard, persists, and resets"
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 });
 
-test("Library and Model Hub remain in the workstation with accessible navigation", async ({ page }) => {
+test("Library, Model Hub and retained tools have accessible navigation", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const library = page.getByTestId("nav-models");
+  const library = page.getByTestId("nav-archive");
+  const installed = page.getByTestId("nav-models");
   const hub = page.getByTestId("nav-discover");
   await library.click();
   await expect(library).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("#modelsView h1")).toHaveText("Library");
+  await expect(page.locator("#archiveView")).toBeVisible();
+  await installed.click();
+  await expect(page.locator("#modelsView h1")).toHaveText("Model Hub");
   await expect(page.locator("#models-tab-installed")).toHaveAttribute("aria-selected", "true");
+  await page.locator(".studio-more-tools > summary").click();
   await hub.click();
-  await expect(hub).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/#discover$/);
   await expect(library).not.toHaveAttribute("aria-current", "page");
   await expect(page.locator("#modelsView h1")).toHaveText("Model Hub");
   await expect(page.locator("#models-tab-library")).toHaveAttribute("aria-selected", "true");
-  await library.focus();
+  await installed.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("#models-tab-installed")).toHaveAttribute("aria-selected", "true");
   await page.getByTestId("nav-schedules").click();
@@ -164,9 +188,9 @@ test("Library and Model Hub remain in the workstation with accessible navigation
 });
 
 test("model filter, selection and clear action work at desktop, tablet and phone widths", async ({ page }) => {
-  for (const [width, height] of [[1440, 1000], [1024, 768], [390, 844]]) {
+  for (const [width, height] of [[1440, 1000], [768, 1024], [390, 844]]) {
     await page.setViewportSize({ width, height });
-    await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 260 : 0));
+    await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 280 : 0));
     const workspace = await page.locator("#mainContent").boundingBox();
     const composer = await page.locator("#objective").boundingBox();
     await page.getByTestId("chat-model-chip").click();

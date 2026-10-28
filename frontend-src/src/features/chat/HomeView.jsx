@@ -4,7 +4,7 @@ import { ModelSidePanel } from "./ModelSidePanel.jsx";
 import { useChatCommands } from "./useChatCommands.js";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Bot, BookOpen, Box, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Cpu, FileText, ListPlus, Laptop, Paperclip, PanelLeftOpen, Settings, ShieldCheck, SquareSlash, Square, X } from "lucide-react";
+import { ArrowUp, Bot, BookOpen, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Cpu, FileText, ListPlus, Paperclip, ShieldCheck, SlidersHorizontal, SquareSlash, Square, X } from "lucide-react";
 
 import { displayModelName, labelize, modelHealthLine, runtimeStatus } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";
@@ -16,7 +16,6 @@ import {
 } from "../../lib/fileExtraction.js";
 
 import { PromptRecipePanel } from "./PromptRecipePanel.jsx";
-import { featuredRecipes } from "./promptRecipes.js";
 
 const modeOptions = [
   {
@@ -94,9 +93,6 @@ const modePlaceholders = {
   review: "What output should we review?",
 };
 
-const featuredPromptRecipes = featuredRecipes()
-  .filter((item) => ["analyze", "research", "code", "write"].includes(item.mode));
-
 export function HomeView(props) {
   const {
     view,
@@ -104,11 +100,9 @@ export function HomeView(props) {
     selectedModelObject,
     models,
     visibleModels,
-    activeWorkspaceName,
     setSelectedModel,
     security,
     go,
-    toggleSidebar,
     homeTasks,
     objective,
     setObjective,
@@ -145,7 +139,6 @@ export function HomeView(props) {
     onOpenModels,
     onConnectLocalEndpoint,
     onEnableTestingMode,
-    eventConnectionStatus,
     modeBlocked,
   } = props;
 
@@ -200,21 +193,12 @@ export function HomeView(props) {
   const activeHomeTasks = orderedHomeTasks.filter((task) => ["queued", "running", "paused"].includes(task.status));
   const latestActiveTask = activeHomeTasks[activeHomeTasks.length - 1] || runningTasks?.[0];
   const composerBusy = activeHomeTasks.length > 0;
-  const privacyTitle = security.privacyLock ? "Local-only" : "Review mode";
-  const privacyDetail = security.privacyLock ? "Models offline" : "Safety relaxed";
   const selectedModelHealthLine = modelHealthLine(selectedModelObject, models);
   const disabledReason = modeBlocked
     ? "This mode is blocked for the selected model. Choose a compatible model or switch back to Chat."
     : healthy
       ? ""
       : selectedModelHealthLine + " Use Models to test or repair the local runtime, or enable Testing Mode.";
-  const eventConnectionLabel = eventConnectionStatus === "degraded"
-    ? "Live updates delayed"
-    : eventConnectionStatus === "connecting"
-      ? "Reconnecting live updates…"
-      : eventConnectionStatus === "disconnected"
-        ? "Live updates unavailable"
-        : "Live updates";
   const activeMode = modeOptions.find((mode) => mode.value === taskMode) || modeOptions[0];
   const activeReasoning = reasoningOptions.find((option) => option.value === reasoningMode) || reasoningOptions[0];
   const objectivePlaceholder = modePlaceholders[activeMode.value] || modePlaceholders.chat;
@@ -471,40 +455,7 @@ export function HomeView(props) {
   const canSubmit = (objective.trim() && !objective.trim().startsWith("/")) || attachments.length > 0;
 
   return (
-    <section className={`cc-layout app-view home-view tw ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
-      {/* Header */}
-      <header className="cc-header">
-        <div className="cc-header-left">
-          <button className="icon-button cc-nav-trigger" type="button" aria-label="Toggle navigation" onClick={toggleSidebar}>
-            <PanelLeftOpen size={19} />
-          </button>
-          <div className="cc-logo">
-            <span className="ras-brand-sigil ras-brand-sigil-sm" aria-hidden="true"><img src="/static/rasputin-logo.png" alt="" className="ras-brand-logo" /></span>
-            <span><strong>Rasputin</strong><small>{activeWorkspaceName || "No workspace selected"}</small></span>
-          </div>
-        </div>
-        <div className="cc-status-area">
-          <div className="cc-status-item cc-runtime-status" title={security?.native ? "Native workstation runtime" : "Docker server runtime"}>
-            {security?.native ? <Laptop size={14} aria-hidden="true" /> : <Box size={14} aria-hidden="true" />}
-            <span>{security?.native ? "Native" : "Docker"}</span>
-          </div>
-          <div
-            className={"cc-status-item event-connection-status status-" + eventConnectionStatus}
-            data-testid="event-connection-status"
-            role="status"
-            aria-live="polite"
-          >
-            <span>{eventConnectionLabel}</span>
-          </div>
-          <div className="cc-status-item" title={`${privacyTitle}: ${privacyDetail}`}>
-            <ShieldCheck size={14} /> <span>{privacyTitle}</span>
-          </div>
-          <button className="icon-button" type="button" aria-label="Open settings" onClick={() => go("settings", "general")}>
-            <Settings size={18} />
-          </button>
-        </div>
-      </header>
-
+    <section className={`cc-layout app-view home-view studio-home tw ${orderedHomeTasks.length === 0 ? "is-welcome" : "has-conversation"} ${view === "chat" ? "active" : ""}`} id="chatView" data-app-view="chat" tabIndex="-1">
       <div className="cc-main-container" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
         {isDragging && (
           <div className="cc-drag-overlay" style={{
@@ -519,40 +470,10 @@ export function HomeView(props) {
         {/* Content Area */}
         <div className="cc-content-area">
           <div className="cc-chat-column">
-            {!hasHealthyRouteableChatModel && (
-              <section className="chat-launch-readiness" data-testid="chat-launch-readiness" role="region" aria-labelledby="chat-launch-readiness-title">
-                <div>
-                  <p className="cc-empty-kicker">SETUP REQUIRED</p>
-                  <h2 id="chat-launch-readiness-title">Choose a working model before you send</h2>
-                  <p>No healthy chat model is available yet. Deploy one, connect an existing local endpoint, or safely explore the workflow in Testing Mode.</p>
-                </div>
-                <div className="chat-launch-readiness-actions">
-                  <button type="button" className="w2-button is-primary" onClick={onOpenModels}>Find a model</button>
-                  <button type="button" className="w2-button" onClick={onConnectLocalEndpoint}>Connect endpoint</button>
-                  <button type="button" className="w2-button" onClick={onEnableTestingMode}>Try Testing Mode</button>
-                </div>
-              </section>
-            )}
             {orderedHomeTasks.length === 0 ? (
               <div className="cc-quick-action-center">
-                <div className="cc-empty-mark" aria-hidden="true"><span>R</span><i /><b /></div>
-                <p className="cc-empty-kicker">READY · PRIVATE · LOCAL</p>
-                <h1 className="cc-objective-title">What should we tackle?</h1>
-                <p className="cc-objective-subtitle">Start with a goal, or choose a direction. Rasputin will keep the work grounded in your active workspace.</p>
-                <div className="cc-quick-actions" aria-label="Featured prompt recipes">
-                  {featuredPromptRecipes.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className="cc-quick-action-chip"
-                      data-testid="featured-prompt-recipe"
-                      onClick={() => openRecipePanel(item.mode, item.id)}
-                    >
-                      <span><small>{labelize(item.mode)} recipe</small>{item.title}</span>
-                      <BookOpen size={14} aria-hidden="true" />
-                    </button>
-                  ))}
-                </div>
+                <img src="/static/rasputin-logo.png" alt="" className="studio-welcome-mark" />
+                <h1 className="cc-objective-title">Good to see you</h1>
               </div>
             ) : (
               <div className="cc-thread-scroll" aria-live="polite" ref={threadScrollRef} onScroll={handleThreadScroll}>
@@ -674,7 +595,7 @@ export function HomeView(props) {
                   ref={composerRef}
                   className="composer-input ras-autogrow"
                   rows={2}
-                  placeholder={objectivePlaceholder}
+                  placeholder={taskMode === "chat" ? "Ask anything" : objectivePlaceholder}
                   value={objective}
                   onChange={handleComposerChange}
                   onInput={resizeComposer}
@@ -721,6 +642,14 @@ export function HomeView(props) {
                       <span>{activeMode.label}</span>
                       <ChevronDown size={12} />
                     </button>
+                    <details className="studio-response-options" onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.currentTarget.open = false;
+                        event.currentTarget.querySelector("summary")?.focus();
+                      }
+                    }}>
+                      <summary data-testid="response-options-trigger"><SlidersHorizontal size={15} /><span>Options</span></summary>
+                      <div className="studio-response-popover" role="group" aria-label="Reasoning, memory, and coding options">
                     <button
                       type="button"
                       className="composer-chip"
@@ -783,15 +712,12 @@ export function HomeView(props) {
                         </select>
                       </label>
                     )}
+                      <button type="button" className="composer-chip" onClick={() => setModePanelOpen(true)}><Bot size={14} />Agent roles and helpers</button>
+                      </div>
+                    </details>
                     </div>
                   </div>
                   <div className="composer-actions">
-                    {latestActiveTask && (
-                      <button type="button" className="composer-icon-button composer-labeled-button composer-stop-round" aria-label="Stop latest task" title="Stop the running task" onClick={() => handleCancelTask(latestActiveTask.id)}>
-                        <Square size={14} />
-                        <span className="composer-control-text">Stop</span>
-                      </button>
-                    )}
                     <button
                       type="button"
                       ref={modelButtonRef}
@@ -808,6 +734,12 @@ export function HomeView(props) {
                       <span className="composer-chip-model-name" data-testid="chat-selected-model-key" data-model-key={selectedModel || ""}>{displayModelName(selectedModelObject || selectedModel, models)}</span>
                       <ChevronDown size={12} />
                     </button>
+                    {latestActiveTask && (
+                      <button type="button" className="composer-icon-button composer-labeled-button composer-stop-round" aria-label="Stop latest task" title="Stop the running task" onClick={() => handleCancelTask(latestActiveTask.id)}>
+                        <Square size={14} />
+                        <span className="composer-control-text">Stop</span>
+                      </button>
+                    )}
                     <button
                       id="sendBtn"
                       className="composer-send-round"
@@ -900,6 +832,16 @@ export function HomeView(props) {
                 />
               )}
             </form>
+            {!hasHealthyRouteableChatModel && (
+              <section className="chat-launch-readiness" data-testid="chat-launch-readiness" aria-label="Model setup">
+                <p>Choose a model to start chatting.</p>
+                <div className="chat-launch-readiness-actions">
+                  <button type="button" onClick={onOpenModels}>Find a model</button>
+                  <button type="button" onClick={onConnectLocalEndpoint}>Connect endpoint</button>
+                  <button type="button" onClick={onEnableTestingMode}>Testing Mode</button>
+                </div>
+              </section>
+            )}
           </div>
         </div>
       </div>

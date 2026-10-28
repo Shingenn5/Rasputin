@@ -8,7 +8,9 @@ import {
   Folder,
   FolderOpen,
   Laptop,
-  Library,
+  ChevronDown,
+  MoreHorizontal,
+  Sparkles,
   LockKeyhole,
   LogOut,
   MessageSquare,
@@ -31,8 +33,9 @@ const NAV_GROUPS = [
     label: "Workspace",
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
-      { view: "models", label: "Library", icon: Library, testId: "nav-models" },
-      { view: "discover", label: "Model Hub", icon: Box, testId: "nav-discover" },
+      { view: "models", label: "Model Hub", icon: Box, testId: "nav-models" },
+      { view: "archive", label: "Library", icon: Folder, testId: "nav-archive" },
+      { view: "assistant", label: "Assistant", icon: Sparkles, testId: "nav-assistant" },
     ],
   },
   {
@@ -43,6 +46,12 @@ const NAV_GROUPS = [
       { view: "schedules", label: "Scheduled", icon: CalendarClock, testId: "nav-schedules" },
     ],
   },
+];
+
+const EXTRA_TOOLS = [
+  ["discover", "Discover models"], ["activity", "History and tasks"],
+  ["memory", "Memory"], ["skills", "Skills"], ["agents", "Agents"],
+  ["approvals", "Approvals"], ["telegram", "Telegram"], ["trials", "Trials"],
 ];
 
 export function DashSidebar({
@@ -290,6 +299,18 @@ export function DashSidebar({
               {group.items.map(navBtn)}
             </div>
           ))}
+
+          <details className={cn("studio-more-tools", !expanded && "is-collapsed")}>
+            <summary aria-label="More Rasputin tools" title={!expanded ? "More Rasputin tools" : undefined}><MoreHorizontal size={18} />{expanded && <><span>More</span><ChevronDown size={13} /></>}</summary>
+            <div className="studio-more-tool-list">
+              {EXTRA_TOOLS.filter(([route]) => canAccessView(role, route)).map(([route, label]) => (
+                <button type="button" key={route} data-testid={`nav-${route}`} aria-current={view === route ? "page" : undefined} onClick={(event) => {
+                  event.currentTarget.closest("details").open = false;
+                  go(route);
+                }}>{label}</button>
+              ))}
+            </div>
+          </details>
 
           {/* The compact rail keeps an icon; the expanded rail exposes recent
            * conversations directly below projects, like the reference shell. */}

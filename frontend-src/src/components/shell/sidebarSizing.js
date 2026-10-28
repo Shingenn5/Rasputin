@@ -1,6 +1,6 @@
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 400;
-export const SIDEBAR_DEFAULT_WIDTH = 260;
+export const SIDEBAR_DEFAULT_WIDTH = 280;
 export const SIDEBAR_WIDTH_KEY = "rasputin-sidebar-width";
 
 export function clampSidebarWidth(value) {

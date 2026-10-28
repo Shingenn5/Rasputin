@@ -52,12 +52,13 @@ test("desktop Settings closes from the visual backdrop", () => {
   assert.match(settings, /onClose=\{\(\) => go\("chat"\)\}/);
 });
 
-test("desktop Library and Model Hub share a page workspace while Settings remains modal", () => {
+test("desktop Library and Model Hub have distinct destinations while Settings remains modal", () => {
   assert.match(app, /desktopOnly && view === "settings" \? "chat" : view/);
   assert.doesNotMatch(sidebar, /view: "discover", label: "Discover Models"/);
   assert.doesNotMatch(models, /data-testid="desktop-models-dialog"/);
   assert.match(models, /id="modelsView"/);
-  assert.match(models, /view === "discover" \? "Model Hub" : "Library"/);
+  assert.match(models, /<h1>Model Hub<\/h1>/);
+  assert.match(sidebar, /view: "archive", label: "Library"/);
   assert.match(models, /return modelsSurface/);
 });
 
