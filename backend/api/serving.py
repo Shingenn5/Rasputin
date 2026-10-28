@@ -13,8 +13,8 @@ from collections import deque
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from backend.api.core import require_admin
-from backend.core import preferences
+from backend.api.core import require_admin, require_member
+from backend.core import api_keys, preferences, security
 from backend.core import runtime_store as store
 from backend.core.response import ok
 from backend.mcp import tools as tool_relay
@@ -80,9 +80,17 @@ def _authorize(request: Request):
     config = _load_config()
     if not config["enabled"]:
         raise ServingError("serving_disabled", "Rasputin model serving is disabled.", 503)
-    if not config["api_key_hash"]:
-        raise ServingError("serving_key_missing", "Generate a serving API key in Models > Serving.", 503)
     supplied = _request_key(request)
+    if supplied.startswith("ras_sk_"):
+        credential = api_keys.authenticate(supplied)
+        if not credential:
+            raise ServingError("authentication_error", "Invalid or revoked inference API key.", 401)
+        if request.url.path not in {"/v1/models", "/v1/chat/completions"}:
+            raise ServingError("insufficient_scope", "This API key grants local OpenAI-compatible inference only.", 403)
+        request.state.inference_key = credential
+        return {**config, "mcp_tool_execution": False}
+    if not config["api_key_hash"] and not api_keys.has_active_keys():
+        raise ServingError("serving_key_missing", "Generate a serving API key in Models > Serving.", 503)
     if not supplied or not secrets.compare_digest(_hash_key(supplied), config["api_key_hash"]):
         raise ServingError("authentication_error", "Invalid or missing model-serving API key.", 401)
     return config
@@ -97,10 +105,14 @@ def _public_status(request: Request):
     base = _base_url(request)
     configured_models = _configured_models()
     models = _servable_models(configured_models)
-    service_status = "ready" if config["enabled"] and config["api_key_hash"] else (
+    if not config["api_key_hash"]:
+        models = [model for model in models if _local_inference_model(model)]
+    key_configured = bool(config["api_key_hash"]) or api_keys.has_active_keys()
+    service_status = "ready" if config["enabled"] and key_configured else (
         "disabled" if not config["enabled"] else "needs_key"
     )
     readiness = service_status if service_status != "ready" else ("ready" if models else "no_models")
+    legacy_status = service_status if config["api_key_hash"] or not config["enabled"] else "needs_key"
     next_actions = {
         "disabled": ["Enable model serving when you are ready to expose the gateway."],
         "needs_key": ["Generate a serving API key before sharing an endpoint."],
@@ -111,7 +123,8 @@ def _public_status(request: Request):
         recent = list(_METRICS)[-20:]
     return {
         "enabled": config["enabled"],
-        "api_key_configured": bool(config["api_key_hash"]),
+        "api_key_configured": key_configured,
+        "legacy_key_configured": bool(config["api_key_hash"]),
         "readiness": readiness,
         "servable_model_count": len(models),
         "configured_model_count": len(configured_models),
@@ -137,21 +150,21 @@ def _public_status(request: Request):
             {
                 "id": "anthropic",
                 "name": "Anthropic Messages compatible",
-                "status": readiness,
+                "status": readiness if config["api_key_hash"] else legacy_status,
                 "endpoints": [f"{base}/v1/messages"],
                 "features": ["streaming", "tool_use blocks", "usage"],
             },
             {
                 "id": "rasputin",
                 "name": "Rasputin native",
-                "status": readiness,
+                "status": readiness if config["api_key_hash"] else legacy_status,
                 "endpoints": [f"{base}/rasputin/v1/responses", f"{base}/rasputin/v1/metrics"],
                 "features": ["request telemetry", "runtime identity", "streaming"],
             },
             {
                 "id": "mcp",
                 "name": "MCP authenticated JSON-RPC HTTP subset",
-                "status": service_status,
+                "status": legacy_status,
                 "endpoints": [f"{base}/mcp"],
                 "features": ["initialize", "tools/list", "guarded tools/call", "no session resumption"],
             },
@@ -184,11 +197,27 @@ def _servable_models(source=None):
     return out
 
 
-def _resolve_model(requested):
+def _local_inference_model(model):
+    return (
+        not providers.is_api_provider(model)
+        and security.is_local_url(model.get("base_url"))
+        and str(model.get("base_url") or "").startswith(("http://", "https://"))
+    )
+
+
+def _request_models(request):
     models = _servable_models()
+    if getattr(request.state, "inference_key", None):
+        return [model for model in models if _local_inference_model(model)]
+    return models
+
+
+def _resolve_model(requested, request=None):
+    models = _request_models(request) if request is not None else _servable_models()
     model_id = str(requested or "").strip()
     if not model_id:
-        selected = preferences.load("admin").get("selectedModel")
+        credential = getattr(request.state, "inference_key", None) if request is not None else None
+        selected = preferences.load(credential["owner_id"] if credential else "admin").get("selectedModel")
         model_id = str(selected or "").strip()
     model = next(
         (
@@ -583,6 +612,25 @@ async def serving_key_rotate(request: Request, _user=Depends(require_admin)):
     return ok({**_public_status(request), "api_key": api_key})
 
 
+@router.get("/api/model-serving/keys")
+async def inference_keys_list(user=Depends(require_member)):
+    return ok({"keys": api_keys.list_keys(user["username"], user.get("role") == "admin")})
+
+
+@router.post("/api/model-serving/keys")
+async def inference_keys_create(req: dict, user=Depends(require_admin)):
+    result = api_keys.create_key(user["username"], req.get("name"))
+    config = _load_config()
+    config["enabled"] = True
+    _save_config(config)
+    return ok(result)
+
+
+@router.delete("/api/model-serving/keys/{key_id}")
+async def inference_keys_revoke(key_id: str, user=Depends(require_member)):
+    return ok({"key": api_keys.revoke_key(key_id, user["username"], user.get("role") == "admin")})
+
+
 @router.get("/v1/models")
 async def openai_models(request: Request):
     try:
@@ -596,7 +644,7 @@ async def openai_models(request: Request):
                 "rasputin_runtime": model.get("runtime") or model.get("provider"),
                 "rasputin_model_id": model.get("model"),
             }
-            for model in _servable_models()
+            for model in _request_models(request)
         ]
         return {"object": "list", "data": data}
     except Exception as exc:
@@ -607,7 +655,7 @@ async def openai_models(request: Request):
 async def openai_chat_completions(req: dict, request: Request):
     try:
         _authorize(request)
-        model = _resolve_model(req.get("model"))
+        model = _resolve_model(req.get("model"), request)
         messages = _openai_messages(req)
         if not messages:
             raise ServingError("invalid_request_error", "messages must contain at least one message.", 400)

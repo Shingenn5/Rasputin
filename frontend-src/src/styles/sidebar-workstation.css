@@ -1,0 +1,44 @@
+/* The separate import makes the workstation rail treatment easy to roll back. */
+.ras-sidebar-container { width: 0; }
+.ras-sidebar-container > #rasputin-sidebar {
+  width: min(var(--workstation-sidebar-width), calc(100vw - 32px));
+}
+.ras-sidebar-container.is-collapsed > #rasputin-sidebar { width: 54px; }
+.ras-sidebar-resize { display: none; }
+
+@media (min-width: 640px) {
+  .ras-sidebar-container { width: var(--workstation-sidebar-width); }
+  .ras-sidebar-container.is-collapsed { width: 54px; }
+  .ras-sidebar-container > #rasputin-sidebar { width: var(--workstation-sidebar-width); }
+  .ras-sidebar-resize {
+    position: absolute;
+    inset: 0 -5px 0 auto;
+    z-index: 35;
+    display: block;
+    width: 10px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .ras-sidebar-resize::after {
+    position: absolute;
+    inset: 0 4px;
+    content: "";
+    background: transparent;
+    transition: background-color 140ms ease;
+  }
+  .ras-sidebar-resize:is(:hover, :focus-visible, [data-dragging="true"])::after {
+    background: var(--ras-primary);
+  }
+  .ras-sidebar-resize:focus-visible { outline: 2px solid var(--ras-primary); outline-offset: -3px; }
+  .ras-sidebar-container.is-resizing { user-select: none; }
+  .ras-sidebar-container.is-resizing > #rasputin-sidebar { transition: none; }
+}
+
+#rasputin-sidebar .ras-workstation-nav { gap: 10px; }
+#rasputin-sidebar .ras-workstation-nav .ras-nav-item { min-height: 42px; }
+#rasputin-sidebar .ras-workstation-nav .ras-sidebar-section-label { padding-block: 8px 5px; }
+#rasputin-sidebar .ras-sidebar-wordmark { white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ras-sidebar-resize::after { transition: none; }
+}

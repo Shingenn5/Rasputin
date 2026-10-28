@@ -11,7 +11,6 @@ import { api } from "../../api/client.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
-import { Modal } from "../../components/Modal.jsx";
 import { Button as UIButton } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 
@@ -89,6 +88,7 @@ export function ModelsView({
 
   useEffect(() => {
     if (view === "discover") setActiveTab("library");
+    if (view === "models") setActiveTab("installed");
   }, [view]);
 
   const focusModelTab = (tabId) => {
@@ -669,8 +669,8 @@ export function ModelsView({
       {/* ── Header ── */}
       <div className="models-page-header models-v3-command-band">
         <div className="models-v3-command-copy">
-          <h1>Models</h1>
-          <p>Discover, import, configure, and run models in one workspace.</p>
+          <h1>{view === "discover" ? "Model Hub" : "Library"}</h1>
+          <p>{view === "discover" ? "Find the right model, choose an exact variant, and download it." : "Import, configure, and run the models on your workstation."}</p>
         </div>
         {desktopOnly && (
           <div className="models-header-runtime" aria-label="Native runtime status">
@@ -1436,21 +1436,6 @@ export function ModelsView({
       />
     </section>
   );
-
-  if (desktopOnly) {
-    return (
-      <Modal
-        open={modelsWorkspaceOpen}
-        onClose={() => go?.("chat")}
-        title="Models"
-        size="xl"
-        className="studio-models-modal"
-        data-testid="desktop-models-dialog"
-      >
-        {modelsSurface}
-      </Modal>
-    );
-  }
 
   return modelsSurface;
 }

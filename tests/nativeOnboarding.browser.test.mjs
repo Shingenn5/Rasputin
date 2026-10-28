@@ -112,7 +112,7 @@ test("native onboarding owns focus, reaches Discover, and preserves nested Load 
           assert.ok(new Set(targets).size > 1, "Tab advances beyond one element");
           await page.keyboard.press("Escape");
           await expect(loadDialog).toHaveCount(0);
-          await expect(page.getByTestId("desktop-models-dialog")).toBeVisible();
+          await expect(page.locator("#modelsView")).toBeVisible();
           await expect(page.locator("#appFrame")).toHaveAttribute("data-current-view", "models");
           await inspector.getByRole("button", { name: "Load Model", exact: true }).click();
           await loadDialog.getByRole("button", { name: "Load model", exact: true }).click();

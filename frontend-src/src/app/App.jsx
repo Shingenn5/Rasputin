@@ -9,7 +9,7 @@ import { useModelRegistryActions } from "./useModelRegistryActions.js";
 import { useTaskActions } from "./useTaskActions.js";
 import { useEventConnection } from "./useEventConnection.js";
 import { useMcpActions } from "./useMcpActions.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -48,6 +48,9 @@ import { loadSettings } from "../features/settings/settingsActions.js";
 import { canAccessRoute } from "../lib/access.js";
 import { applyMotionMode, normalizeMotionMode, readStoredMotionMode } from "../lib/motion.js";
 
+const ApiView = lazy(() => import("../features/workstation/ApiView.jsx").then((module) => ({ default: module.ApiView })));
+const TrainingView = lazy(() => import("../features/workstation/TrainingView.jsx").then((module) => ({ default: module.TrainingView })));
+
 const routedViews = new Set([
   "home",
   "chat",
@@ -67,6 +70,8 @@ const routedViews = new Set([
   "skills",
   "telegram",
   "schedules",
+  "api",
+  "training",
 ]);
 
 const routedSettingsSections = new Set(settingsItems.map(([section]) => section));
@@ -559,7 +564,7 @@ export function App() {
     const route = parseAppRouteHash(desktopDefaultView);
     const hasExplicitRoute = Boolean(window.location.hash.replace(/^#\/?/, "").trim());
     const rememberedView = prefs.activeView || desktopDefaultView;
-    const desktopPrimaryViews = new Set(["chat", "workspaces", "activity", "discover", "models", "settings"]);
+    const desktopPrimaryViews = new Set(["chat", "workspaces", "activity", "discover", "models", "settings", "api", "training", "schedules"]);
     const requestedView = hasExplicitRoute
       ? route.view
       : data.security?.desktopOnly && !desktopPrimaryViews.has(rememberedView)
@@ -1219,6 +1224,10 @@ export function App() {
           { label: "Open project", hint: "Choose a folder and work from it.", keywords: "folder workspace", action: () => go("workspaces") },
           { label: "Open history", hint: "Review conversations, runs, failures, and notifications.", keywords: "activity notifications queue", action: () => go("activity") },
           { label: "Open models", hint: "Browse, download, and load local models.", action: () => go("models") },
+          { label: "Open Model Hub", hint: "Find and download model variants.", action: () => go("discover") },
+          { label: "Open API", hint: "Create API keys and connect local models to other tools.", action: () => go("api") },
+          { label: "Open Training", hint: "Prepare datasets and fine-tune a local model.", action: () => go("training") },
+          { label: "Open Scheduled", hint: "Review saved schedule definitions.", action: () => go("schedules") },
           { label: "Open Rasputin assistant", hint: "Review identity, model packs, plans, and broker handoffs.", keywords: "jarvis friday voice orchestration", action: () => go("assistant") },
           { label: "Open artifacts", hint: "Browse generated files and evidence.", keywords: "archive output", action: () => go("archive") },
           { label: "Open settings", hint: "Configure the application, models, hardware, and integrations.", action: () => go("settings", "general") },
@@ -1296,7 +1305,7 @@ export function App() {
       />
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
-        view={desktopOnly && ["discover", "models", "settings"].includes(view) ? "chat" : view}
+        view={desktopOnly && view === "settings" ? "chat" : view}
         selectedModel={selectedModel}
         selectedModelObject={selectedModelObject}
         models={models}
@@ -1455,6 +1464,10 @@ export function App() {
         schedules={schedulesList}
         createSchedule={createSchedule}
       />
+      {["api", "training"].includes(view) && <Suspense fallback={<div role="status" className="p-6">Loading workstation…</div>}>
+        {view === "api" && <ApiView view={view} models={models} />}
+        {view === "training" && <TrainingView view={view} models={models} />}
+      </Suspense>}
       {!nativeModels && (
       <WarsatView
         view={view}
@@ -1515,7 +1528,7 @@ export function App() {
         saveTrialRoute={saveTrialRoute}
         modeModelOverrides={modeModelOverrides}
       />
-      {/* Onboarding owns focus until dismissed; Desktop Models is also a modal. */}
+      {/* Onboarding owns focus until dismissed. */}
       {!showOnboarding && <ModelsView
         view={view}
         models={models}

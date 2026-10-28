@@ -13,6 +13,7 @@ test.beforeEach(async ({ page, context }) => {
     if (!localStorage.getItem("rasputin-theme")) localStorage.setItem("rasputin-theme", "rasputin-dark");
     localStorage.setItem("rasputin-theme-explicit", "1");
     localStorage.setItem("rasputin-sidebar-collapsed", "false");
+    if (!localStorage.getItem("rasputin-sidebar-width")) localStorage.setItem("rasputin-sidebar-width", "260");
   });
   await page.route("**/api/ui/bootstrap", async route => {
     const response = await route.fetch();
@@ -82,7 +83,7 @@ test("search remains reachable in the collapsed rail and mobile drawer with the 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("sidebar-search")).toBeFocused();
   await page.getByTestId("sidebar-toggle").click();
-  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(220);
+  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(260);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "rasputin-light");
   await page.screenshot({ path: test.info().outputPath("light-sidebar.png") });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -109,10 +110,63 @@ test("recent chats traps focus and returns to its trigger", async ({ page }) => 
   await expect(trigger).toBeFocused();
 });
 
+test("workstation sidebar resizes with mouse and keyboard, persists, and resets", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const separator = page.getByRole("separator", { name: "Resize sidebar" });
+  await separator.focus();
+  await page.keyboard.press("End");
+  await expect(separator).toHaveAttribute("aria-valuenow", "400");
+  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(400);
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(separator).toHaveAttribute("aria-valuenow", "260");
+  const bounds = await separator.boundingBox();
+  await page.mouse.move(bounds.x + bounds.width / 2, 320);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 + 60, 320);
+  await page.mouse.up();
+  await expect(separator).toHaveAttribute("aria-valuenow", "320");
+  await page.reload();
+  await expect(separator).toHaveAttribute("aria-valuenow", "320");
+  await separator.dblclick();
+  await expect(separator).toHaveAttribute("aria-valuenow", "260");
+  await page.getByTestId("sidebar-toggle").click();
+  await expect(separator).toHaveCount(0);
+  await expect.poll(async () => (await page.locator("#rasputin-sidebar").boundingBox()).width).toBe(54);
+  await page.getByTestId("sidebar-toggle").click();
+  await expect(separator).toHaveAttribute("aria-valuenow", "260");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(separator).toBeHidden();
+  await page.getByTestId("mobile-sidebar-toggle").click();
+  await expect(page.getByTestId("nav-training")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+test("Library and Model Hub remain in the workstation with accessible navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const library = page.getByTestId("nav-models");
+  const hub = page.getByTestId("nav-discover");
+  await library.click();
+  await expect(library).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("#modelsView h1")).toHaveText("Library");
+  await expect(page.locator("#models-tab-installed")).toHaveAttribute("aria-selected", "true");
+  await hub.click();
+  await expect(hub).toHaveAttribute("aria-current", "page");
+  await expect(library).not.toHaveAttribute("aria-current", "page");
+  await expect(page.locator("#modelsView h1")).toHaveText("Model Hub");
+  await expect(page.locator("#models-tab-library")).toHaveAttribute("aria-selected", "true");
+  await library.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#models-tab-installed")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("nav-schedules").click();
+  await expect(page.locator("#schedulesView")).toBeVisible();
+  await expect(page.locator("#schedulesView button[type='submit']")).toBeEnabled();
+});
+
 test("model filter, selection and clear action work at desktop, tablet and phone widths", async ({ page }) => {
   for (const [width, height] of [[1440, 1000], [1024, 768], [390, 844]]) {
     await page.setViewportSize({ width, height });
-    await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 220 : 0));
+    await expect.poll(async () => (await page.locator("#mainContent").boundingBox()).width).toBe(width - (width >= 640 ? 260 : 0));
     const workspace = await page.locator("#mainContent").boundingBox();
     const composer = await page.locator("#objective").boundingBox();
     await page.getByTestId("chat-model-chip").click();

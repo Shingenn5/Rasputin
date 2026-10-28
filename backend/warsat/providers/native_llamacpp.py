@@ -454,7 +454,8 @@ class NativeLlamaCppProvider(DeploymentProvider):
         return self._command_for_plan(plan, engine, model_path, port, self._mmproj_path(model))
 
     def start(self, model):
-        with _lifecycle_lock(str(_state_path(model))):
+        from backend.core.training import inference_slot
+        with inference_slot(), _lifecycle_lock(str(_state_path(model))):
             return self._start(model)
 
     def _start(self, model):

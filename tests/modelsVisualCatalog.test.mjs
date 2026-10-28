@@ -36,7 +36,7 @@ test("desktop Discover Models opens into a native llama.cpp visual catalog", () 
   assert.match(models, /className="models-page-shell/);
   assert.match(models, /className="models-page-tabs"/);
   assert.match(models, /const desktopItem = \{/);
-  assert.match(sidebar, /view: "models", label: "Models"/);
+  assert.match(sidebar, /view: "models", label: "Library"/);
   assert.doesNotMatch(models, /id: "library",\s+label: "Library"/);
   assert.match(models, /settings: \{ label: "Advanced", hint: "Connections & diagnostics" \}/);
   assert.match(models, /className="models-catalog-toolbar"/);

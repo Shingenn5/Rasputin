@@ -4,32 +4,43 @@ import {
   BrainCircuit,
   Box,
   Clock,
+  CalendarClock,
   Folder,
   FolderOpen,
   Laptop,
+  Library,
   LockKeyhole,
   LogOut,
   MessageSquare,
   PanelLeft,
   Plus,
   Search,
+  KeyRound,
+  GraduationCap,
   Settings,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { canAccessView, canRunTasks, normalizedRole, roleLabel } from "@/lib/access.js";
 import { useFocusTrap } from "../useFocusTrap.js";
+import { clampSidebarWidth, sidebarWidthForKey, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_WIDTH_KEY } from "./sidebarSizing.js";
+import "../../styles/sidebar-workstation.css";
 
-/* Keep the daily-driver shell intentionally small. Advanced areas remain
- * reachable through the command palette and their existing routes, while
- * these five destinations describe the normal desktop workflow. */
 const NAV_GROUPS = [
   {
-    label: "Work",
+    label: "Workspace",
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
-
-      { view: "models", label: "Models", icon: Box, testId: "nav-models" },
+      { view: "models", label: "Library", icon: Library, testId: "nav-models" },
+      { view: "discover", label: "Model Hub", icon: Box, testId: "nav-discover" },
+    ],
+  },
+  {
+    label: "Build",
+    items: [
+      { view: "training", label: "Training", icon: GraduationCap, testId: "nav-training" },
+      { view: "api", label: "API", icon: KeyRound, testId: "nav-api" },
+      { view: "schedules", label: "Scheduled", icon: CalendarClock, testId: "nav-schedules" },
     ],
   },
 ];
@@ -70,6 +81,12 @@ export function DashSidebar({
     items: group.items.filter((item) => canAccessView(role, item.view) && (!(desktopOnly || runtimeMode === "native") || item.view !== "warsat")),
   })).filter((group) => group.items.length > 0);
   const asideRef = useRef(null);
+  const resizeStartRef = useRef(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try { return clampSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY)); }
+    catch { return SIDEBAR_DEFAULT_WIDTH; }
+  });
+  const [resizing, setResizing] = useState(false);
   const historyTriggerRef = useRef(null);
   const historySearchRef = useRef(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -89,6 +106,17 @@ export function DashSidebar({
   const expanded = mobileOpen || !collapsed;
 
   useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); }
+    catch { /* Resizing still works when browser persistence is unavailable. */ }
+  }, [sidebarWidth]);
+
+  const stopResizing = (event) => {
+    resizeStartRef.current = null;
+    setResizing(false);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  useEffect(() => {
     const wasMobileOpen = wasMobileOpenRef.current;
     wasMobileOpenRef.current = mobileOpen;
 
@@ -105,7 +133,7 @@ export function DashSidebar({
   }, [historyOpen]);
 
   const isActive = (item) =>
-    (view === item.view || (item.view === "models" && view === "discover")) && (item.view !== "settings" || settingsSection === item.section);
+    view === item.view && (item.view !== "settings" || settingsSection === item.section);
   const sessions = (recentSessions || []).slice(0, 12);
   const normalizedHistoryQuery = historyQuery.trim().toLowerCase();
   const filteredSessions = normalizedHistoryQuery
@@ -148,10 +176,8 @@ export function DashSidebar({
 
   return (
     <div
-      className={cn(
-        "relative h-dvh shrink-0 w-0 transition-[width] duration-200 ease-out",
-        collapsed ? "sm:w-[54px]" : "sm:w-[220px]",
-      )}
+      className={cn("ras-sidebar-container relative h-dvh shrink-0", collapsed && !mobileOpen && "is-collapsed", resizing && "is-resizing")}
+      style={{ "--workstation-sidebar-width": `${sidebarWidth}px` }}
     >
       {/* Mobile scrim — covers content behind the open sidebar overlay */}
       {mobileOpen && (
@@ -173,7 +199,6 @@ export function DashSidebar({
         }}
         className={cn(
           "ras-sidebar ras-desktop-rail ras-sidebar-scroll absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden overflow-y-auto border-r border-sidebar-border bg-sidebar px-2 py-3 text-sidebar-foreground transition-[width,transform] duration-200 ease-out",
-          expanded ? "w-[220px]" : "w-[54px]",
           // Mobile-only CSS hides closed controls from tab/AT order; desktop remains persistent.
           !mobileOpen && "is-mobile-closed -translate-x-full sm:translate-x-0",
           mobileOpen ? "shadow-2xl shadow-black/50" : "",
@@ -250,7 +275,7 @@ export function DashSidebar({
         </button>
 
         {/* Navigation participates in the sidebar's single unified scroll surface. */}
-        <nav className="flex shrink-0 flex-col gap-0.5" aria-label="Workstation and assistant navigation">
+        <nav className="ras-workstation-nav flex shrink-0 flex-col" aria-label="Workstation and assistant navigation">
           {visibleNavGroups.map((group) => (
             <div key={group.label} className="mt-1" role="group" aria-labelledby={`nav-group-${group.label.toLowerCase()}`}>
               <div
@@ -402,6 +427,43 @@ export function DashSidebar({
           </button>}
         </div>
       </aside>
+      {!collapsed && <div
+        className="ras-sidebar-resize"
+        data-testid="sidebar-resize"
+        data-dragging={resizing}
+        role="separator"
+        tabIndex={0}
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        aria-controls="rasputin-sidebar"
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={sidebarWidth}
+        aria-valuetext={`${sidebarWidth} pixels`}
+        title="Drag to resize. Arrow keys adjust width; Enter or double-click resets."
+        onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
+        onKeyDown={(event) => {
+          const width = sidebarWidthForKey(event.key, sidebarWidth, event.shiftKey);
+          if (width === null) return;
+          event.preventDefault();
+          setSidebarWidth(width);
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.currentTarget.focus();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          resizeStartRef.current = { x: event.clientX, width: sidebarWidth };
+          setResizing(true);
+        }}
+        onPointerMove={(event) => {
+          const start = resizeStartRef.current;
+          if (start) setSidebarWidth(clampSidebarWidth(start.width + event.clientX - start.x));
+        }}
+        onPointerUp={stopResizing}
+        onPointerCancel={stopResizing}
+        onLostPointerCapture={() => { resizeStartRef.current = null; setResizing(false); }}
+      />}
       {historyOpen && (
         <>
           <button

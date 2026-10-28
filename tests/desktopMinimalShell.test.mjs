@@ -20,7 +20,7 @@ test("desktop navigation uses minimal project and history aliases", () => {
   assert.match(app, /if \(view === "workspaces"\) return "#project"/);
   assert.match(app, /if \(view === "activity"\) return "#history"/);
   assert.match(app, /const desktopDefaultView = data\.security\?\.desktopOnly \? "chat" : "home"/);
-  assert.match(app, /desktopPrimaryViews = new Set\(\["chat", "workspaces", "activity", "discover", "models", "settings"\]\)/);
+  assert.match(app, /desktopPrimaryViews = new Set\(\["chat", "workspaces", "activity", "discover", "models", "settings", "api", "training", "schedules"\]\)/);
 });
 
 test("desktop command palette describes the simplified primary workflow", () => {
@@ -33,9 +33,9 @@ test("desktop command palette describes the simplified primary workflow", () => 
 
 
 test("desktop shell uses a quiet icon rail and Settings opens as a modal", () => {
-  assert.match(sidebar, /"sm:w-\[54px\]"/);
+  assert.match(sidebar, /ras-sidebar-container/);
   assert.match(sidebar, /const expanded = mobileOpen \|\| !collapsed/);
-  assert.match(sidebar, /collapsed \? "sm:w-\[54px\]" : "sm:w-\[220px\]"/);
+  assert.match(sidebar, /data-testid="sidebar-resize"/);
   assert.match(sidebar, /data-testid="sidebar-project-list"/);
   assert.match(sidebar, /Index and Graphify/);
   assert.match(settings, /className="studio-settings-modal"/);
@@ -52,15 +52,13 @@ test("desktop Settings closes from the visual backdrop", () => {
   assert.match(settings, /onClose=\{\(\) => go\("chat"\)\}/);
 });
 
-test("desktop Discover and Models share one modal workspace", () => {
-  assert.match(app, /desktopOnly && \["discover", "models", "settings"\]\.includes\(view\) \? "chat" : view/);
+test("desktop Library and Model Hub share a page workspace while Settings remains modal", () => {
+  assert.match(app, /desktopOnly && view === "settings" \? "chat" : view/);
   assert.doesNotMatch(sidebar, /view: "discover", label: "Discover Models"/);
-  assert.match(models, /className="studio-models-modal"/);
-  assert.match(models, /data-testid="desktop-models-dialog"/);
-  assert.match(models, /open=\{modelsWorkspaceOpen\}/);
-  assert.match(models, /title="Models"/);
-  assert.match(models, /onClose=\{\(\) => go\?\.\("chat"\)\}/);
-  assert.match(interfaceCss, /\.studio-models-modal > \.ras-modal-body/);
+  assert.doesNotMatch(models, /data-testid="desktop-models-dialog"/);
+  assert.match(models, /id="modelsView"/);
+  assert.match(models, /view === "discover" \? "Model Hub" : "Library"/);
+  assert.match(models, /return modelsSurface/);
 });
 
 test("History uses one visible view strip instead of nested advanced disclosures", () => {

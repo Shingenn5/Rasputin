@@ -22,6 +22,7 @@ from backend.api.warsat_api import router as warsat_router
 from backend.api.mcp_routes import router as mcp_api_router
 from backend.api.assistant import router as assistant_router
 from backend.api.serving import router as serving_router
+from backend.api.training import router as training_router
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -181,6 +182,13 @@ app.include_router(mcp_api_router)
 app.include_router(settings_api.router)
 app.include_router(assistant_router)
 app.include_router(serving_router)
+app.include_router(training_router)
+
+
+@app.on_event("shutdown")
+async def shutdown_training():
+    from backend.core.training import shutdown
+    shutdown()
 
 # index.html must never be cached by the browser: it points at content-hashed
 # JS/CSS, so caching it means the browser keeps loading stale bundles after a
