@@ -23,6 +23,7 @@ These are the documents to consult before starting implementation work.
 
 | Document | Scope | Status |
 | --- | --- | --- |
+| [`RASPUTIN_UI_AUDIT_2026-10-28.md`](RASPUTIN_UI_AUDIT_2026-10-28.md) / [illustrated PDF](RASPUTIN_UI_AUDIT_2026-10-28.pdf) | Fresh review of `codex/restore-rea-home` at `44a251e`, current interactions, visible packaged Electron checks, and prioritized changes | Audit complete; eight grouped issues remain open, normal installed data untouched |
 | [`RASPUTIN_UI_REMEDIATION_REPORT_2026-10-27.md`](RASPUTIN_UI_REMEDIATION_REPORT_2026-10-27.md) | Eight prioritized UI fixes with measured audit evidence, source locations, required changes, and acceptance checks | Planned; source audit only, fixes and installed verification remain open |
 | [`RASPUTIN_USER_TESTING_PLAYBOOK.md`](RASPUTIN_USER_TESTING_PLAYBOOK.md) | Computer Use user journeys, complete control inventory, responsive/accessibility checks, and verified improvement workflow | Reusable campaign guide; full campaign not yet executed |
 | [`RASPUTIN_USER_TESTING_REPORT_2026-09-09.md`](RASPUTIN_USER_TESTING_REPORT_2026-09-09.md) | Recorded native-app checks, 19 UI/UX findings, source regression evidence, and known coverage limits | Final September 10 report; attachment upload owner-verified, cancellation inconclusive; six source fixes, no installed-fix certification |
