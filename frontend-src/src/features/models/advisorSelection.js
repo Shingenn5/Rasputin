@@ -1,4 +1,5 @@
 import { normalizeHardwareSnapshot } from "./hardwareSnapshot.js";
+import { modelRuntimeProtocol } from "../../lib/engines.js";
 
 export const advisorProfileSlots = [
   { key: "fast", backendProfile: "fast", label: "Fast", goal: "Prioritizes low latency and quick responses." },
@@ -200,7 +201,7 @@ export function normalizeAdvisorProfile(profile, item, slot, settings, hardwareS
     blockers: [...new Set(blockers)],
     warnings: advisorArray(profile?.warnings),
     modelRef: recommendation.modelRef || recommendation.model_ref || advisorModelId(item),
-    protocolId: recommendation.protocolId || recommendation.protocol_id || item?.recommendedProtocol || item?.runtimeOptions?.[0]?.protocolId || "",
+    protocolId: recommendation.protocolId || recommendation.protocol_id || modelRuntimeProtocol(item, settings),
     contextWindow: recommendation.contextWindow || recommendation.context_window || item?.contextWindow || null,
     toolCallParser: recommendation.toolCallParser || recommendation.tool_call_parser || item?.toolCallParserHint || "",
     placementMode: placement.mode || (multiGpu ? "multi-gpu" : "single-gpu"),

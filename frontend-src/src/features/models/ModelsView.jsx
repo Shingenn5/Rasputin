@@ -9,6 +9,7 @@ import { useReliableAction } from "../../lib/actionRegistry.js";
 import { showsGlobalDownloadProgress } from "../../lib/modelDownloadVisibility.js";
 import { api } from "../../api/client.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
+import { modelRuntimeProtocol } from "../../lib/engines.js";
 import { SkeletonList } from "../../components/Skeleton.jsx";
 import { Button } from "../../components/Button.jsx";
 import { Button as UIButton } from "@/components/ui/button.jsx";
@@ -472,7 +473,7 @@ export function ModelsView({
           hardware: effectiveHardware || {},
           allProfiles: true,
           mission: item.purpose === "coding" ? "coding" : item.purpose === "research" ? "research" : "chat",
-          protocolId: item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "",
+          protocolId: modelRuntimeProtocol(item, modelSettings),
           contextWindow: contextWindow || contextWindowFor(item) || undefined,
           toolCallParser: item.toolCallParserHint || "",
         }),
@@ -514,6 +515,8 @@ export function ModelsView({
     modelCatalogLoading,
     modelSettings?.maxContextTokens,
     modelSettings?.allowMultiGpu,
+    modelSettings?.selectionMode,
+    modelSettings?.defaultEngine,
     advisorRefreshToken,
   ]);
 

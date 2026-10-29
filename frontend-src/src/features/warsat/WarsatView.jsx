@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { isModelHealthy, labelize } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";
 import { api, postJson } from "../../api/client.js";
-import { ENGINE_PROTOCOLS, ENGINE_LABELS } from "../../lib/engines.js";
+import { modelRuntimeProtocol, ENGINE_LABELS } from "../../lib/engines.js";
 import { useSettingsStore } from "../settings/settingsStore.js";
 
 /* ── Tab config ── */
@@ -117,7 +117,7 @@ export function WarsatView({
   const catalogItems = modelCatalog?.items || [];
   const catalogCategories = modelCatalog?.categories || [];
   const firstProtocol = protocols[0];
-  const [protocolId, setProtocolId] = useState(firstProtocol?.id || "");
+  const [protocolId, setProtocolId] = useState("");
   const [strengthProfile, setStrengthProfile] = useState("balanced");
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogPurpose, setCatalogPurpose] = useState("all");
@@ -134,11 +134,9 @@ export function WarsatView({
 
   useEffect(() => {
     if (protocolId) return;
-    // Manual mode honors the engine override. Automatic mode leaves protocol
-    // selection to the model recommendation path instead of silently pinning
-    // every launch to the advanced engine setting.
-    const preferred = selectionMode === "manual" ? ENGINE_PROTOCOLS[defaultEngine] : null;
-    const initial = protocols.some(p => p.id === preferred) ? preferred : firstProtocol?.id;
+    const initial = protocols.length ? modelRuntimeProtocol({
+      runtimeOptions: protocols.map(protocol => ({ protocolId: protocol.id })),
+    }, { selectionMode, defaultEngine }) : "";
     if (initial) setProtocolId(initial);
   }, [firstProtocol?.id, protocolId, defaultEngine, protocols, selectionMode]);
 

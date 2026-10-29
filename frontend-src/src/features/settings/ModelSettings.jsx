@@ -89,7 +89,7 @@ export function ModelSettings({ desktopOnly = false, models: availableModels, mo
 
               <div className="alert alert-info py-2 mb-4">
                 <Zap size={16} className="me-2" />
-                Automatic selection uses your performance preference and measured hardware fit. Manual engine choices remain available below for troubleshooting.
+                Automatic selection prefers llama.cpp and switches to a compatible engine when the model requires it, using your performance preference and measured hardware fit.
               </div>
 
               <Row className="g-3">
@@ -180,7 +180,7 @@ export function ModelSettings({ desktopOnly = false, models: availableModels, mo
               <Card className="shadow-sm border-0 mb-3">
                 <Card.Body>
                   <h5 className="fw-semibold d-flex align-items-center mb-3"><Cpu size={20} className="me-2 text-primary" />Manual inference engine override</h5>
-                  <p className="text-body-secondary small mb-3">This legacy setting remains readable for troubleshooting. It is not the primary choice while Selection strategy is Automatic.</p>
+                  <p className="text-body-secondary small mb-3">Automatic prefers llama.cpp and adapts to the model being loaded. Select Manual engine override above to use a different preferred engine.</p>
                   <div className="d-flex flex-wrap gap-3">
                     <Form.Check type="radio" id="engine-llamacpp" name="engine" label={<><span className="fw-bold">Llama.cpp</span> <Badge bg="secondary" className="ms-1">GGUF</Badge></>} checked={desktopOnly || defaultEngine === "llamacpp"} onChange={() => handleChange("defaultEngine", "llamacpp")} />
                     {!desktopOnly && <Form.Check type="radio" id="engine-vllm" name="engine" label={<><span className="fw-bold">vLLM</span> <Badge bg="primary" className="ms-1">High Throughput</Badge></>} checked={defaultEngine === "vllm"} onChange={() => handleChange("defaultEngine", "vllm")} />}

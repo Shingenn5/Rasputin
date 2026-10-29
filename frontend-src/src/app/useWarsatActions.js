@@ -5,7 +5,7 @@ import { preferredDownloadVariant } from "../features/models/ModelsView.jsx";
 
 import { useSettingsStore } from "../features/settings/settingsStore.js";
 
-import { ENGINE_PROTOCOLS } from "../lib/engines.js";
+import { modelRuntimeProtocol } from "../lib/engines.js";
 
 export function useWarsatActions(context) {
   const {
@@ -79,13 +79,7 @@ export function useWarsatActions(context) {
         return null;
       }
     }
-    // Honor the Default Inference Engine setting when this model actually
-    // offers that runtime; explicit choices and API-only entries still win.
-    const preferredProtocol = ENGINE_PROTOCOLS[useSettingsStore.getState().models?.defaultEngine];
-    const engineProtocol = preferredProtocol && item.runtimeOptions?.some((option) => option.protocolId === preferredProtocol)
-      ? preferredProtocol
-      : null;
-    const protocolId = options.protocolId || engineProtocol || item.recommendedProtocol || item.runtimeOptions?.[0]?.protocolId || "vllmCudaOpenai";
+    const protocolId = options.protocolId || modelRuntimeProtocol(item, useSettingsStore.getState().models);
     if (!protocolId || protocolId === "apiOnly") {
       setGlobalStatus("This catalog entry is API-only. Register it as an API model instead of sending it to Warsat.");
       return null;
