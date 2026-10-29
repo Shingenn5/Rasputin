@@ -117,8 +117,8 @@ DEFAULT_SETTINGS = {
         "githubEnabled": False
     },
     "models": {
-        # Automatic is the authoritative normal-use choice. Keep defaultEngine
-        # below as a readable legacy override for advanced troubleshooting.
+        # Automatic prefers llama.cpp and adapts to the model's runtime formats.
+        # defaultEngine is an override only when selectionMode is manual.
         "selectionMode": "automatic",
         "performancePreference": "balanced",
         "maxContextTokens": "automatic",

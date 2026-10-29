@@ -28,6 +28,7 @@ from backend.models.download_manager import (
 )
 from backend.models.variant_resolver import resolve_model_variants_with_issues
 from backend.models.artifacts import ArtifactStore
+from backend.models.storage import download_folder
 
 
 Transfer = Callable[..., Any]
@@ -67,8 +68,7 @@ class DesktopAcquisitionService:
     ) -> None:
         root = Path(data_root) if data_root is not None else data_dir()
         root.mkdir(parents=True, exist_ok=True)
-        library = Path(model_library) if model_library is not None else root / "models"
-        library.mkdir(parents=True, exist_ok=True)
+        library = Path(model_library) if model_library is not None else download_folder(root)
         self.data_root = root
         self.model_library = library
         self.repository = JsonJobRepository(root / "desktop-download-jobs.json")

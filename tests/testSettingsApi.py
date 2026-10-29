@@ -28,6 +28,7 @@ class SettingsApiTests(unittest.TestCase):
     def test_defaults_include_automatic_model_governance(self):
         models = self.get_settings()["models"]
         self.assertEqual(models["selectionMode"], "automatic")
+        self.assertEqual(models["defaultEngine"], "llamacpp")
         self.assertEqual(models["performancePreference"], "balanced")
         self.assertEqual(models["maxContextTokens"], "automatic")
         self.assertTrue(models["allowMultiGpu"])

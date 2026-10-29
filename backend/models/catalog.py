@@ -10,6 +10,7 @@ import httpx
 
 from backend.core import audit as audit
 from backend.core.datadir import data_dir
+from backend.models.storage import library_folders
 from backend.models import resource_manifest
 from backend.models.variant_resolver import resolve_model_variants_with_issues
 
@@ -351,6 +352,7 @@ def _local_model_roots():
         Path.home() / ".cache" / "huggingface" / "hub",
         Path(os.environ["LOCALAPPDATA"]) / "huggingface" / "hub" if os.environ.get("LOCALAPPDATA") else None,
         MODELS_DIR,
+        *library_folders(),
     ]:
         if not candidate:
             continue

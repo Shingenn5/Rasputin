@@ -6,6 +6,8 @@ import { labelize } from "../../lib/display.js";
 import { api, postJson } from "../../api/client.js";
 
 import { PlanPreview } from "./PlanPreview.jsx";
+import { modelRuntimeProtocol } from "../../lib/engines.js";
+import { useSettingsStore } from "../settings/settingsStore.js";
 
 export const PIPELINE_STEPS = [
   { id: "planned",         label: "Plan" },
@@ -26,6 +28,7 @@ export function DeployTab({
   approveApproval, denyApproval, lifecycle,
   runtimeStrategyLabel, enableDockerControl, go,
 }) {
+  const modelSettings = useSettingsStore(state => state.models);
   const formRef = React.useRef(null);
   const briefRef = React.useRef(null);
   const [advisor, setAdvisor] = React.useState(null);
@@ -72,7 +75,7 @@ export function DeployTab({
         model: selectedCatalogModel,
         hardware,
         mission: selectedCatalogModel.purpose || "chat",
-        protocolId: selectedCatalogModel.recommendedProtocol,
+        protocolId: modelRuntimeProtocol(selectedCatalogModel, modelSettings),
         contextWindow: selectedCatalogModel.contextWindow,
         toolCallParser: selectedCatalogModel.toolCallParserHint,
       }));

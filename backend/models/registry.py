@@ -21,6 +21,7 @@ from backend.core import runtime_store
 from backend.core.response import AppError
 from backend.warsat.providers import get_provider, NATIVE_RUNTIME
 from backend.core.datadir import data_dir
+from backend.models.storage import library_folders
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
@@ -81,7 +82,7 @@ def _is_relative_to(child, parent):
 def _model_library_roots():
     roots = []
     raw = os.environ.get("CONTAINER_MODELS_DIR")
-    candidates = [Path(raw).expanduser() if raw else None, ROOT / "models", data_dir() / "models"]
+    candidates = [Path(raw).expanduser() if raw else None, ROOT / "models", *library_folders()]
     for candidate in candidates:
         if not candidate:
             continue

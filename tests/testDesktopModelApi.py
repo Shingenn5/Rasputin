@@ -60,6 +60,21 @@ class DesktopModelApiTests(unittest.TestCase):
     def tearDown(self):
         main.app.dependency_overrides.clear()
 
+    def test_storage_folder_save_validation_and_admin_boundary(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"RASPUTIN_DATA_DIR": tmp}), patch.object(core.security, "require"), patch.object(core.audit, "log"):
+            target = str(Path(tmp) / "download models")
+            response = self.client.post("/api/models/storage", json={"downloadFolder": target})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(self.client.get("/api/models/storage").json()["data"]["downloadFolder"], target)
+            rejected = self.client.post("/api/models/storage", json={"downloadFolder": "relative"})
+            self.assertEqual(rejected.status_code, 400)
+            self.assertEqual(self.client.get("/api/models/storage").json()["data"]["downloadFolder"], target)
+            main.app.dependency_overrides.pop(require_admin)
+            main.app.dependency_overrides[current_user] = lambda: {"username": "member", "role": "member"}
+            self.assertEqual(self.client.post("/api/models/storage", json={"downloadFolder": target}).status_code, 403)
+            self.assertEqual(self.client.get("/api/models/storage").status_code, 403)
+
     def test_model_load_and_stop_leave_event_loop_responsive(self):
         for handler, operation in ((core.model_registry_start, "start_model"), (core.model_registry_stop, "stop_model")):
             with self.subTest(operation=operation):

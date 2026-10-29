@@ -8,6 +8,7 @@ from pathlib import Path
 from huggingface_hub import snapshot_download, model_info
 
 from backend.core import workspace
+from backend.models.storage import download_folder
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = ROOT / "models"
@@ -115,7 +116,8 @@ def _download_thread(dl_id: str, model_id: str):
         # HuggingFace cache format for this model
         # models/--<repo_type>--<namespace>--<model_name>
         model_cache_name = f"models--{model_id.replace('/', '--')}"
-        cache_path = MODELS_DIR / model_cache_name
+        models_folder = Path(state.get("downloadFolder") or MODELS_DIR)
+        cache_path = models_folder / model_cache_name
         
         def poll_progress():
             while not stop_polling.is_set():
@@ -132,7 +134,7 @@ def _download_thread(dl_id: str, model_id: str):
         try:
             snapshot_path = snapshot_download(
                 repo_id=model_id,
-                cache_dir=str(MODELS_DIR),
+                cache_dir=str(models_folder),
                 local_files_only=False,
                 resume_download=True
             )
@@ -224,6 +226,7 @@ def start_download(model_id: str):
     state = {
         "id": dl_id,
         "modelId": model_id,
+        "downloadFolder": str(download_folder()),
         "status": "starting",
         "progress": None,
         "downloadedBytes": 0,
