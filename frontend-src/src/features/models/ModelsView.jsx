@@ -1,5 +1,6 @@
 import { InstalledModelInspector } from "./InstalledModelInspector.jsx";
 import { LocalModelSources } from "./LocalModelSources.jsx";
+import { ModelDownloadFolder } from "./ModelDownloadFolder.jsx";
 import { useModelActions } from "./useModelActions.js";
 import { usesNativeModels } from "./nativeDeployment.js";
 import { useState, useMemo, useEffect, useRef } from "react";
@@ -767,6 +768,7 @@ export function ModelsView({
       {/* ── Content ── */}
       <div className={`${desktopOnly ? "models-page-content" : "w2-main-grid"} models-v3-content`}>
         <div className="w2-column">
+          {modelsWorkspaceOpen && ["library", "installed"].includes(activeTab) && <ModelDownloadFolder />}
 
           {/* ═══ LIBRARY TAB ═══ */}
           {activeTab === "library" && (

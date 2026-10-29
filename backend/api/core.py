@@ -19,6 +19,7 @@ from backend.mcp import relay as mcp_relay
 from backend.mcp import skills as skill_store
 from backend.mcp import tools as tool_relay
 from backend.models import acquisition as model_acquisition
+from backend.models import storage as model_storage
 from backend.models import catalog as model_catalog
 from backend.models import load_profiles as model_load_profiles
 from backend.models import providers as model_providers
@@ -668,6 +669,28 @@ async def start_model_variant_download(req: ModelDownloadReq, _user=Depends(requ
 
 async def get_active_downloads(_user=Depends(current_user)):
     return ok(model_acquisition.get_active_downloads())
+
+
+class ModelStorageReq(CamelModel):
+    download_folder: str
+
+
+@models_router.get("/models/storage")
+async def get_model_storage(_user=Depends(require_admin)):
+    return ok(await asyncio.to_thread(model_storage.storage_settings))
+
+
+@models_router.post("/models/storage")
+async def update_model_storage(req: ModelStorageReq, _user=Depends(require_admin)):
+    security.require("allow_model_registry_edit")
+    try:
+        result = await asyncio.to_thread(model_storage.set_download_folder, req.download_folder)
+    except ValueError as exc:
+        raise AppError("invalid_download_folder", str(exc), 400) from None
+    except OSError:
+        raise AppError("download_folder_unavailable", "Cannot write to that folder. Check the path, drive connection, and folder permissions.", 400) from None
+    audit.log("model_download_folder_changed", actor=_user.get("username"))
+    return ok(result)
 
 
 def _desktop_acquisition_service():
