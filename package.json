@@ -1,6 +1,6 @@
 {
   "name": "rasputin",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Private Windows AI workstation for local GGUF inference and governed agentic coding",
   "author": "Shingenn5",
   "license": "AGPL-3.0-or-later",
