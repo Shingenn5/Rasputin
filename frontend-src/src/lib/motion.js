@@ -1,7 +1,7 @@
 export const MOTION_STORAGE_KEY = "rasputin-motion-mode";
 
 export function normalizeMotionMode(value) {
-  return value === "reduced" ? "reduced" : "full";
+  return ["full", "reduced"].includes(value) ? value : "system";
 }
 
 export function readStoredMotionMode() {
@@ -9,9 +9,11 @@ export function readStoredMotionMode() {
 }
 
 export function applyMotionMode(value) {
-  const mode = normalizeMotionMode(value);
+  const preference = normalizeMotionMode(value);
+  const mode = preference === "system"
+    ? (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduced" : "full")
+    : preference;
   document.documentElement.dataset.motion = mode;
-  localStorage.setItem(MOTION_STORAGE_KEY, mode);
   window.dispatchEvent(new CustomEvent("rasputin-motion-change", { detail: { mode } }));
   return mode;
 }

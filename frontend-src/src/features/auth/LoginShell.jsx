@@ -26,7 +26,7 @@ export function LoginShell({ onSubmit, status }) {
           <ul className="login-principles">
             <li><ShieldCheck size={16} aria-hidden="true" /><span><strong>Private by default</strong>Data stays under operator control.</span></li>
             <li><Laptop size={16} aria-hidden="true" /><span><strong>Native workstation</strong>Direct folders and the host toolchain.</span></li>
-            <li><Box size={16} aria-hidden="true" /><span><strong>Docker server</strong>The same wrapper, deployable as infrastructure.</span></li>
+            <li><Box size={16} aria-hidden="true" /><span><strong>Local accounts</strong>Sign in to this Native Host with your local account.</span></li>
           </ul>
         </aside>
 

@@ -286,7 +286,7 @@ export function DashboardView({
             <div className="mb-4 flex items-center justify-between">
               <div className="text-base font-semibold">Run Activity <span className="text-muted-foreground">· 30d</span></div>
               <div className="flex gap-1 rounded-full border border-border bg-background p-1">
-                <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium">Daily</span>
+                <span className="rounded-full bg-[var(--secondary)] px-3 py-1 text-xs font-medium">Daily</span>
                 <button className="rounded-full px-3 py-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => go("activity")}>View all</button>
               </div>
             </div>
@@ -347,7 +347,7 @@ export function DashboardView({
               {adminAccess && <Button variant="ghost" size="pill" onClick={() => go("models")}>Manage</Button>}
             </div>
             {topModels.length ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" role="region" aria-label="Top models usage table" tabIndex={0}>
                 <table className="w-full min-w-[440px] border-collapse">
                   <thead>
                     <tr className="text-left text-[0.66rem] uppercase tracking-wider text-muted-foreground/70">

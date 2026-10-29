@@ -720,7 +720,7 @@ export function ModelsView({
               tabIndex={activeTab === t.id ? 0 : -1}
               aria-label={desktopOnly && modelsRailCollapsed ? desktopItem.label : undefined}
               title={desktopOnly && modelsRailCollapsed ? desktopItem.label : undefined}
-              variant={activeTab === t.id ? "default" : "outline"}
+              variant="outline"
               size="sm"
               type="button"
               ref={(node) => { modelTabRefs.current[t.id] = node; }}
@@ -1117,7 +1117,7 @@ export function ModelsView({
                   <button className="w2-button" type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)} style={{ fontSize: "0.75rem", padding: "4px 12px" }}>
                     Next
                   </button>
-                  <select className="w2-input" style={{ width: "110px", flex: "none" }} value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+                  <select className="w2-input" aria-label="Models per page" style={{ width: "110px", flex: "none" }} value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
                     {[10, 20, 40, 80].map(n => <option key={n} value={n}>{n} / page</option>)}
                   </select>
                 </div>
@@ -1410,7 +1410,7 @@ export function ModelsView({
         {/* Discover keeps the server-mode context column. My Models already
             owns a persistent inspector, so never duplicate it beside the table. */}
         {!desktopOnly && activeTab !== "installed" && (
-          <div className="w2-column">
+          <div className="w2-column" role="region" aria-label="Model discovery details" tabIndex={0}>
             <RightPanel
               activeTab={activeTab}
               activeModel={activeModel}

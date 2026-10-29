@@ -5,7 +5,7 @@ import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 import { themeOptions } from "../../lib/constants.js";
 
-export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotionMode, testingMode, updateTestingMode }) {
+export function GeneralSettings({ theme, setTheme, motionMode = "system", setMotionMode, testingMode, updateTestingMode }) {
   const general = useSettingsStore(state => state.general);
   const loading = useSettingsStore(state => state.loading);
   const error = useSettingsStore(state => state.errors?.general);
@@ -82,7 +82,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
                 <h5 className="mb-0 fw-semibold">Aesthetics & UI</h5>
               </div>
               
-              <Form.Group className="mb-4">
+              <Form.Group className="mb-4" controlId="general-theme">
                 <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Platform Theme</Form.Label>
                 <Form.Select 
                   size="lg"
@@ -96,7 +96,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
                 </Form.Select>
               </Form.Group>
 
-              <Form.Group>
+              <Form.Group controlId="general-language">
                 <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Interface Language</Form.Label>
                 <Form.Select 
                   size="lg"
@@ -111,7 +111,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
                 </Form.Select>
               </Form.Group>
 
-              <Form.Group className="mt-4">
+              <Form.Group className="mt-4" controlId="general-motion">
                 <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Interface Motion</Form.Label>
                 <Form.Select
                   data-testid="interface-motion-select"
@@ -120,6 +120,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
                   value={motionMode}
                   onChange={(event) => setMotionMode?.(event.target.value)}
                 >
+                  <option value="system">Follow system preference</option>
                   <option value="full">Full motion — cinematic effects</option>
                   <option value="reduced">Reduced motion — minimal effects</option>
                 </Form.Select>
@@ -140,7 +141,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
                 <h5 className="mb-0 fw-semibold">Environment</h5>
               </div>
               
-              <Form.Group className="mb-4">
+              <Form.Group className="mb-4" controlId="general-workspace-path">
                 <Form.Label className="fw-medium text-muted small text-uppercase tracking-wide">Default Workspace Path</Form.Label>
                 <Form.Control 
                   type="text" 
@@ -155,7 +156,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
 
               <div className="bg-body p-3 rounded border">
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <div className="fw-medium">Markdown Formatting</div>
+                  <label className="fw-medium" htmlFor="markdown-switch">Markdown Formatting</label>
                   <Form.Check 
                     type="switch" 
                     id="markdown-switch"
@@ -165,7 +166,7 @@ export function GeneralSettings({ theme, setTheme, motionMode = "full", setMotio
                 </div>
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
-                    <span className="fw-medium">Testing Mode</span>
+                    <label className="fw-medium" htmlFor="testing-mode-switch">Testing Mode</label>
                     <Badge bg="" className="badge-soft-warn ms-2">Dry-Run</Badge>
                     <Form.Text className="d-block text-muted">Routes chat to a mock model with canned replies. Applies immediately.</Form.Text>
                   </div>

@@ -1372,7 +1372,7 @@
 }
 
 .w2-health-item.is-good {
-  color: #10B981; /* Emerald */
+  color: var(--dash-up);
 }
 
 .w2-health-item.is-warn {

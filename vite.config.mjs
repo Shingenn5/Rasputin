@@ -34,7 +34,8 @@ export default defineConfig({
             if (id.includes("/src/features/tasks/")) return "feature-tasks";
             return undefined;
           }
-          return "vendor";
+          // Let Rollup keep dependencies used only by deferred views out of startup.
+          return undefined;
         },
       },
     },

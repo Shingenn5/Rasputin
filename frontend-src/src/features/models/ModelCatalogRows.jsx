@@ -21,7 +21,7 @@ export function CatalogPagination({ total, currentPage, pageCount, pageSize, onP
         <button className="w2-button" type="button" disabled={currentPage >= pageCount} onClick={() => onPageChange(currentPage + 1)}>Next</button>
         <label>
           <span className="sr-only">Models per page</span>
-          <select className="w2-input" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
+          <select className="w2-input" aria-label="Models per page" value={pageSize} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
             {[10, 20, 40, 80].map((count) => <option key={count} value={count}>{count} / page</option>)}
           </select>
         </label>

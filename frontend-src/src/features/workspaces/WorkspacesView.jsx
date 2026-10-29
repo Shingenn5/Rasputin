@@ -394,7 +394,7 @@ export function WorkspacesView({
               </button>
             </div>
             {/* Bounded scroll so a long roots list can't grow the whole page. */}
-            <div role="tree" aria-label="Approved workspace folders" style={{ display: 'flex', flexDirection: 'column', maxHeight: '40vh', overflowY: 'auto' }}>
+            <div role={workspaceRoots.length ? "tree" : undefined} aria-label={workspaceRoots.length ? "Approved workspace folders" : undefined} style={{ display: 'flex', flexDirection: 'column', maxHeight: '40vh', overflowY: 'auto' }}>
               {workspaceRoots.map((root) => {
                 const rootPath = root.path || root.root;
                 const rootId = root.id;
@@ -419,16 +419,16 @@ export function WorkspacesView({
                   </button>
                 );
               })}
-              {workspaceRoots.length === 0 && <div style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', padding: '4px 8px' }}>No approved folders.</div>}
-              <button
-                type="button"
-                className="w2-tree-item workspace-add-folder"
-                onClick={() => setShowAddModal(true)}
-              >
-                <PlusCircle size={16} className="w2-tree-icon" style={{ color: 'var(--cc-primary)' }} />
-                <span>Open Project</span>
-              </button>
             </div>
+            {workspaceRoots.length === 0 && <p style={{ fontSize: '0.75rem', color: 'var(--cc-muted)', padding: '4px 8px' }}>No approved folders.</p>}
+            <button
+              type="button"
+              className="w2-tree-item workspace-add-folder"
+              onClick={() => setShowAddModal(true)}
+            >
+              <PlusCircle size={16} className="w2-tree-icon" style={{ color: 'var(--cc-primary)' }} />
+              <span>Open Project</span>
+            </button>
           </div>
 
           {pendingMountsList.length > 0 && (

@@ -17,16 +17,16 @@
   --dash-border: color-mix(in srgb, var(--dash-text) 11%, transparent);
   --dash-border-strong: color-mix(in srgb, var(--dash-text) 21%, transparent);
   
-  --dash-muted: color-mix(in srgb, var(--dash-text) 65%, transparent);
-  --dash-faint: color-mix(in srgb, var(--dash-text) 45%, transparent);
+  --dash-muted: color-mix(in srgb, var(--dash-text) 80%, var(--dash-bg));
+  --dash-faint: var(--dash-muted);
 
   --dash-accent-soft: color-mix(in srgb, var(--dash-accent) 14%, transparent);
   --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 50%, transparent);
 
-  --dash-up: #3f9c68;
-  --dash-info: #477ca5;
-  --dash-warn: #d49438;
-  --dash-down: #c74f46;
+  --dash-up: color-mix(in srgb, var(--dash-text) 45%, #3f9c68);
+  --dash-info: color-mix(in srgb, var(--dash-text) 45%, #477ca5);
+  --dash-warn: color-mix(in srgb, var(--dash-text) 50%, #d49438);
+  --dash-down: color-mix(in srgb, var(--dash-text) 45%, #c74f46);
   
   --dash-radius: 4px;
   --dash-radius-sm: 3px;
@@ -393,11 +393,11 @@ html:not(.dark) {
 .w2-button:hover { background: var(--dash-panel-hover); }
 .w2-button.primary {
   background: var(--cc-accent);
-  color: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
+  color: var(--base-accent-contrast, #fff);
   border-color: var(--cc-accent);
   font-weight: 600;
 }
-.w2-button.primary:hover { background: color-mix(in srgb, var(--cc-accent) 85%, var(--dash-text)); }
+.w2-button.primary:hover { background: var(--cc-accent); }
 
 .w2-list-item { border-radius: 3px; background: var(--dash-panel-2); }
 .w2-input {

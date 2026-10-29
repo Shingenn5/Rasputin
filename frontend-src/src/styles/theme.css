@@ -23,7 +23,8 @@
   --popover-foreground: var(--dash-text);
 
   --primary: var(--dash-accent);
-  --primary-foreground: color-mix(in srgb, var(--dash-bg) 80%, var(--dash-text));
+  --primary-foreground: var(--base-accent-contrast, #fff);
+  --dash-accent-contrast: var(--base-accent-contrast, #fff);
 
   --secondary: var(--dash-panel-2);
   --secondary-foreground: var(--dash-text);
@@ -34,7 +35,8 @@
   --accent: var(--dash-panel-hover);
   --accent-foreground: var(--dash-text);
 
-  --destructive: var(--dash-down);
+  /* Solid fills keep their own pairing; status text brightens in dark themes. */
+  --destructive: #c74f46;
   --destructive-foreground: #fff;
 
   --border: var(--dash-border);

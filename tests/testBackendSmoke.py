@@ -1680,6 +1680,9 @@ class BackendSmokeTests(unittest.TestCase):
         stored = runtime_store.get_kv("userPreferences")
         self.assertEqual(stored["theme"], "bootswatch-slate")
         self.assertEqual(stored["activeChatFolder"], "unfiled")
+        system = self.assertOk(self.client.post("/api/preferences", json={"motionMode": "system"}))
+        self.assertEqual(system["motionMode"], "system")
+        self.assertEqual(self.assertOk(self.client.get("/api/preferences"))["motionMode"], "system")
         self.assertOk(self.client.post("/api/preferences", json={
             "onboarded": False,
             "theme": "rasputin-light",

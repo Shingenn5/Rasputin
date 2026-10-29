@@ -99,7 +99,7 @@ test("Discover hardware includes CPU, system RAM, GPU facts, and readable native
   assert.match(styles, /model-vram-filter__capacity[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /models-hardware-fit-facts[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/s);
   assert.match(styles, /models-workspace-v3 select \{ color-scheme: dark;/);
-  assert.match(styles, /select option \{ background-color: #111815; color: #eef7f2;/);
+  assert.match(styles, /select option \{ background-color: var\(--dash-panel\); color: var\(--dash-text\);/);
 });
 
 test("Discover shows registered models independently of catalog results and opens My Models", () => {

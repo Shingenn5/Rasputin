@@ -166,7 +166,7 @@ export function DashSidebar({
         onClick={() => go(item.view, item.section)}
         className={cn(
           "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium transition-colors",
-          active ? "is-active text-sidebar-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+          active ? "is-active text-sidebar-foreground" : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
           !expanded && "justify-center px-0",
         )}
       >
@@ -229,7 +229,7 @@ export function DashSidebar({
           {expanded && (
             <div className="flex flex-col leading-tight">
               <span className="ras-sidebar-wordmark text-[1rem] font-bold tracking-tight">Rasputin</span>
-              <span className="text-[0.63rem] uppercase tracking-[0.12em] text-sidebar-foreground/45">Local AI</span>
+              <span className="text-[0.6875rem] uppercase tracking-[0.12em] text-muted-foreground">Local AI</span>
             </div>
           )}
         </div>
@@ -263,7 +263,7 @@ export function DashSidebar({
           {expanded && <span>New chat</span>}
         </button> : <div
           data-testid="viewer-read-only-notice"
-          className={cn("mb-2 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/60 px-3 py-2 text-[0.68rem] text-sidebar-foreground/65", !expanded && "px-1 text-center")}
+          className={cn("mb-2 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/60 px-3 py-2 text-[0.68rem] text-muted-foreground", !expanded && "px-1 text-center")}
         >
           {expanded ? <><strong className="block text-sidebar-foreground/80">Read-only access</strong><span>Ask an administrator for member access to run tasks.</span></> : <LockKeyhole size={16} className="mx-auto" />}
         </div>}
@@ -290,7 +290,7 @@ export function DashSidebar({
               <div
                 id={`nav-group-${group.label.toLowerCase()}`}
                 className={cn(
-                  "ras-sidebar-section-label px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35",
+                  "ras-sidebar-section-label px-3 pb-1 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground",
                   !expanded && "sr-only",
                 )}
               >
@@ -324,7 +324,7 @@ export function DashSidebar({
             title={!expanded ? "Recent chats" : undefined}
             onClick={() => setHistoryOpen((open) => !open)}
             className={cn(
-              "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+              "ras-nav-item group relative flex w-full items-center gap-3 rounded-lg px-3 py-1 text-[0.82rem] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
               historyOpen && "is-active bg-sidebar-accent text-sidebar-foreground",
               !expanded && "justify-center px-0",
             )}
@@ -340,8 +340,8 @@ export function DashSidebar({
         {expanded && (
           <section className="ras-sidebar-projects mt-3" aria-labelledby="sidebar-projects-heading">
             <div className="flex items-center justify-between gap-2 px-3 pb-1">
-              <span id="sidebar-projects-heading" className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/35">Projects</span>
-              <button type="button" className="text-[0.65rem] text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground" onClick={() => go("workspaces")}>Manage</button>
+              <span id="sidebar-projects-heading" className="text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Projects</span>
+              <button type="button" className="text-[0.65rem] text-muted-foreground transition-colors hover:text-sidebar-foreground" onClick={() => go("workspaces")}>Manage</button>
             </div>
             <div className="flex flex-col gap-0.5" data-testid="sidebar-project-list">
               {projects.map((project) => {
@@ -350,19 +350,19 @@ export function DashSidebar({
                 const projectName = project.displayName || project.display_name || project.name || projectPath.split(/[\\/]/).filter(Boolean).pop() || "Project";
                 const active = (activeWorkspaceId && project.id === activeWorkspaceId) || (activeWorkspacePath && projectPath === activeWorkspacePath);
                 return (
-                  <div key={projectId} className={cn("group/project flex items-center rounded-lg", active ? "bg-sidebar-accent text-sidebar-foreground" : "text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground")}>
+                  <div key={projectId} className={cn("group/project flex items-center rounded-lg", active ? "bg-sidebar-accent text-sidebar-foreground" : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground")}>
                     <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-1.5 text-left text-[0.78rem]" title={`Open ${projectName}`} aria-current={active ? "location" : undefined} onClick={() => onSelectProject?.(project)}>
                       <Folder size={14} className="shrink-0 opacity-75" aria-hidden="true" />
                       <span className="truncate">{projectName}</span>
                     </button>
-                    <button type="button" className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-sidebar-primary/10 hover:text-sidebar-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring" title={`Index and Graphify ${projectName}`} aria-label={`Index and Graphify ${projectName}`} onClick={() => graphifyProject?.(project)}>
+                    <button type="button" className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-primary/10 hover:text-sidebar-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring" title={`Index and Graphify ${projectName}`} aria-label={`Index and Graphify ${projectName}`} onClick={() => graphifyProject?.(project)}>
                       <BrainCircuit size={13} aria-hidden="true" />
                     </button>
                   </div>
                 );
               })}
               {projects.length === 0 && (
-                <button type="button" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.75rem] text-sidebar-foreground/45 hover:bg-sidebar-accent hover:text-sidebar-foreground" onClick={() => go("workspaces")}>
+                <button type="button" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.75rem] text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground" onClick={() => go("workspaces")}>
                   <FolderOpen size={14} aria-hidden="true" /> Open your first project
                 </button>
               )}
@@ -510,11 +510,11 @@ export function DashSidebar({
               <div>
                 <h2 id="history-drawer-title" className="mt-1 text-base font-semibold">Recent chats</h2>
               </div>
-              <button type="button" data-testid="history-drawer-close" aria-label="Close recent chats" onClick={() => setHistoryOpen(false)} className="grid size-8 place-items-center rounded-lg text-sidebar-foreground/55 hover:bg-sidebar-accent hover:text-sidebar-foreground">&#215;</button>
+              <button type="button" data-testid="history-drawer-close" aria-label="Close recent chats" onClick={() => setHistoryOpen(false)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground">&#215;</button>
             </header>
             <label className="relative mt-3 block">
               <span className="sr-only">Search recent chats</span>
-              <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sidebar-foreground/40" />
+              <Search size={15} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 ref={historySearchRef}
                 data-testid="history-search"
@@ -522,10 +522,10 @@ export function DashSidebar({
                 value={historyQuery}
                 onChange={(event) => setHistoryQuery(event.target.value)}
                 placeholder="Search recent chats"
-                className="w-full rounded-lg border border-sidebar-border bg-sidebar-accent/55 py-2 pl-9 pr-3 text-sm text-sidebar-foreground outline-none placeholder:text-sidebar-foreground/35 focus:border-sidebar-primary/60 focus:ring-2 focus:ring-sidebar-primary/20"
+                className="w-full rounded-lg border border-sidebar-border bg-sidebar-accent/55 py-2 pl-9 pr-3 text-sm text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-primary/60 focus:ring-2 focus:ring-sidebar-primary/20"
               />
             </label>
-            <div className="mt-3 flex items-center justify-between text-[0.67rem] text-sidebar-foreground/45">
+            <div className="mt-3 flex items-center justify-between text-[0.67rem] text-muted-foreground">
               <span>{filteredSessions.length} of {sessions.length} recent chats</span>
               {taskAccess && emptySessionCount > 0 && <button type="button" data-testid="sidebar-clear-empty-chats" onClick={() => cleanupEmptySessions?.()} className="flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-sidebar-accent hover:text-sidebar-foreground"><Trash2 size={12} aria-hidden="true" />Clear {emptySessionCount} empty</button>}
             </div>
@@ -533,15 +533,15 @@ export function DashSidebar({
               {filteredSessions.length > 0 ? filteredSessions.map((s) => {
                 const active = s.id === activeSessionId;
                 return (
-                  <div key={s.id} data-testid={"history-session-" + s.id} className={cn("group/session flex items-center rounded-lg border border-transparent", active ? "bg-sidebar-accent text-sidebar-foreground" : "text-sidebar-foreground/65 hover:border-sidebar-border hover:bg-sidebar-accent/60 hover:text-sidebar-foreground")}>
+                  <div key={s.id} data-testid={"history-session-" + s.id} className={cn("group/session flex items-center rounded-lg border border-transparent", active ? "bg-sidebar-accent text-sidebar-foreground" : "text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent/60 hover:text-sidebar-foreground")}>
                     <button type="button" title={s.title || "Untitled chat"} onClick={() => { resumeSession?.(s.id); setHistoryOpen(false); }} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left">
                       <MessageSquare size={15} className="shrink-0 opacity-65" aria-hidden="true" />
-                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{s.title || "Untitled chat"}</span><span className="mt-0.5 block truncate text-[0.65rem] text-sidebar-foreground/40">{s.model || "Local session"}</span></span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{s.title || "Untitled chat"}</span><span className="mt-0.5 block truncate text-[0.65rem] text-muted-foreground">{s.model || "Local session"}</span></span>
                     </button>
-                    {taskAccess && <button type="button" data-testid={"sidebar-delete-chat-" + s.id} aria-label={"Delete " + (s.title || "Untitled chat")} title={s.isEmpty ? "Delete empty chat" : "Delete chat"} onClick={() => deleteSession?.(s)} className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/40 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring"><Trash2 size={13} aria-hidden="true" /></button>}
+                    {taskAccess && <button type="button" data-testid={"sidebar-delete-chat-" + s.id} aria-label={"Delete " + (s.title || "Untitled chat")} title={s.isEmpty ? "Delete empty chat" : "Delete chat"} onClick={() => deleteSession?.(s)} className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sidebar-ring"><Trash2 size={13} aria-hidden="true" /></button>}
                   </div>
                 );
-              }) : <div className="rounded-lg border border-dashed border-sidebar-border px-3 py-6 text-center text-sm text-sidebar-foreground/45">{historyQuery ? "No chats match that search." : "No recent chats yet."}</div>}
+              }) : <div className="rounded-lg border border-dashed border-sidebar-border px-3 py-6 text-center text-sm text-muted-foreground">{historyQuery ? "No chats match that search." : "No recent chats yet."}</div>}
             </div>
             <footer className="mt-3 border-t border-sidebar-border pt-3">
               <button type="button" data-testid="history-view-all" onClick={() => { setHistoryOpen(false); go("activity"); }} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-sidebar-primary hover:bg-sidebar-primary/10"><span>View all activity</span><span aria-hidden="true">-&gt;</span></button>

@@ -11,10 +11,10 @@ export function SchedulesView({ view, schedules, createSchedule }) {
           <Card.Body>
             <Form onSubmit={createSchedule}>
               <Row className="g-3 align-items-end">
-                <Col md={3}><Form.Label>Name</Form.Label><Form.Control name="name" placeholder="Daily review" /></Col>
-                <Col md={5}><Form.Label>Prompt</Form.Label><Form.Control name="prompt" placeholder="Review my active workspace" /></Col>
-                <Col md={2}><Form.Label>Interval seconds</Form.Label><Form.Control name="intervalSeconds" type="number" defaultValue="0" /></Col>
-                <Col md={2}><Form.Check type="switch" name="enabled" label="Enabled" /></Col>
+                <Col md={3}><Form.Label htmlFor="schedule-name">Name</Form.Label><Form.Control id="schedule-name" name="name" placeholder="Daily review" /></Col>
+                <Col md={5}><Form.Label htmlFor="schedule-prompt">Prompt</Form.Label><Form.Control id="schedule-prompt" name="prompt" placeholder="Review my active workspace" /></Col>
+                <Col md={2}><Form.Label htmlFor="schedule-interval">Interval seconds</Form.Label><Form.Control id="schedule-interval" name="intervalSeconds" type="number" defaultValue="0" /></Col>
+                <Col md={2}><Form.Check id="schedule-enabled" type="switch" name="enabled" label="Enabled" /></Col>
                 <Col xs={12}><Button type="submit">Create Schedule</Button></Col>
               </Row>
             </Form>

@@ -12,19 +12,16 @@ import { useMcpActions } from "./useMcpActions.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
+import { DeferredView } from "../components/DeferredView.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { Onboarding } from "../components/Onboarding.jsx";
 import { api, postJson } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
-import { DashboardView } from "../features/dashboard/DashboardView.jsx";
 import { usesNativeModels } from "../features/models/nativeDeployment.js";
-import { ModelsView } from "../features/models/ModelsView.jsx";
 import { AssistantView } from "../features/assistant/AssistantView.jsx";
-import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
 import { TaskDetailsDrawer } from "../features/tasks/TaskDetailsDrawer.jsx";
-import { WorkspacesView } from "../features/workspaces/WorkspacesView.jsx";
 import { AuditView } from "../features/audit/AuditView.jsx";
 import { AgentsView } from "../features/runtime/AgentsView.jsx";
 import { SessionsView } from "../features/runtime/SessionsView.jsx";
@@ -50,6 +47,10 @@ import { applyMotionMode, normalizeMotionMode, readStoredMotionMode } from "../l
 
 const ApiView = lazy(() => import("../features/workstation/ApiView.jsx").then((module) => ({ default: module.ApiView })));
 const TrainingView = lazy(() => import("../features/workstation/TrainingView.jsx").then((module) => ({ default: module.TrainingView })));
+const DashboardView = lazy(() => import("../features/dashboard/DashboardView.jsx").then((module) => ({ default: module.DashboardView })));
+const ModelsView = lazy(() => import("../features/models/ModelsView.jsx").then((module) => ({ default: module.ModelsView })));
+const WorkspacesView = lazy(() => import("../features/workspaces/WorkspacesView.jsx").then((module) => ({ default: module.WorkspacesView })));
+const SettingsView = lazy(() => import("../features/settings/SettingsView.jsx").then((module) => ({ default: module.SettingsView })));
 
 const routedViews = new Set([
   "home",
@@ -144,6 +145,8 @@ export function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(readInitialTheme);
   const [motionMode, setMotionMode] = useState(readStoredMotionMode);
+  const [systemReducedMotion, setSystemReducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const resolvedMotionMode = motionMode === "system" ? (systemReducedMotion ? "reduced" : "full") : motionMode;
   const [models, setModels] = useState([]);
   const [modelProviders, setModelProviders] = useState([]);
   const [modelCatalog, setModelCatalog] = useState({ items: [], categories: [], runtimes: [], source: {} });
@@ -381,7 +384,15 @@ export function App() {
 
   useEffect(() => {
     applyMotionMode(motionMode);
-  }, [motionMode]);
+    if (ready) localStorage.setItem("rasputin-motion-mode", motionMode);
+  }, [motionMode, systemReducedMotion, ready]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (event) => setSystemReducedMotion(event.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
   // Bridge: route every legacy setGlobalStatus(...) call through the toast
   // system so all existing call sites surface as stacked, non-clobbering
@@ -550,7 +561,7 @@ export function App() {
     const themeWasExplicitlyChosen = localStorage.getItem("rasputin-theme-explicit") === "1";
     const storedTheme = localTheme || prefs.theme;
     setTheme(normalizeTheme(!themeWasExplicitlyChosen && storedTheme === "rasputin-light" ? "rasputin-dark" : storedTheme || "rasputin-dark"));
-    setMotionMode(normalizeMotionMode(localMotionMode || prefs.motionMode || "full"));
+    setMotionMode(normalizeMotionMode(localMotionMode || prefs.motionMode || "system"));
     setSidebarCollapsed(localSidebarCollapsed === null ? !!prefs.sidebarCollapsed : localSidebarCollapsed);
     setTestingMode(!!prefs.testingMode);
     setSelectedModel(pickBootModel(data.models || [], prefs));
@@ -1276,7 +1287,7 @@ export function App() {
         locked: security.privacyLock,
         runtimeMode: security.desktopOnly || security.native ? "native" : "docker",
         desktopOnly,
-        motionMode,
+        motionMode: resolvedMotionMode,
         mobileOpen: mobileSidebarOpen,
         newTask: startNewChat,
         recentSessions: sessions?.sessions || [],
@@ -1294,6 +1305,7 @@ export function App() {
         logout: desktopOnly ? undefined : logout,
       }}
     >
+      <DeferredView active={ready && view === "home"}>
       <DashboardView
         view={view}
         models={models}
@@ -1311,6 +1323,7 @@ export function App() {
         sendTask={sendTask}
         healthy={healthy}
       />
+      </DeferredView>
       <HomeView
         activeWorkspaceName={activeWorkspaceName}
         view={desktopOnly && view === "settings" ? "chat" : view}
@@ -1375,6 +1388,7 @@ export function App() {
           setGlobalStatus(`${mode} prompt loaded.`);
         }}
       />
+      <DeferredView active={ready && view === "workspaces"}>
       <WorkspacesView
         view={view}
         workspace={workspace}
@@ -1413,6 +1427,7 @@ export function App() {
           setGlobalStatus("Workspace analysis prompt loaded.");
         }}
       />
+      </DeferredView>
       <AgentsView view={view} tasks={tasks} models={models} />
       <SessionsView
         view={view}
@@ -1537,7 +1552,7 @@ export function App() {
         modeModelOverrides={modeModelOverrides}
       />
       {/* Onboarding owns focus until dismissed. */}
-      {!showOnboarding && <ModelsView
+      {!showOnboarding && <DeferredView active={ready && ["models", "discover"].includes(view)}><ModelsView
         view={view}
         models={models}
         selectedModelObject={selectedModelObject}
@@ -1563,7 +1578,7 @@ export function App() {
         security={security}
         openWarsat={() => (nativeModels ? go("models") : go("warsat"))}
         go={go}
-      />}
+      /></DeferredView>}
       <AssistantView
         view={view}
         profile={assistantProfile}
@@ -1620,6 +1635,7 @@ export function App() {
         archiveInbox={(id) => updateInboxEvent(id, "archive")}
         markAllInboxRead={markAllInboxRead}
       />
+      <DeferredView active={ready && view === "settings"}>
       <SettingsView
         view={view}
         session={session}
@@ -1679,6 +1695,7 @@ export function App() {
         refreshSetupStatus={refreshSetupStatus}
         go={go}
       />
+      </DeferredView>
       <AuditView view={view} events={auditEvents} refresh={loadAuditEvents} />
       <TaskDetailsDrawer
         taskId={selectedTaskId}

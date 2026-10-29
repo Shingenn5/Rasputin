@@ -195,7 +195,7 @@ button.ras-brand-sigil:hover {
 
 .login-kicker {
   margin: 0 0 12px;
-  color: var(--dash-accent);
+  color: var(--dash-text);
   font-family: var(--ras-font-mono);
   font-size: 0.66rem;
   font-weight: 700;
@@ -203,7 +203,7 @@ button.ras-brand-sigil:hover {
 }
 
 .login-manifesto .login-kicker {
-  color: var(--sidebar-primary);
+  color: var(--sidebar-foreground);
 }
 
 .login-manifesto h1 {
@@ -362,7 +362,7 @@ button.ras-brand-sigil:hover {
   border-radius: 10px 3px 10px 3px;
   padding: 0 16px;
   background: var(--dash-accent);
-  color: #fff;
+  color: var(--base-accent-contrast, #fff);
   box-shadow: 0 10px 24px color-mix(in srgb, var(--dash-accent) 21%, transparent);
   font-size: 0.82rem;
   font-weight: 700;
@@ -371,11 +371,10 @@ button.ras-brand-sigil:hover {
 }
 
 html[data-theme="rasputin-dark"] .login-submit {
-  color: #10120f;
+  color: var(--base-accent-contrast, #fff);
 }
 
 .login-submit:hover {
-  filter: brightness(1.07);
   transform: translateY(-1px);
 }
 
@@ -531,7 +530,7 @@ html[data-theme="rasputin-dark"] .login-submit {
   gap: 10px;
   border-radius: 8px;
   padding: 7px 9px;
-  color: color-mix(in srgb, var(--sidebar-foreground) 58%, transparent);
+  color: var(--dash-muted);
 }
 
 .ras-runtime-row {
@@ -549,8 +548,8 @@ html[data-theme="rasputin-dark"] .login-submit {
 
 .ras-runtime-row small {
   margin-bottom: 2px;
-  color: color-mix(in srgb, var(--sidebar-foreground) 34%, transparent);
-  font-size: 0.56rem;
+  color: var(--dash-muted);
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -2170,7 +2169,7 @@ button.workspace-add-folder:focus-visible {
   color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 78%, transparent);
   font-size: 0.69rem;
 }
-.settings-hero-actions button:hover { border-color: color-mix(in srgb, var(--dash-accent) 60%, transparent); background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: #fff; }
+.settings-hero-actions button:hover { border-color: color-mix(in srgb, var(--dash-accent) 60%, transparent); background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-text); }
 .settings-hero-actions button.is-danger:hover { border-color: var(--ras-danger, #cf554f); color: #ffb2ac; }
 
 .settings-control-grid {
@@ -2211,7 +2210,7 @@ button.workspace-add-folder:focus-visible {
 .settings-search kbd { padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--dash-sidebar-text, #fff) 11%, transparent); border-radius: 4px; color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 35%, transparent); background: transparent; font-size: 0.58rem; }
 .settings-rail-scroll { min-height: 0; margin-top: 12px; overflow-y: auto; scrollbar-width: thin; }
 .settings-nav-group { margin: 0 0 14px; }
-.settings-nav-group > span { display: block; margin: 0 9px 5px; color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 33%, transparent); font-family: var(--ras-font-mono); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase; }
+.settings-nav-group > span { display: block; margin: 0 9px 5px; color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 75%, var(--dash-sidebar)); font-family: var(--ras-font-mono); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase; }
 
 .settings-nav-item {
   position: relative;
@@ -2324,7 +2323,7 @@ button.workspace-add-folder:focus-visible {
 .workspace-hero-actions { display: flex; gap: 7px; margin-top: 17px; }
 .workspace-hero-actions button { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; padding: 0 12px; border-radius: 8px 3px 8px 3px; font-size: 0.68rem; font-weight: 650; }
 .workspace-primary-action { border: 1px solid var(--dash-accent); background: var(--dash-accent); color: var(--dash-accent-contrast, #fff); box-shadow: 0 8px 22px color-mix(in srgb, var(--dash-accent) 18%, transparent); }
-.workspace-primary-action:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.workspace-primary-action:hover { transform: translateY(-1px); }
 .workspace-secondary-action { border: 1px solid color-mix(in srgb, var(--dash-sidebar-text, #fff) 15%, transparent); background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 5%, transparent); color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 70%, transparent); }
 
 .workspaces-view .w2-header-stats { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(105px, 1fr)); gap: 8px; }
@@ -2336,12 +2335,12 @@ button.workspace-add-folder:focus-visible {
 .workspaces-view .workspace-runtime-note { margin: 0; border-radius: 4px; background: color-mix(in srgb, var(--dash-accent) 5%, var(--dash-surface)); }
 .workspaces-view .w2-main-grid { grid-template-columns: minmax(255px, 0.7fr) minmax(520px, 2.3fr); gap: 12px; min-height: 540px; }
 .workspaces-view .w2-column { border: 1px solid var(--dash-border); border-radius: 14px 4px 14px 4px; background: color-mix(in srgb, var(--dash-surface) 96%, transparent); box-shadow: 0 12px 32px color-mix(in srgb, #000 5%, transparent); }
-.workspaces-view .w2-column-nav { background: color-mix(in srgb, var(--dash-sidebar) 97%, var(--dash-accent) 3%); color: var(--dash-sidebar-text, #fff); }
-.workspaces-view .w2-column-nav .w2-section-title { color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 45%, transparent); }
-.workspaces-view .w2-column-nav .w2-tree-item { border-radius: 8px 3px 8px 3px; color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 64%, transparent); }
-.workspaces-view .w2-column-nav .w2-tree-item:hover { background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 5%, transparent); color: var(--dash-sidebar-text, #fff); }
-.workspaces-view .w2-column-nav .w2-tree-item.is-active { background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-sidebar-text, #fff); }
-.workspaces-view .w2-column-nav .w2-input { border-color: color-mix(in srgb, var(--dash-sidebar-text, #fff) 11%, transparent); background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 4%, transparent); color: var(--dash-sidebar-text, #fff); }
+.workspaces-view .w2-column-nav { background: var(--dash-panel); color: var(--dash-text); }
+.workspaces-view .w2-column-nav .w2-section-title { color: var(--dash-muted); }
+.workspaces-view .w2-column-nav .w2-tree-item { border-radius: 8px 3px 8px 3px; color: var(--dash-muted); }
+.workspaces-view .w2-column-nav .w2-tree-item:hover { background: var(--dash-panel-hover); color: var(--dash-text); }
+.workspaces-view .w2-column-nav .w2-tree-item.is-active { background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-text); }
+.workspaces-view .w2-column-nav .w2-input { border-color: var(--dash-border-strong); background: var(--dash-panel); color: var(--dash-text); }
 .workspaces-view .w2-column-explorer { background: color-mix(in srgb, var(--dash-bg) 48%, var(--dash-surface)); }
 .workspaces-view .w2-card { border-color: var(--dash-border); border-radius: 11px 4px 11px 4px; background: var(--dash-surface); box-shadow: 0 8px 24px color-mix(in srgb, #000 4%, transparent); }
 .workspaces-view .workspace-operations-grid > .w2-card { position: relative; overflow: hidden; }

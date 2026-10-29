@@ -14,12 +14,13 @@
   background: var(--dash-sidebar);
   box-shadow: 0 12px 28px color-mix(in srgb, #000 12%, transparent);
 }
-.settings-view .settings-hero-copy h1 {
+.settings-view .settings-command-banner-v3 .settings-hero-copy h1 {
+  color: var(--dash-sidebar-text);
   margin: 6px 0 3px;
   font-size: clamp(1.55rem, 2.5vw, 2.35rem);
   letter-spacing: -0.04em;
 }
-.settings-view .settings-hero-copy p { max-width: 520px; margin-top: 6px; font-size: .68rem; }
+.settings-view .settings-command-banner-v3 .settings-hero-copy p { color: color-mix(in srgb, var(--dash-sidebar-text) 80%, var(--dash-sidebar)); max-width: 520px; margin-top: 6px; font-size: .68rem; }
 .settings-view .settings-posture-v3 { gap: 5px; }
 .settings-view .settings-posture-v3 > div {
   min-width: 78px;
@@ -27,8 +28,8 @@
   border-radius: 7px 2px 7px 2px;
   background: color-mix(in srgb, var(--dash-sidebar-text, #fff) 5%, transparent);
 }
-.settings-view .settings-posture-v3 strong { font-size: .68rem; }
-.settings-view .settings-posture-v3 span { font-size: .52rem; }
+.settings-view .settings-posture-v3 strong { color: var(--dash-sidebar-text); font-size: .68rem; }
+.settings-view .settings-posture-v3 span { color: color-mix(in srgb, var(--dash-sidebar-text) 80%, var(--dash-sidebar)); font-size: .52rem; }
 .settings-view .settings-hero-actions { gap: 4px; }
 .settings-view .settings-hero-actions button { min-height: 30px; padding: 0 8px; border-radius: 6px 2px 6px 2px; font-size: .62rem; }
 .settings-view .settings-control-grid-v3 {

@@ -1,0 +1,566 @@
+{
+  "date": "2026-10-28",
+  "baseCommit": "44a251efe41e80e9d2c7ac54a7bec563271e1ebe",
+  "scope": "Built source UI, disposable Native Host data; Desktop shell tests use browser fixtures. No installer or installed-app verification.",
+  "axeVersion": "4.10.3",
+  "axeTags": [
+    "wcag2a",
+    "wcag2aa",
+    "wcag21aa",
+    "wcag22aa"
+  ],
+  "login": {
+    "violations": [],
+    "overflow": 0
+  },
+  "routeScans": [
+    {
+      "route": "chat",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "models",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "archive",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "settings/general",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "workspaces",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0,
+      "hover": {
+        "violations": [],
+        "overflow": 0
+      }
+    },
+    {
+      "route": "home",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "activity",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "skills",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "schedules",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "discover",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "chat",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "models",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "archive",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "settings/general",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "workspaces",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "home",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "activity",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "skills",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "schedules",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "discover",
+      "width": 768,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "chat",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "models",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "archive",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "settings/general",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "workspaces",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "home",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "activity",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "skills",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "schedules",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "discover",
+      "width": 390,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "chat",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "models",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "archive",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "settings/general",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "workspaces",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0,
+      "hover": {
+        "violations": [],
+        "overflow": 0
+      }
+    },
+    {
+      "route": "home",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "activity",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "skills",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "schedules",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "discover",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "api",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "training",
+      "width": 1440,
+      "theme": "rasputin-dark",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "api",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "training",
+      "width": 1440,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "chat",
+      "width": 390,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "models",
+      "width": 390,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "settings/general",
+      "width": 390,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    },
+    {
+      "route": "workspaces",
+      "width": 390,
+      "theme": "rasputin-light",
+      "violations": [],
+      "overflow": 0
+    }
+  ],
+  "pageErrors": [],
+  "tests": {
+    "nodePassed": 31,
+    "backendSmokePassed": 168,
+    "browserPassed": 18
+  },
+  "startup": {
+    "method": "Seven fresh-cache authenticated Chat navigations per run at 1440x1000; decoded resource bytes, navigation-to-ready/composer timing; excludes authentication and Electron process launch.",
+    "before": {
+      "label": "before",
+      "trials": [
+        {
+          "readyMs": 3108.699999988079,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "vendor-aiPz-3cB.js",
+            "feature-tasks-CWPfywsK.js",
+            "feature-models-DA3t4B-a.js",
+            "preview-Be0PiELa.js",
+            "feature-workspaces-BFakxaw-.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        },
+        {
+          "readyMs": 699.8000000119209,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "vendor-aiPz-3cB.js",
+            "feature-tasks-CWPfywsK.js",
+            "feature-models-DA3t4B-a.js",
+            "preview-Be0PiELa.js",
+            "feature-workspaces-BFakxaw-.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        },
+        {
+          "readyMs": 865.9000000357628,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "feature-models-DA3t4B-a.js",
+            "vendor-aiPz-3cB.js",
+            "feature-tasks-CWPfywsK.js",
+            "preview-Be0PiELa.js",
+            "feature-workspaces-BFakxaw-.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        },
+        {
+          "readyMs": 883.6000000238419,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "vendor-aiPz-3cB.js",
+            "feature-tasks-CWPfywsK.js",
+            "feature-models-DA3t4B-a.js",
+            "preview-Be0PiELa.js",
+            "feature-workspaces-BFakxaw-.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        },
+        {
+          "readyMs": 842.1000000238419,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "feature-models-DA3t4B-a.js",
+            "vendor-aiPz-3cB.js",
+            "feature-tasks-CWPfywsK.js",
+            "preview-Be0PiELa.js",
+            "feature-workspaces-BFakxaw-.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        },
+        {
+          "readyMs": 663.6999999880791,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "feature-tasks-CWPfywsK.js",
+            "feature-models-DA3t4B-a.js",
+            "feature-workspaces-BFakxaw-.js",
+            "preview-Be0PiELa.js",
+            "vendor-aiPz-3cB.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        },
+        {
+          "readyMs": 713.0999999642372,
+          "jsBytes": 1753519,
+          "cssBytes": 771557,
+          "js": [
+            "index-DDE79Lcw.js",
+            "vendor-aiPz-3cB.js",
+            "feature-tasks-CWPfywsK.js",
+            "feature-models-DA3t4B-a.js",
+            "preview-Be0PiELa.js",
+            "feature-workspaces-BFakxaw-.js",
+            "feature-runtime-DyvxCsyF.js"
+          ]
+        }
+      ],
+      "medianMs": 842.1000000238419
+    },
+    "after": {
+      "label": "final",
+      "trials": [
+        {
+          "readyMs": 1416.699999988079,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-tasks-CK_9wDaW.js",
+            "feature-runtime-BGD8Z0Jq.js",
+            "preview-XEfN8Ayq.js"
+          ]
+        },
+        {
+          "readyMs": 581.8000000119209,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-tasks-CK_9wDaW.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-runtime-BGD8Z0Jq.js",
+            "preview-XEfN8Ayq.js"
+          ]
+        },
+        {
+          "readyMs": 585.8999999761581,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-tasks-CK_9wDaW.js",
+            "preview-XEfN8Ayq.js",
+            "feature-runtime-BGD8Z0Jq.js"
+          ]
+        },
+        {
+          "readyMs": 579.3000000119209,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-runtime-BGD8Z0Jq.js",
+            "feature-tasks-CK_9wDaW.js",
+            "preview-XEfN8Ayq.js"
+          ]
+        },
+        {
+          "readyMs": 581.8999999761581,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-tasks-CK_9wDaW.js",
+            "preview-XEfN8Ayq.js",
+            "feature-runtime-BGD8Z0Jq.js"
+          ]
+        },
+        {
+          "readyMs": 576.5999999642372,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-runtime-BGD8Z0Jq.js",
+            "feature-tasks-CK_9wDaW.js",
+            "preview-XEfN8Ayq.js"
+          ]
+        },
+        {
+          "readyMs": 585.6999999880791,
+          "jsBytes": 1218499,
+          "cssBytes": 765610,
+          "js": [
+            "index-DVgiKJd_.js",
+            "feature-models-D9YrZW8w.js",
+            "feature-runtime-BGD8Z0Jq.js",
+            "feature-tasks-CK_9wDaW.js",
+            "preview-XEfN8Ayq.js"
+          ]
+        }
+      ],
+      "medianMs": 581.8999999761581
+    },
+    "earlierAfterMedianMs": 755.5
+  }
+}

@@ -490,8 +490,13 @@ button.helper-row:hover {
 }
 
 .btn-primary {
+  --bs-btn-color: var(--base-accent-contrast, #fff);
+  --bs-btn-hover-color: var(--base-accent-contrast, #fff);
+  --bs-btn-active-color: var(--base-accent-contrast, #fff);
   --bs-btn-bg: var(--ras-accent);
   --bs-btn-border-color: var(--ras-accent);
-  --bs-btn-hover-bg: color-mix(in srgb, var(--ras-accent) 86%, #000);
-  --bs-btn-hover-border-color: color-mix(in srgb, var(--ras-accent) 86%, #000);
+  --bs-btn-hover-bg: var(--ras-accent);
+  --bs-btn-hover-border-color: var(--ras-accent);
+  --bs-btn-active-bg: var(--ras-accent);
+  --bs-btn-active-border-color: var(--ras-accent);
 }

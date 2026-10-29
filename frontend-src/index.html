@@ -36,6 +36,14 @@
           var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
           return m ? parseInt(m[1], 16) + ", " + parseInt(m[2], 16) + ", " + parseInt(m[3], 16) : "189, 74, 40";
         }
+        function accentText(hex) {
+          var rgb = hexToRgb(hex).split(",").map(function (value) {
+            var channel = Number(value) / 255;
+            return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+          });
+          var luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+          return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? "#000000" : "#ffffff";
+        }
         function ensure(selector, tag, attrs) {
           var node = document.querySelector(selector);
           if (!node) {
@@ -59,6 +67,7 @@
           root.style.setProperty("--base-bg", cfg.bg);
           root.style.setProperty("--base-text", cfg.text);
           root.style.setProperty("--base-accent", cfg.accent);
+          root.style.setProperty("--base-accent-contrast", accentText(cfg.accent));
           root.style.setProperty("--bs-primary-rgb", hexToRgb(cfg.accent));
           root.style.setProperty("--aurora-1", cfg.a1);
           root.style.setProperty("--aurora-2", cfg.a2);

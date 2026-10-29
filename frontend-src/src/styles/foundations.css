@@ -65,7 +65,7 @@
    (Dry-Run, Approval Req.) with a quiet amber tint + readable amber text. */
 .badge-soft-warn {
   background-color: color-mix(in srgb, var(--ras-warn) 14%, transparent) !important;
-  color: var(--ras-warn-text) !important;
+  color: var(--dash-warn) !important;
   border: 1px solid color-mix(in srgb, var(--ras-warn) 34%, transparent);
 }
 
@@ -150,8 +150,9 @@ h3,
   letter-spacing: .015em;
 }
 
-button {
-  color: inherit;
+/* Resets belong below utilities so button variants can set their foreground. */
+@layer base {
+  button { color: inherit; }
 }
 
 svg {

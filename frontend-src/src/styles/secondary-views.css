@@ -33,7 +33,7 @@
 .activity-view .history-page-header h1 { font-family: var(--ras-font-ui); font-weight: 700; letter-spacing: -.015em; }
 .activity-view .history-toolbar { scrollbar-width: thin; }
 .activity-view .history-nav-group { margin: 0; }
-.activity-view .history-nav-label { color: color-mix(in srgb, var(--dash-muted) 62%, transparent); }
+.activity-view .history-nav-label { color: var(--dash-muted); }
 .activity-view .history-view-tab {
   border: 1px solid transparent;
   border-radius: 6px;

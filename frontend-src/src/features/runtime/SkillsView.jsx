@@ -13,8 +13,8 @@ export function SkillsView({ view, skills, skillPreview, sessions, createSkillFr
             <Form onSubmit={(event) => { event.preventDefault(); createSkillFromSession(sessionId); }}>
               <Row className="g-2 align-items-end">
                 <Col>
-                  <Form.Label>Save workflow from session</Form.Label>
-                  <Form.Select value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
+                  <Form.Label htmlFor="skill-session">Save workflow from session</Form.Label>
+                  <Form.Select id="skill-session" value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
                     <option value="">Choose a session</option>
                     {(sessions?.sessions || []).map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
                   </Form.Select>

@@ -97,7 +97,7 @@ export function ArchiveView({ view, openTaskDetails }) {
           <nav className="rounded-2xl border border-border bg-card p-3" aria-label="Artifact filters">
             <div className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</div>
             {FILTERS.map((item) => (
-              <button key={item.id} type="button" onClick={() => setActiveFilter(item.id)} className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm", activeFilter === item.id ? "bg-primary/12 font-semibold text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+              <button key={item.id} type="button" onClick={() => setActiveFilter(item.id)} className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm", activeFilter === item.id ? "bg-primary/12 font-semibold text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
                 {item.id === "pinned" ? <Pin size={16} /> : <FolderOpen size={16} />} {item.label}
               </button>
             ))}
