@@ -33,17 +33,27 @@ const NAV_GROUPS = [
     label: "Workspace",
     items: [
       { view: "chat", label: "Chat", ariaLabel: "Chat workstation", icon: MessageSquare, testId: "nav-chat" },
-      { view: "models", label: "Model Hub", icon: Box, testId: "nav-models" },
       { view: "archive", label: "Library", icon: Folder, testId: "nav-archive" },
-      { view: "assistant", label: "Assistant", icon: Sparkles, testId: "nav-assistant" },
     ],
   },
   {
-    label: "Build",
+    label: "Models",
     items: [
+      { view: "models", label: "Model Hub", icon: Box, testId: "nav-models" },
       { view: "training", label: "Training", icon: GraduationCap, testId: "nav-training" },
-      { view: "api", label: "API", icon: KeyRound, testId: "nav-api" },
+    ],
+  },
+  {
+    label: "Automation",
+    items: [
+      { view: "assistant", label: "Assistant", icon: Sparkles, testId: "nav-assistant" },
       { view: "schedules", label: "Scheduled", icon: CalendarClock, testId: "nav-schedules" },
+    ],
+  },
+  {
+    label: "Developer",
+    items: [
+      { view: "api", label: "API", icon: KeyRound, testId: "nav-api" },
     ],
   },
 ];

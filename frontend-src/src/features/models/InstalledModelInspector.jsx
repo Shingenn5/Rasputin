@@ -20,7 +20,7 @@ import { contextWindowFor, installedModelArchitecture, installedModelCategory, i
 import { ModelStateSignal } from "./ModelStatus.jsx";
 import { ModelRecovery } from "./ModelRecovery.jsx";
 
-export function InstalledModelInspector({ nativeModels = false, model, allModels, chatActive = false, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, onSaved, onFindModels, activeTab, onTabChange }) {
+export function InstalledModelInspector({ nativeModels = false, model, allModels, chatActive = false, onUseInChat, runModelAction, executeAction, setUiState, onConfigureLoad, onSaved, onFindModels, activeTab, onTabChange, onBack }) {
   const [busy, setBusy] = useState("");
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [pinned, setPinned] = useState(false);
@@ -169,7 +169,8 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
   ];
 
   return (
-    <aside id="installed-model-inspector" className="models-model-inspector" data-testid="installed-model-inspector" aria-label={`${name} model inspector`}>
+    <aside id="installed-model-inspector" className="models-model-inspector" data-testid="installed-model-inspector" aria-label={`${name} model inspector`} tabIndex={-1}>
+      {onBack && <button type="button" className="w2-button models-detail-back" onClick={onBack}>Back to my models</button>}
       <header className="models-inspector-header">
         <div className="models-inspector-title">
           <PublisherLogo item={model} size="lg" />
@@ -177,11 +178,11 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
         </div>
         <ModelStateSignal signal={operationalSignal} chatActive={chatActive} compact />
         <div className="models-inspector-primary-actions">
-          <button type="button" className="w2-button" disabled={!healthy || model.enabled === false} onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
+          {healthy && model.enabled !== false && <button type="button" className="w2-button primary" onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>}
           {model.managed && (
             isRunning
               ? <Button onClick={handleStop} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={13} />}>Stop Model</Button>
-              : <Button disabled={operationalSignal.action === "file" || operationalSignal.action === "wait"} onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>{needsGguf ? "Get GGUF" : "Load Model"}</Button>
+              : ["load", "wait"].includes(operationalSignal.action) && <Button primary disabled={operationalSignal.action === "wait"} onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>{needsGguf ? "Get GGUF" : "Load Model"}</Button>
           )}
         </div>
       </header>
@@ -221,7 +222,8 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
             <div><dt>Size</dt><dd>{installedModelSize(model)}</dd></div>
             <div><dt>Context</dt><dd>{context > 0 ? context.toLocaleString() + " tokens" : "Runtime default"}</dd></div>
           </dl>
-          <ModelRecovery key={model.key} model={model} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} />
+          {!["chat", "load"].includes(operationalSignal.action) && <ModelRecovery key={model.key} model={model} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} />}
+          {operationalSignal.action === "chat" && !model.managed && <details className="models-inspector-disclosure"><summary>Connection settings</summary><ModelRecovery key={model.key} model={model} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} /></details>}
           {(model.summary || model.description) && <p className="models-inspector-summary">{model.summary || model.description}</p>}
           <details className="models-inspector-disclosure models-inspector-technical">
             <summary><SlidersHorizontal size={14} /> Technical Details</summary>

@@ -15,7 +15,7 @@ test("Models rail collapses persistently to accessible icon-only navigation", ()
   assert.match(models, /aria-controls="models-navigation"/);
   assert.match(models, /role="tablist" aria-orientation="horizontal"/);
   assert.match(models, /aria-label={desktopOnly && modelsRailCollapsed \? desktopItem\.label : undefined}/);
-  assert.match(models, /tabIndex={activeTab === t\.id \? 0 : -1}/);
+  assert.match(models, /tabIndex={activeTab === t\.id \|\| \(modelTools\.some/);
   assert.match(models, /ArrowRight/);
   assert.match(models, /ArrowLeft/);
   assert.match(models, /event\.key === "Home"/);

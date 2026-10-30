@@ -35,12 +35,25 @@ for (const width of [1440, 768, 390]) {
   test(`model selection, filtering, and inspector navigation work at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/#models");
+    const primaryTabs = page.getByRole("tablist", { name: "Model management areas" }).getByRole("tab");
+    expect(Math.abs((await primaryTabs.nth(0).boundingBox()).y - (await primaryTabs.nth(1).boundingBox()).y)).toBeLessThanOrEqual(1);
     const rows = page.getByTestId("installed-model-row");
     await expect(rows).toHaveCount(3);
     const inspector = page.getByTestId("installed-model-inspector");
     await rows.filter({ hasText: "Qwen3 8B" }).getByRole("button", { name: /Details and settings/ }).click();
     await expect(inspector).toContainText("Qwen3 8B");
     expect((await inspector.boundingBox()).width).toBeGreaterThan(280);
+    await expect(rows.first().getByRole("button", { name: /Load model|Use in chat/ })).toHaveCount(0);
+    await expect(inspector.getByRole("button", { name: "Load Model", exact: true })).toHaveCount(1);
+    if (width <= 1100) {
+      await expect(rows.first()).toBeHidden();
+      await inspector.getByRole("button", { name: "Back to my models" }).click();
+      await expect(rows.filter({ hasText: "Qwen3 8B" }).getByRole("button")).toBeFocused();
+      await expect(inspector).toBeHidden();
+      await page.screenshot({ path: test.info().outputPath(`model-inventory-${width}.png`), fullPage: true });
+    } else {
+      expect((await rows.first().boundingBox()).height).toBeLessThan(100);
+    }
     const filter = page.getByRole("searchbox", { name: "Filter installed models" });
     await filter.fill("coding server");
     await expect(rows).toHaveCount(1);
@@ -69,7 +82,8 @@ for (const width of [1440, 768, 390]) {
     });
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/#models");
-    await page.getByTestId("installed-model-row").filter({ hasText: "Qwen3 8B" }).getByRole("button", { name: "Load model", exact: true }).click();
+    await page.getByTestId("installed-model-row").filter({ hasText: "Qwen3 8B" }).getByRole("button").click();
+    await page.getByTestId("installed-model-inspector").getByRole("button", { name: "Load Model", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Qwen3 8B", exact: true });
     await expect(dialog.getByLabel("Context length")).toBeVisible();
     await expect(dialog.getByLabel("CPU thread pool")).toHaveCount(0);
@@ -92,6 +106,39 @@ for (const width of [1440, 768, 390]) {
     expect(submitted).toMatchObject({ key: "qa-qwen", profile: { contextLength: 4096, threads: 8, cacheTypeK: "q8_0", cacheTypeV: "q8_0" } });
   });
 }
+
+test("two primary model destinations preserve runtime, sharing, storage, and recovery access", async ({ page }) => {
+  await page.goto("/#models");
+  const navigation = page.getByRole("tablist", { name: "Model management areas" });
+  await expect(navigation.getByRole("tab")).toHaveCount(2);
+  await navigation.getByRole("tab", { name: "My Models" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(navigation.getByRole("tab", { name: "Discover" })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(navigation.getByRole("tab", { name: "My Models" })).toBeFocused();
+  const tools = page.getByRole("combobox", { name: "Model tools", exact: true });
+  await tools.selectOption("running");
+  await expect(page.getByRole("region", { name: "Runtime monitor", exact: true })).toBeVisible();
+  await tools.selectOption("serving");
+  await expect(page.getByRole("region", { name: "Share models", exact: true })).toBeVisible();
+  await tools.selectOption("settings");
+  await expect(page.getByRole("region", { name: "Connections and settings", exact: true })).toBeVisible();
+  await expect(page.getByText("Download folder", { exact: true })).toBeVisible();
+  await navigation.getByRole("tab", { name: "My Models" }).click();
+  await expect(page.getByText("Download folder", { exact: true })).toHaveCount(0);
+  await page.getByTestId("installed-model-row").filter({ hasText: "Local coding server" }).getByRole("button").click();
+  await expect(page.getByTestId("installed-model-inspector").getByRole("button", { name: "Save and check connection" })).toBeVisible();
+  const sidebar = page.locator("#rasputin-sidebar");
+  for (const group of ["Workspace", "Models", "Automation", "Developer"]) await expect(sidebar.getByRole("group", { name: group, exact: true })).toBeVisible();
+});
+
+test("ready model details open Chat with the selected model", async ({ page }) => {
+  await page.goto("/#models");
+  await page.getByTestId("installed-model-row").filter({ hasText: "Gemma 3 4B" }).getByRole("button").click();
+  await page.getByTestId("installed-model-inspector").getByRole("button", { name: "Use in New Chat" }).click();
+  await expect(page).toHaveURL(/#chat$/);
+  await expect(page.getByTestId("chat-model-chip")).toContainText("gemma-3-4b");
+});
 
 test("secondary routes stay within the viewport in both themes", async ({ page }) => {
   test.setTimeout(120000);
@@ -122,15 +169,20 @@ test("secondary routes stay within the viewport in both themes", async ({ page }
 
 test("all model areas remain usable at desktop tablet and phone widths", async ({ page }) => {
   test.setTimeout(90000);
-  const areas = [["Discover", "library"], ["My Models", "installed"], ["Loaded", "running"], ["Share models", "serving"], ["Advanced", "settings"]];
+  const areas = [["Discover", "library"], ["My Models", "installed"], ["Runtime monitor", "running"], ["Share models", "serving"], ["Connections & settings", "settings"]];
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/#models");
     const navigation = page.getByRole("tablist", { name: "Model management areas" });
     for (const [name, id] of areas) {
-      const tab = navigation.getByRole("tab", { name, exact: true });
-      await tab.click();
-      await expect(tab).toHaveAttribute("aria-selected", "true");
+      if (["library", "installed"].includes(id)) {
+        const tab = navigation.getByRole("tab", { name, exact: true });
+        await tab.click();
+        await expect(tab).toHaveAttribute("aria-selected", "true");
+      } else {
+        await page.getByRole("combobox", { name: "Model tools", exact: true }).selectOption(id);
+        await expect(navigation.getByRole("tab", { name: "My Models" })).toHaveAttribute("tabindex", "0");
+      }
       const panel = page.locator(`#models-panel-${id}`);
       await expect(panel).toBeVisible();
       expect(await panel.evaluate(element => element.scrollWidth - element.clientWidth), `${name} at ${width}`).toBeLessThanOrEqual(1);

@@ -181,8 +181,13 @@
 #modelsView .models-header-runtime { display: flex; align-items: center; gap: 8px; color: var(--dash-muted); font-size: .8125rem; }
 #modelsView .models-header-runtime > span { width: 6px; height: 6px; background: var(--dash-muted); box-shadow: none; }
 #modelsView .models-v3-overview-disclosure { display: none; }
-#modelsView.models-unified .models-page-rail { display: block; padding: 0; border: 0; background: transparent; overflow: visible; }
-#modelsView.models-unified .models-page-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 0; border-bottom: 1px solid var(--dash-border); background: transparent; }
+#modelsView.models-unified .models-page-rail { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0; border: 0; border-bottom: 1px solid var(--dash-border); background: transparent; overflow: visible; }
+#modelsView.models-unified .models-page-tabs { flex: 1; min-width: 220px; justify-content: flex-start; border-bottom: 0; }
+#modelsView .models-tools-picker select { max-width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid var(--dash-border-strong); border-radius: 8px; background: var(--dash-panel); color: var(--dash-text); font: inherit; font-size: .75rem; }
+#modelsView .models-tools-picker { min-width: 0; margin-bottom: 8px; }
+#modelsView .models-detail-back { display: none; }
+#rasputin-sidebar .ras-workstation-nav .ras-sidebar-section-label:not(.sr-only) { display: block; font-size: .6875rem; font-weight: 500; letter-spacing: normal; text-transform: none; padding-top: 10px; }
+#modelsView.models-unified .models-page-tabs { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 24px; padding: 0; background: transparent; }
 #modelsView.models-unified .models-page-tabs .models-v3-tab {
   position: relative;
   flex: 0 0 auto;
@@ -238,10 +243,15 @@
 #modelsView .models-inventory-tools { gap: 6px; }
 #modelsView .models-inventory-tools button { padding: 7px 9px; }
 #modelsView.models-unified .models-inventory-table { gap: 0; padding: 0; overflow: visible; border-block: 1px solid var(--dash-border); background: transparent; }
-#modelsView.models-unified .model-library-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; padding: 20px 12px; border: 0; border-bottom: 1px solid var(--dash-border); border-radius: 0; background: transparent; }
+#modelsView.models-unified .model-library-card { display: block; padding: 0; border: 0; border-bottom: 1px solid var(--dash-border); border-radius: 0; background: transparent; }
 #modelsView .model-library-card:last-child { border-bottom: 0; }
 #modelsView.models-unified .model-library-card.is-selected { background: var(--dash-panel); }
-#modelsView .model-card-select { grid-column: 1 / -1; gap: 12px; }
+#modelsView .model-card-select { display: flex; width: 100%; min-height: 76px; gap: 12px; padding: 12px; border-radius: 0; }
+#modelsView .model-card-select .model-card-identity { flex: 1; min-width: 0; }
+#modelsView .model-card-select .model-card-identity strong { overflow-wrap: anywhere; }
+#modelsView .model-card-select .model-card-status { flex: 0 0 auto; display: inline-flex; width: auto; margin: 0; }
+#modelsView .model-card-select .model-card-status > span { flex: 0 0 7px; }
+#modelsView .model-card-select .model-card-status strong { font-size: .6875rem; white-space: nowrap; }
 #modelsView .model-card-select strong { font-size: .9375rem; font-weight: 550; }
 #modelsView .model-card-select small { font-size: .75rem; }
 #modelsView .model-card-select .publisher-logo { border: 0; border-radius: 10px; background: var(--dash-bg); }
@@ -308,6 +318,9 @@
 .studio-load-modal .studio-load-footer label { font-size: .75rem; }
 
 @media (max-width: 1100px) {
+  #modelsView .models-inventory-workbench:not([data-detail-open="true"]) > .models-model-inspector { display: none !important; }
+  #modelsView .models-inventory-workbench[data-detail-open="true"] > .models-inventory-main { display: none !important; }
+  #modelsView .models-detail-back { display: inline-flex; margin: 14px 20px 0; }
   #modelsView.models-unified .models-page-content { flex: 0 0 auto; }
   #modelsView.models-unified .studio-installed-panel { height: auto; flex: 0 0 auto !important; }
   #modelsView.models-unified .models-inventory-workbench { display: flex; flex-direction: column; height: auto; min-height: 0; flex: 0 0 auto; }
@@ -318,9 +331,15 @@
 }
 
 @media (max-width: 767px) {
+  #modelsView .model-card-select { display: grid; grid-template-columns: 36px minmax(0, 1fr) 16px; column-gap: 10px; row-gap: 4px; }
+  #modelsView .model-card-select > .publisher-logo { grid-row: 1 / 3; }
+  #modelsView .model-card-select .model-card-identity { grid-column: 2; }
+  #modelsView .model-card-select .model-card-status { grid-column: 2; grid-row: 2; }
+  #modelsView .model-card-select > svg { grid-column: 3; grid-row: 1 / 3; }
   #mainContent .app-view:not(#chatView):not(#modelsView) { padding: 28px 20px; }
   #modelsView.models-unified { padding: 28px 20px; }
-  #modelsView.models-unified .models-page-tabs { gap: 16px; }
+  #modelsView.models-unified .models-page-tabs { flex: 1 0 100%; min-width: 0; gap: 16px; }
+  #modelsView .models-tools-picker { margin-left: auto; }
   #modelsView.models-unified .models-page-tabs .models-v3-tab { min-height: 44px; padding-bottom: 12px; }
   #modelsView .models-header-runtime { display: none; }
   #modelsView .model-library-filters { flex-wrap: wrap; }

@@ -3,7 +3,7 @@ import { LocalModelSources } from "./LocalModelSources.jsx";
 import { ModelDownloadFolder } from "./ModelDownloadFolder.jsx";
 import { useModelActions } from "./useModelActions.js";
 import { usesNativeModels } from "./nativeDeployment.js";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { Activity, CheckCircle2, Cloud, Cpu, Database, Gauge, HardDrive, KeyRound, Package, PanelLeftClose, PanelLeftOpen, Play, RadioTower, RefreshCw, Search, Settings, SlidersHorizontal } from "lucide-react";
 import { displayModelName, isModelHealthy, isManagedModelRunning, labelize, runtimeStatus } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";
@@ -44,6 +44,8 @@ const modelsTabs = [
   { id: "serving",    label: "Serving",     icon: RadioTower },
   { id: "settings",   label: "Advanced",    icon: Settings },
 ];
+const primaryModelTabs = modelsTabs.slice(0, 2);
+const modelTools = modelsTabs.slice(2);
 
 export function ModelsView({
   view,
@@ -98,16 +100,16 @@ export function ModelsView({
   };
 
   const handleModelTabKeyDown = (event, tabId) => {
-    const index = modelsTabs.findIndex((tab) => tab.id === tabId);
+    const index = primaryModelTabs.findIndex((tab) => tab.id === tabId);
     if (index < 0) return;
     let nextIndex = index;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % modelsTabs.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + modelsTabs.length) % modelsTabs.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % primaryModelTabs.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + primaryModelTabs.length) % primaryModelTabs.length;
     else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = modelsTabs.length - 1;
+    else if (event.key === "End") nextIndex = primaryModelTabs.length - 1;
     else return;
     event.preventDefault();
-    const nextTab = modelsTabs[nextIndex].id;
+    const nextTab = primaryModelTabs[nextIndex].id;
     setActiveTab(nextTab);
     focusModelTab(nextTab);
   };
@@ -153,15 +155,22 @@ export function ModelsView({
   const [installedSearch, setInstalledSearch] = useState("");
   const [installedCategory, setInstalledCategory] = useState("all");
   const [selectedInstalledKey, setSelectedInstalledKey] = useState("");
+  const [installedDetailOpen, setInstalledDetailOpen] = useState(false);
+  useEffect(() => { setInstalledDetailOpen(false); }, [activeTab]);
+  useLayoutEffect(() => {
+    if (installedDetailOpen && activeTab === "installed" && window.matchMedia("(max-width: 1100px)").matches) {
+      document.getElementById("installed-model-inspector")?.focus();
+    }
+  }, [installedDetailOpen, selectedInstalledKey, activeTab]);
   const [installedInspectorTab, setInstalledInspectorTab] = useState("info");
   const [inspectorWidth, setInspectorWidth] = useState(() => {
-    if (typeof window === "undefined") return 350;
+    if (typeof window === "undefined") return 440;
     try {
       const saved = window.localStorage.getItem("rasputin-model-inspector-width");
-      const stored = saved === null ? 350 : Number(saved);
-      return Number.isFinite(stored) ? Math.min(480, Math.max(260, stored)) : 350;
+      const stored = saved === null ? 440 : Number(saved);
+      return Number.isFinite(stored) ? Math.min(480, Math.max(260, stored)) : 440;
     } catch {
-      return 350;
+      return 440;
     }
   });
   const inspectorResizeRef = useRef(null);
@@ -391,6 +400,7 @@ export function ModelsView({
   useEffect(() => {
     const nextKey = selectedInstalledModel?.key || "";
     if (nextKey !== selectedInstalledKey) setSelectedInstalledKey(nextKey);
+    if (!nextKey) setInstalledDetailOpen(false);
   }, [selectedInstalledModel, selectedInstalledKey]);
 
   useEffect(() => {
@@ -706,7 +716,7 @@ export function ModelsView({
       {/* ── Tab Bar ── */}
       {modelsWorkspaceOpen && <div className="models-page-rail">
         <div id="models-navigation" className="models-page-tabs" role="tablist" aria-orientation="horizontal" aria-label="Model management areas">
-        {modelsTabs.map(t => {
+        {primaryModelTabs.map(t => {
           const Icon = t.icon;
           const desktopItem = {
             library: { label: "Discover", hint: "Find & download" },
@@ -722,7 +732,7 @@ export function ModelsView({
               role="tab"
               aria-selected={activeTab === t.id}
               aria-controls={`models-panel-${t.id}`}
-              tabIndex={activeTab === t.id ? 0 : -1}
+              tabIndex={activeTab === t.id || (modelTools.some((tool) => tool.id === activeTab) && t.id === "installed") ? 0 : -1}
               aria-label={desktopOnly && modelsRailCollapsed ? desktopItem.label : undefined}
               title={desktopOnly && modelsRailCollapsed ? desktopItem.label : undefined}
               variant="outline"
@@ -749,6 +759,15 @@ export function ModelsView({
         )}
 
         </div>
+        <label className="models-tools-picker">
+          <span className="sr-only">Model tools</span>
+          <select aria-label="Model tools" value={modelTools.some((tool) => tool.id === activeTab) ? activeTab : ""} onChange={(event) => { if (event.target.value) setActiveTab(event.target.value); }}>
+            <option value="" disabled>Model tools</option>
+            <option value="running">Runtime monitor</option>
+            <option value="serving">Share models</option>
+            <option value="settings">Connections & settings</option>
+          </select>
+        </label>
         {desktopOnly && (
           <button
             type="button"
@@ -769,7 +788,7 @@ export function ModelsView({
       {/* ── Content ── */}
       <div className={`${desktopOnly ? "models-page-content" : "w2-main-grid"} models-v3-content`}>
         <div className="w2-column">
-          {modelsWorkspaceOpen && ["library", "installed"].includes(activeTab) && <ModelDownloadFolder />}
+          {modelsWorkspaceOpen && activeTab === "settings" && <ModelDownloadFolder />}
 
           {/* ═══ LIBRARY TAB ═══ */}
           {activeTab === "library" && (
@@ -1147,7 +1166,7 @@ export function ModelsView({
           {/* ═══ INSTALLED TAB ═══ */}
           {activeTab === "installed" && (
             <div id="models-panel-installed" role="tabpanel" aria-labelledby="models-tab-installed" className="w2-section models-v3-panel studio-installed-panel" style={{ flex: 1 }}>
-              <div className="models-inventory-workbench" style={{ "--models-inspector-width": `${inspectorWidth}px` }}>
+              <div className="models-inventory-workbench" data-detail-open={installedDetailOpen} style={{ "--models-inspector-width": `${inspectorWidth}px` }}>
                 <section className="models-inventory-main" aria-labelledby="models-inventory-title">
                   <header className="model-library-welcome">
                     <div><h2>Your models</h2><p>Load a model to chat, or select one to see its settings.</p></div>
@@ -1203,17 +1222,7 @@ export function ModelsView({
                         onSelect={() => {
                           setSelectedInstalledKey(model.key);
                           setInstalledInspectorTab("info");
-                          if (window.matchMedia("(max-width: 1100px)").matches) requestAnimationFrame(() => document.getElementById("installed-model-inspector")?.scrollIntoView({ block: "start" }));
-                        }}
-                        onUseInChat={(item) => { setSelectedModel?.(item.key); go?.("chat"); }}
-                        runModelAction={runModelAction}
-                        executeAction={executeAction}
-                        setUiState={setUiState}
-                        nativeModels={nativeModels}
-                        onConfigureLoad={configureNativeLoad}
-                        onOpenActions={() => {
-                          setSelectedInstalledKey(model.key);
-                          setInstalledInspectorTab("actions");
+                          setInstalledDetailOpen(true);
                         }}
                       />
                     ))}
@@ -1246,6 +1255,10 @@ export function ModelsView({
                   onKeyDown={handleInspectorResizeKeyDown}
                 />
                 <InstalledModelInspector
+                  onBack={() => {
+                    setInstalledDetailOpen(false);
+                    requestAnimationFrame(() => document.getElementById(`installed-model-row-${String(selectedInstalledKey).replace(/[^a-zA-Z0-9_-]/g, "-")}`)?.querySelector("button")?.focus());
+                  }}
                   model={selectedInstalledModel}
                   chatActive={selectedModel === selectedInstalledModel?.key}
                   activeTab={installedInspectorTab}
@@ -1269,7 +1282,8 @@ export function ModelsView({
 
           {/* ═══ RUNNING TAB ═══ */}
           {activeTab === "running" && (
-            <div id="models-panel-running" role="tabpanel" aria-labelledby="models-tab-running" className="w2-section models-v3-panel models-v3-running" style={{ flex: 1 }}>
+            <div id="models-panel-running" role="region" aria-label="Runtime monitor" className="w2-section models-v3-panel models-v3-running" style={{ flex: 1 }}>
+              <h2>Runtime monitor</h2>
               <ActiveModelCard
                 model={activeModel}
                 models={models}
@@ -1305,14 +1319,14 @@ export function ModelsView({
           )}
 
           {activeTab === "serving" && (
-            <div id="models-panel-serving" role="tabpanel" aria-labelledby="models-tab-serving" className="w2-section models-v3-panel models-serving-tab" style={{ flex: 1 }}>
+            <div id="models-panel-serving" role="region" aria-label="Share models" className="w2-section models-v3-panel models-serving-tab" style={{ flex: 1 }}>
               <ModelServingPanel onOpenModels={() => setActiveTab("running")} />
             </div>
           )}
 
           {/* ═══ SETTINGS TAB ═══ */}
           {activeTab === "settings" && (
-            <div id="models-panel-settings" role="tabpanel" aria-labelledby="models-tab-settings" className="w2-section models-v3-panel models-developer-panel" style={{ flex: 1 }}>
+            <div id="models-panel-settings" role="region" aria-label="Connections and settings" className="w2-section models-v3-panel models-developer-panel" style={{ flex: 1 }}>
               <header className="models-developer-header" data-testid="models-developer-header">
                 <div className="models-runtime-state">
                   <span aria-hidden="true" />
