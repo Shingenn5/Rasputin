@@ -8,14 +8,16 @@ def read_modules(directory, *names):
 
 
 class WarsatUiContractTests(unittest.TestCase):
-    def test_model_actions_send_the_card_registry_key(self):
+    def test_model_actions_send_the_selected_registry_key(self):
         app_source = read_modules("app", "useModelRegistryActions.js")
-        models_source = read_modules("features/models", "InstalledModelRow.jsx", "ModelRuntimePanel.jsx")
+        inspector_source = read_modules("features/models", "InstalledModelInspector.jsx")
+        runtime_source = read_modules("features/models", "ModelRuntimePanel.jsx")
         self.assertIn("async function runModelAction(action, key, options = {})", app_source)
         self.assertIn("const resolvedKey = typeof key === \"string\" ? key.trim() : \"\";", app_source)
         self.assertIn("key: resolvedKey", app_source)
-        self.assertIn("runModelAction?.(op, model.key)", models_source)
-        self.assertIn('runModelAction?.("test", model?.key)', models_source)
+        for action in ("start", "stop", "delete"):
+            self.assertIn(f'runModelAction?.("{action}", model.key)', inspector_source)
+        self.assertIn('runModelAction?.("test", model?.key)', runtime_source)
 
     def test_launch_brief_surfaces_resource_admission_and_locks_unsafe_states(self):
         source = read_modules("features/warsat", "WarsatView.jsx", "PlanPreview.jsx")
