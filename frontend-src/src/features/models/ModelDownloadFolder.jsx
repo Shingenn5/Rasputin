@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "@/components/ui/button.jsx";
 
@@ -36,8 +37,9 @@ export function ModelDownloadFolder() {
   }
 
   return (
-    <details className="min-w-0 rounded-lg border border-border p-3 mb-3" data-testid="model-download-folder">
+    <details className="model-storage-disclosure min-w-0" data-testid="model-download-folder">
       <summary className="cursor-pointer focus-visible:outline-2 focus-visible:outline-ring">
+        <ChevronRight className="model-storage-chevron" size={14} aria-hidden="true" />
         <strong>Download folder</strong>
         {settings && <span className="block text-sm text-muted-foreground break-all mt-1">{settings.downloadFolder}</span>}
       </summary>

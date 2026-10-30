@@ -4,12 +4,10 @@ export function PageHeader({ title, text, action }) {
   return (
     <header className="page-header ras-runtime-hero">
       <div className="ras-runtime-hero-copy">
-        <span className="ras-runtime-kicker"><i aria-hidden="true" /> Local intelligence / {title}</span>
         <h1>{title}</h1>
         <p>{text}</p>
       </div>
       <div className="ras-runtime-hero-side">
-        <span className="ras-runtime-orbit" aria-hidden="true"><i /><b /></span>
         {action && <div className="ras-runtime-action">{action}</div>}
       </div>
     </header>

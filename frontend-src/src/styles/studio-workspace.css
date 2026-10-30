@@ -1,0 +1,349 @@
+/* Secondary surfaces inherit the homepage. Remove this import to roll back the
+   visual consolidation; model actions and runtime ownership stay in their modules. */
+#mainContent {
+  background: var(--dash-bg) !important;
+}
+
+#mainContent::before,
+#mainContent::after { display: none; }
+
+#mainContent .app-view:not(#chatView) {
+  color: var(--dash-text);
+  background: var(--dash-bg) !important;
+  font-family: var(--ras-font-ui);
+  --ras-primary: var(--dash-accent);
+  --sv-radius: 12px;
+}
+
+#mainContent .app-view:not(#chatView):not(#modelsView) {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding: 40px 40px 32px;
+}
+
+#mainContent .app-view:not(#chatView)::before,
+#mainContent .app-view:not(#chatView)::after {
+  display: none;
+}
+
+#mainContent .app-view:not(#chatView) :is(h1, h2, h3, h4, h5) {
+  font-family: var(--ras-font-ui);
+  color: var(--dash-text);
+  letter-spacing: -.02em;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+#mainContent .app-view:not(#chatView) h1 {
+  font-size: 1.75rem;
+  font-weight: 550;
+  margin: 0 0 8px;
+}
+
+#mainContent .app-view:not(#chatView) :is(h2, h5) {
+  font-size: 1.0625rem;
+  font-weight: 550;
+}
+
+#mainContent .app-view:not(#chatView) h3 {
+  font-size: .9375rem;
+  font-weight: 550;
+}
+
+#mainContent .app-view:not(#chatView) :is(.page-header, .workstation-heading) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0 56px 0 0;
+  margin: 0 0 32px;
+  box-shadow: none;
+  background: transparent;
+}
+
+#mainContent .app-view:not(#chatView) :is(.page-header, .workstation-heading) p {
+  color: var(--dash-muted) !important;
+  font-family: var(--ras-font-ui);
+  font-size: .875rem;
+  line-height: 1.65;
+  max-width: 70ch;
+  margin: 0;
+}
+
+#mainContent .ras-runtime-hero-side {
+  min-width: 0;
+}
+
+#mainContent .ras-runtime-hero-side:empty {
+  display: none;
+}
+
+#mainContent .app-view:not(#chatView) :is(.card, .w2-card, .workstation-card, .activity-nav-panel, .activity-main-panel, .activity-inspector-panel) {
+  border-color: var(--dash-border);
+  border-radius: 14px;
+  background: var(--dash-panel);
+  background-image: none;
+  box-shadow: none;
+}
+
+#mainContent .app-view:not(#chatView) :is(.btn, .w2-button, .ras-button) {
+  min-height: 38px;
+  border-radius: 9px;
+  font-size: .8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+#mainContent .app-view:not(#chatView) :is(.btn-primary, .w2-button.primary) {
+  background: var(--dash-accent);
+  color: var(--base-accent-contrast);
+  border-color: transparent;
+}
+
+#mainContent .app-view:not(#chatView) :is(.btn-outline-primary, .w2-button:not(.primary)) {
+  color: var(--dash-text);
+  border-color: var(--dash-border-strong);
+  background: transparent;
+}
+
+#mainContent .app-view:not(#chatView) :is(.form-control, .form-select, .w2-input, .workstation-field input, .workstation-field textarea) {
+  min-height: 42px;
+  border-radius: 9px;
+  border-color: var(--dash-border-strong);
+  background: var(--dash-bg);
+  color: var(--dash-text);
+  font-size: .875rem;
+}
+
+#mainContent .app-view:not(#chatView) :is(button, summary, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--dash-accent);
+  outline-offset: 3px;
+}
+
+#mainContent .app-view:not(#chatView) :is(.task-dashboard, .settings-panels) {
+  padding: 0;
+}
+
+/* Workstation forms and the output library share the same quiet page measure. */
+#mainContent .workstation-grid { gap: 24px; }
+#mainContent .workstation-card { padding: 24px; }
+#mainContent .workstation-card h2:not(:first-child) { margin-top: 28px; }
+#mainContent .workstation-card p { line-height: 1.65; }
+#mainContent .workstation-field { font-weight: 500; }
+#mainContent .workstation-stack { gap: 24px; }
+#mainContent #archiveView > div { padding: 0; gap: 28px; }
+#mainContent #archiveView > div > header { align-items: flex-start; padding-right: 40px; }
+#mainContent #archiveView .glow-card { border: 0; background: transparent; box-shadow: none; padding: 0 14px; min-width: 60px; }
+#mainContent #archiveView :is(nav, article, .rounded-2xl) { border-color: var(--dash-border); border-radius: 14px; }
+#mainContent #assistantView > header { margin-bottom: 28px; padding-right: 52px; }
+#mainContent #assistantView .card .card { border: 0; border-radius: 0; background: transparent; }
+#mainContent #assistantView .card-body { padding: 24px; }
+#mainContent #assistantView .card .card .card-body { padding: 12px 0; }
+
+/* Model Hub: one page heading, one navigation row, a readable model list. */
+#modelsView.models-unified {
+  padding: 36px 40px 28px;
+  overflow-y: auto;
+  --dash-accent: var(--base-accent);
+  --models-forge: var(--base-accent);
+}
+
+#modelsView.models-unified .models-page-shell {
+  /* interface.css forces flex at tablet sizes; this page uses normal flow. */
+  display: block !important;
+  flex: none;
+  gap: 0;
+  height: auto;
+  min-height: 100%;
+  max-width: 1200px;
+  overflow: visible;
+}
+
+#modelsView.models-unified .models-page-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 0;
+  padding: 0 48px 26px 0;
+  border: 0;
+  background: transparent;
+}
+
+#modelsView .models-v3-command-copy { display: block; }
+#modelsView .models-v3-command-copy p { margin: 0; font-size: .875rem; line-height: 1.65; color: var(--dash-muted); }
+#modelsView .models-header-runtime { display: flex; align-items: center; gap: 8px; color: var(--dash-muted); font-size: .8125rem; }
+#modelsView .models-header-runtime > span { width: 6px; height: 6px; background: var(--dash-muted); box-shadow: none; }
+#modelsView .models-v3-overview-disclosure { display: none; }
+#modelsView.models-unified .models-page-rail { display: block; padding: 0; border: 0; background: transparent; overflow: visible; }
+#modelsView.models-unified .models-page-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 0; border-bottom: 1px solid var(--dash-border); background: transparent; }
+#modelsView.models-unified .models-page-tabs .models-v3-tab {
+  position: relative;
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 46px;
+  padding: 8px 0 16px;
+  gap: 8px;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--dash-muted);
+}
+#modelsView .models-v3-tab strong { font-size: .8125rem; font-weight: 500; }
+#modelsView .models-v3-tab::before { display: none; }
+#modelsView .models-v3-tab small { display: none; }
+#modelsView .models-v3-tab-icon { width: auto; height: auto; padding: 0; border: 0; background: transparent; color: inherit; }
+#modelsView .models-v3-tab[aria-selected="true"] { color: var(--dash-text); }
+#modelsView .models-v3-tab[aria-selected="true"]::after { content: ""; position: absolute; inset: auto 0 -1px; height: 2px; background: var(--dash-accent); }
+#modelsView .models-v3-tab:hover { color: var(--dash-text); }
+#modelsView .models-rail-toggle { display: none; }
+#modelsView.models-unified .models-page-content { display: block; height: auto; padding: 0; overflow: visible; background: transparent; }
+#modelsView .models-page-content > .w2-column { display: block; height: auto; overflow: visible; }
+#modelsView.models-unified .models-v3-panel { height: auto; min-height: 0; border: 0; border-radius: 0; padding: 0; overflow: visible; background: transparent; }
+
+#modelsView .model-storage-disclosure { padding: 12px 0; margin: 0 0 24px; border-bottom: 1px solid var(--dash-border); color: var(--dash-muted); }
+#modelsView .model-storage-disclosure summary { display: flex; align-items: center; gap: 12px; min-height: 28px; font-size: .8125rem; list-style: none; }
+#modelsView .model-storage-chevron { flex: 0 0 auto; }
+#modelsView .model-storage-disclosure[open] .model-storage-chevron { transform: rotate(90deg); }
+#modelsView .model-storage-disclosure summary strong { font-weight: 500; color: var(--dash-text); white-space: nowrap; }
+#modelsView .model-storage-disclosure summary > span { display: block; min-width: 0; margin: 0 0 0 auto; max-width: 56%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; }
+#modelsView .model-storage-disclosure[open] { padding-bottom: 20px; }
+#modelsView .model-storage-disclosure[open] summary > span { white-space: normal; overflow-wrap: anywhere; }
+
+#modelsView.models-unified .models-inventory-workbench { display: grid; grid-template-columns: minmax(0, 1fr) 6px minmax(280px, var(--models-inspector-width)); gap: 16px; height: auto; min-height: 460px; overflow: visible; }
+#modelsView .models-inventory-workbench > .models-model-inspector { grid-column: 3; }
+#modelsView .models-inventory-workbench > .models-inspector-resizer { display: block; grid-column: 2; width: 6px; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: col-resize; }
+#modelsView .models-inspector-resizer:hover { background: var(--dash-border-strong); }
+#modelsView.models-unified .models-inventory-main { overflow: visible; padding: 0; }
+#modelsView .model-library-welcome { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 0; margin-bottom: 24px; }
+#modelsView .model-library-welcome h2 { margin: 0 0 7px; font-size: 1.125rem; font-weight: 550; }
+#modelsView .model-library-welcome p { margin: 0; color: var(--dash-muted); font-size: .8125rem; line-height: 1.6; }
+#modelsView .model-library-add-actions { gap: 8px; margin: 0; }
+#modelsView .model-library-add-actions button { min-height: 36px; font-size: .8125rem; border-radius: 9px; }
+#modelsView .model-library-filters { gap: 6px; margin: 0 0 16px; }
+#modelsView .model-library-filters button { gap: 8px; min-height: 34px; padding: 6px 9px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--dash-muted); font-size: .75rem; }
+#modelsView .model-library-filters button[aria-pressed="true"] { background: var(--dash-panel); border-color: var(--dash-border); color: var(--dash-text); }
+#modelsView .model-library-filters strong { font-size: .6875rem; font-weight: 500; color: var(--dash-muted); }
+#modelsView .models-inventory-toolbar { gap: 10px; margin-bottom: 16px; padding: 0; border: 0; background: transparent; }
+#modelsView .models-inventory-heading h2 { display: none; }
+#modelsView .models-inventory-category select { min-height: 38px; border: 1px solid var(--dash-border-strong); border-radius: 9px; background: var(--dash-panel); padding: 8px 24px 8px 10px; color: var(--dash-text); font-size: .8125rem; }
+#modelsView .models-inventory-search { min-height: 38px; border-radius: 9px; background: var(--dash-panel); border-color: var(--dash-border-strong); }
+#modelsView .models-inventory-tools { gap: 6px; }
+#modelsView .models-inventory-tools button { padding: 7px 9px; }
+#modelsView.models-unified .models-inventory-table { gap: 0; padding: 0; overflow: visible; border-block: 1px solid var(--dash-border); background: transparent; }
+#modelsView.models-unified .model-library-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; padding: 20px 12px; border: 0; border-bottom: 1px solid var(--dash-border); border-radius: 0; background: transparent; }
+#modelsView .model-library-card:last-child { border-bottom: 0; }
+#modelsView.models-unified .model-library-card.is-selected { background: var(--dash-panel); }
+#modelsView .model-card-select { grid-column: 1 / -1; gap: 12px; }
+#modelsView .model-card-select strong { font-size: .9375rem; font-weight: 550; }
+#modelsView .model-card-select small { font-size: .75rem; }
+#modelsView .model-card-select .publisher-logo { border: 0; border-radius: 10px; background: var(--dash-bg); }
+#modelsView .model-card-status { grid-column: 1; align-self: center; gap: 7px; font-size: .75rem; }
+#modelsView .model-card-status strong { font-weight: 500; }
+#modelsView .model-card-status small { margin-left: 0; font-size: .6875rem; }
+#modelsView .model-card-reason { grid-column: 1 / -1; grid-row: 3; font-size: .75rem; line-height: 1.6; }
+#modelsView .model-card-actions { grid-column: 2; grid-row: 2; justify-content: flex-end; gap: 6px; }
+#modelsView .model-card-actions .w2-button { min-height: 34px; padding: 6px 10px; font-size: .75rem; }
+#modelsView .model-card-details { min-height: 34px; padding: 6px; color: var(--dash-muted); font-size: .6875rem; }
+#modelsView .models-inventory-footer { padding: 14px 0; font-size: .6875rem; color: var(--dash-muted); }
+#modelsView.models-unified .models-model-inspector { align-self: start; height: auto; max-height: 760px; overflow-y: auto; border: 1px solid var(--dash-border); border-radius: 14px; background: var(--dash-panel); }
+#modelsView .models-inspector-header { padding: 22px; gap: 14px; }
+#modelsView .models-inspector-title strong { font-size: 1.0625rem; font-weight: 550; }
+#modelsView .models-inspector-title small { font-family: var(--ras-font-ui); font-size: .75rem; color: var(--dash-muted); }
+#modelsView .models-state-copy strong { font-family: var(--ras-font-ui); font-size: .75rem; font-weight: 500; }
+#modelsView .model-recovery-heading h3::before { display: none; }
+#modelsView .models-inspector-tabs { flex-wrap: nowrap; gap: 0; padding: 0 12px; border-block: 1px solid var(--dash-border); background: transparent; }
+#modelsView .models-inspector-tabs button { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 8px 3px; border: 0; border-radius: 0; background: transparent; color: var(--dash-muted); font-size: .75rem; font-weight: 500; }
+#modelsView .models-inspector-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px var(--dash-accent); color: var(--dash-text); }
+#modelsView .models-inspector-section { padding: 22px; }
+#modelsView .models-inspector-disclosure { margin-inline: 0; }
+#modelsView .models-inspector-facts { font-family: var(--ras-font-ui); }
+.model-inspector-essentials { display: flex; flex-wrap: wrap; gap: 16px 28px; padding-bottom: 20px; margin: 0 0 20px; border-bottom: 1px solid var(--dash-border); }
+.model-inspector-essentials div { display: grid; gap: 5px; }
+.model-inspector-essentials dt { color: var(--dash-muted); font-size: .6875rem; font-weight: 400; }
+.model-inspector-essentials dd { margin: 0; font-size: .8125rem; font-weight: 500; }
+#modelsView .models-discover-toolbar { background: transparent; border: 0; padding-inline: 0; }
+#modelsView .models-catalog-toolbar { background: transparent; border: 0; border-bottom: 1px solid var(--dash-border); border-radius: 0; }
+#modelsView .models-discover-workbench { gap: 16px; }
+#modelsView .models-discover-table-head { background: transparent; }
+#modelsView .models-discover-row { background: transparent; border-color: var(--dash-border); border-radius: 0; }
+#modelsView .models-discover-row.is-selected { background: var(--dash-panel); }
+
+/* Settings belongs to the same family without changing its dialog behavior. */
+.studio-settings-modal .studio-settings-nav { padding: 16px 10px; gap: 5px; background: var(--dash-bg); }
+.studio-settings-modal .studio-settings-nav button { min-height: 38px; border: 0; border-radius: 8px; font-size: .8125rem; font-weight: 500; }
+.studio-settings-modal .studio-settings-heading { padding: 20px 24px; gap: 12px; min-height: 0; background: transparent; }
+.studio-settings-modal .studio-settings-heading h1 { font-size: 1.0625rem; font-weight: 550; }
+.studio-settings-modal .studio-settings-heading p { font-size: .75rem; line-height: 1.6; }
+.studio-settings-modal .studio-settings-content { padding: 24px; background: var(--dash-panel); }
+.studio-settings-modal .settings-pane { padding: 0; }
+.studio-settings-modal .settings-pane :is(h2, h3, h5) { font-size: 1rem; font-weight: 550; }
+.studio-settings-modal .settings-pane :is(p, label, .form-text) { font-size: .8125rem; line-height: 1.6; }
+.studio-settings-modal .settings-pane :is(.form-control, .form-select) { min-height: 42px; font-size: .875rem; border-radius: 9px !important; }
+.studio-settings-modal .settings-pane .btn { min-height: 38px; font-size: .8125rem; border-radius: 9px !important; }
+.studio-settings-modal .settings-pane .card { background: transparent !important; border: 0; box-shadow: none !important; }
+.studio-settings-modal .settings-pane .card-body { padding: 16px 12px; }
+.studio-settings-modal .settings-pane .text-uppercase { text-transform: none !important; letter-spacing: 0; }
+
+.ras-modal.studio-load-modal { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.studio-load-modal .studio-load-summary { padding-bottom: 20px; border-bottom: 1px solid var(--dash-border); }
+.studio-load-modal .studio-load-summary > div { border: 0; padding: 0; border-radius: 0; background: transparent; }
+.studio-load-modal .studio-load-summary small { font-size: .75rem; text-transform: none; }
+.studio-load-modal .studio-load-summary strong { font-size: .875rem; font-weight: 500; }
+.studio-load-modal .model-load-guidance { font-size: .875rem; line-height: 1.65; }
+.studio-load-modal .studio-load-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; border: 0; padding: 0; background: transparent; }
+.studio-load-modal .studio-load-field { grid-template-columns: minmax(0, 1fr) minmax(160px, .8fr); gap: 20px; padding: 14px 0; }
+.studio-load-modal .studio-load-field strong { font-size: .8125rem; font-weight: 500; }
+.studio-load-modal .studio-load-field small { font-size: .75rem; line-height: 1.5; margin-top: 4px; }
+.studio-load-modal .studio-load-field :is(input, select) { width: 100%; min-width: 0; min-height: 42px; border-radius: 9px; font-size: .8125rem; }
+.studio-load-modal .studio-load-advanced-toggle { min-height: 40px; color: var(--dash-muted); font-size: .8125rem; }
+.studio-load-modal .studio-load-footer { gap: 12px; }
+.studio-load-modal .studio-load-footer label { font-size: .75rem; }
+
+@media (max-width: 1100px) {
+  #modelsView.models-unified .models-page-content { flex: 0 0 auto; }
+  #modelsView.models-unified .studio-installed-panel { height: auto; flex: 0 0 auto !important; }
+  #modelsView.models-unified .models-inventory-workbench { display: flex; flex-direction: column; height: auto; min-height: 0; flex: 0 0 auto; }
+  #modelsView.models-unified .models-inventory-main { flex: 0 0 auto; height: auto; min-height: auto; }
+  #modelsView.models-unified .models-model-inspector { position: static; flex: 0 0 auto; width: 100%; max-height: none; overflow: visible; }
+  #modelsView .models-inventory-workbench > .models-model-inspector { grid-column: auto; }
+  #modelsView .models-inventory-workbench > .models-inspector-resizer { display: none; }
+}
+
+@media (max-width: 767px) {
+  #mainContent .app-view:not(#chatView):not(#modelsView) { padding: 28px 20px; }
+  #modelsView.models-unified { padding: 28px 20px; }
+  #modelsView.models-unified .models-page-tabs { gap: 16px; }
+  #modelsView.models-unified .models-page-tabs .models-v3-tab { min-height: 44px; padding-bottom: 12px; }
+  #modelsView .models-header-runtime { display: none; }
+  #modelsView .model-library-filters { flex-wrap: wrap; }
+  #modelsView .model-library-filters button { flex: 0 1 auto; }
+  #modelsView .models-page-content > .w2-column { gap: 20px; }
+  #modelsView .models-inventory-toolbar { flex-wrap: wrap; }
+  #modelsView .models-inventory-search { flex: 1; }
+  #modelsView .models-inventory-tools { width: 100%; }
+  #modelsView .model-card-actions { grid-column: 1 / -1; grid-row: 4; justify-content: flex-start; }
+  #modelsView .model-card-status { grid-column: 1 / -1; }
+  #modelsView .model-card-select strong { overflow-wrap: anywhere; }
+  #modelsView .model-library-welcome { margin-bottom: 20px; }
+  #modelsView .model-storage-disclosure summary > span { max-width: 45%; }
+  #mainContent .workstation-card { padding: 20px; }
+  #mainContent #archiveView > div > header { padding-right: 36px; }
+  #mainContent #archiveView .glow-card { padding: 0 8px 0 0; text-align: left; }
+  #mainContent #assistantView .card-body { padding: 18px; }
+  .studio-settings-modal .studio-settings-content { padding: 18px; }
+  .studio-settings-modal .studio-settings-heading { padding: 16px 18px; }
+  .studio-load-modal .studio-load-field { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
+
+@media (pointer: coarse) {
+  #mainContent .app-view:not(#chatView) :is(.btn, .w2-button, .ras-button),
+  #modelsView .model-library-filters button { min-height: 44px; }
+}

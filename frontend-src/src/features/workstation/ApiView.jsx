@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "../../components/ui/button.jsx";
 import { ModelServingPanel } from "../models/ModelServingPanel.jsx";
@@ -34,7 +34,7 @@ export function ApiView({ view }) {
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   return <section className={`app-view workstation-view ${view === "api" ? "active" : ""}`} data-app-view="api" id="apiView">
-    <header className="workstation-heading"><div><span className="workstation-eyebrow">CONNECT</span><h1>API</h1><p>Your local models, in the tools you already use.</p></div><KeyRound aria-hidden="true" size={28} /></header>
+    <header className="workstation-heading"><div><h1>API</h1><p>Your local models, in the tools you already use.</p></div></header>
     {error && <p className="workstation-error" role="alert">{error}</p>}
     <div className="workstation-grid">
       <section className="workstation-card"><h2>Connect an application</h2><p>Choose an OpenAI-compatible provider in your client and enter this base URL, a key, and a model ID from the gateway below.</p>

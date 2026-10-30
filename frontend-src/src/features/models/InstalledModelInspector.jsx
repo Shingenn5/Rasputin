@@ -55,7 +55,8 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
     return (
       <aside id="installed-model-inspector" className="models-model-inspector is-empty" data-testid="installed-model-inspector">
         <Cpu size={24} aria-hidden="true" />
-        <p>Select a model to inspect its developer, runtime, source, and inference profile.</p>
+        <strong>Model details</strong>
+        <p>Select a model to see its status, settings, and source file.</p>
       </aside>
     );
   }
@@ -172,7 +173,7 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
       <header className="models-inspector-header">
         <div className="models-inspector-title">
           <PublisherLogo item={model} size="lg" />
-          <div><strong>{name}</strong><small>{developer} · {modelId}</small></div>
+          <div><strong>{name}</strong><small>{developer}</small></div>
         </div>
         <ModelStateSignal signal={operationalSignal} chatActive={chatActive} compact />
         <div className="models-inspector-primary-actions">
@@ -215,6 +216,11 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
 
       {activeTab === "info" && (
         <section id="model-inspector-panel-info" role="tabpanel" aria-labelledby="model-inspector-tab-info" className="models-inspector-section">
+          <dl className="model-inspector-essentials">
+            <div><dt>Format</dt><dd>{installedModelFormat(model)}</dd></div>
+            <div><dt>Size</dt><dd>{installedModelSize(model)}</dd></div>
+            <div><dt>Context</dt><dd>{context > 0 ? context.toLocaleString() + " tokens" : "Runtime default"}</dd></div>
+          </dl>
           <ModelRecovery key={model.key} model={model} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} />
           {(model.summary || model.description) && <p className="models-inspector-summary">{model.summary || model.description}</p>}
           <details className="models-inspector-disclosure models-inspector-technical">

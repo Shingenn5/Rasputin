@@ -86,7 +86,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   const [loadError, setLoadError] = useState("");
 
   const modelKey = model?.key || "";
-  const modelName = displayModelName(model, models);
+  const modelName = model?.name || displayModelName(model, models);
   const cleaned = useMemo(() => cleanProfile(profile), [profile]);
   const previewKey = JSON.stringify({ model, hardware, runtimeStatus, profile: cleaned });
   const preview = previewResult?.key === previewKey ? previewResult.value : null;
@@ -178,7 +178,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         <button className="w2-button" type="button" onClick={() => setProfile((current) => ({ ...current, contextLength: 4096, batchSize: 256, ubatchSize: 128, cacheTypeK: "q8_0", cacheTypeV: "q8_0" }))}>Lower memory</button>
         <button className="w2-button" type="button" onClick={() => setProfile((current) => ({ ...current, memoryMode: "cpu_only", gpuLayers: "0", kvOffload: "off" }))}>CPU only</button>
       </div>
-      <p className="model-load-guidance">Adjust runtime settings before loading. Weight precision comes from the GGUF variant; changing it requires a different file. Placement is checked before launch.</p>
+      <p className="model-load-guidance">Automatic settings fit this model to your hardware. Choose how much conversation to remember, then load.</p>
       <div className="studio-load-form">
         <Field label="Context length" hint="Maximum tokens retained per conversation">
           <input className="w2-input" type="number" min="512" step="512" value={profile.contextLength} onChange={set("contextLength")} />
@@ -190,28 +190,6 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
             <option value="cpu_only">System RAM / CPU only</option>
           </Select>
         </Field>
-        <Field label="GPU offload layers" hint="Auto uses the largest fitting GPU first">
-          <input className="w2-input" value={profile.gpuLayers} onChange={set("gpuLayers")} inputMode="numeric" />
-        </Field>
-        <Field label="CPU thread pool" hint="Leave blank to let llama.cpp choose">
-          <input className="w2-input" type="number" min="1" value={profile.threads} onChange={set("threads")} placeholder="Auto" />
-        </Field>
-        <Field label="Evaluation batch size" hint="Prompt-processing batch">
-          <input className="w2-input" type="number" min="1" value={profile.batchSize} onChange={set("batchSize")} />
-        </Field>
-        <Field label="Physical batch size" hint="Micro-batch used by the runtime">
-          <input className="w2-input" type="number" min="1" value={profile.ubatchSize} onChange={set("ubatchSize")} />
-        </Field>
-        <Field label="Concurrent predictions" hint="Parallel llama.cpp slots">
-          <input className="w2-input" type="number" min="1" value={profile.parallelSlots} onChange={set("parallelSlots")} />
-        </Field>
-        <Field label="KV cache offload" hint="Move the conversation cache to GPU memory">
-          <Select value={profile.kvOffload} onChange={set("kvOffload")} label="KV cache offload">
-            <option value="auto">Automatic</option>
-            <option value="on">On</option>
-            <option value="off">Off</option>
-          </Select>
-        </Field>
       </div>
 
       <button type="button" className="studio-load-advanced-toggle" aria-expanded={advanced} onClick={() => setAdvanced((value) => !value)}>
@@ -220,6 +198,28 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
 
       {advanced && (
         <div className="studio-load-form studio-load-form-advanced">
+          <Field label="GPU offload layers" hint="Auto uses the largest fitting GPU first">
+            <input className="w2-input" value={profile.gpuLayers} onChange={set("gpuLayers")} inputMode="numeric" />
+          </Field>
+          <Field label="CPU thread pool" hint="Leave blank to let llama.cpp choose">
+            <input className="w2-input" type="number" min="1" value={profile.threads} onChange={set("threads")} placeholder="Auto" />
+          </Field>
+          <Field label="Evaluation batch size" hint="Prompt-processing batch">
+            <input className="w2-input" type="number" min="1" value={profile.batchSize} onChange={set("batchSize")} />
+          </Field>
+          <Field label="Physical batch size" hint="Micro-batch used by the runtime">
+            <input className="w2-input" type="number" min="1" value={profile.ubatchSize} onChange={set("ubatchSize")} />
+          </Field>
+          <Field label="Concurrent predictions" hint="Parallel llama.cpp slots">
+            <input className="w2-input" type="number" min="1" value={profile.parallelSlots} onChange={set("parallelSlots")} />
+          </Field>
+          <Field label="KV cache offload" hint="Move the conversation cache to GPU memory">
+            <Select value={profile.kvOffload} onChange={set("kvOffload")} label="KV cache offload">
+              <option value="auto">Automatic</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </Select>
+          </Field>
           <Field label="GPU split mode" hint="Layer splitting pools VRAM across compatible GPUs">
             <Select value={profile.splitMode} onChange={set("splitMode")} label="GPU split mode">
               <option value="auto">Automatic</option>

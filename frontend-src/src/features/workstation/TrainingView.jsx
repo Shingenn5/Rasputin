@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FlaskConical, Play, RefreshCw, Square } from "lucide-react";
+import { Play, RefreshCw, Square } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "../../components/ui/button.jsx";
 import "./workstation.css";
@@ -38,7 +38,7 @@ export function TrainingView({ view }) {
     try { update("dataset", await file.text()); setError(""); } catch { setError("Unable to read this dataset."); }
   }
   return <section className={`app-view workstation-view ${view === "training" ? "active" : ""}`} data-app-view="training" id="trainingView">
-    <header className="workstation-heading"><div><span className="workstation-eyebrow">BUILD</span><h1>Training</h1><p>Teach a local model your examples. Keep the weights and data on your machine.</p></div><FlaskConical aria-hidden="true" size={28} /></header>
+    <header className="workstation-heading"><div><h1>Training</h1><p>Teach a local model your examples. Keep the weights and data on your machine.</p></div></header>
     {error && <p role="alert" className="workstation-error">{error}</p>}
     <div className="workstation-grid">
       <form className="workstation-card" onSubmit={(e) => { e.preventDefault(); perform("preflight", "/api/training/preflight"); }}>

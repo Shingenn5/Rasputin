@@ -48,8 +48,8 @@ test("system motion responds to OS changes and explicit choices survive reload",
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-motion", "reduced");
   await page.goto("/#skills");
-  await expect(page.locator("#skillsView .ras-runtime-orbit i")).toHaveCSS("animation-name", "none");
-  await expect(page.locator("#skillsView .ras-runtime-kicker i")).toHaveCSS("animation-name", "none");
+  await expect(page.locator("#skillsView")).toHaveCSS("animation-name", "none");
+  await expect(page.locator("#skillsView .ras-runtime-orbit, #skillsView .ras-runtime-kicker")).toHaveCount(0);
 });
 
 test("narrow dashboard scrolling has a visible keyboard path and folder actions stay outside the tree", async ({ page }) => {
@@ -66,8 +66,21 @@ test("narrow dashboard scrolling has a visible keyboard path and folder actions 
   const details = page.getByRole("region", { name: "Model discovery details" });
   await details.focus();
   await expect(details).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  await expect.poll(() => details.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  // The expanded page can scroll at its outer container rather than clipping
+  // the details region. Exercise whichever real scrollbar contains the focus.
+  const scrollContainer = await details.evaluateHandle((element) => {
+    for (let node = element; node; node = node.parentElement) {
+      if (node.scrollHeight > node.clientHeight && /auto|scroll/.test(getComputedStyle(node).overflowY)) return node;
+    }
+    return document.scrollingElement;
+  });
+  const scroll = await scrollContainer.evaluate(element => ({ top: element.scrollTop, max: element.scrollHeight - element.clientHeight }));
+  if (scroll.max > 0) {
+    await page.keyboard.press(scroll.top < scroll.max ? "ArrowDown" : "ArrowUp");
+    await expect.poll(() => scrollContainer.evaluate(element => element.scrollTop)).not.toBe(scroll.top);
+  } else {
+    expect(await details.evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true);
+  }
   await page.keyboard.press("Tab");
   await expect(details).not.toBeFocused();
   await page.goto("/#workspaces");

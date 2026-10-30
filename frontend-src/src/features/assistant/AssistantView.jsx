@@ -377,8 +377,7 @@ export function AssistantView({
     <section className={`app-view ${view === "assistant" ? "active" : ""}`} id="assistantView" data-app-view="assistant" data-testid="assistant-view">
       <div className="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
         <div>
-          <p className="text-uppercase small fw-semibold text-body-secondary mb-1">Personal assistant control plane</p>
-          <h1 className="h3 mb-1">{profile?.displayName || "Rasputin"}</h1>
+          <h1 className="h3 mb-1">Assistant</h1>
           <p className="text-body-secondary mb-0">{profile?.mission || "Coordinate local models and agents as one dependable workstation assistant."}</p>
         </div>
         <Button variant="outline-secondary" size="sm" onClick={refresh} disabled={loading} data-testid="assistant-refresh">

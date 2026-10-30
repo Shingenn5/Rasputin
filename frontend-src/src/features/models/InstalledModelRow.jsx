@@ -40,7 +40,7 @@ export function InstalledCard({ nativeModels = false, model, allModels, selected
           else onSelect?.();
         }} icon={ready || operationalSignal.action === "load" ? <Play size={14} /> : undefined}>{operationalSignal.action === "wait" ? "Loading…" : primary}</Button>
         {isRunning && <Button onClick={() => runAction("stop", "StopModel", "stop")} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={14} />}>Stop</Button>}
-        <button type="button" className="model-card-details" onClick={onSelect}>Details & settings</button>
+        <button type="button" className="model-card-details" onClick={onSelect} aria-label={`Details and settings for ${name}`}>Details & settings</button>
       </div>
     </article>
   );

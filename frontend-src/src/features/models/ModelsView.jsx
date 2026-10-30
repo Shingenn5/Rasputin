@@ -157,7 +157,8 @@ export function ModelsView({
   const [inspectorWidth, setInspectorWidth] = useState(() => {
     if (typeof window === "undefined") return 350;
     try {
-      const stored = Number(window.localStorage.getItem("rasputin-model-inspector-width"));
+      const saved = window.localStorage.getItem("rasputin-model-inspector-width");
+      const stored = saved === null ? 350 : Number(saved);
       return Number.isFinite(stored) ? Math.min(480, Math.max(260, stored)) : 350;
     } catch {
       return 350;
@@ -674,11 +675,11 @@ export function ModelsView({
       <div className="models-page-header models-v3-command-band">
         <div className="models-v3-command-copy">
           <h1>Model Hub</h1>
-          <p>{view === "discover" ? "Find the right model, choose an exact variant, and download it." : "Import, configure, and run the models on your workstation."}</p>
+          <p>Find, load, and manage your models.</p>
         </div>
         {desktopOnly && (
           <div className="models-header-runtime" aria-label="Native runtime status">
-            <span aria-hidden="true" /> Native · llama.cpp
+            <span aria-hidden="true" /> {runningModels.length ? `${runningModels.length} loaded` : "No models loaded"}
           </div>
         )}
         <details className="models-v3-overview-disclosure">
@@ -1149,7 +1150,7 @@ export function ModelsView({
               <div className="models-inventory-workbench" style={{ "--models-inspector-width": `${inspectorWidth}px` }}>
                 <section className="models-inventory-main" aria-labelledby="models-inventory-title">
                   <header className="model-library-welcome">
-                    <div><span className="model-library-eyebrow">Your library</span><h2>Choose a model. Start a conversation.</h2><p>See what's ready, load a saved model, or fix a connection here.</p></div>
+                    <div><h2>Your models</h2><p>Load a model to chat, or select one to see its settings.</p></div>
                     <div className="model-library-add-actions"><UIButton type="button" onClick={() => setActiveTab("library")}><Search size={15} /> Find a model</UIButton><UIButton type="button" variant="outline" onClick={() => setShowModelSources((value) => !value)} aria-expanded={showModelSources} aria-controls="model-library-sources">Add existing model</UIButton></div>
                   </header>
                   {showModelSources && <div id="model-library-sources"><LocalModelSources onImported={loadModels} /></div>}
