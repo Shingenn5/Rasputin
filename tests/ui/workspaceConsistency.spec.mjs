@@ -83,6 +83,9 @@ for (const width of [1440, 768, 390]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1);
     expect(await dialog.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false);
+    const cancelBounds = await dialog.getByRole("button", { name: "Cancel", exact: true }).boundingBox();
+    const loadBounds = await dialog.getByRole("button", { name: "Load model", exact: true }).boundingBox();
+    expect(Math.abs(cancelBounds.y - loadBounds.y)).toBeLessThanOrEqual(1);
     await page.screenshot({ path: test.info().outputPath(`model-load-${width}.png`) });
     await dialog.getByRole("button", { name: "Load model", exact: true }).click();
     await expect(dialog).toHaveCount(0);
