@@ -23,6 +23,7 @@ These are the documents to consult before starting implementation work.
 
 | Document | Scope | Status |
 | --- | --- | --- |
+| [`NON_CHAT_UX_ACTION_PLAN.md`](NON_CHAT_UX_ACTION_PLAN.md) | Twelve scoped work packages from the October 30 Unsloth-reference audit, with dependencies, acceptance criteria, verification, and tracking | Planned October 31; companion to the existing UI audits, excludes Chat layout changes |
 | [`RASPUTIN_UI_AUDIT_2026-10-28.md`](RASPUTIN_UI_AUDIT_2026-10-28.md) / [illustrated PDF](RASPUTIN_UI_AUDIT_2026-10-28.pdf) | Fresh review of `codex/restore-rea-home` at `44a251e`, current interactions, visible packaged Electron checks, and prioritized changes | Audit complete; eight grouped issues remain open, normal installed data untouched |
 | [`RASPUTIN_UI_REMEDIATION_REPORT_2026-10-27.md`](RASPUTIN_UI_REMEDIATION_REPORT_2026-10-27.md) | Eight prioritized UI fixes with measured audit evidence, source locations, required changes, and acceptance checks | Planned; source audit only, fixes and installed verification remain open |
 | [`RASPUTIN_USER_TESTING_PLAYBOOK.md`](RASPUTIN_USER_TESTING_PLAYBOOK.md) | Computer Use user journeys, complete control inventory, responsive/accessibility checks, and verified improvement workflow | Reusable campaign guide; full campaign not yet executed |
