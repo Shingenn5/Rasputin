@@ -22,6 +22,7 @@ from backend.rag import memory as memory
 from backend.models import registry as model_registry
 from backend.mcp import tools as tool_relay
 from backend.mcp import relay as mcp_relay
+from backend.mcp import sandbox_tools
 from backend.core import runtime_store as store
 from backend.core.response import AppError
 
@@ -243,6 +244,8 @@ class McpLayer:
             "archive_expand": self.archive_expand,
             "model_health": self.model_health,
             "shell_exec": self.shell_exec,
+            "sandbox_prepare": sandbox_tools.sandbox_prepare,
+            "sandbox_run": sandbox_tools.sandbox_run,
             "git_status": self.git_status,
             "git_diff": self.git_diff,
             "git_log": self.git_log,

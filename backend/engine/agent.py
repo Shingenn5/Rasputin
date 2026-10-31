@@ -74,6 +74,7 @@ from backend.core import audit as audit
 from backend.mcp import tools as tool_relay
 from backend.core import workspace
 from backend.core import task_worktree
+from backend.core import sandbox_execution
 
 TEXT_FILE_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css",
@@ -84,6 +85,7 @@ TEXT_FILE_EXTENSIONS = {
 FILE_MUTATING_TOOLS = {"fs_write", "fs_patch", "fs_move"}
 ISOLATED_PLANNING_BLOCKED_TOOLS = {
     "fs_write", "fs_patch", "fs_mkdir", "fs_move", "git_add", "git_commit", "shell_exec",
+    "sandbox_prepare", "sandbox_run",
 }
 ISOLATED_EXECUTION_BLOCKED_TOOLS = {"git_add", "git_commit", "shell_exec"}
 WORKSPACE_CONTEXT_TERMS = (
@@ -1649,6 +1651,16 @@ class AgentHub:
         chat but must fail visibly when an execution phase requires tools.
         """
 
+        if task.mode == "code" and sandbox_execution.capability()["configured"]:
+            sections = [*sections, context_governor.section(
+                "sandbox_validation", "Approved snapshot execution",
+                "You may prepare selected workspace files and exact executable arguments with sandbox_prepare, "
+                "then call sandbox_run to wait for operator approval and receive an execution receipt. "
+                "These tools use the pinned self-contained toolchain without a host shell. Only report tests "
+                "as passed when the receipt says passed=true, and scope that claim to its recorded snapshot. "
+                "Use failing output to repair source files, then prepare a new snapshot and approval for another test.",
+                required=True, priority=0,
+            )]
         model_key = self.phase_model(task, role)
         model = model_registry.get_model(model_key) or {}
         minimal_inference = phase == "chat" and model_compatibility.default_profile(model) == "minimal"

@@ -1,7 +1,8 @@
-"""Development-only Windows AppContainer execution probe.
+"""Low-level Windows AppContainer snapshot runner and diagnostic probe.
 
-Not registered as an agent tool or an execution authorization. Production shell and
-validation remain disabled. Only disposable fixture files belong in this runner.
+This module grants no execution authorization. Application callers use the
+approval-bound sandbox_execution service. Host Shell and automatic validation
+remain separate; packaged toolchain and installed-app certification are pending.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from contextlib import contextmanager
 from ctypes import wintypes as W
 import os
 import json
+import hashlib
 import re
 from pathlib import Path
 import subprocess
@@ -21,6 +23,39 @@ import uuid
 
 class SandboxUnavailable(RuntimeError):
     pass
+
+
+class SandboxRefused(SandboxUnavailable):
+    """A request was refused before process creation."""
+
+
+def _changed_files(root, original):
+    """Bounded post-execution evidence; never follow a sandbox-created reparse point."""
+    before = {name.as_posix(): hashlib.sha256(content).hexdigest() for name, content in original.items()}
+    after, pending, inspected, total, complete = {}, [root], 0, 0, True
+    while pending:
+        directory = pending.pop()
+        for path in directory.iterdir():
+            inspected += 1
+            info = path.lstat()
+            if inspected > 512 or info.st_file_attributes & 0x400:
+                complete = False
+                if inspected > 512:
+                    pending.clear()
+                    break
+                continue
+            if path.is_dir():
+                pending.append(path)
+                continue
+            if not path.is_file() or total + info.st_size > 8 * 1024 * 1024:
+                complete = False
+                continue
+            total += info.st_size
+            with path.open("rb") as source:
+                after[path.relative_to(root).as_posix()] = hashlib.file_digest(source, "sha256").hexdigest()
+    changes = [{"path": name, "before_sha256": before.get(name), "after_sha256": after.get(name)}
+               for name in sorted(before.keys() | after.keys()) if before.get(name) != after.get(name)]
+    return changes, complete
 
 
 class SECURITY_CAPABILITIES(C.Structure):
@@ -222,12 +257,13 @@ def recover_abandoned(scratch_parent):
 
 
 def probe(executable, files, arguments, *, scratch_parent, timeout=10, cancel=None,
-          max_output=65536, memory_limit_mb=1024, max_processes=16):
+          max_output=65536, memory_limit_mb=1024, max_processes=16,
+          expected_executable_sha256=None):
     """Run an explicit fixture argv in a fresh disposable low-privilege container.
 
     The caller supplies a trusted absolute toolchain path and in-memory fixture
     files; no host checkout is mounted or copied. This is a synchronous diagnostic,
-    deliberately unavailable to model-authored requests. No shell interpretation,
+    accepted only through the service's approval boundary for model-authored requests. No shell interpretation,
     network capabilities, inherited environment, or fallback execution.
     """
     kernel, userenv, advapi = _api()
@@ -246,22 +282,26 @@ def probe(executable, files, arguments, *, scratch_parent, timeout=10, cancel=No
         relative = Path(name)
         if relative.is_absolute() or relative.drive or ".." in relative.parts or ":" in name:
             raise ValueError("Fixture paths must stay inside the disposable directory.")
-        if not isinstance(content, str) or "\0" in name:
-            raise ValueError("Fixture files must contain text and valid relative paths.")
-        fixture_files[relative] = content
+        if not isinstance(content, (str, bytes)) or "\0" in name:
+            raise ValueError("Snapshot files must contain text or bytes and valid relative paths.")
+        fixture_files[relative] = content.encode("utf-8") if isinstance(content, str) else content
     with _resources(kernel, userenv, advapi, scratch_parent) as (root, sid):
         workspace = root / "workspace"
         workspace.mkdir()
         for relative, content in fixture_files.items():
             target = workspace / relative
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            target.write_bytes(content)
         # The prototype supports self-contained executables only. Keep the
         # toolchain in scratch rather than granting access to its host folder.
         toolchain = root / "toolchain"
         toolchain.mkdir()
         copied_executable = toolchain / executable.name
         shutil.copyfile(executable, copied_executable)
+        with copied_executable.open("rb") as copied:
+            toolchain_hash = hashlib.file_digest(copied, "sha256").hexdigest()
+        if expected_executable_sha256 and toolchain_hash != expected_executable_sha256:
+            raise SandboxRefused("Copied toolchain does not match the approved executable hash.")
         sid_text = W.LPWSTR()
         _check(advapi.ConvertSidToStringSidW(sid, C.byref(sid_text)))
         try:
@@ -276,13 +316,24 @@ def probe(executable, files, arguments, *, scratch_parent, timeout=10, cancel=No
                                capture_output=True, creationflags=0x08000000)
         finally:
             kernel.LocalFree(sid_text)
-        return _execute(kernel, sid, copied_executable, workspace, arguments, windows.value,
-                        timeout, cancel, max_output, memory_limit_mb, max_processes)
+        result = _execute(kernel, sid, copied_executable, workspace, arguments, windows.value,
+                          timeout, cancel, max_output, memory_limit_mb, max_processes)
+        result["toolchain_sha256"] = toolchain_hash
+        try:
+            result["changes"], result["evidence_complete"] = _changed_files(workspace, fixture_files)
+        except OSError:
+            result.update(changes=[], evidence_complete=False)
+        return result
 
 
 def _execute(kernel, sid, executable, root, arguments, windows, timeout, cancel, max_output,
              memory_limit_mb, max_processes):
     import msvcrt
+
+    if cancel and cancel.is_set():
+        return {"ran": False, "boundary": "windows_appcontainer_probe", "production_ready": False,
+                "exit_code": None, "termination_reason": "cancelled", "output": "", "truncated": False,
+                "duration_seconds": 0.0}
 
     job = None
     info = PROCESS_INFORMATION()

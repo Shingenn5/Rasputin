@@ -14,12 +14,15 @@ The checkout already contains model lifecycle UI, streaming agent tool loops,
 workspace capabilities, approval handling, task worktrees, diffs, configured
 validation commands, and LoRA training/preflight/adapter-export code. Their presence
 does not certify the installed application or a full coding/training workflow.
-Native command execution and automatic validation remain disabled.
+Native Host Shell and the automatic workspace-validation loop remain disabled.
+Explicit snapshot execution now has an experimental authenticated API and task-bound
+agent tools; these require an administrator-pinned self-contained executable.
 
-The first implementation in this track is `backend/core/windows_sandbox.py`, an
-explicitly development-only AppContainer probe. It has no API route, agent tool,
-readiness override, or host-shell fallback. Its result says `production_ready: false`.
-It is not an execution authorization.
+`backend/core/windows_sandbox.py` supplies the low-level AppContainer boundary.
+`backend/core/sandbox_execution.py` supplies authorization, snapshot admission, and
+owner-scoped durable receipts. The low-level runner still reports
+`production_ready: false`: the installed toolchain and complete workflow are not
+certified. A low-level runner call is never an execution authorization.
 
 The probe creates a unique temporary AppContainer profile with no network
 capabilities, a disposable directory, and a copy of a trusted self-contained
@@ -64,8 +67,8 @@ Ten actual Windows integration tests passed with the local Node toolchain:
 Each probe writes a host-only lease before creating its profile. The lease binds
 the generated directory/profile identity to the owner PID and Windows process
 creation time, so a reused PID cannot claim an old run. `recover_abandoned` is an
-explicit diagnostic over an operator-selected scratch root; it is not yet wired
-to application startup. It derives deletion targets from validated generated
+diagnostic over an operator-selected scratch root. The execution service now calls
+it on its own scratch directory at application startup. It derives deletion targets from validated generated
 directory names and retains inaccessible or malformed resources for inspection.
 
 Run explicitly with an approved external scratch directory:
@@ -93,19 +96,71 @@ ran 174 tests: 168 passed and the same six smoke assertions failed. All six
 existing native-validation tests passed. The ten AppContainer integration tests
 also passed in their separate opt-in run.
 
+## Approval-bound execution and agent tools
+
+The `/api/execution` API exposes capability discovery, administrator-only toolchain
+pinning, request preparation, owner-scoped request/receipt retrieval, execution,
+and cancellation. Ordinary Native Host authentication and Desktop's existing
+loopback session rules apply. Pinning hashes executable bytes without running a
+version probe on the host. Package acquisition remains open; the current API
+expects a maintainer-provisioned self-contained executable.
+
+A request captures explicitly selected workspace files (at most 256 files and
+8 MiB), a bounded argument vector, a timeout up to 60 seconds, toolchain identity,
+owner, optional task identity, and snapshot/plan hashes. Reparse points, path
+traversal, Windows filename/device aliases, Git administration files, common
+credential directories, environment files, and private-key files are refused.
+The snapshot is read from checked file handles and retained in application data;
+it is not a live mount of the original workspace.
+
+Each request gets its own approval. Execution rechecks the current local account,
+workspace membership/read capability, global shell policy, task state/binding,
+snapshot hashes, plan identity, and configured toolchain. The approval is consumed
+atomically only when its owner, task, workspace, action, plan digest, status, and
+expiry match. The copied executable is hashed again before process creation.
+Replays and cross-request approvals are rejected. Trusted Dev Mode does not skip
+this approval.
+
+The agent's `sandbox_prepare` tool pins the workspace to the persisted task,
+ignoring model-authored workspace overrides. `sandbox_run` waits for that request's
+approval, checks task cancellation, and returns the actual execution receipt.
+Neither tool is offered without a pinned Windows toolchain or in unattended mode;
+isolated-task planning excludes both tools. Model guidance scopes passing claims
+to the approved snapshot. A repair requires new source edits, snapshot, and approval.
+This explicitly requested workflow is separate from the legacy automatic test loop.
+
+Receipts retain approved identities/arguments, timing, actual exit status, bounded
+output, termination reason, and bounded changed-file hashes. Incomplete file
+evidence cannot produce `passed: true`. Admission refusals and cancellation before
+launch record `ran: false`; a runner error or process restart may leave `ran: null`
+when actual execution cannot be established, and always records `passed: false`.
+Source files are never updated from sandbox output. Tool/audit summaries omit code
+and output text; receipt retrieval requires the owning account.
+
+Startup recovers abandoned scratch/profile leases and marks interrupted requests
+without replaying them. Shutdown signals running executions to stop. Pending
+snapshot retention and workspace/profile disk quotas still need production policy;
+the file-evidence ceiling is not a hard disk-write quota.
+
+Validation for this integration: 23 focused tests passed (13 service/API/agent-tool
+tests and 10 Windows containment tests). This includes a real local login, member
+request, administrator approval, AppContainer execution, saved-receipt retrieval,
+and replay refusal through the application API. The combined backend smoke and
+native-validation gate remains 168 passes and the same six pre-existing failures
+out of 174 tests. Documentation validation passed. No real local-model coding
+mission, packaged application, or installed application was certified by these tests.
+
 ## Remaining acceptance gates, in dependency order
 
-1. **Production execution boundary.** Connect recovery to the actual application
-   lifecycle; broaden symlink and inherited-handle escape coverage; support pinned
+1. **Production execution boundary.** Broaden symlink and inherited-handle escape coverage; support pinned
    packaged toolchains and common runner subprocesses. The fixture toolchain is
    now read-only to the sandbox, but package identity/acquisition and ordinary
    test-runner pipe compatibility remain unproven. Disk growth and large-file
    workloads also need bounds before arbitrary repository execution is admitted.
-2. **Execution admission and evidence.** Bind task, owner, workspace, approved
-   executable/argv, environment policy, and snapshot identities to each request.
-   Recheck permissions and approvals at execution. Persist bounded output,
-   termination reason, actual exit status, and changed-file hashes as receipts.
-   Cancellation, refusal, and interruption must never be reported as passing.
+2. **Execution admission and evidence.** Verify the implemented service in an
+   isolated packaged application; finish snapshot retention/resource policy and
+   user-facing runtime provisioning. Confirm receipts survive actual application
+   interruption and remain accessible through the product review workflow.
 3. **Coding workflow.** Connect the proven runner to the existing workspace
    test/repair loop and Trials. Run a real local coder through multi-file edits,
    an actual failing test, repair, passing test, final diff review, and explicit
@@ -121,7 +176,8 @@ also passed in their separate opt-in run.
 
 This document tracks the combined product objective. The existing coding checklist
 and native validation design retain their narrower scope. No production execution
-capability was enabled by the initial prototype.
+capability was enabled by the initial prototype; the subsequent source API and
+agent-tool integration is explicit, approval-bound, and still experimental.
 
 ## Platform references
 

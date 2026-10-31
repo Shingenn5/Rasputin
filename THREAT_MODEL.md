@@ -154,6 +154,20 @@ approvals, and audit logging in every supported runtime.
   Docker shell commands run inside the long-lived wrapper container, not a fresh
   disposable container per call.
 
+**Approved sandbox snapshots** (`backend/core/sandbox_execution.py`) are an
+experimental execution surface separate from Host Shell. Each request binds an
+owner, workspace, optional task, explicit file snapshot, exact argv, and pinned
+toolchain hash to a one-use approval. Account/workspace policy, snapshot identity,
+approval scope/expiry, and copied executable identity are checked again at execution.
+The AppContainer has no network capabilities, writes to its copied workspace and
+private profile storage, and gets read/execute access to a separate copied toolchain.
+Its Windows job is attached during process creation and owns descendant cleanup.
+The source checkout is not mounted or updated. Standard AppContainer OS-resource
+access still applies; this is not LPAC. Output/file evidence is bounded, but there
+is no hard workspace/profile disk quota yet. Installed runtime provisioning and
+full coding/training certification remain open. See
+[delivery evidence](docs/AGENT_WORKSTATION_DELIVERY.md).
+
 **Git tools** run as direct backend child processes. They retain their workspace
 containment/trust/approval checks, but they are not an arbitrary-code sandbox.
 Do not describe every agent execution surface as having the same isolation level.

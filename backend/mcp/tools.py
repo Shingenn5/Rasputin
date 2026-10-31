@@ -39,6 +39,43 @@ SENSITIVE_KEYS = {
 
 TOOL_DEFINITIONS = [
     {
+        "id": "sandbox_prepare",
+        "display_name": "Prepare sandbox execution",
+        "description": "Capture selected task-workspace files and an exact argument vector for operator approval. The pinned self-contained toolchain runs only in AppContainer; no source changes are applied. Use sandbox_run with the returned request id after requesting approval.",
+        "category": "System",
+        "risk": "approval_required",
+        "permission_flag": "allow_shell_execution",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "one_time_approval",
+        "timeout_seconds": 60,
+        "output_summary_policy": "execution_metadata_only",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "files": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 256},
+                "arguments": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 64},
+                "workspace_path": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 60},
+            },
+            "required": ["files", "arguments"],
+        },
+    },
+    {
+        "id": "sandbox_run",
+        "display_name": "Run approved sandbox snapshot",
+        "description": "Wait for approval of a sandbox_prepare request belonging to this task, then execute its immutable snapshot and return a durable receipt with actual exit status, bounded output, and changed-file hashes. Pending, refused, cancelled, and interrupted runs never count as passing tests.",
+        "category": "System",
+        "risk": "approval_required",
+        "permission_flag": "allow_shell_execution",
+        "enabled": True,
+        "implemented": True,
+        "approval_behavior": "one_time_approval",
+        "timeout_seconds": 960,
+        "output_summary_policy": "execution_metadata_only",
+        "input_schema": {"type": "object", "properties": {"request_id": {"type": "string"}}, "required": ["request_id"]},
+    },
+    {
         "id": "rag_search",
         "display_name": "RAG Search",
         "description": "Searches the local workspace index and returns cited local matches.",
@@ -634,6 +671,11 @@ def disabled_reason(definition, cfg=None, args=None, external=None):
     flag = definition.get("permission_flag")
     if flag and not permission_allowed(definition, cfg):
         return f"{flag} is disabled."
+    if definition.get("id") in {"sandbox_prepare", "sandbox_run"}:
+        from backend.core.sandbox_execution import capability
+        state = capability()
+        if not state["windows"] or not state["configured"]:
+            return "A pinned Windows sandbox toolchain is required."
     return ""
 
 
@@ -722,6 +764,8 @@ def _redacted_blob(value):
 def _safe_value(key, value, tool_id=None):
     key_text = str(key or "")
     lower = key_text.lower()
+    if tool_id == "sandbox_prepare" and lower == "arguments":
+        return _redacted_blob(value)
     if key_text in SENSITIVE_KEYS or lower in SENSITIVE_KEYS:
         return _redacted_blob(value)
     if any(marker in lower for marker in ["secret", "token", "api_key", "apikey", "password"]):
@@ -781,6 +825,11 @@ def _summarize_memory(items):
 def summarize_result(tool_id, result):
     if not isinstance(result, dict):
         return _safe_value("", result, tool_id)
+    if tool_id in {"sandbox_prepare", "sandbox_run"}:
+        summary = {key: result.get(key) for key in ("request_id", "approval_id", "snapshot_sha256", "status",
+                                                    "ran", "passed", "exit_code", "termination_reason", "truncated")}
+        summary["output"] = _redacted_blob(result.get("output"))
+        return summary
     if tool_id == "rag_search":
         return {
             "query": _safe_value("query", result.get("query"), tool_id),
