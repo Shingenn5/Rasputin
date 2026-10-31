@@ -307,6 +307,28 @@ This is source application and local-model evidence on x64 Windows. It does not
 certify packaged/installed Electron coding, arbitrary project dependencies,
 automatic configured workspace commands, Trials, or accepted-change application.
 
+## Real CUDA LoRA workflow — 2026-10-31
+
+The source application now has actual authenticated API evidence for local
+training, adapter export, mid-training cancellation, and subsequent direct PEFT
+inference. A clean, separate Windows x64/CPython 3.12 environment with pinned
+PyTorch 2.9.1+cu128 and compatible Transformers/PEFT/TRL dependencies trained the
+official Qwen3-0.6B base offline on synthetic data. Four optimizer steps completed;
+the exported adapter had 392 finite tensors and nonzero trained LoRA weights.
+Synthetic evaluation loss improved from 6.273619 to 3.801028. A second run stopped
+after a real training step and reached `cancelled` with no active worker.
+
+The real run exposed final progress telemetry overwriting loss with null. The
+monitor now preserves the last finite metric; 13 training regressions pass, and
+a subsequent real two-step API run retained final loss 4.9374 after completion.
+The verified package set and reproduction details are recorded in
+[`TRAINING_RUNTIME_VERIFICATION.md`](TRAINING_RUNTIME_VERIFICATION.md).
+
+This closes the source training-mechanics proof. Installed Electron training,
+app-managed runtime/base acquisition, broad model quality, and native Chat use
+of exported adapters are still unverified or unimplemented. The installed app
+was not rebuilt or updated for this evidence.
+
 ## Remaining acceptance gates, in dependency order
 
 1. **Production execution boundary.** Broaden symlink and inherited-handle escape coverage; support pinned
@@ -322,10 +344,11 @@ automatic configured workspace commands, Trials, or accepted-change application.
    multi-file fail/repair/pass mission with an unchanged original checkout.
    Connect the proven runner to configured workspace test/repair and Trials;
    finish final diff review and explicit application of accepted changes.
-4. **Training workflow.** Verify the current ML dependency stack against an actual
-   compatible local base model and dataset. Complete LoRA training, cancellation,
-   adapter export, evaluation, and supported inference use. Report format/runtime
-   incompatibilities before work starts; source preflight is not training proof.
+4. **Training workflow.** Deliver the verified ML stack through app-managed runtime
+   setup and base-model intake, integrate adapter evaluation and native serving,
+   and verify the installed workflow. The real source training/export/cancel and
+   direct PEFT inference fixture is complete; it does not certify arbitrary base
+   models, general training quality, or Rasputin Chat adapter use.
 5. **Installed daily driver.** Build the native toolchain resources into the
    installation flow; test the coding and training workflows in an isolated
    packaged application, then verify installation/upgrade on the intended target

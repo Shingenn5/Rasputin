@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from contextlib import contextmanager
 import os
 from pathlib import Path
@@ -185,7 +186,11 @@ def _watch(job_id, process):
                 with _lock:
                     job = next((j for j in jobs() if j["id"] == job_id), {})
                     if job.get("status") != "stopping":
-                        _update(job_id, status="running", step=event.get("step", 0), loss=event.get("loss"), message="Training adapter.")
+                        fields = {"status": "running", "step": event.get("step", 0), "message": "Training adapter."}
+                        loss = event.get("loss")
+                        if isinstance(loss, (int, float)) and not isinstance(loss, bool) and math.isfinite(loss):
+                            fields["loss"] = loss
+                        _update(job_id, **fields)
             elif event.get("event") == "complete":
                 completed = True
             elif event.get("event") == "error":

@@ -87,6 +87,28 @@ class TrainingTests(unittest.TestCase):
                 training.start("admin", self.config)
             spawn.assert_not_called()
 
+    def test_completion_preserves_last_finite_loss(self):
+        class Process:
+            stdout = io.StringIO(''.join(json.dumps(event) + '\n' for event in [
+                {"event": "progress", "step": 1, "loss": 1.25},
+                {"event": "progress", "step": 2, "loss": None},
+                {"event": "progress", "step": 2, "loss": float("nan")},
+                {"event": "progress", "step": 2, "loss": float("inf")},
+                {"event": "progress", "step": 2, "loss": True},
+                {"event": "progress", "step": 2},
+                {"event": "complete"},
+            ]))
+            def wait(self): return 0
+        process = Process()
+        training._processes["finite-loss"] = process
+        store.set_kv(training._KEY, [{"id": "finite-loss", "status": "starting"}])
+        training._watch("finite-loss", process)
+        job = training.jobs()[0]
+        self.assertEqual((job["status"], job["step"], job["loss"]), ("completed", 2, 1.25))
+        # Nonfinite progress must never break the JSON API response.
+        main.app.dependency_overrides[require_admin] = lambda: {"username": "admin", "role": "admin"}
+        self.assertEqual(self.client.get("/api/training/jobs").status_code, 200)
+
     def test_buffered_progress_cannot_undo_cancellation(self):
         class Process:
             stdout = io.StringIO('{"event":"progress","step":1}\n')
