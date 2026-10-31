@@ -164,7 +164,11 @@ private profile storage, and gets read/execute access to a separate copied toolc
 Its Windows job is attached during process creation and owns descendant cleanup.
 The source checkout is not mounted or updated. Standard AppContainer OS-resource
 access still applies; this is not LPAC. Output/file evidence is bounded, but there
-is no hard workspace/profile disk quota yet. Installed runtime provisioning and
+is no hard workspace/profile disk quota yet. Managed JavaScript runtime acquisition
+uses architecture-selected executable/license hashes from a packaged manifest;
+only administrators can start it, offline policy is checked, redirects are refused,
+and model-service tokens are not attached. Current files and each execution copy
+are verified without running a host-side version probe. Installed Electron and
 full coding/training certification remain open. Approval operators can inspect the
 matching plan and selected captured files through administrator-only review routes.
 That review grants neither execution/cancellation nor private output access for

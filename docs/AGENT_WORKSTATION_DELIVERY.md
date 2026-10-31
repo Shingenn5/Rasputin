@@ -16,7 +16,8 @@ validation commands, and LoRA training/preflight/adapter-export code. Their pres
 does not certify the installed application or a full coding/training workflow.
 Native Host Shell and the automatic workspace-validation loop remain disabled.
 Explicit snapshot execution now has an experimental authenticated API and task-bound
-agent tools; these require an administrator-pinned self-contained executable.
+agent tools; administrators can acquire a verified managed runtime from the app
+or pin a maintainer-provisioned self-contained executable.
 
 `backend/core/windows_sandbox.py` supplies the low-level AppContainer boundary.
 `backend/core/sandbox_execution.py` supplies authorization, snapshot admission, and
@@ -102,8 +103,8 @@ The `/api/execution` API exposes capability discovery, administrator-only toolch
 pinning, request preparation, owner-scoped request/receipt retrieval, execution,
 and cancellation. Ordinary Native Host authentication and Desktop's existing
 loopback session rules apply. Pinning hashes executable bytes without running a
-version probe on the host. Package acquisition remains open; the current API
-expects a maintainer-provisioned self-contained executable.
+version probe on the host. Managed Node acquisition is available through the
+runtime setup controls described below; advanced manual pinning remains available.
 
 A request captures explicitly selected workspace files (at most 256 files and
 8 MiB), a bounded argument vector, a timeout up to 60 seconds, toolchain identity,
@@ -192,20 +193,83 @@ The live check is repeatable after `npm run build`:
 It checks that the test port is free, creates isolated accounts/state/workspace,
 runs actual AppContainer fixtures, saves browser evidence outside the checkout,
 and removes its owned server and temporary data. It requires a maintainer Node
-installation; end-user toolchain provisioning is still outstanding. The prior
+installation to drive browser automation, independently of the app's runtime. The prior
 Approvals layout can be restored by reverting the scoped UI integration; Chat
 layout and composer are unchanged.
+
+## Managed JavaScript runtime — 2026-10-30
+
+Approvals now offers **Set up sandbox runtime**, progress/cancellation, verification,
+and repair controls. Acquisition selects x64 or ARM64 from a committed manifest;
+there is no model-authored download URL or automatic latest-version lookup. The
+manifest pins Node.js v26.13.0, executable size/SHA-256, and the corresponding
+license file. Its identities were checked against the
+[official release index](https://nodejs.org/dist/index.json),
+[release checksums](https://nodejs.org/dist/v26.13.0/SHASUMS256.txt), and
+[tagged license](https://github.com/nodejs/node/blob/v26.13.0/LICENSE).
+
+The app downloads only the selected architecture's raw executable and license into
+private application storage. Downloads are size/time bounded, reject redirects,
+do not forward model-service tokens, and publish only verified files. Existing
+verified files can be reused offline; damaged files are repaired without deleting
+unknown files. Runtime storage rejects redirected directories. Account authority
+and executable identity are checked again when pinning. No downloaded executable
+is run on the host for discovery or version checks. App shutdown requests cancellation
+of active acquisition; abandoned download staging after abrupt death still needs
+the broader storage/retention recovery policy.
+
+Runtime status verifies current executable/license hashes. Execution independently
+verifies the copied executable before creating its AppContainer process. Selecting
+or installing a runtime does not enable execution policy or approve a snapshot.
+The UI links to Security settings for the separate execution opt-in, refreshes when
+returning to Approvals, and keeps the Approvals Refresh action available on mobile.
+Runtime guidance supplied to coding models names the selected executable and the
+managed runtime's JavaScript entry-file flags.
+
+This is a self-contained JavaScript runtime; it does not currently supply npm,
+Python, Git, arbitrary project dependencies, or certification of common child-pipe
+test runners. The full coding/toolchain acceptance remains open. The manifest is
+included in the packaged backend; runtime binaries are acquired after architecture
+selection rather than bundled for every architecture.
+
+Verification: all 36 focused runtime/service/containment tests passed, including an
+actual official download and execution of its expected version inside AppContainer.
+Four packaging contract tests, six desktop lifecycle/packaging tests, desktop syntax
+checks, frontend build, documentation checks, and the design detector passed. The
+first desktop test run failed and retained test children in the restricted nested
+execution environment; that exact test tree was stopped and the suite passed with
+an explicit isolated temporary directory outside that boundary. The broader backend
+gate remains 168 passes and the same six existing failures out of 174 tests.
+
+An actual PyInstaller backend artifact was built with the pinned manifest. Against
+that executable, a real authenticated Playwright workflow started with no configured
+runtime, checked offline refusal, downloaded/verified the runtime through the UI,
+enabled execution in Security settings, prepared/approved a snapshot, and executed
+the captured JavaScript successfully. The workflow passed at widths 1440, 1024,
+and 390 without page overflow; its screenshots were visually inspected. This proves
+the packaged backend path on x64, not ARM64 execution, an installed Electron update,
+a clean machine, or a real-model coding mission. The artifact reflects this mixed
+checkout; unrelated edits were preserved and are excluded from this scoped commit.
+
+The same maintainer verifier supports this workflow and an explicitly selected artifact:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/verify_sandbox_review.py --runtime-setup --scratch-dir <absolute-external-scratch-directory> --backend-executable <absolute-packaged-backend-executable>
+```
+
+Omit `--backend-executable` to verify the source server. Both paths use fresh test
+state and remove the owned test process/data; browser evidence stays in scratch.
 
 ## Remaining acceptance gates, in dependency order
 
 1. **Production execution boundary.** Broaden symlink and inherited-handle escape coverage; support pinned
    packaged toolchains and common runner subprocesses. The fixture toolchain is
-   now read-only to the sandbox, but package identity/acquisition and ordinary
-   test-runner pipe compatibility remain unproven. Disk growth and large-file
+   now read-only to the sandbox, and managed JavaScript acquisition is verified;
+   broader toolchains and ordinary test-runner pipe compatibility remain unproven. Disk growth and large-file
    workloads also need bounds before arbitrary repository execution is admitted.
 2. **Execution admission and evidence.** Verify the implemented service in an
-   isolated packaged application; finish snapshot retention/resource policy and
-   user-facing runtime provisioning. Confirm receipts survive actual application
+   isolated packaged Electron application; finish snapshot retention/resource policy
+   and broader runtime provisioning. Confirm receipts survive actual application
    interruption and remain accessible through the product review workflow.
 3. **Coding workflow.** Connect the proven runner to the existing workspace
    test/repair loop and Trials. Run a real local coder through multi-file edits,

@@ -1,0 +1,45 @@
+{
+  "version": "v26.13.0",
+  "engine": "node",
+  "license": "MIT and bundled third-party licenses",
+  "release_index": "https://nodejs.org/dist/index.json",
+  "checksums": "https://nodejs.org/dist/v26.13.0/SHASUMS256.txt",
+  "runtimes": [
+    {
+      "id": "node-v26.13.0-windows-x64",
+      "architecture": "x64",
+      "assets": [
+        {
+          "name": "node.exe",
+          "url": "https://nodejs.org/dist/v26.13.0/win-x64/node.exe",
+          "sha256": "14319838b3f355e0398c13569a90270bce4fc68f25189f58c59b03dadae0e6d5",
+          "size_bytes": 100097864
+        },
+        {
+          "name": "LICENSE",
+          "url": "https://raw.githubusercontent.com/nodejs/node/v26.13.0/LICENSE",
+          "sha256": "8e603aa87c70d36e497004f0dec63111511cb61b7d65ace12e10ea791599286c",
+          "size_bytes": 156386
+        }
+      ]
+    },
+    {
+      "id": "node-v26.13.0-windows-arm64",
+      "architecture": "arm64",
+      "assets": [
+        {
+          "name": "node.exe",
+          "url": "https://nodejs.org/dist/v26.13.0/win-arm64/node.exe",
+          "sha256": "4c9baa047c4ae555050179f25a63153f1c962af32e2aad97735fb550750c5e7a",
+          "size_bytes": 88331080
+        },
+        {
+          "name": "LICENSE",
+          "url": "https://raw.githubusercontent.com/nodejs/node/v26.13.0/LICENSE",
+          "sha256": "8e603aa87c70d36e497004f0dec63111511cb61b7d65ace12e10ea791599286c",
+          "size_bytes": 156386
+        }
+      ]
+    }
+  ]
+}

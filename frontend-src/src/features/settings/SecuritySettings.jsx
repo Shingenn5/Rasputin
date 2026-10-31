@@ -151,13 +151,13 @@ export function SecuritySettings({ desktopOnly = false }) {
                   <tr>
                     <td className="ps-4">
                       <div className="fw-medium"><AlertTriangle size={16} className="me-2 text-danger"/>Shell Execution</div>
-                      <div className="text-muted small">Allow agents to execute terminal commands.</div>
+                      <div className="text-muted small">Allow approved sandbox tasks and supported terminal tools.</div>
                     </td>
                     <td>
                       {security?.allow_shell_execution ? <Badge bg="" className="badge-soft-warn">Approval Req.</Badge> : <Badge bg="secondary">Blocked</Badge>}
                     </td>
                     <td className="text-end pe-4">
-                      <Form.Check type="switch" id="allow-shell-execution" checked={!!security?.allow_shell_execution} onChange={() => handleToggle("allow_shell_execution")} />
+                      <Form.Check type="switch" id="allow-shell-execution" aria-label="Shell Execution" checked={!!security?.allow_shell_execution} onChange={() => handleToggle("allow_shell_execution")} />
                     </td>
                   </tr>
                   <tr data-testid="unattended-mode-row">

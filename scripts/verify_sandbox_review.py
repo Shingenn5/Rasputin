@@ -23,6 +23,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scratch-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8899)
+    parser.add_argument("--runtime-setup", action="store_true", help="Verify managed runtime download and execution from an unconfigured application")
+    parser.add_argument("--backend-executable", type=Path, help="Verify a specific packaged backend instead of the source server")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     scratch = args.scratch_dir.resolve(strict=True)
@@ -30,6 +32,8 @@ def main():
         parser.error("Select an absolute scratch directory outside the source checkout.")
     if os.name != "nt" or not 1024 <= args.port <= 65535:
         parser.error("This verification requires Windows and an unprivileged test port.")
+    if args.backend_executable and (not args.backend_executable.is_absolute() or not args.backend_executable.is_file()):
+        parser.error("Select an existing absolute packaged backend executable.")
     with socket.socket() as check:
         check.bind(("127.0.0.1", args.port))
     artifacts = scratch / ("sandbox-review-evidence-" + uuid.uuid4().hex[:12])
@@ -56,21 +60,23 @@ def main():
         executable = shutil.which("node")
         if not executable:
             raise RuntimeError("The maintainer fixture requires an installed Node runtime.")
-        execution.configure_toolchain(executable, "admin")
         fixtures = {}
-        for name, owner, code in [
+        if not args.runtime_setup:
+            execution.configure_toolchain(executable, "admin")
+        for name, owner, code in ([] if args.runtime_setup else [
             ("passing", "admin", "// captured-version-marker\n// <img src=snapshot-xss onerror=alert(1)>\nconsole.log('captured-version-marker');"),
             ("denied", "admin", "console.log('denied fixture should never run');"),
             ("slow", "admin", "setInterval(() => {}, 1000);"),
             ("foreign", "reviewmember", "console.log('foreign-private-output');"),
-        ]:
+        ]):
             (source / "worker_fixture.cjs").write_text(code, encoding="utf-8")
             request = execution.create_request(owner, str(source), ["worker_fixture.cjs"],
                         ["--preserve-symlinks", "--preserve-symlinks-main", "worker_fixture.cjs", "long-argument-" * 50], timeout=30)
             fixtures[name] = {"approvalId": request["approval_id"], "requestId": request["plan"]["request_id"]}
-        (source / "worker_fixture.cjs").write_text("// later-source-version", encoding="utf-8")
+        (source / "worker_fixture.cjs").write_text("console.log('managed-runtime-ready', process.version);" if args.runtime_setup else "// later-source-version", encoding="utf-8")
         with (artifacts / "server.log").open("w", encoding="utf-8") as log:
-            server = subprocess.Popen([sys.executable, str(root / "server.py")], cwd=root, stdout=log, stderr=log,
+            command = [str(args.backend_executable)] if args.backend_executable else [sys.executable, str(root / "server.py")]
+            server = subprocess.Popen(command, cwd=root, stdout=log, stderr=log,
                                       env=os.environ.copy(), creationflags=subprocess.CREATE_NO_WINDOW)
             try:
                 deadline = time.monotonic() + 45
@@ -88,9 +94,9 @@ def main():
                     time.sleep(.2)
                 test_env = {**os.environ, "RASPUTIN_TEST_BASE_URL": base_url,
                             "RASPUTIN_TEST_PASSWORD": admin_password, "RASPUTIN_TEST_MEMBER_PASSWORD": member_password,
-                            "RASPUTIN_REVIEW_FIXTURES": json.dumps(fixtures)}
+                            "RASPUTIN_REVIEW_FIXTURES": json.dumps(fixtures), "RASPUTIN_RUNTIME_WORKSPACE": str(source)}
                 result = subprocess.run(["node", str(root / "node_modules/@playwright/test/cli.js"), "test",
-                                         "tests/ui/sandboxApprovalReview.spec.mjs", "--project=chromium", "--reporter=list",
+                                         "tests/ui/sandboxRuntimeSetup.spec.mjs" if args.runtime_setup else "tests/ui/sandboxApprovalReview.spec.mjs", "--project=chromium", "--reporter=list",
                                          "--output", str(artifacts / "browser")], cwd=root, env=test_env)
             finally:
                 server.terminate()

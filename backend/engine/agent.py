@@ -1651,10 +1651,17 @@ class AgentHub:
         chat but must fail visibly when an execution phase requires tools.
         """
 
-        if task.mode == "code" and sandbox_execution.capability()["configured"]:
+        sandbox_profile = sandbox_execution.capability() if task.mode == "code" else {}
+        if sandbox_profile.get("available"):
+            runtime_hint = f"Pinned runtime: {sandbox_profile['toolchain']['name']} {sandbox_profile['toolchain'].get('version') or ''}. "
+            if sandbox_profile["toolchain"].get("managed"):
+                runtime_hint += (
+                    "For JavaScript entry files, pass --preserve-symlinks and --preserve-symlinks-main before the entry path. "
+                    "This managed runtime does not install packages or include npm/Python; capture needed files explicitly. "
+                )
             sections = [*sections, context_governor.section(
                 "sandbox_validation", "Approved snapshot execution",
-                "You may prepare selected workspace files and exact executable arguments with sandbox_prepare, "
+                runtime_hint + "You may prepare selected workspace files and exact executable arguments with sandbox_prepare, "
                 "then call sandbox_run to wait for operator approval and receive an execution receipt. "
                 "These tools use the pinned self-contained toolchain without a host shell. Only report tests "
                 "as passed when the receipt says passed=true, and scope that claim to its recorded snapshot. "

@@ -50,3 +50,23 @@ test('desktop-only entrypoint and backend supervisor are present', () => {
     assert.ok(exists(relativePath), `required desktop file is missing: ${relativePath}`);
   }
 });
+
+test('the packaged backend carries a pinned hardware-selected execution manifest without runtime payloads', () => {
+  const manifest = readJson('runtime/execution/manifest.json');
+  assert.equal(manifest.engine, 'node');
+  assert.deepEqual(manifest.runtimes.map(runtime => runtime.architecture).sort(), ['arm64', 'x64']);
+  for (const runtime of manifest.runtimes) {
+    assert.equal(runtime.id, `node-${manifest.version}-windows-${runtime.architecture}`);
+    assert.deepEqual(runtime.assets.map(asset => asset.name).sort(), ['LICENSE', 'node.exe']);
+    for (const asset of runtime.assets) {
+      assert.match(asset.sha256, /^[0-9a-f]{64}$/);
+      assert.ok(asset.size_bytes > 0);
+      assert.equal(asset.url, asset.name === 'node.exe'
+        ? `https://nodejs.org/dist/${manifest.version}/win-${runtime.architecture}/node.exe`
+        : `https://raw.githubusercontent.com/nodejs/node/${manifest.version}/LICENSE`);
+    }
+  }
+  const spec = fs.readFileSync(path.join(repoRoot, 'desktop/rasputin-backend.spec'), 'utf8');
+  assert.ok(spec.includes('runtime/execution/manifest.json'));
+  assert.ok(!spec.includes('runtime/execution/node.exe'));
+});

@@ -3,6 +3,7 @@ import { Badge, Button, Card, Stack } from "react-bootstrap";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { PageHeader, formatRuntimeTime } from "./RuntimePrimitives.jsx";
 import { SandboxApprovalReview } from "./SandboxApprovalReview.jsx";
+import { SandboxRuntimeSetup } from "./SandboxRuntimeSetup.jsx";
 
 export function ApprovalsView({ view, approvals, approveApproval, denyApproval, refreshApprovals, openTaskDetails }) {
   const items = approvals?.approvals || [];
@@ -10,6 +11,7 @@ export function ApprovalsView({ view, approvals, approveApproval, denyApproval, 
     <section className={`app-view ${view === "approvals" ? "active" : ""}`} id="approvalsView" data-app-view="approvals">
       <PageHeader title="Approvals" text="Risky tool actions wait here before execution." action={<Button variant="outline-secondary" size="sm" onClick={refreshApprovals}>Refresh</Button>} />
       <div className="task-dashboard">
+        <SandboxRuntimeSetup visible={view === "approvals"} />
         <Stack gap={3}>
           {items.map((approval) => (
             <Card className={`settings-card shadow-sm ${(approval.actionType || approval.action_type) === "sandbox_execute" ? "sandbox-approval" : ""}`} key={approval.id} data-testid="approval-card" data-approval-id={approval.id}>

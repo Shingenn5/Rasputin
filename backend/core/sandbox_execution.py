@@ -37,7 +37,7 @@ def _actor(username):
     return user
 
 
-def configure_toolchain(executable, username):
+def configure_toolchain(executable, username, *, managed_identity=None):
     if _actor(username)["role"] != "admin":
         raise PermissionError("Administrator access is required to pin a toolchain.")
     path = Path(executable)
@@ -48,6 +48,10 @@ def configure_toolchain(executable, username):
     with path.open("rb") as source:
         digest = hashlib.file_digest(source, "sha256").hexdigest()
     runtime = {"path": str(path), "sha256": digest, "name": path.name}
+    if managed_identity:
+        if digest != managed_identity["sha256"]:
+            raise ValueError("Managed runtime bytes changed before pinning.")
+        runtime.update(managed=True, runtime_id=managed_identity["runtime_id"], version=managed_identity["version"])
     store.set_kv(_RUNTIME_KEY, runtime)
     audit.log("sandbox_toolchain_pinned", {"sha256": digest})
     return {"name": path.name, "sha256": digest}
@@ -55,8 +59,10 @@ def configure_toolchain(executable, username):
 
 def capability():
     runtime = store.get_kv(_RUNTIME_KEY)
+    present = bool(runtime and Path(runtime["path"]).is_file())
     return {"configured": bool(runtime), "boundary": "windows_appcontainer",
-            "windows": os.name == "nt", "toolchain": {key: runtime[key] for key in ("name", "sha256")} if runtime else None,
+            "available": os.name == "nt" and present,
+            "windows": os.name == "nt", "toolchain": {key: runtime.get(key) for key in ("name", "sha256", "managed", "version")} if runtime else None,
             "packaged_toolchain": False, "experimental": True, "source_workspace_is_modified": False}
 
 
@@ -363,6 +369,8 @@ def recover():
 
 
 def shutdown():
+    from backend.core import sandbox_runtime
+    sandbox_runtime.shutdown()
     with _lock:
         for cancel in _active.values():
             cancel.set()

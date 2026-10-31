@@ -15,6 +15,7 @@ analysis = Analysis(
     pathex=[str(ROOT)],
     binaries=[],
     datas=[(str(ROOT / "frontend"), "frontend"),
+           (str(ROOT / "runtime/execution/manifest.json"), "runtime/execution"),
            (str(ROOT / "backend/core/training_worker.py"), "backend/core"), *ssl_policy_data],
     hiddenimports=collect_submodules("backend"),
     hookspath=[],

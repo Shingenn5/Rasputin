@@ -6,6 +6,7 @@ from pydantic import Field
 
 from backend.api.core import CamelModel, current_user, require_admin, require_member
 from backend.core import sandbox_execution as execution
+from backend.core import sandbox_runtime
 from backend.core.response import ok
 
 router = APIRouter(prefix="/api/execution", tags=["execution"])
@@ -38,6 +39,21 @@ async def capability(_user=Depends(current_user)):
 @router.post("/toolchain")
 async def configure(req: ToolchainInput, user=Depends(require_admin)):
     return ok(await asyncio.to_thread(execution.configure_toolchain, req.executable, user["username"]))
+
+
+@router.get("/runtime")
+async def runtime_status(_user=Depends(current_user)):
+    return ok(await asyncio.to_thread(sandbox_runtime.status))
+
+
+@router.post("/runtime/install")
+async def runtime_install(user=Depends(require_admin)):
+    return ok(await asyncio.to_thread(sandbox_runtime.start, user["username"]))
+
+
+@router.post("/runtime/cancel")
+async def runtime_cancel(user=Depends(require_admin)):
+    return ok(sandbox_runtime.cancel(user["username"]))
 
 
 @router.post("/requests")

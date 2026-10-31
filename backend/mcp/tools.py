@@ -674,8 +674,8 @@ def disabled_reason(definition, cfg=None, args=None, external=None):
     if definition.get("id") in {"sandbox_prepare", "sandbox_run"}:
         from backend.core.sandbox_execution import capability
         state = capability()
-        if not state["windows"] or not state["configured"]:
-            return "A pinned Windows sandbox toolchain is required."
+        if not state["available"]:
+            return "Set up the Windows sandbox runtime from Approvals before executing snapshots."
     return ""
 
 
