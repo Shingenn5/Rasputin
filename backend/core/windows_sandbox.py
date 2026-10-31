@@ -9,10 +9,11 @@ import ctypes as C
 from contextlib import contextmanager
 from ctypes import wintypes as W
 import os
+import json
+import re
 from pathlib import Path
 import subprocess
 import shutil
-import tempfile
 import threading
 import time
 import uuid
@@ -86,7 +87,8 @@ def _api():
         "CreateJobObjectW": ([C.c_void_p, W.LPCWSTR], W.HANDLE),
         "SetInformationJobObject": ([W.HANDLE, C.c_int, C.c_void_p, W.DWORD], W.BOOL),
         "QueryInformationJobObject": ([W.HANDLE, C.c_int, C.c_void_p, W.DWORD, C.c_void_p], W.BOOL),
-        "AssignProcessToJobObject": ([W.HANDLE, W.HANDLE], W.BOOL),
+        "OpenProcess": ([W.DWORD, W.BOOL, W.DWORD], W.HANDLE),
+        "GetProcessTimes": ([W.HANDLE, C.POINTER(W.FILETIME), C.POINTER(W.FILETIME), C.POINTER(W.FILETIME), C.POINTER(W.FILETIME)], W.BOOL),
         "ResumeThread": ([W.HANDLE], W.DWORD),
         "WaitForSingleObject": ([W.HANDLE, W.DWORD], W.DWORD),
         "GetExitCodeProcess": ([W.HANDLE, C.POINTER(W.DWORD)], W.BOOL),
@@ -116,27 +118,111 @@ def _check(result):
     return result
 
 
-@contextmanager
-def _scratch(parent):
-    root = Path(tempfile.mkdtemp(prefix="rasputin-probe-", dir=parent))
+def _remove_scratch(root):
+    # Windows can briefly retain an executable image after the last process
+    # terminates. Retry only this exact owned directory, never its parent.
+    deadline = time.monotonic() + 3
+    while True:
+        try:
+            shutil.rmtree(root)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def _process_identity(kernel, pid):
+    handle = kernel.OpenProcess(0x1000 | 0x100000, False, pid)
+    if not handle:
+        if C.get_last_error() == 87:  # ERROR_INVALID_PARAMETER: PID no longer exists
+            return None
+        raise C.WinError(C.get_last_error())
     try:
-        yield root
+        if kernel.WaitForSingleObject(handle, 0) == 0:
+            return None
+        created, ended, system, user = (W.FILETIME() for _ in range(4))
+        _check(kernel.GetProcessTimes(handle, C.byref(created), C.byref(ended), C.byref(system), C.byref(user)))
+        return (created.dwHighDateTime << 32) | created.dwLowDateTime
     finally:
-        # Windows can briefly retain an executable image after the last process
-        # terminates. Retry only this exact newly allocated directory.
-        deadline = time.monotonic() + 3
-        while True:
-            try:
-                shutil.rmtree(root)
-                break
-            except PermissionError:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.05)
+        kernel.CloseHandle(handle)
+
+
+@contextmanager
+def _resources(kernel, userenv, advapi, parent):
+    run_id = uuid.uuid4().hex
+    root = Path(parent).resolve() / ("rasputin-probe-" + run_id)
+    root.mkdir()  # fail on collision; never adopt an existing directory
+    profile = "Rasputin.Probe." + run_id
+    sid = C.c_void_p()
+    created = False
+    try:
+        # Host-only metadata precedes profile creation so a crash is recoverable.
+        # PID plus creation time prevents a reused PID from claiming this lease.
+        lease = {"version": 1, "run_id": run_id, "owner_pid": os.getpid(),
+                 "owner_started": _process_identity(kernel, os.getpid())}
+        with (root / "lease.json").open("x", encoding="utf-8") as record:
+            json.dump(lease, record)
+            record.flush()
+            os.fsync(record.fileno())
+        hr = userenv.CreateAppContainerProfile(profile, profile, "Disposable execution probe", None, 0, C.byref(sid))
+        if hr:
+            raise SandboxUnavailable(f"AppContainer profile creation failed (HRESULT {hr:#x}).")
+        created = True
+        yield root, sid
+    finally:
+        if sid:
+            advapi.FreeSid(sid)
+        if created:
+            hr = userenv.DeleteAppContainerProfile(profile)
+            if hr:
+                # Retain the lease if profile cleanup needs retry after restart.
+                raise SandboxUnavailable(f"Probe profile cleanup failed (HRESULT {hr:#x}).")
+        _remove_scratch(root)
+
+
+def recover_abandoned(scratch_parent):
+    """Recover only valid, dead-owner leases beneath an operator-selected root.
+
+    Unreadable identities, malformed records and reparse points are retained for
+    inspection. This diagnostic is not automatically run against application data.
+    """
+    kernel, userenv, _ = _api()
+    parent = Path(scratch_parent).resolve(strict=True)
+    results = []
+    for root in parent.glob("rasputin-probe-*"):
+        if not re.fullmatch(r"rasputin-probe-[0-9a-f]{32}", root.name):
+            continue
+        record = root / "lease.json"
+        try:
+            # Never follow a redirected root or lease when deciding ownership.
+            if root.lstat().st_file_attributes & 0x400 or record.lstat().st_file_attributes & 0x400:
+                raise ValueError("reparse point")
+            if record.stat().st_size > 4096:
+                raise ValueError("oversized lease")
+            lease = json.loads(record.read_text(encoding="utf-8"))
+            run_id = root.name.removeprefix("rasputin-probe-")
+            if (not isinstance(lease, dict) or lease.get("version") != 1 or lease.get("run_id") != run_id
+                    or type(lease.get("owner_pid")) is not int or not 0 < lease["owner_pid"] <= 0xFFFFFFFF
+                    or type(lease.get("owner_started")) is not int or lease["owner_started"] <= 0):
+                raise ValueError("invalid lease")
+            if _process_identity(kernel, lease["owner_pid"]) == lease["owner_started"]:
+                results.append({"run_id": run_id, "status": "active"})
+                continue
+            # Derive the profile from the owned directory; accept no deletion path
+            # or profile name from a mutable JSON field.
+            hr = userenv.DeleteAppContainerProfile("Rasputin.Probe." + run_id)
+            if hr and (hr & 0xFFFFFFFF) not in (0x80070002, 0x80070003):
+                raise SandboxUnavailable("Abandoned profile could not be removed.")
+            _remove_scratch(root)
+            results.append({"run_id": run_id, "status": "recovered"})
+        except (OSError, ValueError, SandboxUnavailable):
+            results.append({"run_id": root.name.removeprefix("rasputin-probe-"), "status": "retained"})
+    return results
 
 
 def probe(executable, files, arguments, *, scratch_parent, timeout=10, cancel=None,
-          max_output=65536):
+          max_output=65536, memory_limit_mb=1024, max_processes=16):
     """Run an explicit fixture argv in a fresh disposable low-privilege container.
 
     The caller supplies a trusted absolute toolchain path and in-memory fixture
@@ -150,6 +236,9 @@ def probe(executable, files, arguments, *, scratch_parent, timeout=10, cancel=No
         raise ValueError("Select an existing absolute fixture toolchain executable.")
     if not 0 < timeout <= 60 or not 0 < max_output <= 1048576:
         raise ValueError("Probe limits must be bounded.")
+    if (type(memory_limit_mb) is not int or not 64 <= memory_limit_mb <= 1024
+            or type(max_processes) is not int or not 1 <= max_processes <= 16):
+        raise ValueError("Probe memory and process limits must be bounded.")
     if not isinstance(arguments, (list, tuple)) or not all(isinstance(arg, str) and "\0" not in arg for arg in arguments):
         raise ValueError("Arguments must be strings without NUL characters.")
     fixture_files = {}
@@ -160,46 +249,39 @@ def probe(executable, files, arguments, *, scratch_parent, timeout=10, cancel=No
         if not isinstance(content, str) or "\0" in name:
             raise ValueError("Fixture files must contain text and valid relative paths.")
         fixture_files[relative] = content
-    profile = "Rasputin.Probe." + uuid.uuid4().hex
-    sid = C.c_void_p()
-    hr = userenv.CreateAppContainerProfile(profile, profile, "Disposable execution probe", None, 0, C.byref(sid))
-    if hr:
-        raise SandboxUnavailable(f"AppContainer profile creation failed (HRESULT {hr:#x}).")
-    try:
-        with _scratch(scratch_parent) as root:
-            for relative, content in fixture_files.items():
-                target = root / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(content, encoding="utf-8")
-            # The prototype supports self-contained executables only. Keep the
-            # toolchain in scratch rather than granting access to its host folder.
-            toolchain = root / ("toolchain-" + uuid.uuid4().hex)
-            toolchain.mkdir()
-            copied_executable = toolchain / executable.name
-            shutil.copyfile(executable, copied_executable)
-            sid_text = W.LPWSTR()
-            _check(advapi.ConvertSidToStringSidW(sid, C.byref(sid_text)))
-            try:
-                windows = C.create_unicode_buffer(32768)
-                _check(kernel.GetWindowsDirectoryW(windows, len(windows)))
-                icacls = str(Path(windows.value) / "System32" / "icacls.exe")
-                # Only this newly created disposable directory receives an ACL.
-                for options in (["/grant", f"*{sid_text.value}:(OI)(CI)M"],
-                                ["/setintegritylevel", "(OI)(CI)L"]):
-                    subprocess.run([icacls, str(root), *options], check=True,
-                                   capture_output=True, creationflags=0x08000000)
-            finally:
-                kernel.LocalFree(sid_text)
-            return _execute(kernel, sid, copied_executable, root, arguments, windows.value,
-                            timeout, cancel, max_output)
-    finally:
-        advapi.FreeSid(sid)
-        hr = userenv.DeleteAppContainerProfile(profile)
-        if hr:
-            raise SandboxUnavailable(f"Probe profile cleanup failed (HRESULT {hr:#x}).")
+    with _resources(kernel, userenv, advapi, scratch_parent) as (root, sid):
+        workspace = root / "workspace"
+        workspace.mkdir()
+        for relative, content in fixture_files.items():
+            target = workspace / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        # The prototype supports self-contained executables only. Keep the
+        # toolchain in scratch rather than granting access to its host folder.
+        toolchain = root / "toolchain"
+        toolchain.mkdir()
+        copied_executable = toolchain / executable.name
+        shutil.copyfile(executable, copied_executable)
+        sid_text = W.LPWSTR()
+        _check(advapi.ConvertSidToStringSidW(sid, C.byref(sid_text)))
+        try:
+            windows = C.create_unicode_buffer(32768)
+            _check(kernel.GetWindowsDirectoryW(windows, len(windows)))
+            icacls = str(Path(windows.value) / "System32" / "icacls.exe")
+            # Keep the toolchain and host-only lease outside writable scope.
+            for target, options in ((workspace, ["/grant", f"*{sid_text.value}:(OI)(CI)M"]),
+                                    (workspace, ["/setintegritylevel", "(OI)(CI)L"]),
+                                    (toolchain, ["/grant", f"*{sid_text.value}:(OI)(CI)RX"])):
+                subprocess.run([icacls, str(target), *options], check=True,
+                               capture_output=True, creationflags=0x08000000)
+        finally:
+            kernel.LocalFree(sid_text)
+        return _execute(kernel, sid, copied_executable, workspace, arguments, windows.value,
+                        timeout, cancel, max_output, memory_limit_mb, max_processes)
 
 
-def _execute(kernel, sid, executable, root, arguments, windows, timeout, cancel, max_output):
+def _execute(kernel, sid, executable, root, arguments, windows, timeout, cancel, max_output,
+             memory_limit_mb, max_processes):
     import msvcrt
 
     job = None
@@ -239,20 +321,21 @@ def _execute(kernel, sid, executable, root, arguments, windows, timeout, cancel,
         reader = threading.Thread(target=drain, args=(out_read,), daemon=True)
         reader.start()
         readers.append(reader)
-        size = C.c_size_t()
-        kernel.InitializeProcThreadAttributeList(None, 2, 0, C.byref(size))
-        attribute_list = C.create_string_buffer(size.value)
-        _check(kernel.InitializeProcThreadAttributeList(attribute_list, 2, 0, C.byref(size)))
-        initialized = True
-        capabilities = SECURITY_CAPABILITIES(sid, None, 0, 0)
-        for key, value in ((0x20009, capabilities), (0x20002, handles)):
-            _check(kernel.UpdateProcThreadAttribute(attribute_list, 0, key, C.byref(value), C.sizeof(value), None, None))
         job = _check(kernel.CreateJobObjectW(None, None))
         limits = EXTENDED_LIMITS()
         limits.basic.flags = 0x2000 | 0x200 | 0x8  # kill on close, job memory, active processes
-        limits.basic.active_processes = 16
-        limits.job_memory = 1024 * 1024 * 1024
+        limits.basic.active_processes = max_processes
+        limits.job_memory = memory_limit_mb * 1024 * 1024
         _check(kernel.SetInformationJobObject(job, 9, C.byref(limits), C.sizeof(limits)))
+        size = C.c_size_t()
+        kernel.InitializeProcThreadAttributeList(None, 3, 0, C.byref(size))
+        attribute_list = C.create_string_buffer(size.value)
+        _check(kernel.InitializeProcThreadAttributeList(attribute_list, 3, 0, C.byref(size)))
+        initialized = True
+        capabilities = SECURITY_CAPABILITIES(sid, None, 0, 0)
+        jobs = (W.HANDLE * 1)(job)
+        for key, value in ((0x20009, capabilities), (0x20002, handles), (0x2000D, jobs)):
+            _check(kernel.UpdateProcThreadAttribute(attribute_list, 0, key, C.byref(value), C.sizeof(value), None, None))
         startup = STARTUPINFOEX()
         startup.startup.cb = C.sizeof(startup)
         startup.startup.flags = 0x100  # STARTF_USESTDHANDLES
@@ -268,7 +351,8 @@ def _execute(kernel, sid, executable, root, arguments, windows, timeout, cancel,
                "PATH": str(executable.parent) + os.pathsep + str(Path(windows) / "System32")}
         environment = C.create_unicode_buffer("\0".join(f"{key}={value}" for key, value in sorted(env.items())) + "\0\0")
         command = C.create_unicode_buffer(subprocess.list2cmdline([str(executable), *arguments]))
-        # Suspended creation closes the race between launch and job assignment.
+        # Atomic job assignment prevents orphaned suspended children if the owner
+        # dies between CreateProcess and token verification/ResumeThread.
         _check(kernel.CreateProcessW(str(executable), command, None, None, True,
                                     0x80000 | 0x400 | 0x4 | 0x08000000, environment,
                                     str(root), C.byref(startup), C.byref(info)))
@@ -286,7 +370,6 @@ def _execute(kernel, sid, executable, root, arguments, windows, timeout, cancel,
                 raise SandboxUnavailable("Windows did not create an AppContainer token.")
         finally:
             kernel.CloseHandle(token)
-        _check(kernel.AssignProcessToJobObject(job, info.process))
         if kernel.ResumeThread(info.thread) == 0xFFFFFFFF:
             raise C.WinError(C.get_last_error())
         while True:

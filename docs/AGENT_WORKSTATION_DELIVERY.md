@@ -23,11 +23,13 @@ It is not an execution authorization.
 
 The probe creates a unique temporary AppContainer profile with no network
 capabilities, a disposable directory, and a copy of a trusted self-contained
-executable. Only the disposable directory receives a profile-specific modify ACL
-and low-integrity label. No source checkout or application data is mounted. The
-child receives an explicit environment and inherited-handle list. Suspended
-creation allows assignment to a Windows job before executing instructions. The
-job limits aggregate memory to 1 GiB and active processes to 16, kills processes
+executable. The workspace receives a profile-specific modify ACL and low-integrity
+label; the separate toolchain receives read/execute access. The lease directory
+remains host-only. No source checkout or application data is mounted. The child
+receives an explicit environment and inherited-handle list. A process-creation
+job attribute attaches the Windows job atomically, closing the orphaned suspended
+process window if the backend dies during launch. The job defaults to aggregate
+memory of 1 GiB and 16 active processes, kills processes
 on owner-handle closure, and is terminated on completion, timeout, cancellation,
 or output overflow. Output is bounded; cleanup waits for the job to empty.
 
@@ -37,7 +39,7 @@ that absolutely all filesystem reads outside scratch are impossible. LPAC was
 investigated but prevented the local Node fixture from initializing Winsock; the
 committed probe explicitly uses standard AppContainer, with no runtime downgrade.
 
-Five actual Windows integration tests passed with the local Node toolchain:
+Ten actual Windows integration tests passed with the local Node toolchain:
 
 - Write two fixture files, observe a failing check, repair the implementation,
   and observe a passing check, entirely inside scratch.
@@ -48,6 +50,23 @@ Five actual Windows integration tests passed with the local Node toolchain:
   reports a socket timeout for that loopback denial on this workstation.
 - Terminate on timeout, cancellation, and output overflow, with bounded output.
 - Kill a background descendant when its parent fixture exits.
+- Reject creation/replacement in the toolchain and reads/writes of host-only leases.
+- Kill parent and child fixtures when their separate owning backend is forcibly
+  terminated; recover the abandoned scratch/profile afterward while preserving
+  an unrelated sentinel. Recovery leaves a live owner's resources intact.
+- Permit a small allocation under a 128 MiB job allowance but refuse a 256 MiB
+  allocation, and reject spawning beyond a one-process ceiling. Limits may be
+  lowered for fixtures, never raised beyond the defaults.
+- Reject an attempted junction escape to an unrelated sentinel.
+- Retain malformed recovery records and directory junctions without following
+  them or acting on an unvalidated process identity.
+
+Each probe writes a host-only lease before creating its profile. The lease binds
+the generated directory/profile identity to the owner PID and Windows process
+creation time, so a reused PID cannot claim an old run. `recover_abandoned` is an
+explicit diagnostic over an operator-selected scratch root; it is not yet wired
+to application startup. It derives deletion targets from validated generated
+directory names and retains inaccessible or malformed resources for inspection.
 
 Run explicitly with an approved external scratch directory:
 
@@ -69,14 +88,19 @@ test-loop assertions. They expect execution where the checkout's existing native
 validation changes refuse it. None of these paths imports the new probe. The
 documentation contract check passed (50 Markdown files). This is not a clean
 full-suite certification, and no installed application was rebuilt or updated.
+After lifecycle hardening, the combined backend smoke and native-validation gate
+ran 174 tests: 168 passed and the same six smoke assertions failed. All six
+existing native-validation tests passed. The ten AppContainer integration tests
+also passed in their separate opt-in run.
 
 ## Remaining acceptance gates, in dependency order
 
-1. **Production execution boundary.** Prove containment and cleanup on abrupt
-   backend death; recover abandoned scratch/profile resources after restart;
-   test junction/symlink and handle escape attempts; prove resource limits;
-   support pinned immutable packaged toolchains and common runner subprocesses.
-   A prototype's scratch-local writable executable is not an immutable toolchain.
+1. **Production execution boundary.** Connect recovery to the actual application
+   lifecycle; broaden symlink and inherited-handle escape coverage; support pinned
+   packaged toolchains and common runner subprocesses. The fixture toolchain is
+   now read-only to the sandbox, but package identity/acquisition and ordinary
+   test-runner pipe compatibility remain unproven. Disk growth and large-file
+   workloads also need bounds before arbitrary repository execution is admitted.
 2. **Execution admission and evidence.** Bind task, owner, workspace, approved
    executable/argv, environment policy, and snapshot identities to each request.
    Recheck permissions and approvals at execution. Persist bounded output,
