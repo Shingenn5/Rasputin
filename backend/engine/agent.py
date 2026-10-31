@@ -1665,6 +1665,7 @@ class AgentHub:
                 "then call sandbox_run to wait for operator approval and receive an execution receipt. "
                 "These tools use the pinned self-contained toolchain without a host shell. Only report tests "
                 "as passed when the receipt says passed=true, and scope that claim to its recorded snapshot. "
+                "Automatic-validation warnings refer to the legacy configured command, not this explicit approved snapshot path. "
                 "Use failing output to repair source files, then prepare a new snapshot and approval for another test.",
                 required=True, priority=0,
             )]
@@ -1776,6 +1777,8 @@ class AgentHub:
         test_budget = self._test_loop_budget(task)
         echo_retried = False
         user_echo_retried = False
+        completed_tool_calls = 0
+        missing_tools_retried = False
         effective_reasoning = getattr(task, "reasoning", "auto")
         if phase == "chat" and effective_reasoning == "auto" and not model_providers.is_api_provider(model):
             # Local hybrid models often interpret their template default as
@@ -1793,7 +1796,7 @@ class AgentHub:
                 if time.time() - started_at > max_seconds:
                     task.log(f"tool loop stopped: {max_seconds}s time budget exceeded after {attempt} iteration(s)")
                     self._finish_step(task, phase_step, "error")
-                    return f"Error: Tool loop time budget ({max_seconds}s) exceeded after {attempt} iteration(s)."
+                    raise RuntimeError(f"Tool loop time budget ({max_seconds}s) exceeded after {attempt} iteration(s).")
 
                 messages = self._bound_tool_loop_messages(task, model_key, messages)
                 task.stream_text = ""
@@ -1891,6 +1894,25 @@ class AgentHub:
                         task.log(message)
                         self._finish_step(task, phase_step, "error")
                         raise RuntimeError(message)
+                    if phase == "execution" and task.isolate_workspace and not completed_tool_calls:
+                        if not missing_tools_retried:
+                            missing_tools_retried = True
+                            messages.append({"role": "user", "content": (
+                                "No callable tool requests were received. This isolated coding task requires "
+                                "actual workspace tool use. Call an available tool through the function-call "
+                                "interface; writing examples of tool calls in your answer does not execute them. "
+                                "Do not claim files changed or tests ran without tool evidence."
+                            )})
+                            task.seen("execution_tools_missing", {"phase": phase, "retry": True})
+                            continue
+                        message = (
+                            "The model returned without executing any tools in the isolated coding task, "
+                            "including after a retry. No file changes or validation were verified. "
+                            "Choose a model with working tool calls."
+                        )
+                        task.seen("execution_tools_missing", {"phase": phase, "retry": False})
+                        self._finish_step(task, phase_step, "error")
+                        raise RuntimeError(message)
                     if test_cmd and test_edited and test_reopens < test_budget:
                         outcome = await self._run_workspace_test(task, test_cmd)
                         if outcome is not None and not outcome[0]:
@@ -1936,6 +1958,8 @@ class AgentHub:
                         args["_task_id"] = task.id
                         args = self._pin_execution_workspace(task, phase, tc["name"], args)
                         result = await self.mcp.call_tool(tc["name"], args, on_log=task.log)
+                        if not isinstance(result, dict) or not (result.get("error") or result.get("approval_id")):
+                            completed_tool_calls += 1
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc["id"],
@@ -1961,7 +1985,7 @@ class AgentHub:
                         self._finish_step(task, step, "error")
 
             self._finish_step(task, phase_step, "error")
-            return f"Error: Maximum tool loop iterations ({max_attempts}) exceeded."
+            raise RuntimeError(f"Maximum tool loop iterations ({max_attempts}) exceeded.")
         finally:
             task.stream_text = ""
 
@@ -2214,7 +2238,9 @@ class AgentHub:
                 "Isolated-worktree policy",
                 "Use the dedicated isolated worktree for all available workspace tools. Host Shell, automatic test runs, "
                 "git add, and git commit are intentionally unavailable in this mode because the current shell boundary "
-                "could escape a worktree. Do not claim tests ran or that changes were applied to the source workspace.",
+                "could escape a worktree. Explicit sandbox_prepare/sandbox_run requests remain available when "
+                "configured and approved; report tests only for a receipt with passed=true. "
+                "Do not claim changes were applied to the source workspace.",
                 required=True,
                 priority=0,
             ))

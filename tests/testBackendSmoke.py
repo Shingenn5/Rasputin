@@ -4957,14 +4957,14 @@ class BackendSmokeTests(unittest.TestCase):
 
         sections = [context_governor.section("fixture", "Fixture", "fixture", required=True, priority=0)]
         with patch("backend.engine.agent._chat", new=fake_chat):
-            result = asyncio.run(hub.governed_chat(
-                task,
-                "execution",
-                "coder",
-                sections,
-                tools=hub._agent_tools(task, "execution"),
-            ))
-        self.assertEqual(result, "safe completion after refusal")
+            with self.assertRaisesRegex(RuntimeError, "without executing any tools"):
+                asyncio.run(hub.governed_chat(
+                    task,
+                    "execution",
+                    "coder",
+                    sections,
+                    tools=hub._agent_tools(task, "execution"),
+                ))
         self.assertTrue(any(
             entry["kind"] == "tool_call_blocked" and entry["detail"]["tool"] == "shell_exec"
             for entry in task.trace
@@ -5112,8 +5112,8 @@ class BackendSmokeTests(unittest.TestCase):
             chat_task = agent.AgentTask("just chatting", "dry-run", "general", mode="chat", workspace_path=".")
             hub._persist_session(chat_task)
             call_count["n"] = 0
-            result2 = asyncio.run(hub.governed_chat(chat_task, "chat", "main", sections))
-            self.assertEqual(result2, "Error: Maximum tool loop iterations (15) exceeded.")
+            with self.assertRaisesRegex(RuntimeError, "Maximum tool loop iterations"):
+                asyncio.run(hub.governed_chat(chat_task, "chat", "main", sections))
             self.assertEqual(call_count["n"], 15)
 
     def testGovernedChatArchivesOldToolResultsUnderContextPressure(self):
@@ -5380,8 +5380,8 @@ class BackendSmokeTests(unittest.TestCase):
             return clock["t"]
 
         with patch("backend.engine.agent._chat", scripted_chat), patch("backend.engine.agent.time.time", fake_time):
-            result = asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
-        self.assertIn("time budget", result)
+            with self.assertRaisesRegex(RuntimeError, "time budget"):
+                asyncio.run(hub.governed_chat(task, "execution", "coder", sections))
         self.assertTrue(any("time budget exceeded" in line for line in task.logs))
 
     def testGovernedChatFailsWhenLocalRuntimeDroppedRequiredTools(self):
@@ -5484,11 +5484,11 @@ class BackendSmokeTests(unittest.TestCase):
             c["t"] += 250.0
             return c["t"]
 
-        result, task, shell_calls = self._run_stage6_execution(
-            shell_results=[{"exit_code": 1, "output": "fail"}], clock=clock)
         # An always-failing test would reopen forever if reopens got a fresh
         # budget; the shared wall-clock budget halts the loop instead.
-        self.assertIn("time budget", result)
+        with self.assertRaisesRegex(RuntimeError, "time budget"):
+            self._run_stage6_execution(
+                shell_results=[{"exit_code": 1, "output": "fail"}], clock=clock)
 
     def testStage6TestLoopSkipsWhenNoCommandOrShellDenied(self):
         # No configured command -> shell never invoked.

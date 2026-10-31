@@ -260,6 +260,53 @@ The same maintainer verifier supports this workflow and an explicitly selected a
 Omit `--backend-executable` to verify the source server. Both paths use fresh test
 state and remove the owned test process/data; browser evidence stays in scratch.
 
+## Real local-model coding mission — 2026-10-31
+
+`scripts/verify_sandbox_coder.py` drives the actual `AgentHub.run_task` planning,
+execution, and reflection phases against an owned loopback llama.cpp process.
+It uses a generated Git repository, separate application data, and Rasputin's
+retained task worktree. The harness approves only two editable fixture files and
+exact Node argument vectors; the test snapshot must retain the original test-file
+bytes. This automatic fixture reviewer is a maintainer test, not an unattended
+approval feature exposed to product agents.
+
+An actual local `Qwen3.8-27B-UD-Q4_K_M.gguf` run with repository-pinned llama.cpp
+b10586 and managed Node v26.13.0 passed:
+
+- The model issued real filesystem and sandbox tool calls through the governed loop.
+- The first approved AppContainer snapshot exited 1 with **1/6 checks passed**.
+- The model patched `items.cjs` and `invoice.cjs` through two approved file edits.
+- The second independently approved snapshot exited 0 with **6/6 checks passed**.
+- `check.cjs`, the source checkout's files, its HEAD, and its clean status were
+  unchanged. Only the retained task worktree contained the two-file diff.
+- The model's final answer accurately cited failing and passing snapshot receipts.
+  Neither receipt applies changes back to the source checkout.
+
+The script retains a JSON report, both immutable plans/receipts, the final diff,
+inference log, model/runtime SHA-256 identities, and the task worktree under the
+external scratch directory. The owned inference process is stopped on exit.
+Reproduce with `.venv` Python, an absolute external `--scratch-dir`, an existing
+verified `--engine` pointing to `llama-server.exe`, and a local tool-capable GGUF
+via `--model`. The test acquires its own managed JavaScript runtime into isolated
+state; it does not configure or restart the installed application.
+
+The older local Qwen2.5 uncensored fixture produced prose containing tool-call
+examples rather than callable requests. The mission correctly failed, exposing
+an incorrect task `done` status. Isolated coding execution now retries a missing
+tool call once and then fails visibly; blocked calls, failed calls, and pending
+approval previews do not count as completed execution. Iteration/time exhaustion
+now raises an error rather than returning success-shaped text to task completion.
+Six focused execution-evidence tests pass. The combined backend/native-validation/
+execution-evidence run has **174 passes and the same six existing legacy-shell
+failures out of 180 tests**. No legacy Host Shell capability was enabled.
+Separately, 16 focused regressions passed after loading the exact staged agent
+source, without the unrelated working-tree native-validation blocker. This
+isolates the committed completion changes from those existing mixed-tree failures.
+
+This is source application and local-model evidence on x64 Windows. It does not
+certify packaged/installed Electron coding, arbitrary project dependencies,
+automatic configured workspace commands, Trials, or accepted-change application.
+
 ## Remaining acceptance gates, in dependency order
 
 1. **Production execution boundary.** Broaden symlink and inherited-handle escape coverage; support pinned
@@ -271,10 +318,10 @@ state and remove the owned test process/data; browser evidence stays in scratch.
    isolated packaged Electron application; finish snapshot retention/resource policy
    and broader runtime provisioning. Confirm receipts survive actual application
    interruption and remain accessible through the product review workflow.
-3. **Coding workflow.** Connect the proven runner to the existing workspace
-   test/repair loop and Trials. Run a real local coder through multi-file edits,
-   an actual failing test, repair, passing test, final diff review, and explicit
-   application of accepted changes. Verify the original checkout remains intact.
+3. **Coding workflow.** The explicit agent-tool path now has a real local-model
+   multi-file fail/repair/pass mission with an unchanged original checkout.
+   Connect the proven runner to configured workspace test/repair and Trials;
+   finish final diff review and explicit application of accepted changes.
 4. **Training workflow.** Verify the current ML dependency stack against an actual
    compatible local base model and dataset. Complete LoRA training, cancellation,
    adapter export, evaluation, and supported inference use. Report format/runtime
