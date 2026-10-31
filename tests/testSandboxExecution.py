@@ -295,6 +295,56 @@ class SandboxExecutionTests(unittest.TestCase):
         self.assertEqual(receipt, saved)
         self.assertEqual(403, member.post(f"/api/execution/requests/{request_id}/execute").status_code)
 
+    def test_operator_can_review_captured_files_without_receiving_foreign_output_or_execution_rights(self):
+        request = self.request(self.member)
+        approval_id = request["approval_id"]
+        review = execution.review_approval(approval_id, self.owner)
+        self.assertEqual(request["plan"], review["plan"])
+        self.assertFalse(review["can_run_manually"])
+        self.assertFalse(review["output_access"])
+        captured = execution.review_file(approval_id, self.owner, "test.cjs")
+        self.assertEqual(self.source.read_text(encoding="utf-8"), captured["text"])
+        self.assertEqual(request["plan"]["files"]["test.cjs"]["sha256"], captured["sha256"])
+        with self.assertRaises(PermissionError):
+            execution.review_approval(approval_id, self.member)
+        with self.assertRaises(PermissionError):
+            execution.execute_request(request["plan"]["request_id"], self.owner)
+        receipt = execution.execute_request(self.approve(request), self.member)
+        self.assertTrue(receipt["passed"], receipt)
+        reviewed = execution.review_approval(approval_id, self.owner)["receipt"]
+        self.assertTrue(reviewed["passed"])
+        self.assertNotIn("output", reviewed)
+        self.assertNotIn("changes", reviewed)
+        with self.assertRaises(PermissionError):
+            execution.get_request(request["plan"]["request_id"], self.owner)
+
+    def test_snapshot_preview_refuses_unselected_and_changed_files_and_marks_expiry(self):
+        request = self.request()
+        approval_id = request["approval_id"]
+        with self.assertRaises(PermissionError):
+            execution.review_file(approval_id, self.owner, "unselected.cjs")
+        snapshot = Path(os.environ["RASPUTIN_DATA_DIR"]) / "execution-requests" / request["plan"]["request_id"] / "test.cjs"
+        snapshot.write_text("tampered", encoding="utf-8")
+        with self.assertRaises(PermissionError):
+            execution.review_file(approval_id, self.owner, "test.cjs")
+        self.approve(request)
+        with store.connect() as conn:
+            conn.execute("UPDATE approvals SET expires_at=0 WHERE id=?", (approval_id,))
+            conn.commit()
+        self.assertEqual("expired", execution.review_approval(approval_id, self.owner)["approval_status"])
+
+    def test_binary_and_long_file_previews_are_explicit_and_bounded(self):
+        self.source.write_bytes(b"\x00binary")
+        request = self.request()
+        preview = execution.review_file(request["approval_id"], self.owner, "test.cjs")
+        self.assertTrue(preview["binary"])
+        self.assertIsNone(preview["text"])
+        self.source.write_text("x" * 40000, encoding="utf-8")
+        request = self.request()
+        preview = execution.review_file(request["approval_id"], self.owner, "test.cjs")
+        self.assertEqual(32768, len(preview["text"]))
+        self.assertTrue(preview["truncated"])
+
 
 if __name__ == "__main__":
     unittest.main()

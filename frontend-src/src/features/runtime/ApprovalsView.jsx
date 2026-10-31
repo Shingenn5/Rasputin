@@ -2,6 +2,7 @@ import React from "react";
 import { Badge, Button, Card, Stack } from "react-bootstrap";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { PageHeader, formatRuntimeTime } from "./RuntimePrimitives.jsx";
+import { SandboxApprovalReview } from "./SandboxApprovalReview.jsx";
 
 export function ApprovalsView({ view, approvals, approveApproval, denyApproval, refreshApprovals, openTaskDetails }) {
   const items = approvals?.approvals || [];
@@ -11,7 +12,7 @@ export function ApprovalsView({ view, approvals, approveApproval, denyApproval, 
       <div className="task-dashboard">
         <Stack gap={3}>
           {items.map((approval) => (
-            <Card className="settings-card shadow-sm" key={approval.id} data-testid="approval-card">
+            <Card className={`settings-card shadow-sm ${(approval.actionType || approval.action_type) === "sandbox_execute" ? "sandbox-approval" : ""}`} key={approval.id} data-testid="approval-card" data-approval-id={approval.id}>
               <Card.Body>
                 <div className="section-row">
                   <div>
@@ -25,7 +26,7 @@ export function ApprovalsView({ view, approvals, approveApproval, denyApproval, 
                     {approval.taskId && (
                       <Button variant="outline-secondary" onClick={() => openTaskDetails(approval.taskId)}>Open Task</Button>
                     )}
-                    {approval.status === "pending" && (
+                    {approval.status === "pending" && (approval.actionType || approval.action_type) !== "sandbox_execute" && (
                       <>
                         <Button onClick={() => approveApproval(approval.id)}>Approve</Button>
                         <Button variant="outline-danger" onClick={() => denyApproval(approval.id)}>Deny</Button>
@@ -33,11 +34,16 @@ export function ApprovalsView({ view, approvals, approveApproval, denyApproval, 
                     )}
                   </Stack>
                 </div>
+                {(approval.actionType || approval.action_type) === "sandbox_execute" && (
+                  <SandboxApprovalReview approval={approval} approveApproval={approveApproval} denyApproval={denyApproval} />
+                )}
                 <dl className="detail-grid approval-detail-grid mt-3">
                   <dt>Risk</dt><dd>{approval.riskLevel || approval.risk_level || "approval required"}</dd>
                   <dt>Workspace</dt><dd>{displayWorkspaceName(approval.workspace)}</dd>
                   <dt>Expires</dt><dd>{formatRuntimeTime(approval.expiresAt || approval.expires_at)}</dd>
-                  <dt>Details</dt><dd>{summarizeApproval(approval.redactedDetail || approval.redacted_detail || {})}</dd>
+                  {(approval.actionType || approval.action_type) !== "sandbox_execute" && (
+                    <><dt>Details</dt><dd>{summarizeApproval(approval.redactedDetail || approval.redacted_detail || {})}</dd></>
+                  )}
                 </dl>
                 <details className="advanced-block approval-raw-detail">
                   <summary>Redacted metadata</summary>

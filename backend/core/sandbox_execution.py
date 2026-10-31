@@ -145,6 +145,52 @@ def get_request(request_id, username):
     return request
 
 
+def review_approval(approval_id, username):
+    """Operators may inspect the exact plan being approved, not another owner's output."""
+    if _actor(username)["role"] != "admin":
+        raise PermissionError("Administrator access is required to review execution approvals.")
+    approval = approvals.get(approval_id)
+    if not approval or approval["action_type"] != "sandbox_execute":
+        raise PermissionError("This approval does not authorize snapshot execution.")
+    detail = approval["redacted_detail"]
+    request = _request(detail.get("request_id"), approval["owner_id"])
+    if (request["approval_id"] != approval_id or request["plan_sha256"] != detail.get("request_digest")
+            or _digest(request["plan"]) != request["plan_sha256"]
+            or request["plan"]["workspace"] != approval["workspace"]
+            or request["plan"]["task_id"] != approval["task_id"]):
+        raise PermissionError("Approval no longer matches the captured execution plan.")
+    own_request = request["owner_id"] == username
+    approval_status = approval["status"]
+    if approval_status in {"pending", "approved"} and approval["expires_at"] <= store.now():
+        approval_status = "expired"
+    receipt = request.get("receipt")
+    if receipt and not own_request:
+        receipt = {key: receipt.get(key) for key in ("ran", "passed", "exit_code", "termination_reason",
+                                                    "started_at", "finished_at", "truncated", "evidence_complete")}
+    return {**request, "receipt": receipt, "approval_status": approval_status,
+            "output_access": own_request, "can_run_manually": own_request and not request["plan"]["task_id"]}
+
+
+def review_file(approval_id, username, relative):
+    request = review_approval(approval_id, username)
+    relative = _relative(relative)
+    manifest = request["plan"]["files"].get(relative)
+    if not manifest:
+        raise PermissionError("File is not part of this approved snapshot.")
+    snapshot = data_dir() / "execution-requests" / request["plan"]["request_id"]
+    content = _read_file(snapshot, relative, manifest["bytes"])
+    if len(content) != manifest["bytes"] or hashlib.sha256(content).hexdigest() != manifest["sha256"]:
+        raise PermissionError("Captured file changed; execution will refuse this snapshot.")
+    try:
+        text = content.decode("utf-8")
+        binary = "\0" in text
+    except UnicodeDecodeError:
+        text, binary = None, True
+    return {"path": relative, "sha256": manifest["sha256"], "bytes": manifest["bytes"],
+            "text": None if binary else text[:32768], "binary": binary,
+            "truncated": not binary and len(text) > 32768}
+
+
 def create_request(username, workspace_ref, file_paths, arguments, *, task_id=None, timeout=30):
     if os.name != "nt":
         raise ValueError("Snapshot execution currently requires Windows.")

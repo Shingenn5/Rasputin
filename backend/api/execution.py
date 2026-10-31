@@ -1,7 +1,7 @@
 """Authenticated approval-bound execution of explicit workspace snapshots."""
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from backend.api.core import CamelModel, current_user, require_admin, require_member
@@ -44,6 +44,16 @@ async def configure(req: ToolchainInput, user=Depends(require_admin)):
 async def create(req: ExecutionInput, user=Depends(require_member)):
     return ok(_public_request(await asyncio.to_thread(execution.create_request, user["username"], req.workspace,
                                                      req.files, req.arguments, task_id=req.task_id, timeout=req.timeout)))
+
+
+@router.get("/approvals/{approval_id}")
+async def review(approval_id: str, user=Depends(require_admin)):
+    return ok(_public_request(await asyncio.to_thread(execution.review_approval, approval_id, user["username"])))
+
+
+@router.get("/approvals/{approval_id}/file")
+async def review_file(approval_id: str, path: str = Query(min_length=1, max_length=4096), user=Depends(require_admin)):
+    return ok(await asyncio.to_thread(execution.review_file, approval_id, user["username"], path))
 
 
 @router.get("/requests/{request_id}")

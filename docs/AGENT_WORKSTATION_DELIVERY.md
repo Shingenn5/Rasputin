@@ -150,6 +150,52 @@ native-validation gate remains 168 passes and the same six pre-existing failures
 out of 174 tests. Documentation validation passed. No real local-model coding
 mission, packaged application, or installed application was certified by these tests.
 
+## Operator review in the source application
+
+The existing Approvals page now has a snapshot review for execution requests.
+Operators inspect the captured workspace, requester, pinned runtime, exact quoted
+arguments, file list, and selected captured file contents before approving. Tabs,
+line breaks, and empty arguments remain explicit in the argument display. Binary
+files and truncated text previews are labeled; full snapshot/runtime hashes stay
+under a disclosure. Changing a source file after submission does not change the
+captured preview or execution input.
+
+Approving a task-bound request releases the waiting agent tool. For a taskless
+request owned by the current operator, **Approve and run snapshot** starts it;
+an already-approved request has a separate run control. Owners can stop a running
+execution. Receipts distinguish passing, non-passing, unexecuted, and unconfirmed
+execution, show actual termination/exit details, and expose available output and
+changed-file names. Failed loads and file-integrity errors remain visible.
+
+Administrator-only review endpoints bind the approval to its immutable plan and
+allow inspection of selected captured files, including requests from another
+account. This does not grant execution/cancellation of another owner's request.
+Other owners' output and generated-file evidence stay private, while the approval
+operator can see the execution outcome. The original owner-only request API is
+unchanged.
+
+Verification passed: frontend build; 16 focused backend execution/review tests;
+one live Playwright scenario covering real authentication, captured-file inspection,
+approval/execution, denial, stopping, and output ownership. Keyboard and mouse
+controls worked; there was no page overflow at 1440, 1024, 390, or 320 pixels, and
+the changed screens were visually inspected. The design detector reported no
+findings. The broader gate remains 168 passes and the same six pre-existing failures
+out of 174 backend/native-validation tests. Existing Vite dependency/chunk warnings
+remain. This is source Native Host evidence, not packaged or installed evidence.
+
+The live check is repeatable after `npm run build`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/verify_sandbox_review.py --scratch-dir <absolute-external-scratch-directory>
+```
+
+It checks that the test port is free, creates isolated accounts/state/workspace,
+runs actual AppContainer fixtures, saves browser evidence outside the checkout,
+and removes its owned server and temporary data. It requires a maintainer Node
+installation; end-user toolchain provisioning is still outstanding. The prior
+Approvals layout can be restored by reverting the scoped UI integration; Chat
+layout and composer are unchanged.
+
 ## Remaining acceptance gates, in dependency order
 
 1. **Production execution boundary.** Broaden symlink and inherited-handle escape coverage; support pinned

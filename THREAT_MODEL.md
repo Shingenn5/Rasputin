@@ -165,7 +165,10 @@ Its Windows job is attached during process creation and owns descendant cleanup.
 The source checkout is not mounted or updated. Standard AppContainer OS-resource
 access still applies; this is not LPAC. Output/file evidence is bounded, but there
 is no hard workspace/profile disk quota yet. Installed runtime provisioning and
-full coding/training certification remain open. See
+full coding/training certification remain open. Approval operators can inspect the
+matching plan and selected captured files through administrator-only review routes.
+That review grants neither execution/cancellation nor private output access for
+another account's request. See
 [delivery evidence](docs/AGENT_WORKSTATION_DELIVERY.md).
 
 **Git tools** run as direct backend child processes. They retain their workspace
