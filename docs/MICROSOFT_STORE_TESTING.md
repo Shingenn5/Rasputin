@@ -42,7 +42,9 @@ This workflow never generates a certificate or silently adds one to Windows trus
    the submission's Packages page. Microsoft supports this format; a separate
    purchase of a code-signing certificate is not required for Store distribution.
 4. Complete the listing, privacy URL, screenshots, age rating, declarations, and
-   certification notes. Explain that `runFullTrust` is needed for the packaged
+   certification notes. After this change is merged, use
+   <https://github.com/Shingenn5/Rasputin/blob/main/PRIVACY.md> as the privacy URL.
+   Explain that `runFullTrust` is needed for the packaged
    Python backend, local inference processes, and user-approved workspace access.
    Acceptance of these capabilities and runtime acquisition remains Microsoft's
    decision. Run the Windows App Certification Kit and resolve its findings.
@@ -80,6 +82,27 @@ GitHub currently stops at verified downloadable packages. Initial Store submissi
 and subsequent uploads are manual; no Partner Center API credentials are configured.
 Automate package flights after the account, initial submission and upgrade rehearsal
 work. Do not mistake CI artifact upload for Store publication.
+
+## Initial private-listing draft
+
+- Name: the name actually reserved in Partner Center (Rasputin or Rasputin Desktop).
+- Short description: A local-first Windows AI workstation for local models, chat,
+  and coding in approved workspaces.
+- Description: Rasputin lets you download or import GGUF language models and run
+  them locally through a hardware-selected llama.cpp runtime. Use chat and coding
+  workflows with workspace permissions and approval controls. The desktop app
+  manages its packaged backend and native runtime processes. Remote providers and
+  integrations are optional and depend on your configuration.
+- Certification notes: Private testing build. The full-trust capability is needed
+  to run the bundled Python backend, start native local inference processes and
+  access user-approved workspaces. No external Python, Node or Git installation is
+  required for local inference. Model and runtime downloads require network access;
+  model memory requirements depend on the selected model and hardware.
+- Audience: Private; add the personal Microsoft account used on the test PC.
+- Screenshots: capture the actual Store-installed build before submission; no
+  mockups or source-browser images as installed-app evidence.
+- Age rating and declarations: complete from the actual app behavior and the
+  Store questionnaire; this draft does not choose answers on the publisher's behalf.
 
 ## References
 
