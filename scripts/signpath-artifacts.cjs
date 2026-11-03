@@ -17,7 +17,7 @@ function stageApp(root, publisher) {
   const config = configuration(root, publisher);
   const unpacked = path.join(config.directory, "win-unpacked");
   // --dir does not emit an updater feed. Put it in place before creating NSIS.
-  fs.writeFileSync(path.join(unpacked, "resources/app-update.yml"), yaml.dump({ ...config.publish, publisherName: [publisher] }));
+  fs.writeFileSync(path.join(unpacked, "resources/app-update.yml"), yaml.dump({ ...config.publish, publisherName: [publisher], updaterCacheDirName: "rasputin-updater" }));
   const destination = path.join(root, "dist/signpath/unsigned-app");
   fs.mkdirSync(destination, { recursive: true });
   for (const [name, relative] of Object.entries(APP_FILES)) fs.copyFileSync(path.join(unpacked, relative), path.join(destination, name));

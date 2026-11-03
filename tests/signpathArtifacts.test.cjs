@@ -23,6 +23,7 @@ test("SignPath staging rejects invalid returns and rebuilds metadata for the fin
     assert.equal(stageApp(root, publisher), "1.2.3");
     const feed = yaml.load(fs.readFileSync(path.join(unpacked, "resources/app-update.yml"), "utf8"));
     assert.deepEqual(feed.publisherName, [publisher]);
+    assert.equal(feed.updaterCacheDirName, "rasputin-updater");
     const signedApp = path.join(root, "dist/signpath/signed-app");
     fs.mkdirSync(signedApp, { recursive: true });
     // Signature verification is injected only for these synthetic byte fixtures.
