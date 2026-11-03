@@ -53,6 +53,9 @@ The application packet is ready for the maintainer's review and completion.
    Suggested slugs: `rasputin-app-v1` and `rasputin-installer-v1`. Both require the
    `version` parameter. Confirm these XML templates in the SignPath portal; local XML
    parsing is not server-side schema or policy acceptance.
+   Electron stores Windows ProductVersion with a fourth zero (`x.y.z.0`); the
+   application template binds that form to release `x.y.z`, while the backend and
+   installer use `x.y.z`. Confirm the Foundation accepts this normalization.
 4. In the GitHub **release** environment, add:
 
 | Kind | Name | Value |

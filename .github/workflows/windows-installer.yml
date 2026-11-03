@@ -119,7 +119,7 @@ jobs:
       - name: Assemble NSIS from the signed application
         if: inputs.release
         shell: pwsh
-        run: npx electron-builder --prepackaged dist/electron/win-unpacked --win nsis --publish never "--config.win.publisherName=$env:WINDOWS_PUBLISHER_NAME"
+        run: npx electron-builder --prepackaged dist/electron/win-unpacked --win nsis --publish never
 
       - name: Prepare installer signing artifact
         if: inputs.release
@@ -174,7 +174,7 @@ jobs:
                 throw "Unexpected Authenticode publisher: $file"
               }
               $metadata = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $file))
-              if ($metadata.ProductName -ne 'Rasputin' -or $metadata.ProductVersion -ne $version) { throw "Unexpected product metadata: $file" }
+              if ($metadata.ProductName -ne 'Rasputin' -or $metadata.ProductVersion -notin @($version, "$version.0")) { throw "Unexpected product metadata: $file" }
             }
           }
 

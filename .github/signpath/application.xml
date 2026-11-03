@@ -3,7 +3,8 @@
     <parameter name="version" required="true" />
   </parameters>
   <zip-file>
-    <pe-file path="Rasputin.exe" product-name="Rasputin" product-version="${version}" original-filename="Rasputin.exe">
+    <!-- Electron's Windows resources pad the stable release with a fourth zero. -->
+    <pe-file path="Rasputin.exe" product-name="Rasputin" product-version="${version}.0" file-version="${version}">
       <authenticode-sign />
     </pe-file>
     <pe-file path="rasputin-backend.exe" product-name="Rasputin" product-version="${version}" original-filename="rasputin-backend.exe">
