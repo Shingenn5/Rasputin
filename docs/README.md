@@ -14,6 +14,7 @@ competing "current" roadmaps from forming.
 | Inherit or maintain the codebase | [`MAINTAINER_HANDOFF.md`](MAINTAINER_HANDOFF.md) | First-day workflow, ownership boundaries, maintenance baseline, and handoff acceptance |
 | Understand the architecture | [`RASPUTIN_ARCHITECTURE_GUIDE.md`](RASPUTIN_ARCHITECTURE_GUIDE.md) | Runtime and frontend architecture reference |
 | Run CI, build installers, and ship app updates | [`GITHUB_ACTIONS_DELIVERY.md`](GITHUB_ACTIONS_DELIVERY.md) | Automated gates, signed draft releases, update bootstrap and remaining evidence |
+| Configure free open-source signing | [`SIGNPATH_SETUP.md`](SIGNPATH_SETUP.md), [`Code signing policy`](../CODE_SIGNING_POLICY.md) | Application packet, two-stage SignPath signing and approval boundaries |
 | Deploy or troubleshoot a runtime | [`DEPLOYMENT_MATRIX.md`](DEPLOYMENT_MATRIX.md) | Installed Desktop and source Native Host ownership, upgrades, and verification |
 | Prepare a release | [`RELEASE_SETUP.md`](RELEASE_SETUP.md), [`PUBLIC_RELEASE_AUDIT.md`](PUBLIC_RELEASE_AUDIT.md), [`RASPUTIN_V1_OPERATOR_RUNBOOK.md`](RASPUTIN_V1_OPERATOR_RUNBOOK.md), and `scripts/verify_release_candidate.py` | Operational release steps, human evidence checklist, automated evidence, and explicit remaining boundaries |
 | Change security-sensitive behavior | [`THREAT_MODEL.md`](../THREAT_MODEL.md), [`SECURITY.md`](../SECURITY.md) | Security boundaries and reporting policy |

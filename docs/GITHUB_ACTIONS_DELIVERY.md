@@ -36,18 +36,18 @@ the packaged frontend, then stops its owned process and removes its test data.
    enforce repository branch protection by themselves.
 2. Create a GitHub Actions environment named **release**. Restrict deployment branches
    to `main`; add required reviewers if approval before signing is desired.
-3. In that environment, add secrets **CSC_LINK** (base64-encoded PFX or a supported
-   certificate source) and **CSC_KEY_PASSWORD**. Set variable **WINDOWS_PUBLISHER_NAME**
-   to the certificate's exact publisher common name. These are electron-builder's PFX
-   signing inputs; hardware-backed/cloud signing needs its own signing integration.
-   Never commit a certificate, password, or GitHub token. Clients use the public release
-   feed and carry no GitHub credentials.
+3. Use the selected free/open-source route in [SignPath setup](SIGNPATH_SETUP.md).
+   After Foundation acceptance, configure **SIGNPATH_API_TOKEN**, the SignPath project,
+   policy and artifact-configuration variables, and **WINDOWS_PUBLISHER_NAME** in the
+   release environment. No PFX/private key is stored in GitHub. Clients use the public
+   release feed and carry no GitHub credentials. The
+   [code signing policy](../CODE_SIGNING_POLICY.md) states approval and signing coverage.
 4. Bump `package.json` and `package-lock.json` to an unused stable `x.y.z` version before
    each release. Run the delivery workflow on `main` with `release` checked. Missing
    credentials, invalid signatures, publisher mismatches, or reused version tags fail
    the release. Inspect the draft assets and validation run, then publish the draft.
 
-No signing credentials or branch protection are provisioned by this code change.
+No signing credentials or Foundation approval are provisioned by this code change.
 Routine unsigned CI installers are never uploaded to the public release channel.
 The draft contains the versioned installer, SHA-256 checksums, stable download aliases,
 `latest.yml`, and differential `.blockmap`. Do not edit those assets after publishing.
@@ -93,7 +93,7 @@ node scripts/verify-update-artifacts.cjs
 node scripts/smoke-packaged-desktop.cjs dist/electron/win-unpacked/resources
 ```
 
-For signed local packaging, supply the same signing inputs privately and pass
-`--config.forceCodeSigning=true` and `--config.win.publisherName=<publisher>` to the
-packaging command. Packaging or passing a mocked updater test does not prove a signed
-update was downloaded, trusted, or installed on a clean Windows machine.
+SignPath release signing is performed through GitHub-hosted Actions artifacts and
+manual SignPath approvals, not local certificate flags. Packaging or passing a mocked
+updater test does not prove a signed update was downloaded, trusted, or installed on a
+clean Windows machine. See [the staged release flow](SIGNPATH_SETUP.md#release-flow).
