@@ -93,6 +93,12 @@ def run_check(name: str, command: list[str], env: dict[str, str], *, timeout: in
             "durationSeconds": round(time.monotonic() - started, 2),
             "outputTail": [line[:600] for line in output.splitlines() if line.strip()][-18:],
         }
+        if process.returncode != 0:
+            # The last lines of TAP often contain only passing tests and totals.
+            # Keep bounded, already-redacted failure context for CI diagnosis.
+            lines = output.splitlines()
+            failures = [i for i, line in enumerate(lines) if re.match(r"^(not ok\b|FAIL:|ERROR:|Traceback)", line)]
+            result["failureOutput"] = [line[:600] for i in failures[:3] for line in lines[i:i + 30]]
         count = re.search(r"Ran (\d+) tests?", output)
         if not count:
             count = re.search(r"(?m)^# tests (\d+)", output)
@@ -192,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             count = f" ({result['testCount']} tests, {result.get('skipped', 0)} skipped)" if "testCount" in result else ""
             print(f"{'PASS' if result['passed'] else 'FAIL'} {result['name']}{count}", flush=True)
             if not result["passed"]:
+                print("\n".join(result.get("failureOutput", [])), flush=True)
                 print("\n".join(result.get("outputTail", [])), flush=True)
     build_verified = False
     with tempfile.TemporaryDirectory(prefix="rasputin-source-regressions-") as temporary:

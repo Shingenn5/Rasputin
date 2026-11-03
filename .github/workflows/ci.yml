@@ -1,0 +1,67 @@
+name: CI and Windows delivery
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Build a signed installer and prepare a draft release (main only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivery-${{ github.ref }}
+  # Never cancel a release while it is uploading artifacts.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  safety:
+    uses: ./.github/workflows/repository-safety.yml
+
+  source:
+    uses: ./.github/workflows/windows-source-regressions.yml
+
+  installer:
+    needs: [safety, source]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    uses: ./.github/workflows/windows-installer.yml
+    with:
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+    secrets: inherit
+
+  draft-release:
+    needs: installer
+    if: github.event_name == 'workflow_dispatch' && inputs.release && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: rasputin-windows-installer
+          path: release-assets
+      - name: Prepare immutable draft from the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          # Existing tags/releases are deliberately rejected, never overwritten.
+          if git show-ref --verify --quiet "refs/tags/v$version"; then
+            echo "Version v$version already has a tag. Bump package.json and package-lock.json."
+            exit 1
+          fi
+          gh release create "v$version" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Rasputin v$version" --generate-notes --draft
+          echo "Draft prepared for $GITHUB_SHA. Review it, then publish in GitHub Releases." >> "$GITHUB_STEP_SUMMARY"

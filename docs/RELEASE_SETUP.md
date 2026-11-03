@@ -77,7 +77,11 @@ CPU/CUDA payloads, bundles the backend with PyInstaller, and creates the NSIS in
 Each GitHub release must include the versioned installer and checksum plus stable aliases named
 `Rasputin-Setup.exe` and `Rasputin-Setup.exe.sha256`. The README download button targets the stable
 installer name on the latest release.
-The current package remains unsigned; do not claim Authenticode or automatic-update certification.
+GitHub Actions now gates installer builds and prepares signed draft releases. See
+[GitHub Actions delivery and desktop updates](GITHUB_ACTIONS_DELIVERY.md) for signing
+credentials, release promotion, and the one-time manual updater bootstrap. Unsigned CI
+packages cannot auto-update; signed update-channel certification still requires an actual
+installed N to N+1 rehearsal.
 
 A source backend restart does not update an installed Desktop package. Complete checks first,
 then install the new package with operator approval. Quit the current Desktop owner before

@@ -1,10 +1,7 @@
 name: Windows source regressions
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -48,6 +45,10 @@ jobs:
 
       - name: Verify source, lifecycle, and authenticated browser fixtures
         run: .\.venv\Scripts\python.exe scripts/verify_source_regressions.py --browser-artifacts "${{ runner.temp }}/rasputin-browser-evidence"
+
+      - name: Verify updater and desktop packaging
+        if: ${{ !cancelled() }}
+        run: npm run desktop:test
 
       - name: Upload browser evidence
         if: always()
