@@ -7,22 +7,44 @@ on:
         type: boolean
         default: false
     secrets:
-      CSC_LINK:
-        required: false
-      CSC_KEY_PASSWORD:
+      SIGNPATH_API_TOKEN:
         required: false
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   build-windows-installer:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     environment: ${{ inputs.release && 'release' || 'build' }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Validate SignPath release prerequisites
+        if: inputs.release
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG }}
+          SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
+            throw 'Signing requires an explicitly dispatched release on main.'
+          }
+          foreach ($name in @('SIGNPATH_API_TOKEN', 'SIGNPATH_ORGANIZATION_ID', 'SIGNPATH_PROJECT_SLUG', 'SIGNPATH_SIGNING_POLICY_SLUG', 'SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG', 'SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG', 'WINDOWS_PUBLISHER_NAME')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing release configuration: $name" }
+          }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Stable releases require a stable x.y.z package version.' }
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -47,20 +69,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-desktop.txt
 
-      - name: Validate release prerequisites
-        if: inputs.release
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
-        shell: pwsh
-        run: |
-          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD -or -not $env:PUBLISHER_NAME) {
-            throw 'Signed releases require CSC_LINK, CSC_KEY_PASSWORD and WINDOWS_PUBLISHER_NAME in the release environment.'
-          }
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Stable releases require a stable x.y.z package version.' }
-
       - name: Build unsigned CI installer
         if: '!inputs.release'
         env:
@@ -68,14 +76,84 @@ jobs:
         shell: pwsh
         run: npm run desktop:package
 
-      - name: Build signed release installer
+      - name: Build application for SignPath
         if: inputs.release
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
         shell: pwsh
-        run: npm run desktop:package -- --config.forceCodeSigning=true "--config.win.publisherName=$env:PUBLISHER_NAME"
+        run: npm run desktop:package:dir
+
+      - name: Prepare application signing artifact
+        id: prepare-signpath
+        if: inputs.release
+        run: node scripts/signpath-artifacts.cjs stage-app
+
+      - name: Upload unsigned application executables
+        id: unsigned-app
+        if: inputs.release
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-unsigned-app
+          path: dist/signpath/unsigned-app/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Request approved SignPath application signatures
+        if: inputs.release
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+          output-artifact-directory: dist/signpath/signed-app
+          parameters: |
+            version: "${{ steps.prepare-signpath.outputs.version }}"
+
+      - name: Verify and place signed application executables
+        if: inputs.release
+        run: node scripts/signpath-artifacts.cjs accept-app
+
+      - name: Assemble NSIS from the signed application
+        if: inputs.release
+        shell: pwsh
+        run: npx electron-builder --prepackaged dist/electron/win-unpacked --win nsis --publish never
+
+      - name: Prepare installer signing artifact
+        if: inputs.release
+        run: node scripts/signpath-artifacts.cjs stage-installer
+
+      - name: Upload unsigned installer
+        id: unsigned-installer
+        if: inputs.release
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-unsigned-installer
+          path: dist/signpath/unsigned-installer/
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Request approved SignPath installer signature
+        if: inputs.release
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+          output-artifact-directory: dist/signpath/signed-installer
+          parameters: |
+            version: "${{ steps.prepare-signpath.outputs.version }}"
+
+      - name: Verify signed installer and rebuild update metadata
+        if: inputs.release
+        run: node scripts/signpath-artifacts.cjs accept-installer
 
       - name: Verify packaged application and updater assets
         env:
@@ -89,12 +167,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:EXPECT_SIGNED -eq 'true') {
             $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-            foreach ($file in @("dist/electron/Rasputin-Setup-$version.exe", 'dist/electron/win-unpacked/Rasputin.exe')) {
+            foreach ($file in @("dist/electron/Rasputin-Setup-$version.exe", 'dist/electron/win-unpacked/Rasputin.exe', 'dist/electron/win-unpacked/resources/backend/rasputin-backend.exe')) {
               $signature = Get-AuthenticodeSignature -LiteralPath $file
               if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $file" }
               if ($signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -ne $env:PUBLISHER_NAME) {
                 throw "Unexpected Authenticode publisher: $file"
               }
+              $metadata = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $file))
+              if ($metadata.ProductName -ne 'Rasputin' -or $metadata.ProductVersion -notin @($version, "$version.0")) { throw "Unexpected product metadata: $file" }
             }
           }
 

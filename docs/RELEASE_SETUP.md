@@ -82,6 +82,8 @@ GitHub Actions now gates installer builds and prepares signed draft releases. Se
 credentials, release promotion, and the one-time manual updater bootstrap. Unsigned CI
 packages cannot auto-update; signed update-channel certification still requires an actual
 installed N to N+1 rehearsal.
+The selected free signing route is [SignPath Foundation](SIGNPATH_SETUP.md), subject to
+acceptance. Review the [Code signing policy](../CODE_SIGNING_POLICY.md) before publishing.
 
 A source backend restart does not update an installed Desktop package. Complete checks first,
 then install the new package with operator approval. Quit the current Desktop owner before

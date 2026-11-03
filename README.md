@@ -18,6 +18,7 @@ containers.
 Click once to download. No repository clone, terminal, developer tools, or account required.
 
 [Installation help](#install-and-run) · [All releases](https://github.com/Shingenn5/Rasputin/releases) ·
+[Code signing policy](CODE_SIGNING_POLICY.md) ·
 [Report a problem](https://github.com/Shingenn5/Rasputin/issues/new/choose)
 
 > **Preview software:** current builds are unsigned, so Windows may show a Microsoft Defender

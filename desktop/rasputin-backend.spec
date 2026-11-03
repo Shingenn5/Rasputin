@@ -1,10 +1,26 @@
 from pathlib import Path
+import json
 import ssl
 
 from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.win32 import versioninfo
 
 
 ROOT = Path(SPECPATH).resolve().parent
+package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+version = package["version"]
+version_numbers = tuple(int(part) for part in version.split("-")[0].split(".")[:3]) + (0,)
+backend_version = versioninfo.VSVersionInfo(
+    ffi=versioninfo.FixedFileInfo(filevers=version_numbers, prodvers=version_numbers, fileType=1),
+    kids=[versioninfo.StringFileInfo([versioninfo.StringTable("040904B0", [
+        versioninfo.StringStruct("CompanyName", package["author"]),
+        versioninfo.StringStruct("FileDescription", "Rasputin Backend"),
+        versioninfo.StringStruct("FileVersion", version),
+        versioninfo.StringStruct("ProductName", "Rasputin"),
+        versioninfo.StringStruct("ProductVersion", version),
+        versioninfo.StringStruct("OriginalFilename", "rasputin-backend.exe"),
+    ])]), versioninfo.VarFileInfo([versioninfo.VarStruct("Translation", [1033, 1200])])],
+)
 # Some build interpreters load an adjacent CA policy when creating any SSL
 # context. Preserve that policy in the frozen stdlib directory as well.
 ssl_policy = Path(ssl.__file__).with_name("codex-rejected-cas.pem")
@@ -33,6 +49,7 @@ executable = EXE(
     [],
     exclude_binaries=True,
     name="rasputin-backend",
+    version=backend_version,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

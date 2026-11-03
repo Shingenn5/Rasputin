@@ -28,6 +28,9 @@ jobs:
 
   installer:
     needs: [safety, source]
+    permissions:
+      actions: read
+      contents: read
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     uses: ./.github/workflows/windows-installer.yml
     with:
@@ -64,4 +67,8 @@ jobs:
           gh release create "v$version" release-assets/* \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Rasputin v$version" --generate-notes --draft
+          notes="$RUNNER_TEMP/rasputin-release-notes.md"
+          gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$notes"
+          printf '\nCode signing policy: https://github.com/%s/blob/%s/CODE_SIGNING_POLICY.md\nSigned through SignPath; publisher and signatures verified by the release workflow.\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" >> "$notes"
+          gh release edit "v$version" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
           echo "Draft prepared for $GITHUB_SHA. Review it, then publish in GitHub Releases." >> "$GITHUB_STEP_SUMMARY"
