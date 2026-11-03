@@ -15,7 +15,7 @@ on:
         type: boolean
         default: false
       store_submission:
-        description: Use reserved Partner Center identity for Store upload (main only, no automatic submission)
+        description: Build with reserved Partner Center identity (build only, does not submit)
         type: boolean
         default: false
 

@@ -53,9 +53,12 @@ jobs:
           if ($env:SIGNED_RELEASE -eq 'true' -and $env:STORE_PACKAGE_MODE -eq 'submission') {
             throw 'Choose either an NSIS signed release or a Store submission build, not both.'
           }
-          if (($env:SIGNED_RELEASE -eq 'true' -or $env:STORE_PACKAGE_MODE -eq 'submission') -and
+          if ($env:SIGNED_RELEASE -eq 'true' -and
               ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch')) {
-            throw 'Release and Store submission packages require a manual run on main.'
+            throw 'Signed releases require a manual run on main.'
+          }
+          if ($env:STORE_PACKAGE_MODE -eq 'submission' -and $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
+            throw 'Store candidate packages require an explicit manual build request.'
           }
           node -e "require('./scripts/store-config.cjs').createStoreConfig()"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

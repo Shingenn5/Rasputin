@@ -38,8 +38,10 @@ This workflow never generates a certificate or silently adds one to Windows trus
 
    These are public package identity fields, not signing secrets. Do not invent
    them from the app name. Submission mode fails if any value is missing.
-3. Run **CI and Windows delivery** on `main` with `store_submission: true` and
-   `release: false`. Download `rasputin-store-submission`. Upload its `.appx` on
+3. Run **CI and Windows delivery** with `store_submission: true` and `release: false`.
+   A task branch can prepare a candidate for draft package validation before merge;
+   use the reviewed `main` commit for a release submission. Neither run submits or
+   publishes anything. Download `rasputin-store-submission`. Upload its `.appx` on
    the submission's Packages page. Microsoft supports this format; a separate
    purchase of a code-signing certificate is not required for Store distribution.
 4. Complete the listing, privacy URL, screenshots, age rating, declarations, and
