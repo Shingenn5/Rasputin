@@ -11,12 +11,14 @@ const {
 } = require("electron");
 const { BackendSupervisor } = require("./backend-supervisor.cjs");
 const { loadDesktopSettings, saveDesktopSettings } = require("./settings.cjs");
+const { createDesktopUpdates } = require("./updates.cjs");
 
 let mainWindow = null;
 let tray = null;
 let supervisor = null;
 let quitting = false;
 let shutdownComplete = false;
+let desktopUpdates = null;
 let desktopSettings = { closeBehavior: "tray" };
 
 app.setName("Rasputin");
@@ -118,6 +120,8 @@ function rebuildTrayMenu() {
       },
     },
     { label: "Show logs", click: () => shell.showItemInFolder(supervisor.logPath) },
+    ...(desktopUpdates ? [desktopUpdates.menuItem()] : app.isPackaged
+      ? [{ label: "Updates unavailable — signed install required", enabled: false }] : []),
     { type: "separator" },
     {
       label: "Quit Rasputin",
@@ -220,6 +224,7 @@ app.on("second-instance", () => showWindow());
 
 app.on("before-quit", async (event) => {
   quitting = true;
+  desktopUpdates?.stop();
   if (shutdownComplete) return;
   event.preventDefault();
   try {
@@ -253,6 +258,27 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   await startEngine();
+
+  if (app.isPackaged && process.platform === "win32") {
+    const { autoUpdater } = require(path.join(process.resourcesPath, "updater.cjs"));
+    // electron-updater 6 skips signature validation without a publisher name.
+    // Unsigned CI artifacts must never silently become trusted update clients.
+    const updateConfig = await autoUpdater.configOnDisk.value.catch(() => ({}));
+    if (updateConfig.publisherName?.length) desktopUpdates = createDesktopUpdates({
+      updater: autoUpdater,
+      dialog,
+      changed: rebuildTrayMenu,
+      install: async () => {
+        await supervisor.stop({ includeAttached: false });
+        quitting = true;
+        shutdownComplete = true;
+        desktopUpdates.stop();
+        autoUpdater.quitAndInstall(false, true);
+      },
+    });
+    desktopUpdates?.start();
+    rebuildTrayMenu();
+  }
 
   const smokeCloseMs = Number(process.env.RASPUTIN_DESKTOP_SMOKE_CLOSE_MS) || 0;
   if (smokeCloseMs > 0) {
