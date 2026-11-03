@@ -1,3 +1,7 @@
 
 # Public SQLite storage label "inference_api_keys_v1", not a credential.
 197785337c88c8f5470f3437626a723e852c4e1b:backend/core/api_keys.py:generic-api-key:17
+
+# Static expected-response marker for the model instruction-retention probe,
+# interpolated into prompts and compared with model output; not a credential.
+461842d21c8d10a6af661410472661283853b3b2:backend/models/compatibility.py:generic-api-key:9
