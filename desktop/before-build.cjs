@@ -1,4 +1,16 @@
-// The frontend is bundled by Vite; the Electron host uses only built-ins and
-// local modules. Returning false also skips electron-builder's node_modules
-// collection, which can stall on the frontend dependency graph.
-module.exports = () => false;
+const path = require("node:path");
+
+// Ship the updater and its dependencies as one resource. Collecting every
+// frontend dependency into the Electron host adds size and can stall packaging.
+module.exports = async () => {
+  await require("esbuild").build({
+    entryPoints: [require.resolve("electron-updater")],
+    outfile: path.join(__dirname, "..", "dist", "desktop-updater.cjs"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    external: ["electron"],
+    target: "node22",
+  });
+  return false;
+};

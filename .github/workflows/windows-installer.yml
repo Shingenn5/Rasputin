@@ -1,7 +1,16 @@
 name: Windows installer
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+    secrets:
+      CSC_LINK:
+        required: false
+      CSC_KEY_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -9,6 +18,8 @@ permissions:
 jobs:
   build-windows-installer:
     runs-on: windows-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.release && 'release' || 'build' }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -29,21 +40,63 @@ jobs:
         shell: pwsh
         run: |
           npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-desktop.txt
 
-      - name: Test desktop contracts
+      - name: Validate release prerequisites
+        if: inputs.release
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
         shell: pwsh
         run: |
-          npm run build
-          npm run desktop:check
-          npm run desktop:test
-          .\.venv\Scripts\python.exe -m unittest tests.testBackendSmoke
+          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD -or -not $env:PUBLISHER_NAME) {
+            throw 'Signed releases require CSC_LINK, CSC_KEY_PASSWORD and WINDOWS_PUBLISHER_NAME in the release environment.'
+          }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Stable releases require a stable x.y.z package version.' }
 
-      - name: Build installer
+      - name: Build unsigned CI installer
+        if: '!inputs.release'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         shell: pwsh
         run: npm run desktop:package
+
+      - name: Build signed release installer
+        if: inputs.release
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+        shell: pwsh
+        run: npm run desktop:package -- --config.forceCodeSigning=true "--config.win.publisherName=$env:PUBLISHER_NAME"
+
+      - name: Verify packaged application and updater assets
+        env:
+          EXPECT_SIGNED: ${{ inputs.release }}
+          PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+        shell: pwsh
+        run: |
+          node scripts/verify-update-artifacts.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/smoke-packaged-desktop.cjs dist/electron/win-unpacked/resources
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:EXPECT_SIGNED -eq 'true') {
+            $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+            foreach ($file in @("dist/electron/Rasputin-Setup-$version.exe", 'dist/electron/win-unpacked/Rasputin.exe')) {
+              $signature = Get-AuthenticodeSignature -LiteralPath $file
+              if ($signature.Status -ne 'Valid') { throw "Invalid Authenticode signature: $file" }
+              if ($signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -ne $env:PUBLISHER_NAME) {
+                throw "Unexpected Authenticode publisher: $file"
+              }
+            }
+          }
 
       - name: Create checksum
         shell: pwsh
@@ -65,5 +118,7 @@ jobs:
             dist/electron/Rasputin-Setup-*.exe.sha256
             dist/electron/Rasputin-Setup.exe
             dist/electron/Rasputin-Setup.exe.sha256
+            dist/electron/latest.yml
+            dist/electron/*.blockmap
           if-no-files-found: error
           compression-level: 0
