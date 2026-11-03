@@ -191,13 +191,13 @@ class RecoveryDeleteIn(CamelModel):
 def _ui_preview_enabled():
     return str(os.environ.get("RASPUTIN_UI_PREVIEW", "")).strip().lower() in {"1", "true", "yes", "on"}
 
-def _setup_status(username="admin", is_admin=True):
+def _setup_status(username="admin", is_admin=True, *, models=None):
     auth_state = auth.load_public()
     security_state = security.load()
     workspace_state = workspace.get_active(username, is_admin)
     output_state = output.get_config()
     prefs = preferences.load()
-    all_models = model_registry.all_models()
+    all_models = model_registry.all_models() if models is None else models
     active_key = prefs.get("selectedModel") or "main-vllm"
     active_model = next((item for item in all_models if item.get("key") == active_key), None)
     chat_models = [
@@ -323,8 +323,10 @@ async def ui_bootstrap(_user=Depends(current_user)):
         warsat_runtime_state = await asyncio.to_thread(warsat.containers)
     except AppError:
         warsat_runtime_state = {"containers": [], "enabled": False, "message": "Docker unreachable."}
+    # Reuse one runtime snapshot for the model list and setup checklist.
+    models = model_registry.all_models()
     return ok({
-        "models": model_registry.all_models(),
+        "models": models,
         "model_providers": model_providers.public_provider_options(),
         "model_catalog": model_catalog.local_catalog(include_runtime_cache=False),
         "skills": skill_store.enabled_names(),
@@ -351,7 +353,7 @@ async def ui_bootstrap(_user=Depends(current_user)):
         "mcp_relays": mcp_relay.servers(),
         "archive": archive.sessions(),
         "trials": trials.runs(),
-        "setup": _setup_status(username, is_admin),
+        "setup": _setup_status(username, is_admin, models=models),
         "ui_preview_enabled": _ui_preview_enabled(),
         "account": {**_user, "can_administer": is_admin},
     })

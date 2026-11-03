@@ -754,7 +754,9 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("sections", detail)
 
     def testUiBootstrapShape(self):
-        data = self.assertOk(self.client.get("/api/ui/bootstrap"))
+        with patch.object(model_registry, "all_models", wraps=model_registry.all_models) as collect_models:
+            data = self.assertOk(self.client.get("/api/ui/bootstrap"))
+        self.assertEqual(collect_models.call_count, 1, "Bootstrap must not repeat runtime probes for its setup checklist")
         for key in ["models", "tasks", "security", "workspace", "output", "preferences", "warsat", "tools", "setup"]:
             self.assertIn(key, data)
         self.assertIn("steps", data["setup"])
