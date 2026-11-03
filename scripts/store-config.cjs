@@ -32,6 +32,9 @@ function createStoreConfig(env = process.env) {
     ...structuredClone(build),
     publish: null,
     forceCodeSigning: false, // Microsoft signs the uploaded package after certification.
+    // The legacy AppX kit contains macOS symlinks and fails on ordinary Windows
+    // accounts. Use the modern, checksum-verified SDK bundle supported by our lockfile.
+    toolsets: { ...build.toolsets, winCodeSign: "1.1.0" },
     directories: { ...build.directories, buildResources: "dist/store-resources" },
     win: { ...build.win, target: ["appx"] },
     appx: {

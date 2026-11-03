@@ -33,12 +33,24 @@ try {
         'app/Rasputin.exe', 'app/resources/app.asar',
         'app/resources/backend/rasputin-backend.exe',
         'app/resources/backend/_internal/frontend/index.html',
+        'app/resources/backend/_internal/docx/templates/default.docx',
         'app/resources/llama/manifest.json',
         'assets/StoreLogo.png', 'assets/Square150x150Logo.png',
         'assets/Square44x44Logo.png', 'assets/Wide310x150Logo.png'
     )) {
         $entry = $package.GetEntry($file)
         if (-not $entry -or $entry.Length -eq 0) { throw "Missing package content: $file" }
+    }
+    if ($package.Entries | Where-Object { $_.FullName -like '*/docx/templates/default-docx-template/*' }) {
+        throw 'Unused expanded Word template must not enter the Store package'
+    }
+    $templateStream = $package.GetEntry('app/resources/backend/_internal/docx/templates/default.docx').Open()
+    $template = New-Object System.IO.Compression.ZipArchive($templateStream, [System.IO.Compression.ZipArchiveMode]::Read)
+    try {
+        if (-not $template.GetEntry('word/document.xml')) { throw 'Invalid packaged Word template' }
+    } finally {
+        $template.Dispose()
+        $templateStream.Dispose()
     }
 } finally {
     $package.Dispose()
