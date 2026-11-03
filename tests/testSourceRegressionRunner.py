@@ -15,6 +15,24 @@ from scripts import owned_process
 
 
 class SourceRegressionRunnerTests(unittest.TestCase):
+    def test_transient_windows_cleanup_lock_is_retried(self):
+        directory = MagicMock(name="temporary_directory")
+        directory.name = "isolated-workspace"
+        directory.cleanup.side_effect = [PermissionError("file still closing"), None]
+        with patch.object(runner.tempfile, "TemporaryDirectory", return_value=directory), patch.object(runner.time, "sleep"):
+            with runner.temporary_workspace() as workspace:
+                self.assertEqual("isolated-workspace", workspace)
+                directory.cleanup.assert_not_called()
+        self.assertEqual(2, directory.cleanup.call_count)
+
+    def test_persistent_cleanup_lock_still_fails_the_gate(self):
+        directory = MagicMock()
+        directory.cleanup.side_effect = PermissionError("persistent lock")
+        with patch.object(runner.tempfile, "TemporaryDirectory", return_value=directory), patch.object(runner.time, "sleep"):
+            with self.assertRaises(PermissionError):
+                with runner.temporary_workspace():
+                    pass
+
     def test_isolation_overrides_operator_data_and_auth_bypass(self):
         with patch.dict(os.environ, {"RASPUTIN_DATA_DIR": "operator-data", "RASPUTIN_DESKTOP_ONLY": "1", "PYTHONPATH": "inherited", "WRAPPER_RUNTIME": "docker"}):
             env = runner.isolated_environment(Path("isolated-data"), "fixture-password")
