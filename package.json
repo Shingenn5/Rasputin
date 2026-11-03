@@ -30,7 +30,7 @@
     "bootstrap": "^5.3.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "electron-updater": "6.6.2",
+    "electron-updater": "6.8.12",
     "framer-motion": "^12.41.0",
     "lucide-react": "^0.468.0",
     "pyodide": "^314.0.0",

@@ -22,9 +22,11 @@ test("downloaded artifact keys resolve to the same readable name used in task de
   assert.equal(displayModelName({ key: "dry-run" }), "Testing Mode");
 });
 
-test("header, composer and task identity use the display-name resolver", () => {
+test("composer and task identity use the display-name resolver", () => {
   const home = readFeatureSource(new URL("../frontend-src/src/features/chat/HomeView.jsx", import.meta.url));
-  assert.equal((home.match(/displayModelName\(selectedModelObject \|\| selectedModel, models\)/g) || []).length, 2);
+  // The header shows workspace/runtime status; selected model identity lives in
+  // the composer. Assert that actual label rather than counting old duplicates.
+  assert.match(home, /data-testid="chat-selected-model-key"[^>]*>\{displayModelName\(selectedModelObject \|\| selectedModel, models\)\}/);
   assert.match(home, /const taskModel = displayModelName\(task.model \|\| deploymentProfile.key, models\)/);
   assert.match(home, /data-model-key=\{selectedModel \|\| ""\}/);
 });

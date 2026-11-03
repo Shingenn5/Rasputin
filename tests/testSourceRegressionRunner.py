@@ -96,6 +96,17 @@ class SourceRegressionRunnerTests(unittest.TestCase):
         self.assertNotIn("fixture-password", output)
         self.assertNotIn("abc123", output)
 
+    def test_failed_assertion_is_retained_before_a_long_passing_tail(self):
+        output = "not ok 1 - broken contract\n  error: fixture-password\n" + "ok - later test\n" * 50
+        process = MagicMock(returncode=1)
+        process.communicate.return_value = (output, "")
+        with patch.object(runner, "owned_popen", return_value=process), patch.object(runner, "stop_owned_process"):
+            result = runner.run_check("javascript", ["node", "--test"], {"RASPUTIN_ADMIN_PASSWORD": "fixture-password"})
+        self.assertFalse(result["passed"])
+        self.assertNotIn("broken contract", "\n".join(result["outputTail"]))
+        self.assertIn("broken contract", "\n".join(result["failureOutput"]))
+        self.assertNotIn("fixture-password", "\n".join(result["failureOutput"]))
+
 @unittest.skipUnless(os.name == "nt", "Windows Job ownership contract")
 class OwnedProcessTests(unittest.TestCase):
     def setUp(self):
