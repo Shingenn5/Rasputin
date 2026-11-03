@@ -23,6 +23,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 75
     environment: ${{ inputs.release && 'release' || 'build' }}
+    env:
+      STORE_PACKAGE_MODE: ${{ inputs.store_submission && 'submission' || 'test' }}
+      STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+      STORE_DISPLAY_NAME: ${{ vars.STORE_DISPLAY_NAME }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -41,10 +47,6 @@ jobs:
 
       - name: Validate Store build inputs before installing dependencies
         env:
-          STORE_PACKAGE_MODE: ${{ inputs.store_submission && 'submission' || 'test' }}
-          STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
-          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
-          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
           SIGNED_RELEASE: ${{ inputs.release }}
         shell: pwsh
         run: |
@@ -135,7 +137,6 @@ jobs:
         if: '!inputs.release'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          STORE_PACKAGE_MODE: ${{ inputs.store_submission && 'submission' || 'test' }}
         shell: pwsh
         run: |
           node scripts/store-config.cjs "$env:RUNNER_TEMP/rasputin-store.json"

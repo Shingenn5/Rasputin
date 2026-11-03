@@ -22,5 +22,6 @@ test("submission packaging fails without a reserved identity and test identity c
   assert.equal(submission.appx.identityName, env.STORE_IDENTITY_NAME);
   assert.equal(submission.appx.publisher, env.STORE_PUBLISHER);
   assert.equal(submission.appx.displayName, "Rasputin");
+  assert.equal(createStoreConfig({ ...env, STORE_DISPLAY_NAME: "Rasputin Desktop" }).appx.displayName, "Rasputin Desktop");
   assert.equal(submission.extraResources.find(item => item.to === "backend").from, "dist/desktop-backend/rasputin-backend");
 });

@@ -28,6 +28,8 @@ function createStoreConfig(env = process.env) {
   }
   assert.match(identity.identityName, /^[A-Za-z0-9.-]{3,50}$/, "Invalid Store package identity name");
   assert.match(identity.publisher, /^CN=.+/, "Store publisher must be the exact CN=... identity from Partner Center");
+  const displayName = mode === "submission" ? env.STORE_DISPLAY_NAME?.trim() || build.productName : "Rasputin Test";
+  assert.ok(!/[<>&"'\r\n]/.test(displayName), "Unsupported XML characters in Store display name");
   return {
     ...structuredClone(build),
     publish: null,
@@ -40,7 +42,7 @@ function createStoreConfig(env = process.env) {
     appx: {
       ...identity,
       applicationId: "Rasputin",
-      displayName: mode === "submission" ? "Rasputin" : "Rasputin Test",
+      displayName,
       artifactName: `Rasputin-${mode}-\${version}-\${arch}.appx`,
       languages: ["en-US"],
       minVersion: "10.0.19041.0",

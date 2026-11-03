@@ -34,6 +34,7 @@ This workflow never generates a certificate or silently adds one to Windows trus
    | `STORE_IDENTITY_NAME` | Package/Identity/Name |
    | `STORE_PUBLISHER` | Package/Identity/Publisher, including `CN=` |
    | `STORE_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
+   | `STORE_DISPLAY_NAME` | Reserved app name; defaults to Rasputin if omitted |
 
    These are public package identity fields, not signing secrets. Do not invent
    them from the app name. Submission mode fails if any value is missing.
@@ -99,8 +100,9 @@ work. Do not mistake CI artifact upload for Store publication.
   required for local inference. Model and runtime downloads require network access;
   model memory requirements depend on the selected model and hardware.
 - Audience: Private; add the personal Microsoft account used on the test PC.
-- Screenshots: capture the actual Store-installed build before submission; no
-  mockups or source-browser images as installed-app evidence.
+- Screenshots: capture the actual packaged Desktop build. After private
+  certification, check that the listing matches the Store-installed app before
+  promoting beyond private testing. Do not use mockups as runtime evidence.
 - Age rating and declarations: complete from the actual app behavior and the
   Store questionnaire; this draft does not choose answers on the publisher's behalf.
 
