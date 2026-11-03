@@ -1,5 +1,9 @@
 # GitHub Actions delivery and desktop updates
 
+For free Microsoft Store signing, private-audience updates, and on-demand personal
+test builds, see [Microsoft Store testing](MICROSOFT_STORE_TESTING.md). Store AppX
+packages use Store updates; the NSIS GitHub update channel below is separate.
+
 Rasputin uses [CI and Windows delivery](../.github/workflows/ci.yml) to run routine
 verification without an agent supervising each command. Source checks, installer
 artifacts, published releases, and installed upgrades remain different evidence.

@@ -6,6 +6,9 @@ on:
       release:
         type: boolean
         default: false
+      store_submission:
+        type: boolean
+        default: false
     secrets:
       CSC_LINK:
         required: false
@@ -18,7 +21,7 @@ permissions:
 jobs:
   build-windows-installer:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     environment: ${{ inputs.release && 'release' || 'build' }}
     steps:
       - name: Check out source
@@ -35,6 +38,25 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+
+      - name: Validate Store build inputs before installing dependencies
+        env:
+          STORE_PACKAGE_MODE: ${{ inputs.store_submission && 'submission' || 'test' }}
+          STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+          SIGNED_RELEASE: ${{ inputs.release }}
+        shell: pwsh
+        run: |
+          if ($env:SIGNED_RELEASE -eq 'true' -and $env:STORE_PACKAGE_MODE -eq 'submission') {
+            throw 'Choose either an NSIS signed release or a Store submission build, not both.'
+          }
+          if (($env:SIGNED_RELEASE -eq 'true' -or $env:STORE_PACKAGE_MODE -eq 'submission') -and
+              ($env:GITHUB_REF -ne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch')) {
+            throw 'Release and Store submission packages require a manual run on main.'
+          }
+          node -e "require('./scripts/store-config.cjs').createStoreConfig()"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install dependencies
         shell: pwsh
@@ -109,6 +131,44 @@ jobs:
           Copy-Item -LiteralPath $installer -Destination "dist/electron/Rasputin-Setup.exe"
           "$hash  Rasputin-Setup.exe" | Set-Content -LiteralPath "dist/electron/Rasputin-Setup.exe.sha256" -Encoding ascii
 
+      - name: Build and verify Microsoft Store package
+        if: '!inputs.release'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          STORE_PACKAGE_MODE: ${{ inputs.store_submission && 'submission' || 'test' }}
+        shell: pwsh
+        run: |
+          node scripts/store-config.cjs "$env:RUNNER_TEMP/rasputin-store.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/prepare-store-assets.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --prepackaged dist/electron/win-unpacked --win appx --x64 --publish never --config "$env:RUNNER_TEMP/rasputin-store.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          ./scripts/verify-store-package.ps1 -PackagePath "dist/electron/Rasputin-$env:STORE_PACKAGE_MODE-$version-x64.appx" -ConfigPath "$env:RUNNER_TEMP/rasputin-store.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @"
+          ### Windows test packages
+          Source commit: $env:GITHUB_SHA
+          - NSIS artifact: download and manually install for personal testing; unsigned, no automatic updates.
+          - AppX mode: **$env:STORE_PACKAGE_MODE**. Unsigned; Store signs submission packages after certification.
+          - Test identity packages are packaging rehearsals, not Store submissions or directly installable signed packages.
+          - For Store auto-updates, complete Partner Center setup and submit to a private audience first.
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload Store package and provenance
+        if: '!inputs.release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.store_submission && 'rasputin-store-submission' || 'rasputin-store-test-package' }}
+          path: |
+            dist/electron/*.appx
+            dist/electron/*.appx.sha256
+            dist/electron/*.appx.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -122,3 +182,4 @@ jobs:
             dist/electron/*.blockmap
           if-no-files-found: error
           compression-level: 0
+          retention-days: 14

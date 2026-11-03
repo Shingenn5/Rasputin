@@ -11,7 +11,7 @@ const {
 } = require("electron");
 const { BackendSupervisor } = require("./backend-supervisor.cjs");
 const { loadDesktopSettings, saveDesktopSettings } = require("./settings.cjs");
-const { createDesktopUpdates } = require("./updates.cjs");
+const { createDesktopUpdates, loadDesktopUpdater } = require("./updates.cjs");
 
 let mainWindow = null;
 let tray = null;
@@ -22,7 +22,7 @@ let desktopUpdates = null;
 let desktopSettings = { closeBehavior: "tray" };
 
 app.setName("Rasputin");
-app.setAppUserModelId("com.rasputin.desktop");
+if (!process.windowsStore) app.setAppUserModelId("com.rasputin.desktop");
 app.setPath("userData", path.join(process.env.APPDATA || app.getPath("appData"), "Rasputin"));
 if (process.env.RASPUTIN_DISABLE_HARDWARE_ACCELERATION === "1") {
   app.disableHardwareAcceleration();
@@ -120,7 +120,8 @@ function rebuildTrayMenu() {
       },
     },
     { label: "Show logs", click: () => shell.showItemInFolder(supervisor.logPath) },
-    ...(desktopUpdates ? [desktopUpdates.menuItem()] : app.isPackaged
+    ...(process.windowsStore ? [{ label: "Updates managed by Microsoft Store", enabled: false }]
+      : desktopUpdates ? [desktopUpdates.menuItem()] : app.isPackaged
       ? [{ label: "Updates unavailable — signed install required", enabled: false }] : []),
     { type: "separator" },
     {
@@ -259,8 +260,13 @@ app.whenReady().then(async () => {
   createTray();
   await startEngine();
 
-  if (app.isPackaged && process.platform === "win32") {
-    const { autoUpdater } = require(path.join(process.resourcesPath, "updater.cjs"));
+  const autoUpdater = loadDesktopUpdater({
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    windowsStore: process.windowsStore,
+    resourcesPath: process.resourcesPath,
+  });
+  if (autoUpdater) {
     // electron-updater 6 skips signature validation without a publisher name.
     // Unsigned CI artifacts must never silently become trusted update clients.
     const updateConfig = await autoUpdater.configOnDisk.value.catch(() => ({}));

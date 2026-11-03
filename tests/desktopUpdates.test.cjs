@@ -1,8 +1,23 @@
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const test = require("node:test");
-const { createDesktopUpdates } = require("../desktop/updates.cjs");
+const { createDesktopUpdates, loadDesktopUpdater } = require("../desktop/updates.cjs");
 const { verifyWindowsSignature } = require("../desktop/update-signature.cjs");
+
+test("Store packages never load the GitHub updater, while packaged NSIS installs do", () => {
+  const calls = [];
+  const updater = {};
+  const options = {
+    isPackaged: true, platform: "win32", windowsStore: false, resourcesPath: "resources",
+    load: (file) => { calls.push(file); return { autoUpdater: updater }; },
+  };
+  assert.equal(loadDesktopUpdater({ ...options, windowsStore: true }), null);
+  assert.equal(loadDesktopUpdater({ ...options, isPackaged: false }), null);
+  assert.equal(loadDesktopUpdater({ ...options, platform: "linux" }), null);
+  assert.deepEqual(calls, []);
+  assert.equal(loadDesktopUpdater(options), updater);
+  assert.deepEqual(calls, [require("node:path").join("resources", "updater.cjs")]);
+});
 
 function fixture({ response = 1, failure = false } = {}) {
   const updater = new EventEmitter();

@@ -10,6 +10,14 @@ on:
         description: Build a signed installer and prepare a draft release (main only)
         type: boolean
         default: false
+      test_packages:
+        description: Build downloadable personal-test installer and Store package on this branch
+        type: boolean
+        default: false
+      store_submission:
+        description: Use reserved Partner Center identity for Store upload (main only, no automatic submission)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,10 +36,13 @@ jobs:
 
   installer:
     needs: [safety, source]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.test_packages || inputs.store_submission))
     uses: ./.github/workflows/windows-installer.yml
     with:
       release: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+      store_submission: ${{ github.event_name == 'workflow_dispatch' && inputs.store_submission }}
     secrets: inherit
 
   draft-release:
