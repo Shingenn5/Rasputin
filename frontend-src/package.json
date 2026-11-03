@@ -1,0 +1,16 @@
+{
+  "name": "workspaces-page",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vue-cli-service dev",
+    "build": "vue-cli-service build",
+    "start": "node frontend-src/server.js"
+  },
+  "dependencies": {
+    "vue": "^3.0.0",
+    "vue-router": "^4.0.0",
+    "vuex": "^4.0.0",
+    "vue-cli-service": "^5.0.0",
+    "express": "^5.0.0"
+  }
+}
