@@ -27,7 +27,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dependency-review:
-    name: Dependency review
+    name: ${{ github.event_name == 'pull_request' && 'Dependency review' || 'Dependency review (PR only)' }}
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:

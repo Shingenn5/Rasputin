@@ -27,7 +27,7 @@ test("native workspace setup remains restart-free", () => {
 });
 
 test("workspace roots and explorer entries are keyboard-operable tree items", () => {
-  assert.match(component, /role="tree" aria-label="Approved workspace folders"/);
+  assert.match(component, /role=\{workspaceRoots\.length \? "tree" : undefined\} aria-label=\{workspaceRoots\.length \? "Approved workspace folders" : undefined\}/);
   assert.match(component, /role="treeitem"[\s\S]*aria-selected=\{active\}[\s\S]*onKeyDown=\{\(event\) => handleTreeItemKeyDown/);
   assert.match(component, /role="tree" aria-label="Workspace files and folders"/);
   assert.match(component, /tabIndex=\{0\}[\s\S]*aria-selected=\{selectedEntry\?\.path === entry\.path\}/);

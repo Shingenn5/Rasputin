@@ -8,7 +8,7 @@ artifacts, published releases, and installed upgrades remain different evidence.
 
 | Trigger | Result |
 | --- | --- |
-| Push to `codex/**`, or a pull request | Repository path/secret-history checks, dependency review on PRs, Windows source regressions, authenticated browser fixtures, desktop lifecycle/updater tests |
+| Open or update a pull request | Repository path/secret-history checks, dependency review, Windows source regressions, authenticated browser fixtures, desktop lifecycle/updater tests |
 | Push to `main` | The same checks, followed by an unsigned Windows NSIS installer, checksums, updater metadata/blockmap, and a frozen-backend smoke check |
 | Manual **CI and Windows delivery**, `main`, `release: true` | The same gates, a signed installer with signature/publisher verification, then a **draft** GitHub Release targeting the exact tested commit |
 | Publish the reviewed draft in GitHub Releases | Makes the stable installer and `latest.yml` visible to signed installed clients |
@@ -18,6 +18,9 @@ artifacts are retained by GitHub Actions; browser evidence is retained for seven
 Build jobs have read-only repository access; only the draft-release job can write releases.
 Fork PRs never run packaging or receive signing secrets. The existing source and safety
 workflows are reusable jobs, so the delivery workflow does not duplicate their checks.
+Feature-branch pushes run these gates through an open PR rather than also creating
+a second branch-push run. The PR dependency-review check has a distinct name from
+the skipped non-PR job, so a skipped push check cannot satisfy that required gate.
 
 The pipeline runs the current `verify_source_regressions.py` suite, not every possible
 hardware or UI test. It never downloads a model or claims GPU, voice, clean-machine,
