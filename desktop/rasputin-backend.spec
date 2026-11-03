@@ -25,6 +25,13 @@ analysis = Analysis(
     optimize=1,
 )
 
+# python-docx opens templates/default.docx, not its expanded source directory.
+# The latter contains OPC-reserved _rels paths that cannot be AppX payload parts.
+analysis.datas = [
+    item for item in analysis.datas
+    if not item[0].replace("\\", "/").startswith("docx/templates/default-docx-template/")
+]
+
 python_archive = PYZ(analysis.pure)
 
 executable = EXE(

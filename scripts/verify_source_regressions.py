@@ -7,6 +7,7 @@ A passing source report is not installed-package or live-model certification.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -43,6 +44,24 @@ BACKEND_TEST_MODULES = (
     "tests.testTrialsScorecards", "tests.testReleaseEvidence",
     "tests.testSourceRegressionRunner",
 )
+
+
+@contextmanager
+def temporary_workspace():
+    directory = tempfile.TemporaryDirectory(prefix="rasputin-source-regressions-")
+    try:
+        yield directory.name
+    finally:
+        # Owned jobs have stopped, but Windows may briefly retain SQLite/file
+        # handles during process teardown. Retry cleanup, never ignore failure.
+        for attempt in range(20):
+            try:
+                directory.cleanup()
+                break
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1)
 
 
 def isolated_environment(data_dir: Path, password: str) -> dict[str, str]:
@@ -201,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("\n".join(result.get("failureOutput", [])), flush=True)
                 print("\n".join(result.get("outputTail", [])), flush=True)
     build_verified = False
-    with tempfile.TemporaryDirectory(prefix="rasputin-source-regressions-") as temporary:
+    with temporary_workspace() as temporary:
         scratch = Path(temporary)
         env = isolated_environment(scratch / "data", secrets.token_urlsafe(32))
         if groups.intersection({"build", "backend", "browser"}):

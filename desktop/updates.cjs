@@ -1,6 +1,12 @@
 // Only the main process owns updates. No renderer IPC or configurable feed URL.
 const { verifyWindowsSignature } = require("./update-signature.cjs");
 
+function loadDesktopUpdater({ isPackaged, platform, windowsStore, resourcesPath, load = require }) {
+  // Store packages must never cross over to the GitHub/NSIS update channel.
+  if (!isPackaged || platform !== "win32" || windowsStore) return null;
+  return load(require("node:path").join(resourcesPath, "updater.cjs")).autoUpdater;
+}
+
 function createDesktopUpdates({ updater, dialog, install, changed = () => {}, timers = globalThis }) {
   let status = "Check for updates";
   let busy = false;
@@ -84,4 +90,4 @@ function createDesktopUpdates({ updater, dialog, install, changed = () => {}, ti
   };
 }
 
-module.exports = { createDesktopUpdates };
+module.exports = { createDesktopUpdates, loadDesktopUpdater };
