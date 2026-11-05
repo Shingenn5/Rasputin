@@ -178,8 +178,8 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
         <div className="models-inspector-primary-actions">
           <button type="button" className="w2-button" disabled={!healthy || model.enabled === false} onClick={() => onUseInChat?.(model)}><Play size={13} /> Use in New Chat</button>
           {model.managed && (
-            isRunning
-              ? <Button onClick={handleStop} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={13} />}>Stop Model</Button>
+            isRunning || runtimeStatus(model) === "starting"
+              ? <Button onClick={handleStop} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={13} />}>{runtimeStatus(model) === "starting" ? "Cancel loading" : "Stop Model"}</Button>
               : <Button disabled={operationalSignal.action === "file" || operationalSignal.action === "wait"} onClick={handleLoad} loading={busy === "load"} loadingLabel="Loading…" icon={<Download size={13} />}>{needsGguf ? "Get GGUF" : "Load Model"}</Button>
           )}
         </div>

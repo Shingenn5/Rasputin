@@ -1,5 +1,5 @@
 import React from "react";
-import { Cpu, Gauge, MemoryStick, X } from "lucide-react";
+import { Cpu, Gauge, MemoryStick, X, Move, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { api } from "../../api/client.js";
 import { displayModelName, isManagedModelRunning, runtimeStatus } from "../../lib/display.js";
 import "../../styles/system-status.css";
@@ -26,6 +26,60 @@ export function HardwareMonitor({ enabled = false, refreshIntervalMs = 2000, mod
   const [open, setOpen] = React.useState(false);
   const [telemetry, setTelemetry] = React.useState(null);
   const [error, setError] = React.useState("");
+  const [expanded, setExpanded] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const [position, setPosition] = React.useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("rasputin-system-status-position") || "null");
+      return Number.isFinite(saved?.x) && Number.isFinite(saved?.y) ? saved : null;
+    } catch { return null; }
+  });
+  const moveHelpId = React.useId();
+  const clampPosition = (x, y) => {
+    const rect = popupRef.current.getBoundingClientRect();
+    return {
+      x: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)),
+    };
+  };
+  React.useEffect(() => {
+    try {
+      if (position) localStorage.setItem("rasputin-system-status-position", JSON.stringify(position));
+      else localStorage.removeItem("rasputin-system-status-position");
+    } catch { /* Position persistence is optional. */ }
+  }, [position]);
+  React.useLayoutEffect(() => {
+    if (!open || expanded) return undefined;
+    const constrain = () => {
+      const rect = popupRef.current.getBoundingClientRect();
+      const next = clampPosition(rect.left, rect.top);
+      if (next.x !== rect.left || next.y !== rect.top) setPosition(next);
+    };
+    constrain();
+    window.addEventListener("resize", constrain);
+    return () => window.removeEventListener("resize", constrain);
+  }, [open, expanded]);
+
+  function startMove(event) {
+    if (event.button !== 0 || expanded) return;
+    const rect = popupRef.current.getBoundingClientRect();
+    dragRef.current = { x: rect.left, y: rect.top, pointerX: event.clientX, pointerY: event.clientY };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.focus();
+    event.preventDefault();
+  }
+  function move(event) {
+    const drag = dragRef.current;
+    if (drag) setPosition(clampPosition(drag.x + event.clientX - drag.pointerX, drag.y + event.clientY - drag.pointerY));
+  }
+  function moveWithKeyboard(event) {
+    if (event.key === "Home") { event.preventDefault(); setPosition(null); return; }
+    const delta = { ArrowLeft: [-24, 0], ArrowRight: [24, 0], ArrowUp: [0, -24], ArrowDown: [0, 24] }[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    const rect = popupRef.current.getBoundingClientRect();
+    setPosition(clampPosition(rect.left + delta[0], rect.top + delta[1]));
+  }
 
   React.useEffect(() => {
     const popup = popupRef.current;
@@ -65,7 +119,7 @@ export function HardwareMonitor({ enabled = false, refreshIntervalMs = 2000, mod
 
   const loadedModels = models.filter((model) => model.runtime !== "remote-api"
     && !["mock", "hash-vector"].includes(model.provider)
-    && (isManagedModelRunning(model) || runtimeStatus(model) === "reachable"));
+    && (isManagedModelRunning(model) || ["reachable", "starting"].includes(runtimeStatus(model)) || model.lastLoadFailure || model.last_load_failure));
 
   const ram = telemetry?.ram || {};
   const gpus = Array.isArray(telemetry?.gpus) ? telemetry.gpus : [];
@@ -79,21 +133,31 @@ export function HardwareMonitor({ enabled = false, refreshIntervalMs = 2000, mod
         <Gauge size={19} aria-hidden="true" />
       </button>
       <div ref={popupRef} id={popupId} popover="auto"
-        className="system-status-popup"
+        className={`system-status-popup${expanded ? " is-expanded" : ""}`}
+        style={!expanded && position ? { inset: `${position.y}px auto auto ${position.x}px` } : undefined}
         data-testid="hardware-monitor"
         role="dialog"
         aria-label="System status"
       >
         <header className="system-status-heading">
           <strong>System status</strong>
+          <span id={moveHelpId} className="sr-only">Drag to move, or use arrow keys while this handle is focused. Home resets the position.</span>
+          <button type="button" className="system-status-move" aria-label="Move system status" aria-describedby={moveHelpId}
+            title="Drag to move, or use arrow keys" disabled={expanded} onPointerDown={startMove} onPointerMove={move}
+            onPointerUp={() => { dragRef.current = null; }} onPointerCancel={() => { dragRef.current = null; }} onKeyDown={moveWithKeyboard}><Move size={16} aria-hidden="true" /></button>
+          <button type="button" aria-label={expanded ? "Restore system status size" : "Expand system status"} aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}>{expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>
+          <button type="button" aria-label="Reset system status position" onClick={() => { setPosition(null); setExpanded(false); }}><RotateCcw size={16} aria-hidden="true" /></button>
           <button type="button" popovertarget={popupId} popovertargetaction="hide" aria-label="Close system status" autoFocus><X size={16} aria-hidden="true" /></button>
         </header>
-        <section className="system-status-models" aria-label="Loaded models">
-          <span className="system-status-label">Loaded model{loadedModels.length > 1 ? "s" : ""}</span>
+        <section className="system-status-models" aria-label="Local models" aria-live="polite">
+          <span className="system-status-label">Local model{loadedModels.length > 1 ? "s" : ""}</span>
           {loadedModels.length ? loadedModels.map((model) => (
             <div key={model.key} className="system-status-model" data-testid="system-status-model">
               <strong>{displayModelName(model)}</strong>
-              <small>{runtimeStatus(model) === "reachable" ? "Ready" : "Running · health check pending"}</small>
+              <small>{runtimeStatus(model) === "starting" ? "Loading" : runtimeStatus(model) === "reachable" ? "Ready"
+                : model.lastLoadFailure || model.last_load_failure ? "Couldn't load" : "Running · health check pending"}</small>
+              {runtimeStatus(model) !== "starting" && (model.lastLoadFailure || model.last_load_failure) && <small role="alert">{(model.lastLoadFailure || model.last_load_failure).message}</small>}
             </div>
           )) : <p>No model loaded</p>}
         </section>

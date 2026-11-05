@@ -31,7 +31,8 @@
   position: fixed;
   inset: max(5rem, env(safe-area-inset-top)) 52px auto auto;
   margin: 0;
-  width: min(320px, calc(100vw - 64px));
+  box-sizing: border-box;
+  width: min(400px, calc(100vw - 64px));
   max-height: calc(100dvh - 6rem);
   overflow-y: auto;
   padding: 16px;
@@ -48,7 +49,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
+}
+.system-status-heading > strong { flex: 1; min-width: 0; }
+.system-status-popup.is-expanded {
+  inset: 16px;
+  width: min(720px, calc(100vw - 32px));
+  height: min(680px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+}
+.system-status-move { cursor: grab; touch-action: none; }
+.system-status-move:active { cursor: grabbing; }
+.system-status-heading button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 480px) {
+  .system-status-popup { inset: 72px 8px auto; width: calc(100vw - 16px); max-height: calc(100dvh - 88px); }
+  .system-status-heading { flex-wrap: wrap; }
+  .system-status-heading > strong { flex-basis: 100%; }
 }
 
 .system-status-heading button {

@@ -15,12 +15,13 @@ export function useModelRegistryActions(context) {
       throw new Error(message);
     }
     try {
-      const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey, ...options });
+      const result = await postJson(`/api/model-registry/${action}`, { key: resolvedKey, background: action === "start", ...options });
       if (result?.ok === false) {
         throw new Error(result.error?.message || result.error || result.message || "Model action failed.");
       }
-      setGlobalStatus(action === "repair" && result.repaired ? "Model repaired." : `${action} finished.`);
+      setGlobalStatus(result.message || (action === "repair" && result.repaired ? "Model repaired." : `${action} finished.`));
       await loadModels();
+      return result;
     } catch (error) {
       setGlobalStatus(error.message);
       if (action === "start") await loadModels().catch(() => {});

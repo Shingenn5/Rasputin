@@ -4,10 +4,11 @@ import os
 import re
 import subprocess
 import time
+from contextvars import copy_context
 import urllib.error
 import urllib.request
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 from urllib.parse import urlparse, urlunparse
 
 from backend.core import audit as audit
@@ -26,6 +27,8 @@ from backend.models.storage import library_folders
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
 REGISTRY_FILE = DATA_DIR / "models.json"
+_model_load_lock = Lock()
+_model_loads = {}
 def _desktop_only():
     return str(os.environ.get("RASPUTIN_DESKTOP_ONLY", "")).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -576,6 +579,13 @@ def all_models():
                     item["container_status"] = get_provider(item).status(item)
                 except Exception:
                     item["container_status"] = "unknown"
+                with _model_load_lock:
+                    job = _model_loads.get(item["key"])
+                    if job:
+                        item["container_status"] = "starting"
+                        item["load_status"] = {"status": "stopping" if job["cancel"].is_set() else "loading",
+                                               "started_at": job["started_at"]}
+                        item.pop("last_load_failure", None)
                 if item["container_status"] == "running":
                     item["runtime_status"] = "reachable"
                 elif item["container_status"] == "starting":
@@ -834,6 +844,9 @@ PROTECTED_KEYS = {"dry-run", "local-embeddings"}
 
 def delete_model(key):
     security.require("allow_model_registry_edit")
+    with _model_load_lock:
+        if key in _model_loads:
+            raise AppError("model_loading", "Cancel loading and wait for the model to stop before deleting it.", 409)
     if key in PROTECTED_KEYS:
         raise AppError("model_delete_protected", f"Cannot delete built-in model '{key}'.", 403)
     data = _load()
@@ -1297,7 +1310,50 @@ def _record_load_outcome(key, result):
         break
 
 
-def start_model(key, load_profile=None):
+def start_model_background(key, load_profile=None):
+    """Accept native loads independently of the browser request's lifetime."""
+    security.require("allow_model_registry_edit")
+    model = get_model(key)
+    if not model:
+        raise AppError("model_missing", "Model is not registered.", 404)
+    if model.get("runtime") != NATIVE_RUNTIME:
+        return start_model(key, load_profile)
+    if not model.get("managed"):
+        raise AppError("model_not_managed", "This model is not managed by Rasputin.", 409)
+    if load_profile is not None:
+        from backend.models.load_profiles import DOCUMENTED_FLAGS, validate_load_profile
+        # Validate values now; the provider checks actual installed flag support later.
+        validate_load_profile(load_profile, capabilities={"supported_flags": DOCUMENTED_FLAGS})
+    with _model_load_lock:
+        if key in _model_loads:
+            return {"ok": True, "status": "starting", "message": "Model is already loading in the background."}
+        job = {"cancel": Event(), "started_at": time.time()}
+        _model_loads[key] = job
+        context = copy_context()
+
+        def run():
+            try:
+                result = start_model(key, load_profile, _cancel=job["cancel"])
+                # A cancellation can arrive during post-load context detection.
+                if job["cancel"].is_set() and result.get("ok") and result.get("status") != "stopped":
+                    current = get_model(key)
+                    if current:
+                        _record_load_outcome(key, get_provider(current).stop(current))
+            except Exception as exc:
+                _record_load_outcome(key, {"ok": False, "error": str(exc)})
+            finally:
+                with _model_load_lock:
+                    _model_loads.pop(key, None)
+
+        try:
+            Thread(target=context.run, args=(run,), daemon=True, name="rasputin-model-load").start()
+        except Exception:
+            _model_loads.pop(key, None)
+            raise
+    return {"ok": True, "status": "starting", "message": "Model is loading in the background. You can keep using Rasputin."}
+
+
+def start_model(key, load_profile=None, *, _cancel=None):
     model = get_model(key)
     if not model:
         raise ValueError("model missing")
@@ -1308,6 +1364,8 @@ def start_model(key, load_profile=None):
                 raise ValueError("load profile must be a mapping")
             model = {**model, "load_profile": dict(load_profile)}
         model = _native_model_with_desktop_preferences(model)
+        if _cancel is not None:
+            model["_load_cancel"] = _cancel
     else:
         security.require("allow_docker_control")
     if not model.get("managed"):
@@ -1317,12 +1375,12 @@ def start_model(key, load_profile=None):
         result = provider.start(model)
         if model.get("runtime") == NATIVE_RUNTIME:
             _record_load_outcome(key, result)
-        if result.get("ok"):
+        if result.get("ok") and result.get("status") != "stopped":
             if model.get("runtime") == NATIVE_RUNTIME:
                 detected = context_detection.detect_runtime_context(model)
                 _store_detected_context(key, detected)
             audit.log("model_start", {"key": key, "container": model.get("container"), "port": model.get("port")})
-        else:
+        elif not result.get("ok"):
             audit.log("model_start_failed", {"key": key, "error": result.get("error", "unknown error")})
         return result
     except Exception as exc:
@@ -1340,6 +1398,12 @@ def stop_model(key):
         security.require("allow_docker_control")
     if not model or not model.get("managed"):
         return {"ok": False, "message": "model is not managed"}
+    with _model_load_lock:
+        job = _model_loads.get(key)
+        if job:
+            job["cancel"].set()
+            audit.log("model_load_cancel", {"key": key})
+            return {"ok": True, "status": "stopping", "message": "Cancelling model loading."}
     try:
         provider = get_provider(model)
         result = provider.stop(model)

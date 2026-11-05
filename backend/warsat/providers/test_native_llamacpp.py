@@ -253,6 +253,62 @@ class NativeLlamaCppProviderTests(unittest.TestCase):
         self.assertEqual(terminate.call_args.kwargs["state"]["pid"], 4243)
         self.assertFalse((Path(os.environ["RASPUTIN_DATA_DIR"]) / "llama.cpp" / "demo.json").exists())
 
+    def test_large_model_can_become_ready_after_the_old_45_second_limit(self):
+        from backend.warsat.providers import native_llamacpp as native
+        process = Mock(pid=4243)
+        process.poll.return_value = None
+        with patch.object(native, "_find_engine", return_value="llama-server.exe"), \
+             patch.object(native.subprocess, "Popen", return_value=process), \
+             patch.object(native.time, "monotonic", side_effect=[0, 46]), \
+             patch.object(native, "_health", return_value=True), \
+             patch.object(native, "_warm_up", return_value={"status": "complete"}):
+            self.assertTrue(self.provider.start(self.model)["ok"])
+
+    def test_background_load_cancellation_stops_the_owned_process(self):
+        import threading
+        from backend.warsat.providers import native_llamacpp as native
+        cancel = threading.Event()
+        process = Mock(pid=4243)
+        process.poll.return_value = None
+        def health(*args, **kwargs):
+            cancel.set()
+            return False
+        with patch.object(native, "_find_engine", return_value="llama-server.exe"), \
+             patch.object(native.subprocess, "Popen", return_value=process), \
+             patch.object(native, "_health", side_effect=health), \
+             patch.object(native, "_terminate") as terminate:
+            result = self.provider.start({**self.model, "_load_cancel": cancel})
+        self.assertEqual(result["status"], "stopped")
+        self.assertEqual(terminate.call_args.args, (4243,))
+
+    def test_cancel_during_warmup_does_not_wait_for_http_timeout(self):
+        import threading
+        from backend.warsat.providers import native_llamacpp as native
+        cancel, entered, release = threading.Event(), threading.Event(), threading.Event()
+        process = Mock(pid=4243)
+        process.poll.return_value = None
+        def warmup(model):
+            entered.set()
+            release.wait(5)
+            return {"status": "complete"}
+        result = {}
+        with patch.object(native, "_find_engine", return_value="llama-server.exe"), \
+             patch.object(native.subprocess, "Popen", return_value=process), \
+             patch.object(native, "_health", return_value=True), \
+             patch.object(native, "_warm_up", side_effect=warmup), patch.object(native, "_terminate"):
+            worker = threading.Thread(target=lambda: result.update(self.provider.start({**self.model, "_load_cancel": cancel})))
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                cancel.set()
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(result["status"], "stopped")
+            finally:
+                cancel.set()
+                release.set()
+                worker.join(3)
+
     def test_crash_and_log_text_have_stable_failure_codes(self):
         process = Mock(pid=4244)
         process.poll.return_value = 7

@@ -347,6 +347,9 @@ export function App() {
     queryKey: ["model-registry"],
     queryFn: fetchModels,
     enabled: authenticated,
+    refetchInterval: (query) => (query.state.data || []).some((model) =>
+      model.loadStatus || model.load_status || ["starting", "stopping"].includes(model.runtimeStatus || model.runtime_status),
+    ) ? 2000 : false,
   });
   const tasksQuery = useQuery({
     queryKey: ["tasks"],

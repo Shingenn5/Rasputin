@@ -24,6 +24,7 @@ const DEFAULT_PROFILE = {
   cpuMoe: "auto",
   nCpuMoe: "",
 };
+const CONTEXT_PRESETS = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
 
 function savedProfile(modelKey) {
   try {
@@ -84,6 +85,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   const [runtimeStatus, setRuntimeStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [customContext, setCustomContext] = useState(false);
 
   const modelKey = model?.key || "";
   const modelName = displayModelName(model, models);
@@ -97,6 +99,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
     setLoadError("");
     const next = savedProfile(modelKey);
     setProfile(next);
+    setCustomContext(!CONTEXT_PRESETS.includes(Number(next.contextLength)));
     setRemember(localStorage.getItem("rasputin:model-load:remember:" + modelKey) === "1");
   }, [modelKey]);
 
@@ -154,6 +157,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         localStorage.setItem("rasputin:model-load:remember:" + modelKey, "1");
       } else {
         localStorage.removeItem("rasputin:model-load:remember:" + modelKey);
+        localStorage.removeItem("rasputin:model-load:" + modelKey);
       }
       await onLoad(model, cleaned);
       onClose();
@@ -174,15 +178,25 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       </div>
 
       <div className="model-load-presets" role="group" aria-label="Model load presets">
-        <button className="w2-button" type="button" onClick={() => setProfile({ ...DEFAULT_PROFILE })}>Automatic defaults</button>
-        <button className="w2-button" type="button" onClick={() => setProfile((current) => ({ ...current, contextLength: 4096, batchSize: 256, ubatchSize: 128, cacheTypeK: "q8_0", cacheTypeV: "q8_0" }))}>Lower memory</button>
+        <button className="w2-button" type="button" onClick={() => { setCustomContext(false); setProfile({ ...DEFAULT_PROFILE }); }}>Automatic defaults</button>
+        <button className="w2-button" type="button" onClick={() => { setCustomContext(false); setProfile((current) => ({ ...current, contextLength: 4096, batchSize: 256, ubatchSize: 128, cacheTypeK: "q8_0", cacheTypeV: "q8_0" })); }}>Lower memory</button>
         <button className="w2-button" type="button" onClick={() => setProfile((current) => ({ ...current, memoryMode: "cpu_only", gpuLayers: "0", kvOffload: "off" }))}>CPU only</button>
       </div>
       <p className="model-load-guidance">Adjust runtime settings before loading. Weight precision comes from the GGUF variant; changing it requires a different file. Placement is checked before launch.</p>
       <div className="studio-load-form">
-        <Field label="Context length" hint="Maximum tokens retained per conversation">
-          <input className="w2-input" type="number" min="512" step="512" value={profile.contextLength} onChange={set("contextLength")} />
+        <Field label="Context length" hint="Larger contexts use more memory. Placement is checked for your selection.">
+          <Select label="Context length preset" value={customContext ? "custom" : String(profile.contextLength)} onChange={(event) => {
+            const custom = event.target.value === "custom";
+            setCustomContext(custom);
+            if (!custom) setProfile((current) => ({ ...current, contextLength: Number(event.target.value) }));
+          }}>
+            {CONTEXT_PRESETS.map((tokens) => <option key={tokens} value={tokens}>{tokens / 1024}K tokens{tokens === 8192 ? " (default)" : ""}</option>)}
+            <option value="custom">Custom</option>
+          </Select>
         </Field>
+        {customContext && <Field label="Custom context length" hint="Enter the maximum number of tokens">
+          <input className="w2-input" aria-label="Custom context length" type="number" min="512" step="512" value={profile.contextLength} onChange={set("contextLength")} />
+        </Field>}
         <Field label="Memory mode" hint="Choose automatic GPU fit, pooled RAM + VRAM, or CPU only">
           <Select value={profile.memoryMode} onChange={set("memoryMode")} label="Memory mode">
             <option value="gpu_preferred">Prefer GPU automatically</option>
@@ -284,13 +298,13 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       {runtimeStatus?.state === "install_required" && !loading && (
         <p role="status">First load will detect your NVIDIA driver, download and verify one compatible llama.cpp runtime, then reuse it for later loads.</p>
       )}
-      {loading && <p role="status" data-testid="model-warmup-status">Preparing the selected runtime if needed, loading weights, and running a short warm-up. First load may take longer while one verified runtime downloads.</p>}
+      <p role="status" data-testid="model-warmup-status">{loading ? "Starting background load…" : "Loading continues in the background after this dialog closes. Check System status for progress, or cancel in My Models. Large models may take several minutes."}</p>
       <footer className="studio-load-footer">
         <label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember settings for this model</label>
         <span />
         <button type="button" className="w2-button" onClick={onClose}>Cancel</button>
         <button type="button" className="w2-button primary" disabled={blocked || loading} onClick={handleLoad}>
-          <Cpu size={15} /> {loading ? "Loading and warming up…" : "Load model"}
+          <Cpu size={15} /> {loading ? "Starting…" : "Load model"}
         </button>
       </footer>
     </Modal>

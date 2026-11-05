@@ -15,6 +15,7 @@ import sys
 import time
 import threading
 from functools import cache, lru_cache
+from concurrent.futures import Future
 
 import psutil
 import urllib.error
@@ -33,7 +34,7 @@ from .base import DeploymentProvider
 
 NATIVE_RUNTIME = "native-llamacpp"
 _WARMUP_TIMEOUT = 120.0
-_START_TIMEOUT = max(5.0, min(float(os.environ.get("RASPUTIN_LLAMA_START_TIMEOUT", "45")), 180.0))
+_START_TIMEOUT = max(5.0, min(float(os.environ.get("RASPUTIN_LLAMA_START_TIMEOUT", "900")), 3600.0))
 
 
 def _runtime_dir():
@@ -459,6 +460,18 @@ class NativeLlamaCppProvider(DeploymentProvider):
             return self._start(model)
 
     def _start(self, model):
+        cancel = model.get("_load_cancel")
+        def cancelled():
+            return cancel is not None and cancel.is_set()
+
+        def cancel_load():
+            stopped = self.stop(model)
+            if not stopped.get("ok"):
+                return stopped
+            return {"ok": True, "status": "stopped", "message": "Model loading cancelled."}
+
+        if cancelled():
+            return {"ok": True, "status": "stopped"}
         if model.get("runtime") != NATIVE_RUNTIME:
             return {"ok": False, "message": "This provider only starts native llama.cpp models."}
         if self.status(model) == "running":
@@ -495,6 +508,8 @@ class NativeLlamaCppProvider(DeploymentProvider):
                     resolvedPlan=self._plan_payload(plan, []),
                 )
             return _failure("missing_runtime", "llama-server was not found. Install llama.cpp or set RASPUTIN_LLAMA_SERVER to llama-server.exe.", "Set RASPUTIN_LLAMA_SERVER to a valid llama-server executable and retry.", status="unavailable", resolvedPlan=self._plan_payload(plan, []))
+        if cancelled():
+            return {"ok": True, "status": "stopped"}
         stopped = self.stop(model)
         if not stopped.get("ok"):
             return stopped
@@ -524,6 +539,8 @@ class NativeLlamaCppProvider(DeploymentProvider):
         _write_state(model, state)
         deadline = time.monotonic() + _START_TIMEOUT
         while time.monotonic() < deadline:
+            if cancelled():
+                return cancel_load()
             if process.poll() is not None:
                 self.stop(model)
                 log_text = self.logs(model, limit=40).get("logs", "")
@@ -532,11 +549,29 @@ class NativeLlamaCppProvider(DeploymentProvider):
                 state["startupStage"] = "warming"
                 _write_state(model, state)
                 try:
-                    state["warmup"] = _warm_up({**model, "context": plan.resolved_settings.get("context_length", model.get("context"))})
+                    warmup_model = {**model, "context": plan.resolved_settings.get("context_length", model.get("context"))}
+                    if cancel is None:
+                        state["warmup"] = _warm_up(warmup_model)
+                    else:
+                        warmup = Future()
+                        def run_warmup():
+                            try:
+                                warmup.set_result(_warm_up(warmup_model))
+                            except Exception as exc:
+                                warmup.set_exception(exc)
+                        threading.Thread(target=run_warmup, daemon=True, name="rasputin-model-warmup").start()
+                        while not warmup.done():
+                            if cancel.wait(0.25):
+                                return cancel_load()
+                        state["warmup"] = warmup.result()
                 except (OSError, ValueError, urllib.error.URLError) as exc:
+                    if cancelled():
+                        return cancel_load()
                     self.stop(model)
                     return _failure("warmup_failed", f"The model loaded but its warm-up failed: {exc}", "Check the native runtime log and available memory, then retry Load.", command=command, logPath=str(log_path), resolvedPlan=plan_payload)
                 state["startupStage"] = "ready"
+                if cancelled():
+                    return cancel_load()
                 _write_state(model, state)
                 return {"ok": True, "status": "running", "pid": process.pid, "command": command, "logPath": str(log_path), "resolvedPlan": plan_payload, "warmup": state["warmup"]}
             time.sleep(0.25)

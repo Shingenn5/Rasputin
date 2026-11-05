@@ -1435,8 +1435,10 @@ export function ModelsView({
         hardware={effectiveHardware}
         onClose={() => setLoadDialogModel(null)}
         onLoad={async (model, profile) => {
-          await runModelAction?.("start", model.key, { profile });
-          setUiState({ status: "success", message: "Model loaded with the selected llama.cpp profile." });
+          const result = await runModelAction?.("start", model.key, { profile });
+          setUiState({ status: "success", message: result?.status === "starting"
+            ? "Loading in the background. Check System status for progress."
+            : "Model loaded with the selected llama.cpp profile." });
         }}
       />
     </section>

@@ -608,6 +608,7 @@ class ModelInferenceIn(CamelModel):
 class ModelKeyIn(CamelModel):
     key: str
     profile: dict[str, Any] | None = None
+    background: bool = False
 
     @field_validator("key")
     @classmethod
@@ -942,6 +943,8 @@ async def model_registry_scan_local_sources(req: GgufScanIn | None = None, _user
 @models_router.post("/model-registry/start")
 
 async def model_registry_start(req: ModelKeyIn, _user=Depends(require_admin)):
+    if req.background:
+        return ok(await asyncio.to_thread(model_registry.start_model_background, req.key, load_profile=req.profile))
     return ok(await asyncio.to_thread(model_registry.start_model, req.key, load_profile=req.profile))
 
 @models_router.post("/model-registry/stop")
