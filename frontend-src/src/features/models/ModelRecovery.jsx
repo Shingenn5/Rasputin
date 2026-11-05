@@ -4,7 +4,7 @@ import { postJson } from "../../api/client.js";
 import { Button } from "../../components/Button.jsx";
 import { LocalModelSources } from "./LocalModelSources.jsx";
 
-export function ModelRecovery({ model, signal, onConfigureLoad, onSaved, onFindModels }) {
+export function ModelRecovery({ model, localCopy, signal, onConfigureLoad, onSaved, onFindModels }) {
   const [address, setAddress] = useState(model.baseUrl || model.base_url || "");
   const [modelId, setModelId] = useState(model.model || "");
   const [apiKey, setApiKey] = useState("");
@@ -36,6 +36,7 @@ export function ModelRecovery({ model, signal, onConfigureLoad, onSaved, onFindM
     <div className="model-recovery-heading"><span className="model-recovery-dot" aria-hidden="true" /><h3>{signal.label}</h3></div>
     <p>{signal.detail}</p><p className="model-recovery-next">{signal.next}</p>
     <div className="model-recovery-actions">
+      {localCopy && <Button primary onClick={() => onConfigureLoad?.(localCopy)}>Load local copy</Button>}
       {["load", "configure"].includes(signal.action) && <Button primary onClick={() => onConfigureLoad?.(model)} icon={<SlidersHorizontal size={15} />}>{signal.action === "load" ? "Load model" : "Adjust settings and retry"}</Button>}
       {signal.action === "download" && <Button primary onClick={() => onConfigureLoad?.(model)}>Find a GGUF version</Button>}
       {!["wait", "load", "file", "download"].includes(signal.action) && <Button loading={busy} loadingLabel="Checking…" onClick={() => act(check)} icon={<RefreshCw size={15} />}>Check again</Button>}

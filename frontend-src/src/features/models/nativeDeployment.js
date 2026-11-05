@@ -2,6 +2,16 @@ export function usesNativeModels(security) {
   return Boolean(security?.native || security?.desktopOnly);
 }
 
+export function localCopyForModel(model, models = []) {
+  if (!model || model.runtime === "native-llamacpp" || model.runtime === "remote-api") return null;
+  const identity = (value) => String(value || "").replace(/\\/g, "/").split("/").pop().replace(/\.gguf$/i, "").toLowerCase();
+  const wanted = identity(model.model);
+  if (!wanted) return null;
+  const matches = models.filter((candidate) => candidate.runtime === "native-llamacpp" && candidate.enabled !== false
+    && (candidate.artifactAvailable ?? candidate.artifact_available) === true && identity(candidate.model) === wanted);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export function needsNativeModelDownload(model, nativeModels) {
   return Boolean(nativeModels && model?.managed && model.runtime !== "native-llamacpp");
 }

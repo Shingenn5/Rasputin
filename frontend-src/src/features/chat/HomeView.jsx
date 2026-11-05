@@ -1,6 +1,7 @@
 import { TaskThread } from "./TaskThread.jsx";
 import { ModeSidePanel } from "./ModeSidePanel.jsx";
 import { ModelSidePanel } from "./ModelSidePanel.jsx";
+import { ModelLoadDialog } from "../models/ModelLoadDialog.jsx";
 import { useChatCommands } from "./useChatCommands.js";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -143,11 +144,13 @@ export function HomeView(props) {
     setSelectedContextCapsuleId,
     hasHealthyRouteableChatModel,
     onOpenModels,
+    runModelAction,
     onConnectLocalEndpoint,
     onEnableTestingMode,
     eventConnectionStatus,
     modeBlocked,
   } = props;
+  const [loadDialogModel, setLoadDialogModel] = useState(null);
 
   const threadScrollRef = useRef(null);
   const composerRef = useRef(null);
@@ -879,6 +882,7 @@ export function HomeView(props) {
                     window.requestAnimationFrame(() => modelButtonRef.current?.focus());
                   }}
                   onOpenModels={onOpenModels}
+                  onLoadModel={(model) => { setModelPanelOpen(false); setLoadDialogModel(model); }}
                   returnFocusRef={modelButtonRef}
                   close={() => {
                     setModelPanelOpen(false);
@@ -903,6 +907,15 @@ export function HomeView(props) {
           </div>
         </div>
       </div>
+      <ModelLoadDialog
+        model={loadDialogModel}
+        models={models}
+        onClose={() => setLoadDialogModel(null)}
+        onLoad={async (model, profile) => {
+          await runModelAction("start", model.key, { profile });
+          setSelectedModel(model.key);
+        }}
+      />
     </section>
   );
 }

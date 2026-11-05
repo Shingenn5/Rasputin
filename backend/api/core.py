@@ -828,7 +828,7 @@ async def llamacpp_runtime_verify(_user=Depends(require_admin)):
 @models_router.get("/model-registry")
 
 async def model_registry_list(_user=Depends(current_user)):
-    return ok({"models": model_registry.all_models(), "providers": model_providers.public_provider_options()})
+    return ok({"models": await asyncio.to_thread(model_registry.all_models), "providers": model_providers.public_provider_options()})
 
 @models_router.get("/model-providers")
 

@@ -77,6 +77,7 @@ function Select({ value, onChange, children, label }) {
 }
 
 export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
+  const [detectedHardware, setDetectedHardware] = useState(null);
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [remember, setRemember] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -88,11 +89,22 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
   const [customContext, setCustomContext] = useState(false);
 
   const modelKey = model?.key || "";
+  const hardwareSnapshot = hardware || detectedHardware;
   const modelName = displayModelName(model, models);
   const cleaned = useMemo(() => cleanProfile(profile), [profile]);
-  const previewKey = JSON.stringify({ model, hardware, runtimeStatus, profile: cleaned });
+  const previewKey = JSON.stringify({ model, hardware: hardwareSnapshot, runtimeStatus, profile: cleaned });
   const preview = previewResult?.key === previewKey ? previewResult.value : null;
   const previewPending = !preview;
+
+  useEffect(() => {
+    if (!modelKey || hardware) return undefined;
+    setDetectedHardware(null);
+    const controller = new AbortController();
+    api("/api/warsat/hardware?native_models=true", { signal: controller.signal })
+      .then(setDetectedHardware)
+      .catch((error) => { if (!controller.signal.aborted) setPreviewError(error.message || "Unable to detect hardware. Try opening Models and refreshing hardware."); });
+    return () => controller.abort();
+  }, [modelKey, hardware]);
 
   useEffect(() => {
     if (!modelKey) return;
@@ -110,7 +122,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       .then((status) => { if (!disposed) setRuntimeStatus(status); })
       .catch(() => { if (!disposed) setRuntimeStatus(null); });
     return () => { disposed = true; };
-  }, [model]);
+  }, [modelKey]);
 
   useEffect(() => {
     if (!model) return undefined;
@@ -124,7 +136,7 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
         signal: controller.signal,
         body: JSON.stringify({
           profile: cleaned,
-          hardware: hardware || {},
+          hardware: hardwareSnapshot || {},
           model,
           modelPath: model.hostModelPath || model.host_model_path || model.path || model.model_path || model.modelPath,
           capabilities: runtimeStatus?.capabilities || runtimeStatus?.runtimeCapabilities || runtimeStatus?.runtime_capabilities || {},
@@ -140,11 +152,11 @@ export function ModelLoadDialog({ model, models, hardware, onClose, onLoad }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [model, hardware, runtimeStatus, cleaned, previewKey]);
+  }, [model, hardwareSnapshot, runtimeStatus, cleaned, previewKey]);
 
   const set = (key) => (event) => setProfile((current) => ({ ...current, [key]: event.target.value }));
   const requiredMemoryMb = preview?.resolvedSettings?.requiredMemoryMb ?? preview?.resolved_settings?.required_memory_mb;
-  const provisionalFirstLoad = firstLoadCanResolvePlacement(preview, runtimeStatus, hardware, cleaned);
+  const provisionalFirstLoad = firstLoadCanResolvePlacement(preview, runtimeStatus, hardwareSnapshot, cleaned);
   const blocked = previewPending || Boolean(((preview?.blocked || preview?.accepted === false) && !provisionalFirstLoad) || previewError);
 
   const handleLoad = async () => {

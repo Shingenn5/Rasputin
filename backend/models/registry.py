@@ -596,7 +596,7 @@ def all_models():
                     item["runtime_status"] = "stopped"
             else:
                 item["container_status"] = "docker control disabled"
-                item["runtime_status"] = item.get("runtime_status") or "unknown"
+                item["runtime_status"] = "unknown"
         elif item.get("provider") == "mock" or item.get("provider") == "hash-vector":
             item["runtime_status"] = "reachable"
         else:

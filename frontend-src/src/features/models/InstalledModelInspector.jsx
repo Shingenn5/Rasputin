@@ -1,4 +1,4 @@
-import { needsNativeModelDownload } from "./nativeDeployment.js";
+import { needsNativeModelDownload, localCopyForModel } from "./nativeDeployment.js";
 import { useState, useEffect } from "react";
 import { Copy, Cpu, Download, Gauge, HardDrive, Link2, Play, Pin, PinOff, Power, SlidersHorizontal, Trash2 } from "lucide-react";
 import {
@@ -68,6 +68,7 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
   const needsGguf = needsNativeModelDownload(model, nativeModels);
   const isRunning = isManagedModelRunning(model);
   const operationalSignal = modelOperationalSignal(model);
+  const localCopy = localCopyForModel(model, allModels);
   const path = installedModelPath(model);
   const context = contextWindowFor(model);
   const mismatch = modelMismatchLine(model);
@@ -215,7 +216,7 @@ export function InstalledModelInspector({ nativeModels = false, model, allModels
 
       {activeTab === "info" && (
         <section id="model-inspector-panel-info" role="tabpanel" aria-labelledby="model-inspector-tab-info" className="models-inspector-section">
-          <ModelRecovery key={model.key} model={model} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} />
+          <ModelRecovery key={model.key} model={model} localCopy={localCopy} signal={operationalSignal} onConfigureLoad={onConfigureLoad} onSaved={onSaved} onFindModels={onFindModels} />
           {(model.summary || model.description) && <p className="models-inspector-summary">{model.summary || model.description}</p>}
           <details className="models-inspector-disclosure models-inspector-technical">
             <summary><SlidersHorizontal size={14} /> Technical Details</summary>

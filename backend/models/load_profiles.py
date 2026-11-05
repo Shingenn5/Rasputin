@@ -586,7 +586,11 @@ def resolve_load_plan(
         safety = 512.0
     model_mb = _model_memory_mb(model)
     context = requested.context_length or int(_first(model, "recommended_context", "context_window", "contextWindow", default=4096))
-    model_context = _first(model, "context_window", "contextWindow", "max_context", "maxContext")
+    model_context = _first(model, "model_context_window", "modelContextWindow", "max_context", "maxContext")
+    # A running server's context is its current allocation, not the GGUF's limit.
+    detected_native_context = model.get("runtime") == "native-llamacpp" and _first(model, "context_detected_at", "contextDetectedAt") is not None
+    if model_context is None and not detected_native_context:
+        model_context = _first(model, "context_window", "contextWindow")
     adjustments: list[dict[str, Any]] = []
     warnings: list[str] = []
     fit_reasons: list[str] = []

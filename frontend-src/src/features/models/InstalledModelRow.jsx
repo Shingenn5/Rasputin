@@ -4,6 +4,7 @@ import { displayModelName, isManagedModelRunning, isModelHealthy } from "../../l
 import { Button } from "../../components/Button.jsx";
 import { PublisherLogo } from "./PublisherLogo.jsx";
 import { modelOperationalSignal, installedModelFormat, installedModelSize } from "./modelPresentation.js";
+import { localCopyForModel } from "./nativeDeployment.js";
 
 export function InstalledCard({ nativeModels = false, model, allModels, selected = false, chatActive = false, onSelect, runModelAction, executeAction, setUiState, onConfigureLoad, onOpenActions, onUseInChat }) {
   const name = model.name || displayModelName(model, allModels);
@@ -11,6 +12,7 @@ export function InstalledCard({ nativeModels = false, model, allModels, selected
   const nativeRuntime = model.runtime === "native-llamacpp";
   const isRunning = isManagedModelRunning(model);
   const operationalSignal = modelOperationalSignal(model);
+  const localCopy = localCopyForModel(model, allModels);
 
   const runAction = async (key, actionName, op) => {
     setBusy(key);
@@ -34,11 +36,12 @@ export function InstalledCard({ nativeModels = false, model, allModels, selected
       <div className={`model-card-status is-${operationalSignal.key}`}><span aria-hidden="true" /><strong>{operationalSignal.label}</strong>{chatActive && <small>Selected for chat</small>}</div>
       <p className="model-card-reason">{operationalSignal.detail}</p>
       <div className="model-card-actions">
-        <Button primary disabled={operationalSignal.action === "wait" || operationalSignal.action === "check" && isRunning && !ready} onClick={() => {
+        <Button primary disabled={!localCopy && (operationalSignal.action === "wait" || operationalSignal.action === "check" && isRunning && !ready)} onClick={() => {
           if (ready) onUseInChat?.(model);
+          else if (localCopy) onConfigureLoad?.(localCopy);
           else if (["load", "configure", "download"].includes(operationalSignal.action)) onConfigureLoad?.(model);
           else onSelect?.();
-        }} icon={ready || operationalSignal.action === "load" ? <Play size={14} /> : undefined}>{operationalSignal.action === "wait" ? "Loading…" : primary}</Button>
+        }} icon={ready || operationalSignal.action === "load" ? <Play size={14} /> : undefined}>{localCopy && !ready ? "Load local copy" : operationalSignal.action === "wait" ? "Loading…" : primary}</Button>
         {isRunning && <Button onClick={() => runAction("stop", "StopModel", "stop")} loading={busy === "stop"} loadingLabel="Stopping…" icon={<Power size={14} />}>Stop</Button>}
         <button type="button" className="model-card-details" onClick={onSelect}>Details & settings</button>
       </div>

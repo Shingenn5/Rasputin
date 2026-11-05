@@ -1307,6 +1307,7 @@ export function App() {
         healthy={healthy}
       />
       <HomeView
+        runModelAction={runModelAction}
         activeWorkspaceName={activeWorkspaceName}
         view={desktopOnly && view === "settings" ? "chat" : view}
         selectedModel={selectedModel}

@@ -5,11 +5,16 @@ import { displayModelName, displayModelSecondary, runtimeStatus } from "../../li
 
 import { Modal } from "../../components/Modal.jsx";
 
-export function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close, onOpenModels, returnFocusRef }) {
+export function ModelSidePanel({ panelRef, models, visibleModels, selectedModel, setSelectedModel, close, onOpenModels, onLoadModel, returnFocusRef }) {
   const [query, setQuery] = useState("");
   const filterId = useId();
   const searchRef = useRef(null);
-  const items = visibleModels.filter((model) => {
+  const choices = [...visibleModels, ...(models || []).filter((model) =>
+    model.runtime === "native-llamacpp" && model.enabled !== false && model.role !== "embeddings"
+    && (model.artifactAvailable ?? model.artifact_available) === true
+    && !visibleModels.some((visible) => visible.key === model.key),
+  )];
+  const items = choices.filter((model) => {
     const text = [displayModelName(model, models), displayModelSecondary(model, models), model.key, model.model].join(" ").toLowerCase();
     return text.includes(query.trim().toLowerCase());
   });
@@ -22,16 +27,18 @@ export function ModelSidePanel({ panelRef, models, visibleModels, selectedModel,
           <input ref={searchRef} id={filterId} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by model, provider, or role..." />
           {query && <button type="button" className="studio-model-filter-clear" aria-label="Clear model filter" onClick={() => { setQuery(""); searchRef.current?.focus(); }}><X size={15} aria-hidden="true" /></button>}
         </div>
-        <div className="studio-model-picker-head"><strong>Your models</strong><span role="status">{items.length} available{query ? ` of ${visibleModels.length}` : ""}</span></div>
+        <div className="studio-model-picker-head"><strong>Your models</strong><span role="status">{items.length} available{query ? ` of ${choices.length}` : ""}</span></div>
         <div className="studio-model-picker-list">
           {!items.length && (
             <p className="model-panel-empty" role="status">
-              No available chat model matches this filter.
+              No ready or downloaded chat model matches this filter.
             </p>
           )}
           {items.map((model) => {
             const selected = model.key === selectedModel;
             const status = runtimeStatus(model);
+            const loading = status === "starting";
+            const needsLoad = model.runtime === "native-llamacpp" && status !== "reachable";
             const context = model.context_window || model.contextWindow;
             return (
               <button
@@ -40,21 +47,22 @@ export function ModelSidePanel({ panelRef, models, visibleModels, selectedModel,
                 className={selected ? "model-choice is-active" : "model-choice"}
                 data-testid="model-option"
                 aria-pressed={selected}
-                onClick={() => setSelectedModel(model.key)}
+                disabled={loading}
+                onClick={() => needsLoad ? onLoadModel?.(model) : setSelectedModel(model.key)}
               >
                 <span className={"model-choice-status status-" + status} aria-hidden="true" />
                 <span>
                   <strong>{displayModelName(model, models)}</strong>
                   <small>{displayModelSecondary(model, models) || model.model || model.key}</small>
                 </span>
-                <em>{context ? Number(context).toLocaleString() + " ctx" : status}</em>
+                <em>{loading ? "Loading…" : needsLoad ? "Load model" : context ? Number(context).toLocaleString() + " ctx" : status}</em>
                 <Check size={17} className="model-choice-check" aria-hidden="true" />
               </button>
             );
           })}
         </div>
         <footer className="studio-model-picker-footer">
-          <span>Only healthy chat-capable models are selectable here.</span>
+          <span>Choose a ready model, or load a downloaded model for Chat.</span>
           <button type="button" className="w2-button" onClick={() => { close(); onOpenModels?.(); }}>Manage models</button>
         </footer>
       </div>
