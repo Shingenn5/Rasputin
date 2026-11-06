@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Rasputin Rust Prototype",
+  "version": "0.1.0",
+  "identifier": "com.rasputin.rust-prototype",
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": [],
+      "dangerousDisableAssetCspModification": false
+    }
+  },
+  "bundle": { "active": false, "icon": ["../../desktop/assets/rasputin.ico"] }
+}
