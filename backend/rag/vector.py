@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -163,9 +164,10 @@ def _cosine(left, right):
 
 
 def _import_status(module_name):
+    # Bootstrap reports installed parsers without loading them (openpyxl also
+    # loads NumPy). Actual imports and parse failures belong to document ingest.
     try:
-        __import__(module_name)
-        return True
+        return importlib.util.find_spec(module_name) is not None
     except Exception:
         return False
 
