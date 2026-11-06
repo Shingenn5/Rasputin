@@ -12,19 +12,16 @@ import { useMcpActions } from "./useMcpActions.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "../components/AppShell.jsx";
+import { DeferredView } from "../components/DeferredView.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { Onboarding } from "../components/Onboarding.jsx";
 import { api, postJson } from "../api/client.js";
 import { LoginShell } from "../features/auth/LoginShell.jsx";
 import { HomeView } from "../features/chat/HomeView.jsx";
-import { DashboardView } from "../features/dashboard/DashboardView.jsx";
 import { usesNativeModels } from "../features/models/nativeDeployment.js";
-import { ModelsView } from "../features/models/ModelsView.jsx";
 import { AssistantView } from "../features/assistant/AssistantView.jsx";
-import { SettingsView } from "../features/settings/SettingsView.jsx";
 import { ActivityView } from "../features/tasks/TasksView.jsx";
 import { TaskDetailsDrawer } from "../features/tasks/TaskDetailsDrawer.jsx";
-import { WorkspacesView } from "../features/workspaces/WorkspacesView.jsx";
 import { AuditView } from "../features/audit/AuditView.jsx";
 import { AgentsView } from "../features/runtime/AgentsView.jsx";
 import { SessionsView } from "../features/runtime/SessionsView.jsx";
@@ -50,6 +47,10 @@ import { applyMotionMode, normalizeMotionMode, readStoredMotionMode } from "../l
 
 const ApiView = lazy(() => import("../features/workstation/ApiView.jsx").then((module) => ({ default: module.ApiView })));
 const TrainingView = lazy(() => import("../features/workstation/TrainingView.jsx").then((module) => ({ default: module.TrainingView })));
+const DashboardView = lazy(() => import("../features/dashboard/DashboardView.jsx").then((module) => ({ default: module.DashboardView })));
+const ModelsView = lazy(() => import("../features/models/ModelsView.jsx").then((module) => ({ default: module.ModelsView })));
+const SettingsView = lazy(() => import("../features/settings/SettingsView.jsx").then((module) => ({ default: module.SettingsView })));
+const WorkspacesView = lazy(() => import("../features/workspaces/WorkspacesView.jsx").then((module) => ({ default: module.WorkspacesView })));
 
 const routedViews = new Set([
   "home",
@@ -1289,6 +1290,7 @@ export function App() {
         logout: desktopOnly ? undefined : logout,
       }}
     >
+      <DeferredView active={ready && view === "home"}>
       <DashboardView
         view={view}
         models={models}
@@ -1306,6 +1308,7 @@ export function App() {
         sendTask={sendTask}
         healthy={healthy}
       />
+      </DeferredView>
       <HomeView
         runModelAction={runModelAction}
         activeWorkspaceName={activeWorkspaceName}
@@ -1371,6 +1374,7 @@ export function App() {
           setGlobalStatus(`${mode} prompt loaded.`);
         }}
       />
+      <DeferredView active={ready && view === "workspaces"}>
       <WorkspacesView
         view={view}
         workspace={workspace}
@@ -1409,6 +1413,7 @@ export function App() {
           setGlobalStatus("Workspace analysis prompt loaded.");
         }}
       />
+      </DeferredView>
       <AgentsView view={view} tasks={tasks} models={models} />
       <SessionsView
         view={view}
@@ -1533,7 +1538,7 @@ export function App() {
         modeModelOverrides={modeModelOverrides}
       />
       {/* Onboarding owns focus until dismissed. */}
-      {!showOnboarding && <ModelsView
+      {!showOnboarding && <DeferredView active={ready && ["models", "discover"].includes(view)}><ModelsView
         view={view}
         models={models}
         selectedModelObject={selectedModelObject}
@@ -1559,7 +1564,7 @@ export function App() {
         security={security}
         openWarsat={() => (nativeModels ? go("models") : go("warsat"))}
         go={go}
-      />}
+      /></DeferredView>}
       <AssistantView
         view={view}
         profile={assistantProfile}
@@ -1616,6 +1621,7 @@ export function App() {
         archiveInbox={(id) => updateInboxEvent(id, "archive")}
         markAllInboxRead={markAllInboxRead}
       />
+      <DeferredView active={ready && view === "settings"}>
       <SettingsView
         view={view}
         session={session}
@@ -1675,6 +1681,7 @@ export function App() {
         refreshSetupStatus={refreshSetupStatus}
         go={go}
       />
+      </DeferredView>
       <AuditView view={view} events={auditEvents} refresh={loadAuditEvents} />
       <TaskDetailsDrawer
         taskId={selectedTaskId}
