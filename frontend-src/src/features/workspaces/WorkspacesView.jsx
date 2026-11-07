@@ -105,7 +105,6 @@ export function WorkspacesView({
   const activeId = workspace.activeId || workspace.active_id;
   const activeWorkspaceInfo = workspace.workspaces?.find((item) => item.id === activeId || item.root === workspace.activePath) || {};
   const activeReadOnly = activeWorkspaceInfo.readOnly ?? activeWorkspaceInfo.read_only;
-  const activeIndexed = activeWorkspaceInfo.indexed;
   const activeTrusted = Boolean(activeWorkspaceInfo.trusted);
   const activeHostShell = Boolean(activeWorkspaceInfo.allowHostShell ?? activeWorkspaceInfo.allow_host_shell);
   const activeCommands = activeWorkspaceInfo.commands || {};
@@ -130,8 +129,6 @@ export function WorkspacesView({
   
   const ragHits = knowledgeResults?.ragResult?.hits || [];
   const graphNodes = knowledgeResults?.graphResult?.nodes || [];
-  const graphEdges = knowledgeResults?.graphResult?.edges || [];
-
   useEffect(() => {
     setPendingMountsOverride(pendingMounts || []);
   }, [pendingMounts]);

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { postJson } from "../../api/client.js";
 
 export function LocalModelSources({ onImported }) {

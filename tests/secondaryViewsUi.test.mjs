@@ -44,7 +44,6 @@ test("models keeps its accessible navigation and compacts every operator surface
   assert.match(models, /role="tablist"/);
   assert.match(models, /data-testid="models-rail-toggle"/);
   assert.match(css, /models-page-tabs \[role="tab"\]\[aria-selected="true"\]/);
-  assert.match(css, /studio-model-detail section/);
   assert.match(css, /studio-installed-row[^}]*min-height:\s*54px/s);
   assert.match(css, /model-serving-panel/);
 });

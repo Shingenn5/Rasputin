@@ -1,19 +1,3 @@
-export const navItems = [
-  { view: "home", label: "Dashboard", testId: "nav-home" },
-  { view: "chat", label: "Chat", testId: "nav-chat" },
-  { view: "workspaces", label: "Workspaces", testId: "nav-workspaces" },
-  { view: "activity", label: "Activity", testId: "nav-activity" },
-  { view: "discover", label: "Model Hub", testId: "nav-discover" },
-  { view: "models", label: "Library", testId: "nav-models" },
-  { view: "api", label: "API", testId: "nav-api" },
-  { view: "training", label: "Training", testId: "nav-training" },
-  { view: "schedules", label: "Scheduled", testId: "nav-schedules" },
-  { view: "warsat", label: "Warsat", testId: "nav-warsat" },
-  { view: "archive", label: "Archive", testId: "nav-archive" },
-  { view: "trials", label: "Trials", testId: "nav-trials" },
-  { view: "settings", section: "general", label: "Settings", testId: "nav-settings" },
-];
-
 export const settingsItems = [
   ["general", "General", "platform defaults"],
   ["runtime", "Runtime", "system limits"],
@@ -73,10 +57,3 @@ export const darkThemes = new Set([
   "bootswatch-solar",
   "bootswatch-superhero",
 ]);
-
-export const quickPrompts = [
-  ["Analyze Files", "Summarize this workspace and tell me what looks important.", "analyze files"],
-  ["Organize", "Draft a safe folder organization plan for this workspace. Do not move anything yet.", "organize"],
-  ["Research", "Search the approved local knowledge and cite the files you used.", "research"],
-  ["Think", "Help me reason through this problem step by step.", "chat"],
-];

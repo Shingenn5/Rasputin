@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { harnessConfigs } from "./harnessConfig.js";
 import "./harnessConfig.css";
 import {

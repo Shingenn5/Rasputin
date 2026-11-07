@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import {
-  Pause, Play, RefreshCw, Square, Users, Search, 
+  Pause, Play, RefreshCw, Square, Search,
   Activity, AlertTriangle, CheckCircle, Clock, History as HistoryIcon, ListFilter,
-  Server, Database, HardDrive, Download, Eye, FileText, Archive, ChevronUp, ChevronDown
+  Server, Database, HardDrive, Download, FileText, Archive, ChevronUp, ChevronDown
 } from "lucide-react";
 import { displayModelName, displayWorkspaceName } from "../../lib/display.js";
 import { actionRegistry, useReliableAction } from "../../lib/actionRegistry.js";

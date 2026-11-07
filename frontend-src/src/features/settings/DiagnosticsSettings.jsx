@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Card, Button, Row, Col, Spinner, Alert } from "react-bootstrap";
 import { ActivitySquare, HeartPulse, Terminal, AlertCircle, CheckCircle2 } from "lucide-react";
 import { api, postJson } from "../../api/client.js";

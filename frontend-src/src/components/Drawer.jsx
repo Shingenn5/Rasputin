@@ -30,7 +30,7 @@
  * @param {string}   [props.className]        Extra class names for the panel.
  * @param {object}   [props.panelProps]       Extra props spread onto the panel (e.g. data-testid).
  */
-import React, { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useFocusTrap } from "./useFocusTrap.js";

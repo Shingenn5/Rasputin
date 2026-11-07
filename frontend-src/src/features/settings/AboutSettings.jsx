@@ -1,4 +1,3 @@
-import React from "react";
 import { Card, Row, Col, Badge } from "react-bootstrap";
 import { Info, Github, FileText, Globe } from "lucide-react";
 

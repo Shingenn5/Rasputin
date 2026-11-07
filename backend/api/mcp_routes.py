@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, Response, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException
 from backend.api.core import CamelModel, current_user, hub, require_admin
 from backend.core.response import ok
 from backend.mcp import relay as mcp_relay

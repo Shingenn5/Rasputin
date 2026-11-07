@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { KeyRound, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "../../components/ui/button.jsx";

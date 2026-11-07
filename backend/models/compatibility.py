@@ -302,9 +302,3 @@ def default_profile(model):
     if compatibility.get("status") == "incompatible":
         return "minimal"
     return compatibility.get("promptProfile") or "standard"
-
-
-def supported_modes(model):
-    compatibility = (model or {}).get("compatibility") or {}
-    modes = compatibility.get("supportedModes")
-    return list(modes) if isinstance(modes, list) else None

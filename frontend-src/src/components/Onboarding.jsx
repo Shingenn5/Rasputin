@@ -12,7 +12,7 @@
  *
  * Fail-soft: any render/handler issue degrades to simply not blocking the app.
  */
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const STEPS = [
   {

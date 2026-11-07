@@ -1026,8 +1026,3 @@ class McpLayer:
             "trusted": trusted,
         })
         return {"cwd": str(base), "paths": rel_paths, "removed_untracked": untracked_targets, **result}
-
-
-async def demo_tool_call():
-    mcp = McpLayer()
-    return await mcp.call_tool("fs_list", {"path": "."})

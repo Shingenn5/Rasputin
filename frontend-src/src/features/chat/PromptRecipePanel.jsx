@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Sparkles, X } from "lucide-react";
 import { useFocusTrap } from "../../components/useFocusTrap.js";
 import {

@@ -2,7 +2,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import time
 from contextvars import copy_context
 import urllib.error
@@ -1411,19 +1410,6 @@ def stop_model(key):
         return result
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
-
-
-def rm_model(key):
-    model = get_model(key)
-    if model and model.get("runtime") == NATIVE_RUNTIME:
-        security.require("allow_model_registry_edit")
-    else:
-        security.require("allow_docker_control")
-    if model and model.get("managed"):
-        try:
-            get_provider(model).rm(model)
-        except Exception:
-            pass
 
 
 def test_model(key):

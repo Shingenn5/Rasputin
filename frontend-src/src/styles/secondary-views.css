@@ -157,11 +157,6 @@
 .models-view .studio-model-list [data-testid="model-catalog-card"] { min-height: 62px; gap: 4px; padding: 8px 9px; }
 .models-view .studio-model-list [data-testid="model-catalog-card"] h3 { font-size: .76rem; }
 .models-view .studio-model-list [data-testid="model-catalog-card"] p { font-size: .63rem; line-height: 1.3; }
-.models-view .studio-model-detail { padding: 11px 13px 15px; background: color-mix(in srgb, var(--dash-bg-2) 94%, var(--dash-panel)); }
-.models-view .studio-model-detail > header { padding-bottom: 7px; }
-.models-view .studio-model-detail section { margin-top: 7px; border-width: 1px 0 0; border-radius: 0; padding: 9px 0 0; background: transparent; }
-.models-view .studio-model-detail p { font-size: .68rem; line-height: 1.42; }
-.models-view .studio-model-detail h3 { font-size: .77rem; }
 .models-view .studio-installed-list,
 .models-view .models-developer-header,
 .models-view .models-developer-panel > .w2-card { border-radius: var(--sv-radius); box-shadow: none; }

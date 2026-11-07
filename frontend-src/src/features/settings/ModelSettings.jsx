@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, Form, Row, Col, Spinner, Badge } from "react-bootstrap";
 import { BrainCircuit, Download, Cpu, Gauge, HardDrive, Layers3, SlidersHorizontal, Zap } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";

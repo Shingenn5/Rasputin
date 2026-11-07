@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Col, Form, Row, Stack } from "react-bootstrap";
 import { ArrowRight, Bot, CheckCircle2, Clock3, Code2, Link2, MessageSquare, Mic, RefreshCw, ShieldCheck, Volume2, XCircle } from "lucide-react";
 

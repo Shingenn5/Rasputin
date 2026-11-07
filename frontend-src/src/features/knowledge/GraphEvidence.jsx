@@ -1,4 +1,3 @@
-import React from "react";
 import { labelize } from "../../lib/display.js";
 
 function firstValue(...values) {
@@ -47,27 +46,6 @@ function EvidenceList({ evidence = [], compact = false }) {
         </article>
       ))}
     </div>
-  );
-}
-
-export function GraphNodeCard({ node = {}, compact = false }) {
-  const kind = firstValue(node.kind, node.type, "node");
-  const evidence = Array.isArray(node.evidence) ? node.evidence : [];
-  const sources = Array.isArray(node.sources) ? node.sources : [];
-  return (
-    <article className="graph-evidence-card" data-testid="graph-node-card">
-      <div className="graph-evidence-card-head">
-        <div>
-          <span className="graph-type-pill">{labelize(kind)}</span>
-          <strong>{node.name || "Unnamed graph node"}</strong>
-        </div>
-        {node.weight !== undefined && <span className="graph-evidence-meta">weight {node.weight}</span>}
-      </div>
-      {!evidence.length && !!sources.length && (
-        <p className="graph-evidence-why">{sources.slice(0, 3).join(", ")}</p>
-      )}
-      <EvidenceList evidence={evidence} compact={compact} />
-    </article>
   );
 }
 

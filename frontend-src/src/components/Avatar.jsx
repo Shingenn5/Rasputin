@@ -1,4 +1,3 @@
-import React from "react";
 import { Bot, Cpu, Sparkles, Brain, Boxes } from "lucide-react";
 
 const SIZES = { sm: 22, md: 28, lg: 34 };

@@ -1,6 +1,5 @@
-import React from "react";
-import { Card, Form, Row, Col, Spinner, Table, Badge } from "react-bootstrap";
-import { FileText, ShieldAlert, Clock, Database, History } from "lucide-react";
+import { Card, Form, Row, Col, Spinner } from "react-bootstrap";
+import { FileText, ShieldAlert, Clock, Database } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 

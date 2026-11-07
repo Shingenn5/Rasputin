@@ -7,7 +7,6 @@ Tests must redirect it with `RASPUTIN_DATA_DIR` before importing the backend.
 """
 
 import json
-import os
 import sqlite3
 import time
 import uuid

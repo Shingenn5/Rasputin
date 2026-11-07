@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import { Copy, Cpu, Download, Gauge, HardDrive, Link2, Play, Pin, PinOff, Power, SlidersHorizontal, Trash2 } from "lucide-react";
 import {
   displayModelName,
-  isModelHealthy,
   isManagedModelRunning,
   labelize,
   modelMismatchLine,

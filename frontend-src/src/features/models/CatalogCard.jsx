@@ -17,46 +17,6 @@ import {
 } from "./downloadState.js";
 import { catalogPlacementAssessment, catalogSystemRamEstimateGb, catalogVramEstimateGb, runtimeEnvelopeForItem } from "./modelPlacement.js";
 
-function StudioModelDetail({ item }) {
-  if (!item) {
-    return <aside className="studio-model-detail"><p>Select a model to see its details.</p></aside>;
-  }
-  const parameterCount = item.parameterCountB ? item.parameterCountB + "B" : "Unknown";
-  const context = contextWindowFor(item);
-  const capabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
-  const format = item.format || ((item.runtimeOptions || []).some((option) => option.protocolId === "llamaCppGgufServer") ? "GGUF" : "Model");
-  const updated = item.lastModified || item.updatedAt || item.updated_at;
-  return (
-    <aside className="studio-model-detail" data-testid="studio-model-detail">
-      <header>
-        <ModelIdentity item={item} />
-        {item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label="Open model source"><ExternalLink size={15} /></a>}
-      </header>
-      <div className="studio-model-metrics">
-        {item.downloads > 0 && <span>Downloads {Number(item.downloads).toLocaleString()}</span>}
-        {item.likes > 0 && <span>Likes {Number(item.likes).toLocaleString()}</span>}
-        {updated && <span>Updated {new Date(updated).toLocaleDateString()}</span>}
-      </div>
-      <section>
-        <p>{item.summary || "Model information from the local Rasputin catalog and Hugging Face metadata."}</p>
-        <div className="studio-model-facts">
-          <span><small>Parameters</small><strong>{parameterCount}</strong></span>
-          <span><small>Architecture</small><strong>{item.architecture || item.arch || "Unknown"}</strong></span>
-          <span><small>Purpose</small><strong>{labelize(item.purpose || "chat")}</strong></span>
-          <span><small>Format</small><strong>{format}</strong></span>
-          {context > 0 && <span><small>Context</small><strong>{context.toLocaleString()}</strong></span>}
-          {item.license && <span><small>License</small><strong>{item.license}</strong></span>}
-        </div>
-        {capabilities.length > 0 && <div className="studio-model-capabilities">{capabilities.map((capability) => <Badge key={capability} variant="muted">{labelize(capability)}</Badge>)}</div>}
-      </section>
-      <section>
-        <h3>About this model</h3>
-        <p>{item.description || item.summary || "Select a GGUF variant to download it into Rasputin's native model library. Rasputin acquires one hardware-compatible llama.cpp runtime when first needed."}</p>
-      </section>
-    </aside>
-  );
-}
-
 export function CatalogCard({ item, selected = false, onSelect, placementFit, hardwareBlocked = false, hardwareBlockReasons = [], prepareCatalogModelForWarsat, searchMode, startDownload, loadCompletedArtifact, activeDownloads, desktopOnly = false, installedModel: repositoryModel = null, installedModels = [], onLoadInstalled, onManageInstalled }) {
   const modelId = item.modelId || item.id;
   const isHuggingFace = searchMode !== "catalog" || item.source === "huggingface";

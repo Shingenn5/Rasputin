@@ -1,6 +1,5 @@
 import json
 import re
-import time
 from pathlib import Path
 
 from backend.core import audit as audit
@@ -9,7 +8,6 @@ from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = data_dir()
-SKILLS_DIR = DATA_DIR / "skills"
 SKILL_FORMAT = "declarative-v1"
 MAX_SKILL_CONTEXT_CHARS = 6000
 
@@ -93,10 +91,6 @@ description; the task tool and approval policy remains authoritative.
 }
 def _slug(name):
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(name or "")).strip("-").lower()[:64] or "skill"
-
-
-def _skill_path(name):
-    return SKILLS_DIR / _slug(name) / "SKILL.md"
 
 
 def _markdown(name, metadata):

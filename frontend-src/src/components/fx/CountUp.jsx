@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* Animated number that counts up to `value` on mount/change.
    Supports a numeric value with optional prefix/suffix; falls back to

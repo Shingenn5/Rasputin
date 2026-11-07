@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, Download, FileCode2, FileJson, FileText, FolderOpen, Pin, RefreshCw, Search, Sparkles } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "@/components/ui/button.jsx";

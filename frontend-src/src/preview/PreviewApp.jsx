@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Archive,
@@ -12,7 +12,6 @@ import {
   Home,
   Layers,
   Lock,
-  PanelLeft,
   Play,
   Search,
   Settings,

@@ -1,5 +1,3 @@
-import React from "react";
-
 /* ─────────────────────────────────────────────
    Skeleton loading primitives
 

@@ -1,4 +1,3 @@
-import React from "react";
 import { Badge, Button, Card, Stack } from "react-bootstrap";
 import { displayWorkspaceName } from "../../lib/display.js";
 import { PageHeader, formatRuntimeTime } from "./RuntimePrimitives.jsx";

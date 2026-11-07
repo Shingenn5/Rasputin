@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Card, Form, Row, Col, Badge, Spinner } from "react-bootstrap";
+import { useState } from "react";
+import { Card, Form, Row, Col, Spinner } from "react-bootstrap";
 import { Rocket, Box, Network, ServerCrash, KeySquare } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";

@@ -1,4 +1,3 @@
-import React from "react";
 import { ArrowRight, Box, KeyRound, Laptop, LockKeyhole, ShieldCheck } from "lucide-react";
 
 export function LoginShell({ onSubmit, status }) {

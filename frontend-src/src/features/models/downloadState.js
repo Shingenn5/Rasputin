@@ -17,8 +17,6 @@ export function trustedDownloadProgress(download) {
   );
 }
 
-export const DURABLE_DOWNLOAD_STATES = ["queued", "resolving", "downloading", "paused", "verifying", "installing", "completed", "failed", "cancelled"];
-
 const BLOCKED_VARIANT_STATES = new Set(["incompatible", "blocked", "unsupported"]);
 
 export function downloadJobState(download) {

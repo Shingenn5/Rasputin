@@ -22,7 +22,6 @@ from backend.models import registry as model_registry
 from backend.core import runtime_store as rts
 from backend.core import audit
 from . import store
-from .models import EXPERIMENT_TYPES
 
 
 async def run_experiment(experiment_id):

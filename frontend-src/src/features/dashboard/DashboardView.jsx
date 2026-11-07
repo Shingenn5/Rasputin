@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -54,10 +54,6 @@ const DONE = ["completed", "done", "success"];
 const FAILED = ["failed", "error", "cancelled"];
 
 const ACCENT = "var(--primary)";
-const DOWN = "var(--destructive)";
-const BLUE = "var(--chart-2)";
-const FAINT = "var(--muted)";
-
 function statusBucket(s) {
   if (ACTIVE.includes(s)) return "active";
   if (DONE.includes(s)) return "done";

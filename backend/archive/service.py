@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from .models import ArchiveItem, ArchiveRetentionRule
+from .models import ArchiveItem
 from backend.core.datadir import data_dir
 
 ROOT = Path(__file__).resolve().parents[2]

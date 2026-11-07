@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Play, Square, Terminal } from 'lucide-react';
 import PyodideWorker from '../lib/pyodideWorker.js?worker';
 

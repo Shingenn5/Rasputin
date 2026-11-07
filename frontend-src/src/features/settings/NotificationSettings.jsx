@@ -1,4 +1,3 @@
-import React from "react";
 import { Card, Form, Row, Col, Spinner } from "react-bootstrap";
 import { Bell, Mail, MessageSquare, Volume2, MonitorSmartphone } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";

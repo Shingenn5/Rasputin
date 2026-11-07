@@ -25,7 +25,7 @@
  * @param {string}   [props.className]        Extra class names for the panel.
  * @param {string}   [props.labelledBy]       id of an existing label (overrides title labelling).
  */
-import React, { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useFocusTrap } from "./useFocusTrap.js";

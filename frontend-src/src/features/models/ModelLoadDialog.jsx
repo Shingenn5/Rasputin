@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Cpu, Gauge, Layers, MemoryStick, SlidersHorizontal } from "lucide-react";
 import { api } from "../../api/client.js";
 import { Modal } from "../../components/Modal.jsx";

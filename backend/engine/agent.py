@@ -7,12 +7,10 @@ execution when required tools were unavailable.
 """
 
 import asyncio
-import importlib
 import json
 import os
 import re
 import time
-import uuid
 from pathlib import Path
 
 from backend.mcp.layer import McpLayer
@@ -55,10 +53,6 @@ from backend.rag import vector as rag
 from backend.models import registry as model_registry
 from backend.core import runtime_store as store
 from backend.engine.task_state import (
-    MEMORY_MODES,
-    GENERATION_PHASES,
-    GENERATION_TOKEN_SOURCES,
-    MAX_GENERATION_TOKENS_PER_SECOND,
     _empty_generation_metrics,
     _nonnegative_metric_float,
     _nonnegative_metric_int,

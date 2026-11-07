@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Badge, Button, Card, Col, Form, ListGroup, Row, Stack } from "react-bootstrap";
 import { Trash2 } from "lucide-react";
 import { displayWorkspaceName } from "../../lib/display.js";

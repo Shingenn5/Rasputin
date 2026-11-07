@@ -15,8 +15,6 @@ export function ContainersTab({ containers, runtimes, logs, handleLoadLogs, hand
   const [importingKey, setImportingKey] = useState(null);
   const [importedKeys, setImportedKeys] = useState(new Set());
   const [downloadProgress, setDownloadProgress] = useState({});
-  const operationApproval = (approvals?.approvals || []).find(a => a.id === (operation?.approval?.id || operation?.approvalId)) || operation?.approval;
-
   // status is raw docker text ("Up 50 seconds"); state is the normalized flag.
   const isUp = (c) => ["running", "healthy", "reachable"].includes(c.state || "") || (c.status || "").toLowerCase().startsWith("up");
   const running = containers.filter(isUp);

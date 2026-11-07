@@ -216,9 +216,6 @@ export function WarsatView({
   const pendingApprovals = (approvals?.approvals || []).filter(a => a.status === "pending");
   const healthyModels = (models || []).filter(m => isModelHealthy(m));
   const privacyLocked = security?.privacyLock;
-  const dockerEnabled = warsat?.dockerControlEnabled;
-  const executionEnabled = warsat?.executionEnabled;
-
   function handleFormChange() { if (plan || error) clearPlan?.(); }
 
   return (

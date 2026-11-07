@@ -855,18 +855,6 @@ def load_memory(owner_id="admin"):
     return {"prefs": prefs, "facts": facts[-250:], "sessions": sessions[-100:]}
 
 
-def save_memory(data, owner_id="admin"):
-    if not isinstance(data, dict):
-        return load_memory(owner_id)
-    for key, value in (data.get("prefs") or {}).items():
-        add_item("preference", {"key": key, "value": value}, owner_id=owner_id)
-    for value in data.get("facts") or []:
-        add_item("fact", value, owner_id=owner_id)
-    for value in data.get("sessions") or []:
-        add_item("session", value, owner_id=owner_id)
-    return load_memory(owner_id)
-
-
 def remember(kind, value, owner_id="admin", source_task_id=None, source_session_id=None, source_message_ids=None):
     kind = _normalize_kind(kind)
     if kind == "preference" and isinstance(value, dict):

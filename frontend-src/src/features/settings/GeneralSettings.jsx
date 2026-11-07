@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, Form, Row, Col, Badge, Spinner, Button } from "react-bootstrap";
-import { Monitor, Moon, Sun, ShieldAlert, BookOpen, Settings2, Save } from "lucide-react";
+import { Monitor, ShieldAlert, BookOpen, Settings2, Save } from "lucide-react";
 import { useSettingsStore } from "./settingsStore.js";
 import { updateSetting } from "./settingsActions.js";
 import { themeOptions } from "../../lib/constants.js";

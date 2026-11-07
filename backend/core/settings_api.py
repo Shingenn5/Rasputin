@@ -47,16 +47,6 @@ def _model_setting_error(key: str, value):
     return None
 
 
-def _model_settings_error(settings: dict):
-    if not isinstance(settings, dict):
-        return "models settings must be an object"
-    for key, value in settings.items():
-        error = _model_setting_error(key, value)
-        if error:
-            return error
-    return None
-
-
 def _domain_setting_error(domain: str, key: str, value):
     if domain == "models":
         return _model_setting_error(key, value)

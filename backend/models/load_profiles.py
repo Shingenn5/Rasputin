@@ -472,11 +472,6 @@ def _kv_memory_mb(model: Mapping[str, Any], context: int, parallel: int) -> floa
     return 0.0
 
 
-def _capability_list(capabilities: Mapping[str, Any], key: str, default: set[str]) -> set[str]:
-    value = capabilities.get(key)
-    return {str(item).lower() for item in value} if value is not None else set(default)
-
-
 def _canonical_flags(settings: Mapping[str, Any], capabilities: Mapping[str, Any]) -> tuple[str, ...]:
     flags: list[str] = []
 

@@ -1,5 +1,3 @@
-import React from "react";
-
 // These are intentionally small, code-native marks. Keeping them in the bundle means
 // the model browser still identifies a lab when it is offline or behind a firewall.
 const BRAND_RULES = [

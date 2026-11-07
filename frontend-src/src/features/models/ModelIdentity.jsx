@@ -1,4 +1,3 @@
-import React from "react";
 import { PublisherLogo } from "./PublisherLogo.jsx";
 
 function modelParts(item) {

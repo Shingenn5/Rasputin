@@ -20,9 +20,7 @@ from pathlib import Path
 from backend.core import audit
 from backend.core import runtime_store as rts
 from backend.core import security
-from backend.core.response import AppError
 from backend.models import registry as model_registry
-from . import legacy
 from .legacy import _chat, _load, _save, _public
 
 TEST_TIMEOUT_SECONDS = 20

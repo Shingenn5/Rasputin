@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Play, Power, ChevronRight } from "lucide-react";
-import { displayModelName, isManagedModelRunning, isModelHealthy } from "../../lib/display.js";
+import { displayModelName, isManagedModelRunning } from "../../lib/display.js";
 import { Button } from "../../components/Button.jsx";
 import { PublisherLogo } from "./PublisherLogo.jsx";
 import { modelOperationalSignal, installedModelFormat, installedModelSize } from "./modelPresentation.js";

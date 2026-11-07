@@ -153,13 +153,6 @@ export async function testIntegration(integrationId) {
 }
 
 /**
- * Saves deployment governance policy.
- */
-export async function saveDeploymentPolicy(policy) {
-  return updateSetting("deployments", "policy", policy);
-}
-
-/**
  * Rotates secrets/API keys.
  */
 export async function rotateSecrets(secretType) {

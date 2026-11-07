@@ -76,5 +76,5 @@ test("desktop model catalog exposes selection details and a real llama.cpp loade
   assert.match(loader, /firstLoadCanResolvePlacement/);
   assert.match(loader, /confirm layer-split support, and re-check placement before launch/);
   assert.match(app, /runModelAction\(action, key, options = \{\}\)/);
-  assert.match(app, /\{ key: resolvedKey, \.\.\.options \}/);
+  assert.match(app, /\{ key: resolvedKey,[^}]*\.\.\.options \}/);
 });

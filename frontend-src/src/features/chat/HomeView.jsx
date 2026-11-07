@@ -5,7 +5,7 @@ import { ModelLoadDialog } from "../models/ModelLoadDialog.jsx";
 import { useChatCommands } from "./useChatCommands.js";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Bot, BookOpen, Box, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Cpu, FileText, ListPlus, Laptop, Paperclip, PanelLeftOpen, Settings, ShieldCheck, SquareSlash, Square, X } from "lucide-react";
+import { ArrowUp, Bot, BookOpen, Box, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, FileText, ListPlus, Laptop, Paperclip, PanelLeftOpen, Settings, ShieldCheck, SquareSlash, Square, X } from "lucide-react";
 
 import { displayModelName, labelize, modelHealthLine, runtimeStatus } from "../../lib/display.js";
 import { useReliableAction } from "../../lib/actionRegistry.js";

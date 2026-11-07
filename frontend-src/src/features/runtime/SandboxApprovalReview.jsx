@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "../../components/ui/button.jsx";
 import { displayWorkspaceName } from "../../lib/display.js";

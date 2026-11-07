@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "../../components/ui/button.jsx";
 import "./sandbox-review.css";

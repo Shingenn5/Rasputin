@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Github, Mail, MessageSquare, Plug, RefreshCw, ShieldCheck, Trash2, Webhook } from "lucide-react";
 import { api, postJson } from "../../api/client.js";
 import { Button } from "@/components/ui/button.jsx";

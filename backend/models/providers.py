@@ -36,11 +36,6 @@ def is_api_provider(model_or_provider):
     return provider_key(provider) in API_PROVIDERS
 
 
-def is_openai_compatible_api(model_or_provider):
-    provider = model_or_provider if isinstance(model_or_provider, str) else (model_or_provider or {}).get("provider")
-    return provider_key(provider) in OPENAI_COMPATIBLE_API_PROVIDERS
-
-
 def default_base_url(provider):
     return DEFAULT_BASE_URLS.get(provider_key(provider), "")
 
@@ -849,12 +844,3 @@ def discover_models(model):
     headers = _gemini_headers(model) if provider == "gemini" else _anthropic_headers(model) if provider == "anthropic" else _openai_headers(model)
     payload = _request_json(url, headers=headers, timeout=15)
     return _parse_model_ids(payload, provider)
-
-
-def test_payload(model, max_tokens=8):
-    provider = provider_key(model.get("provider"))
-    if provider == "anthropic":
-        return _anthropic_payload(model, [{"role": "user", "content": "Say ok."}], max_tokens, 0)
-    if provider == "gemini":
-        return _gemini_payload(model, [{"role": "user", "content": "Say ok."}], max_tokens, 0)
-    return _openai_payload(model, [{"role": "user", "content": "Say ok."}], max_tokens, 0)
